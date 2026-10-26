@@ -62,7 +62,7 @@ func push(dir: Vector3, at: Vector3) -> void:
 	dir.y = 0
 	if dir.length() < 0.01:
 		return
-	var f := dir.normalized() * PUSH_FORCE
+	var f: Vector3 = dir.normalized() * PUSH_FORCE * min(1.0, dir.length())
 	# 力は手の位置の近くにかける。ただし横のずれは弱めて、後ろから押したときに回りすぎないように
 	var p := to_local(at)
 	apply_force(f, global_basis * Vector3(p.x * 0.35, 0.2, clamp(p.z, -HALF.y, HALF.y) * 0.5))

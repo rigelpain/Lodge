@@ -1,10 +1,11 @@
 extends CharacterBody3D
 ## あなた。一人称で、見えるのはフェルトの手袋をした両手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
-## つかんだまま W で押し、A/D で向きを変え、S を引き続けるか F で手を離す。
+## つかんだまま W で押し、S で手前に引き、A/D で回り込む。離すのは F だけ。Shift でダッシュ。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
 
 const SPEED := 4.0
+const DASH := 7.0            # Shift で走る速さ
 const SPEED_TAUT := 2.6      # 紐が張っているときの歩く速さ
 const JUMP := 4.5
 const GRAVITY := 9.8
@@ -28,7 +29,6 @@ var prompt := ""             # 画面に出す一言（main.gd が読む）
 var base_fov := 75.0         # ホイールで変える視野角
 var _col: CollisionShape3D
 var _t := 0.0
-var _pull := 0.0             # S を引き続けた時間
 var _snap := 0.0             # 吸い付きの途中（0→1）
 var _rope: Array[MeshInstance3D] = []
 
@@ -146,7 +146,6 @@ func grab() -> void:
 	mode = Mode.GRIP
 	_col.disabled = true
 	_snap = 0.0
-	_pull = 0.0
 	# 体を押す向きに向ける（視線はそのあと自由）
 	var fwd: Vector3 = sled.global_basis * push_dir
 	rotation.y = atan2(-fwd.x, -fwd.z)
@@ -156,7 +155,6 @@ func grab_rope() -> void:
 	if not sled.take_rope(self):
 		return
 	mode = Mode.ROPE
-	_pull = 0.0
 
 
 func let_go() -> void:
@@ -225,7 +223,7 @@ func _physics_process(dt: float) -> void:
 func _walk(dt: float, with_rope: bool) -> void:
 	var input := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
 	var dir := (global_basis * Vector3(input.x, 0, input.y)).normalized()
-	var speed := SPEED
+	var speed := DASH if Input.is_physical_key_pressed(KEY_SHIFT) else SPEED
 	if with_rope:
 		# 紐が張っていれば、手の位置から引く。引いている間は歩みが重くなる
 		var over: float = sled.pull_rope(_hand_world())
@@ -280,6 +278,10 @@ func _grip(dt: float) -> void:
 	if Input.is_physical_key_pressed(KEY_W):
 		sled.push(fwd, target + fwd * 0.6 + Vector3.UP * 0.5)
 		pushing = true
+	elif Input.is_physical_key_pressed(KEY_S):
+		# 手前に引く（押すより少し弱い）
+		sled.push(-fwd * 0.7, target + fwd * 0.6 + Vector3.UP * 0.5)
+		pushing = true
 	# A/D: 真向かいの縁を軸に回り込む。D で自分の右へ動く向きに回す
 	var steer := _key(KEY_D) - _key(KEY_A)
 	if steer != 0.0:
@@ -294,14 +296,13 @@ func _grip(dt: float) -> void:
 	else:
 		sled.angular_velocity.y = lerp(sled.angular_velocity.y, 0.0, min(1.0, dt * 8.0))
 
-	# 後ろへ引き続けると手を離す
-	_pull = _pull + dt if Input.is_physical_key_pressed(KEY_S) else 0.0
-	if _pull > 0.35 or sled.linear_velocity.length() > LET_GO_SPEED:
+	# 速く滑り出したら手が離れる
+	if sled.linear_velocity.length() > LET_GO_SPEED:
 		let_go()
 		global_position -= fwd * 0.6
 		return
 
-	prompt = "押している　A/D 向き　S 手を離す　E 乗る" if pushing else "W 押す　A/D 向き　S 手を離す　E 乗る"
+	prompt = "押している　A/D 回り込む　F 手を離す　E 乗る" if pushing else "W 押す　S 引く　A/D 回り込む　F 手を離す　E 乗る"
 
 
 ## 紐を持つ手の位置（世界座標）

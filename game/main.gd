@@ -177,7 +177,7 @@ func _physics_process(dt: float) -> void:
 		"押している人: %d　ソリの高さ: %.1f m（頂上 %.0f m）　速さ: %.1f m/s" % [sled.pushers, s.y, HILL_H, sled.linear_velocity.length()],
 	]
 	if player:
-		lines.append(player.prompt if player.prompt != "" else "WASD 歩く　マウス 見回す　ホイール 視野角　Space ジャンプ　ソリのそばで F つかむ（前では紐を持つ）　E 乗る　R ソリをふもとへ　Esc マウスを離す")
+		lines.append(player.prompt if player.prompt != "" else "WASD 歩く　Shift 走る　マウス 見回す　ホイール／ピンチ 視野角　Space ジャンプ　ソリのそばで F つかむ（前では紐を持つ）　E 乗る　R ソリをふもとへ　Esc マウスを離す")
 	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）
