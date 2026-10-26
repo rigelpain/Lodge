@@ -101,6 +101,7 @@ uniform int mode = 0;   // 0: 縦長の超広角魚眼  1: 全天球  2: リト�
 uniform float aspect = 0.5625;   // 窓の 幅/高さ
 uniform float vfov = 2.97;       // 魚眼の縦の画角 (rad)。170°
 uniform float tilt = 0.17;       // 魚眼の中心を下へ向ける角 (rad)
+uniform int face_back = 1;       // 1: 後ろ向き（背中側を中央に）
 
 vec4 sample_face(int i, vec2 uv) {
 	if (i == 0) return texture(f0, uv);
@@ -142,6 +143,7 @@ void fragment() {
 		float cy = d.y * cos(tilt) + d.z * sin(tilt);
 		float cz = -d.y * sin(tilt) + d.z * cos(tilt);
 		d = vec3(d.x, cy, cz);
+		if (face_back == 1) d = vec3(-d.x, d.y, -d.z);
 		COLOR = sample_dir(d);
 	} else if (mode == 1) {
 		float lon = (UV.x - 0.5) * 6.2831853;
@@ -263,7 +265,7 @@ func _process(_dt: float) -> void:
 		return
 	_place_pip_cams()
 	var t := int(elapsed)
-	pip_label.text = "    360 LIVE  %02d:%02d" % [t / 60, t % 60]
+	pip_label.text = "    360 LIVE  %02d:%02d%s" % [t / 60, t % 60, "  後ろ" if pip_mode == 0 else ""]
 
 
 func _make_world() -> void:
