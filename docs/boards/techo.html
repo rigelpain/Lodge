@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>制作手帖（手帖）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=Zen+Old+Mincho:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  /* 手帖: 見開き。左は週ごとの罫に日付で書き込み、右はいまの頁。小口に段の見出し（インデックス）。色は墨と藍のインク一色 */
+  :root { --desk: #e9e4da; --paper: #fbfaf6; --ink: #2a2a28; --ink-2: #77736b; --line: #e3ddd1; --line-2: #c9c1b2; --blue: #2c4f86; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--desk); color: var(--ink); font-family: "Zen Kaku Gothic New", sans-serif; font-size: 15px; line-height: 1.8; }
+  h1, h2, h3, p, ol, ul, dl, dd { margin: 0; }
+  ol, ul { padding: 0; list-style: none; }
+
+  .book { max-width: 1280px; margin: 24px auto; padding: 0 56px 0 24px; position: relative; }
+  .spread { display: grid; grid-template-columns: 1fr 1fr; background: var(--paper); border: 1px solid var(--line-2); }
+  .page { padding: 28px 32px 32px; min-width: 0; }
+  .page + .page { border-left: 1px solid var(--line-2); }
+
+  .runhead { display: flex; justify-content: space-between; align-items: baseline; border-bottom: 1px solid var(--ink); padding-bottom: 6px; margin-bottom: 4px; }
+  .runhead h1, .runhead h2 { font-family: "Zen Old Mincho", serif; font-weight: 700; font-size: 22px; letter-spacing: 0.06em; }
+  .runhead p { font-size: 12px; color: var(--ink-2); }
+
+  /* 左頁: 週の罫 */
+  .weeks li { display: grid; grid-template-columns: 5.5em 1fr; border-bottom: 1px solid var(--line); min-height: 40px; }
+  .weeks .wk { font-size: 12px; color: var(--ink-2); padding: 9px 0 0; font-feature-settings: "tnum"; border-right: 1px solid var(--line); }
+  .weeks .ent { padding: 7px 0 7px 12px; }
+  .weeks .ent p { font-size: 14px; }
+  .weeks .ent p + p { margin-top: 2px; }
+  .weeks .ent .d { font-size: 12px; color: var(--ink-2); margin-right: 6px; font-feature-settings: "tnum"; }
+  .weeks .ent .goal { color: var(--blue); font-weight: 700; }
+  .weeks li.this { border-bottom-color: var(--blue); }
+  .weeks li.this .wk { color: var(--blue); font-weight: 700; }
+
+  /* 右頁 */
+  .next { padding: 18px 0 20px; border-bottom: 1px solid var(--line-2); }
+  .next .what { font-family: "Zen Old Mincho", serif; font-size: 30px; line-height: 1.45; font-weight: 700; }
+  .next .when { color: var(--blue); margin-top: 6px; }
+  h3 { font-size: 13px; font-weight: 700; color: var(--ink-2); letter-spacing: 0.12em; margin: 20px 0 4px; }
+  .todo li { display: grid; grid-template-columns: 1.6em 1fr; border-bottom: 1px solid var(--line); padding: 5px 0; }
+  .todo li::before { content: ""; width: 12px; height: 12px; border: 1px solid var(--ink-2); margin-top: 8px; }
+  .todo li.done { color: var(--ink-2); }
+  .todo li.done::before { background: linear-gradient(45deg, transparent 45%, var(--ink-2) 45% 55%, transparent 55%); }
+  .todo li.now { color: var(--blue); font-weight: 700; }
+  .todo li.now::before { border-color: var(--blue); border-width: 2px; }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .q li { border-bottom: 1px solid var(--line); padding: 5px 0; font-size: 14px; }
+  .places div { border-bottom: 1px solid var(--line); padding: 5px 0; }
+  .places dt { font-weight: 700; font-size: 14px; }
+  .places dd { font-size: 13px; color: var(--ink-2); line-height: 1.6; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td { border-bottom: 1px solid var(--line); padding: 5px 0; }
+  td + td { text-align: right; font-feature-settings: "tnum"; }
+  .memo { margin-top: 24px; padding-top: 12px; border-top: 1px solid var(--line-2); font-family: "Zen Old Mincho", serif; font-size: 15px; color: var(--ink); }
+  .memo span { display: block; font-family: "Zen Kaku Gothic New", sans-serif; font-size: 12px; color: var(--ink-2); margin-top: 4px; }
+
+  /* 小口のインデックス（段） */
+  .tabs { position: absolute; right: 0; top: 24px; display: flex; flex-direction: column; gap: 4px; width: 56px; }
+  .tabs li { writing-mode: vertical-rl; font-size: 12px; letter-spacing: 0.1em; padding: 10px 6px; background: #f1ede5; border: 1px solid var(--line-2); border-left: 0; color: var(--ink-2); width: 28px; }
+  .tabs li.done { color: #a9a294; }
+  .tabs li.now { width: 44px; background: var(--paper); color: var(--blue); font-weight: 700; }
+
+  @media (max-width: 960px) {
+    .book { padding: 0 16px; margin: 16px auto; }
+    .spread { grid-template-columns: 1fr; }
+    .page + .page { border-left: 0; border-top: 1px solid var(--line-2); }
+    .tabs { position: static; flex-direction: row; flex-wrap: wrap; width: auto; margin-bottom: 8px; }
+    .tabs li { writing-mode: horizontal-tb; width: auto; border-left: 1px solid var(--line-2); }
+    .tabs li.now { width: auto; }
+    .two { grid-template-columns: 1fr; gap: 0; }
+    .page { padding: 20px 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="book">
+  <ol class="tabs" id="tabs" aria-label="発売までの段"></ol>
+  <div class="spread">
+    <section class="page" aria-labelledby="left-h">
+      <header class="runhead"><h1 id="left-h">ソリのゲーム 制作手帖</h1><p id="range"></p></header>
+      <ol class="weeks" id="weeks"></ol>
+    </section>
+    <main class="page" aria-labelledby="right-h">
+      <header class="runhead"><h2 id="right-h">いま</h2><p id="updated"></p></header>
+      <div class="next">
+        <p class="what" id="next"></p>
+        <p class="when" id="due"></p>
+      </div>
+      <h3>やること</h3>
+      <ul class="todo" id="todo"></ul>
+      <div class="two">
+        <section><h3>決めていない</h3><ul class="q" id="q"></ul></section>
+        <section><h3>場所</h3><dl class="places" id="places"></dl></section>
+      </div>
+      <div class="two">
+        <section><h3>お金</h3><table><tbody id="costs"></tbody></table></section>
+        <section><h3>参考</h3><ul class="q" id="refs"></ul></section>
+      </div>
+      <p class="memo" id="origin"></p>
+    </main>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+load(d => {
+  $('tabs').innerHTML = d.phases.map(p => `<li class="${p.state}"${p.state === 'now' ? ' aria-current="step"' : ''}>${esc(p.name)}</li>`).join('');
+  $('updated').textContent = fmt(d.updated) + ' 更新';
+  $('next').textContent = d.next.label;
+  $('due').textContent = `${fmt(d.next.due)}まで、あと${daysLeft(d.next.due)}日`;
+  $('todo').innerHTML = d.tasks.map(t => `<li class="${t.state}"><span><span class="sr" style="position:absolute;left:-9999px">${STATE[t.state]}</span>${esc(t.text)}</span></li>`).join('');
+  $('q').innerHTML = d.questions.map(q => `<li>${esc(q)}</li>`).join('');
+  $('places').innerHTML = d.places.map(p => `<div><dt>${esc(p.name)}</dt><dd>${esc(p.note)}</dd></div>`).join('');
+  $('costs').innerHTML = d.costs.map(c => `<tr><td>${esc(c.item)}</td><td>${esc(c.yen)}</td></tr>`).join('');
+  $('refs').innerHTML = d.refs.map(r => `<li>${esc(r.name)}</li>`).join('');
+  $('origin').innerHTML = `${esc(d.origin)}<span>はじまり</span>`;
+
+  // 左頁: 最初の決定の週から、節目の週の2週あとまで
+  const monday = (s) => { const t = new Date(s + 'T00:00:00'); t.setDate(t.getDate() - ((t.getDay() + 6) % 7)); return t; };
+  const iso = (t) => `${t.getFullYear()}-${String(t.getMonth() + 1).padStart(2, '0')}-${String(t.getDate()).padStart(2, '0')}`;
+  const start = monday(d.decisions[0].date), end = monday(d.next.due);
+  end.setDate(end.getDate() + 14);
+  const today = monday(iso(new Date()));
+  const rows = [];
+  for (let w = new Date(start); w <= end; w.setDate(w.getDate() + 7)) {
+    const a = iso(w), z = new Date(w); z.setDate(z.getDate() + 6); const b = iso(z);
+    const ent = d.decisions.filter(x => x.date >= a && x.date <= b).map(x => `<p><span class="d">${short(x.date)}</span>${esc(x.text)}</p>`);
+    if (d.next.due >= a && d.next.due <= b) ent.push(`<p class="goal"><span class="d">${short(d.next.due)}</span>${esc(d.next.label)}</p>`);
+    rows.push(`<li class="${w.getTime() === today.getTime() ? 'this' : ''}"><span class="wk">${short(a)}〜</span><div class="ent">${ent.join('')}</div></li>`);
+  }
+  $('weeks').innerHTML = rows.join('');
+  $('range').textContent = `${short(iso(start))}〜${short(iso(end))}`;
+});
+</script>
+</body>
+</html>
