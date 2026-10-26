@@ -1,6 +1,6 @@
 extends CharacterBody3D
 ## あなた。一人称で、見えるのはフェルトの手袋をした両手だけ。
-## ソリのまわりのどこからでも F でつかめる（近くで W を押し続けても吸い付く）。
+## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま W で押し、A/D で向きを変え、S を引き続けるか F で手を離す。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
 
@@ -9,8 +9,8 @@ const SPEED_TAUT := 2.6      # 紐が張っているときの歩く速さ
 const JUMP := 4.5
 const GRAVITY := 9.8
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
-const SNAP_REACH := 1.0      # W で歩いて近づくと吸い付く距離 (m)
 const LET_GO_SPEED := 5.0    # ソリがこれより速く滑ると手が離れる (m/s)
+const PIVOT_RATE := 0.7      # 回り込む速さ (rad/s)
 const ROPE_SEGS := 14
 
 enum Mode { WALK, GRIP, RIDE, ROPE }
@@ -98,6 +98,9 @@ func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-e.relative.x * 0.003)
 		cam.rotation.x = clamp(cam.rotation.x - e.relative.y * 0.003, -1.4, 1.3)
+	elif e is InputEventMagnifyGesture:
+		# トラックパッドのピンチ: 広げると寄る（視野角が狭まる）
+		base_fov = clamp(base_fov / e.factor, 50.0, 110.0)
 	elif e is InputEventMouseButton and e.pressed:
 		if e.button_index == MOUSE_BUTTON_WHEEL_UP:
 			base_fov = clamp(base_fov - 3.0, 50.0, 110.0)
@@ -260,12 +263,7 @@ func _walk(dt: float, with_rope: bool) -> void:
 		return
 	var fwd: Vector3 = sled.global_basis * gp[1]
 	fwd.y = 0
-	var facing := fwd.normalized().dot(-global_basis.z) > 0.6
-	# ソリへ向かって歩いて縁に触れたら吸い付く
-	if input.y < 0 and facing and global_position.distance_to(stand_w) < SNAP_REACH:
-		grab()
-		return
-	if facing:
+	if fwd.normalized().dot(-global_basis.z) > 0.6:
 		prompt = "F でソリをつかむ"
 
 
@@ -282,9 +280,19 @@ func _grip(dt: float) -> void:
 	if Input.is_physical_key_pressed(KEY_W):
 		sled.push(fwd, target + fwd * 0.6 + Vector3.UP * 0.5)
 		pushing = true
+	# A/D: 真向かいの縁を軸に回り込む。D で自分の右へ動く向きに回す
 	var steer := _key(KEY_D) - _key(KEY_A)
 	if steer != 0.0:
-		sled.steer_from_handle(steer)
+		var pivot_local := Vector3(-handle.x, 0, -handle.z)
+		var arm: Vector3 = global_position - sled.to_global(pivot_local)
+		arm.y = 0
+		var move_dir := Vector3.UP.cross(arm)   # 正の回転で自分が動く向き
+		var sgn := 1.0 if move_dir.dot(global_basis.x) >= 0.0 else -1.0
+		var omega := steer * sgn * PIVOT_RATE
+		sled.pivot_turn(handle, omega)
+		rotate_y(omega * dt)   # 体もソリと一緒に回り、ソリを向いたままになる
+	else:
+		sled.angular_velocity.y = lerp(sled.angular_velocity.y, 0.0, min(1.0, dt * 8.0))
 
 	# 後ろへ引き続けると手を離す
 	_pull = _pull + dt if Input.is_physical_key_pressed(KEY_S) else 0.0

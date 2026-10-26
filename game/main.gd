@@ -194,6 +194,17 @@ func _physics_process(dt: float) -> void:
 			player.global_position = sled.to_global(Vector3(2.0, 0, 0)) + Vector3.UP * 0.2
 			var inward: Vector3 = -sled.global_basis.x
 			player.rotation.y = atan2(-inward.x, -inward.z)
+		if args["sim"] == "turn":
+			player.global_position = sled.to_global(Vector3(0, 0, 2.4)) + Vector3.UP * 0.2
+			player.rotation.y = atan2(-fwd.x, -fwd.z)
+			player.grab()
+			var evd := InputEventKey.new()
+			evd.physical_keycode = KEY_D
+			evd.pressed = true
+			Input.parse_input_event(evd)
+			return
+		if args["sim"] == "1":
+			player.grab()
 		var ev := InputEventKey.new()
 		ev.physical_keycode = KEY_W
 		ev.pressed = true
@@ -206,7 +217,7 @@ func _physics_process(dt: float) -> void:
 			log_t = 0.0
 			var bots := get_children().filter(func(c): return c.get_script() == Bot)
 			var bd: float = bots[0].global_position.distance_to(s) if bots.size() > 0 else 0.0
-			var me := ("　あなた=%s %s" % [["歩く", "つかむ", "乗る", "紐"][player.mode], player.prompt]) if player else ""
+			var me := ("　あなた=%s 向き=%.0f° ソリ向き=%.0f°" % [["歩く", "つかむ", "乗る", "紐"][player.mode], rad_to_deg(player.rotation.y), rad_to_deg(sled.rotation.y)]) if player else ""
 			print("t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
 			_duty = 0
 			_frames = 0

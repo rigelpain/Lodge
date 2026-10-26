@@ -17,6 +17,7 @@ var pushers := 0            # 前のコマで押していた人数（表示用�
 var riders: Array[Node3D] = []
 var holders := {}           # つかんでいる人 → つかんだ所（ソリの座標）
 var rope_holder: Node3D = null
+var _pivoting := false
 var _push_count := 0
 
 
@@ -120,9 +121,21 @@ func pull_rope(hand: Vector3) -> float:
 
 
 
-## 取っ手を握ったまま、押す向きを変える（乗っているときより弱い）
-func steer_from_handle(steer: float) -> void:
-	apply_torque(Vector3.UP * -steer * 70.0)
+## つかんでいる人が左右に回り込む: つかんだ所の真向かいの縁を軸に、ソリ全体を回す。
+## omega は回す速さ (rad/s、上から見て反時計回りが正)。軸の点（世界座標）を返す
+func pivot_turn(handle: Vector3, omega: float) -> Vector3:
+	var pivot_local := Vector3(-handle.x, 0, -handle.z)
+	var pivot := to_global(pivot_local)
+	var r := global_position - pivot
+	r.y = 0
+	var lateral := Vector3.UP.cross(r)   # 軸まわりに回るとき、重心が動く向き（長さ |r|）
+	angular_velocity.y = omega
+	if lateral.length() > 0.01:
+		var dir := lateral.normalized()
+		var want := omega * lateral.length()
+		linear_velocity += dir * (want - linear_velocity.dot(dir))
+	_pivoting = true
+	return pivot
 
 
 func mount(who: Node3D) -> Vector3:
@@ -163,10 +176,12 @@ func _physics_process(_dt: float) -> void:
 	pushers = _push_count
 	_push_count = 0
 	linear_damp = RIDE_DAMP if riders.size() > 0 else CLIMB_DAMP
-	# 滑り木: 前後にはよく滑り、横には滑りにくい
-	var side := global_basis.x
-	var slip := side * linear_velocity.dot(side)
-	apply_central_force(-slip * mass * SLIP_RESIST)
+	# 滑り木: 前後にはよく滑り、横には滑りにくい（回り込みの最中は邪魔しない）
+	if not _pivoting:
+		var side := global_basis.x
+		var slip := side * linear_velocity.dot(side)
+		apply_central_force(-slip * mass * SLIP_RESIST)
+	_pivoting = false
 	# 起き上がり: 大きく傾いたら少しずつ戻す
 	var up := global_basis.y
 	if up.y < 0.5:
