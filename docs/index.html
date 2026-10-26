@@ -14,7 +14,42 @@
 <body>
 <a class="skip" href="#main">本文へ移る</a>
 
-<main id="main" class="grid">
+<nav class="tabs" role="tablist" aria-label="ページ">
+  <button type="button" role="tab" id="tab-all" aria-controls="main" aria-selected="true">全体</button>
+  <button type="button" role="tab" id="tab-art" aria-controls="art" aria-selected="false" tabindex="-1">アート</button>
+</nav>
+
+<!-- アート: 見た目の考え方 -->
+<div id="art" class="grid" role="tabpanel" aria-labelledby="tab-art" hidden>
+  <header class="tile hero art-hero" aria-labelledby="art-goal">
+    <p class="kicker">アートコンセプト</p>
+    <h1 id="art-goal"></h1>
+    <p class="pitch" id="art-pitch"></p>
+  </header>
+  <section class="tile art-rules" aria-labelledby="rules-h">
+    <h2 id="rules-h">決まり</h2>
+    <ol class="list plain" id="art-rules"></ol>
+  </section>
+  <section class="tile art-mat" aria-labelledby="mat-h">
+    <h2 id="mat-h">素材</h2>
+    <dl class="mats" id="art-mats"></dl>
+  </section>
+  <section class="tile art-pal" aria-labelledby="pal-h">
+    <h2 id="pal-h">色</h2>
+    <ul class="swatches" id="art-pal"></ul>
+    <p class="cap">ゲームの中で使っている色（game/ のコードから）</p>
+  </section>
+  <section class="tile art-scene" aria-labelledby="scene-h">
+    <h2 id="scene-h">いまある景色</h2>
+    <ol class="list" id="art-scene"></ol>
+  </section>
+  <section class="tile art-open" aria-labelledby="aopen-h">
+    <h2 id="aopen-h">まだ決めていない</h2>
+    <dl class="pairs" id="art-open"></dl>
+  </section>
+</div>
+
+<main id="main" class="grid" role="tabpanel" aria-labelledby="tab-all">
   <!-- 何を目指すか -->
   <header class="tile hero" aria-labelledby="goal">
     <p class="kicker"><span id="title"></span><span class="dot" aria-hidden="true"></span><time id="updated"></time> 更新</p>

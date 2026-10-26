@@ -77,6 +77,7 @@ function render(d) {
     `<tr><td>${esc(c.item)}</td><td class="amt">${esc(c.yen)}${/\d/.test(c.yen) ? '<small>円</small>' : ''}</td><td class="note">${esc(c.note)}</td></tr>`).join('');
   $('refs').innerHTML = d.refs.map((r) => `<div><dt>${esc(r.name)}</dt><dd>${esc(r.note)}</dd></div>`).join('');
   $('origin').textContent = d.origin;
+  if (d.art) renderArt(d.art);
 
   // 現れ方: タイルを順に浮かせ、図を伸ばし、数字を数え上げる
   const tiles = [...document.querySelectorAll('.tile')];
@@ -89,6 +90,43 @@ function render(d) {
     countUp($('days'), left);
   }));
 }
+
+// アート: 素材・色・景色・未定
+function renderArt(a) {
+  $('art-goal').textContent = a.concept;
+  $('art-pitch').textContent = a.pitch;
+  $('art-rules').innerHTML = a.rules.map((r, i) =>
+    `<li><span class="idx">${String(i + 1).padStart(2, '0')}</span><span>${esc(r)}</span></li>`).join('');
+  $('art-mats').innerHTML = a.materials.map((m) =>
+    `<div><dt>${esc(m.name)}</dt><dd class="use">${esc(m.use)}</dd><dd>${esc(m.note)}</dd></div>`).join('');
+  $('art-pal').innerHTML = a.palette.map((c) =>
+    `<li><span class="chip" style="--c:${esc(c.hex)}" aria-hidden="true"></span><span class="cn">${esc(c.name)}</span><span class="hex num">${esc(c.hex)}</span></li>`).join('');
+  $('art-scene').innerHTML = a.scene.map((s) =>
+    `<li class="${s.state}"><span class="mark" aria-hidden="true"></span><span><b>${esc(s.name)}</b>　${esc(s.note)}</span></li>`).join('');
+  $('art-open').innerHTML = a.open.map((o) => `<div><dt>${esc(o.name)}</dt><dd>${esc(o.note)}</dd></div>`).join('');
+}
+
+// タブ: 全体 / アート。#art で直接開ける
+const tabs = [...document.querySelectorAll('[role=tab]')];
+function show(tab) {
+  tabs.forEach((t) => {
+    const on = t === tab;
+    t.setAttribute('aria-selected', on);
+    t.tabIndex = on ? 0 : -1;
+    $(t.getAttribute('aria-controls')).hidden = !on;
+  });
+  history.replaceState(null, '', tab.id === 'tab-art' ? '#art' : location.pathname);
+}
+tabs.forEach((t, i) => {
+  t.addEventListener('click', () => show(t));
+  t.addEventListener('keydown', (e) => {
+    const k = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
+    if (!k) return;
+    const n = tabs[(i + k + tabs.length) % tabs.length];
+    n.focus(); show(n);
+  });
+});
+if (location.hash === '#art') show($('tab-art'));
 
 function countUp(el, to) {
   if (reduce || to === 0) { el.textContent = to; return; }

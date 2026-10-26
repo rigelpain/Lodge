@@ -214,3 +214,30 @@ a:focus-visible { outline: 2px solid var(--coral); outline-offset: 3px; border-r
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   .tile { background: rgba(255, 255, 255, 0.86); }
 }
+
+/* タブ: ガラスの細い帯に、選んだものだけ白く浮かせる */
+.tabs { display: flex; gap: 4px; width: fit-content; margin: var(--gutter) auto 0; padding: 4px; border-radius: 999px; background: rgba(255, 255, 255, 0.3); -webkit-backdrop-filter: blur(20px) saturate(1.8); backdrop-filter: blur(20px) saturate(1.8); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 8px 24px -12px rgba(30, 50, 110, 0.3); }
+.tabs button { font: inherit; font-weight: 700; color: var(--ink-2); background: none; border: 0; border-radius: 999px; padding: 8px 22px; min-height: 40px; cursor: pointer; transition: background 300ms var(--ease), color 300ms var(--ease); }
+.tabs button[aria-selected="true"] { background: rgba(255, 255, 255, 0.9); color: var(--ink); box-shadow: 0 2px 8px rgba(30, 50, 110, 0.15); }
+.tabs button:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+.grid[hidden] { display: none; }
+
+/* アート */
+.art-hero { grid-column: span 8; }
+.art-rules { grid-column: span 4; }
+.art-mat { grid-column: span 7; }
+.art-pal { grid-column: span 5; }
+.art-scene { grid-column: span 7; }
+.art-open { grid-column: span 5; }
+@media (max-width: 1100px) { .art-hero { grid-column: span 12; } .art-rules, .art-mat, .art-pal, .art-scene, .art-open { grid-column: span 6; } }
+@media (max-width: 680px) { #art > * { grid-column: span 12; } }
+.mats { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 10px; }
+.mats > div { padding: 12px 14px; border-radius: 18px; background: rgba(255, 255, 255, 0.4); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9); border: 1.5px dashed rgba(20, 28, 54, 0.18); }
+.mats dt { font-weight: 700; font-size: var(--t-m); }
+.mats dd { font-size: var(--t-xs); color: var(--ink-2); line-height: 1.6; }
+.mats dd.use { color: var(--ink); font-weight: 500; margin: 0.15em 0 0.3em; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 12px 10px; }
+.swatches li { display: grid; gap: 2px; }
+.swatches .chip { aspect-ratio: 1.4; border-radius: 14px; background: var(--c); box-shadow: inset 0 -6px 12px -6px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 6px rgba(30, 50, 110, 0.15); margin-bottom: 4px; }
+.swatches .cn { font-size: var(--t-xs); font-weight: 700; line-height: 1.4; }
+.swatches .hex { font-size: var(--t-xs); color: var(--ink-3); }
