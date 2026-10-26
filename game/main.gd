@@ -80,8 +80,10 @@ func _ready() -> void:
 ## 右上のライブ映像: 自分の頭の上に載せた 360° カメラの映像。
 ## 6 方向を同時に撮り、シェーダで 1 枚の全天球（正距円筒）に合成する。V でリトルプラネット
 const FACE_PX := 320
+const PIP_PHONE := Vector2(216, 384)    # スマホ向けの縦長 (9:16)。超広角の魚眼で切り出す
 const PIP_EQ := Vector2(420, 210)       # 全天球の窓 (2:1)
 const PIP_PLANET := Vector2(260, 260)   # リトルプラネットの窓
+const PIP_SIZES := [PIP_PHONE, PIP_EQ, PIP_PLANET]
 # 面ごとの [前 A, 上 U, 右 R]。シェーダ側も同じ向きで読む
 const FACES := [
 	[Vector3(0, 0, -1), Vector3(0, 1, 0), Vector3(1, 0, 0)],   # 前
@@ -95,7 +97,10 @@ const PIP_SHADER := """
 shader_type canvas_item;
 uniform sampler2D f0; uniform sampler2D f1; uniform sampler2D f2;
 uniform sampler2D f3; uniform sampler2D f4; uniform sampler2D f5;
-uniform int mode = 0;   // 0: 全天球  1: リトルプラネット
+uniform int mode = 0;   // 0: 縦長の超広角魚眼  1: 全天球  2: リトルプラネット
+uniform float aspect = 0.5625;   // 窓の 幅/高さ
+uniform float vfov = 2.97;       // 魚眼の縦の画角 (rad)。170°
+uniform float tilt = 0.17;       // 魚眼の中心を下へ向ける角 (rad)
 
 vec4 sample_face(int i, vec2 uv) {
 	if (i == 0) return texture(f0, uv);
@@ -128,6 +133,17 @@ vec4 sample_dir(vec3 d) {
 void fragment() {
 	vec3 d;
 	if (mode == 0) {
+		// 等距離射影の魚眼: 中央はふつうに、端へ行くほどぎゅっと縮む
+		vec2 p = (UV - 0.5) * vec2(aspect, 1.0) * 2.0;
+		float r = length(p);
+		float theta = r * vfov * 0.5;
+		vec2 u = (r > 0.0001) ? p / r : vec2(0.0, -1.0);
+		d = cos(theta) * vec3(0.0, 0.0, -1.0) + sin(theta) * (-u.y * vec3(0.0, 1.0, 0.0) + u.x * vec3(1.0, 0.0, 0.0));
+		float cy = d.y * cos(tilt) + d.z * sin(tilt);
+		float cz = -d.y * sin(tilt) + d.z * cos(tilt);
+		d = vec3(d.x, cy, cz);
+		COLOR = sample_dir(d);
+	} else if (mode == 1) {
 		float lon = (UV.x - 0.5) * 6.2831853;
 		float lat = (0.5 - UV.y) * 3.1415927;
 		d = vec3(sin(lon) * cos(lat), sin(lat), -cos(lon) * cos(lat));
@@ -209,7 +225,9 @@ func _make_pip() -> void:
 
 
 func _layout_pip() -> void:
-	var size: Vector2 = PIP_EQ if pip_mode == 0 else PIP_PLANET
+	var size: Vector2 = PIP_SIZES[pip_mode]
+	if pip_mat:
+		pip_mat.set_shader_parameter("aspect", size.x / size.y)
 	pip_frame.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	pip_frame.offset_left = -(size.x + 16)
 	pip_frame.offset_right = -16
@@ -230,7 +248,7 @@ func _layout_pip() -> void:
 
 ## 6 台のカメラを、頭のてっぺんに、体の向きに合わせて置く（水平は固定）
 func _place_pip_cams() -> void:
-	var head: Vector3 = player.global_position + Vector3.UP * 2.15
+	var head: Vector3 = player.global_position + Vector3.UP * 2.35   # 帽子の先の少し上
 	var yaw := Basis(Vector3.UP, player.rotation.y)
 	for i in FACES.size():
 		var f: Array = FACES[i]
@@ -428,6 +446,6 @@ func _unhandled_input(e: InputEvent) -> void:
 		if e.physical_keycode == KEY_R:
 			sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
 		elif e.physical_keycode == KEY_V and pip_mat:
-			pip_mode = 1 - pip_mode
+			pip_mode = (pip_mode + 1) % 3
 			pip_mat.set_shader_parameter("mode", pip_mode)
 			_layout_pip()
