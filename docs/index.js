@@ -7,12 +7,24 @@ const day = (s) => new Date(s + 'T00:00:00');
 const STATE = { done: '済', now: 'いま', todo: 'これから' };
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+let data = null;
 fetch('data.json')
   .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
-  .then(render)
+  .then((d) => { data = d; paint(); })
   .catch((e) => {
     $('main').insertAdjacentHTML('afterbegin', `<p class="tile in" style="grid-column:span 12" role="alert">data.json を読めませんでした（${esc(e.message)}）。GitHub Pages か手元のサーバーで開いてください。</p>`);
   });
+
+// いま開いているページ（main の data-page）に合わせて描く
+function paint() {
+  if (!data) return;
+  if ($('main').dataset.page === 'art') { renderArt(data.art); reveal(); } else render(data);
+}
+
+// タイルを順に浮かせる
+function reveal() {
+  [...document.querySelectorAll('.tile')].forEach((t, i) => setTimeout(() => t.classList.add('in'), reduce ? 0 : 60 * i));
+}
 
 function render(d) {
   $('title').textContent = d.title;
@@ -77,11 +89,9 @@ function render(d) {
     `<tr><td>${esc(c.item)}</td><td class="amt">${esc(c.yen)}${/\d/.test(c.yen) ? '<small>円</small>' : ''}</td><td class="note">${esc(c.note)}</td></tr>`).join('');
   $('refs').innerHTML = d.refs.map((r) => `<div><dt>${esc(r.name)}</dt><dd>${esc(r.note)}</dd></div>`).join('');
   $('origin').textContent = d.origin;
-  if (d.art) renderArt(d.art);
 
   // 現れ方: タイルを順に浮かせ、図を伸ばし、数字を数え上げる
-  const tiles = [...document.querySelectorAll('.tile')];
-  tiles.forEach((t, i) => setTimeout(() => t.classList.add('in'), reduce ? 0 : 60 * i));
+  reveal();
   requestAnimationFrame(() => requestAnimationFrame(() => {
     $('ring').style.strokeDashoffset = (326.7 * (1 - passed / total)).toFixed(1);
     track.style.setProperty('--progress', (ni / (d.phases.length - 1) * 100).toFixed(1) + '%');
@@ -106,27 +116,35 @@ function renderArt(a) {
   $('art-open').innerHTML = a.open.map((o) => `<div><dt>${esc(o.name)}</dt><dd>${esc(o.note)}</dd></div>`).join('');
 }
 
-// タブ: 全体 / アート。#art で直接開ける
-const tabs = [...document.querySelectorAll('[role=tab]')];
-function show(tab) {
-  tabs.forEach((t) => {
-    const on = t === tab;
-    t.setAttribute('aria-selected', on);
-    t.tabIndex = on ? 0 : -1;
-    $(t.getAttribute('aria-controls')).hidden = !on;
-  });
-  history.replaceState(null, '', tab.id === 'tab-art' ? '#art' : location.pathname);
-}
-tabs.forEach((t, i) => {
-  t.addEventListener('click', () => show(t));
-  t.addEventListener('keydown', (e) => {
-    const k = { ArrowRight: 1, ArrowLeft: -1 }[e.key];
-    if (!k) return;
-    const n = tabs[(i + k + tabs.length) % tabs.length];
-    n.focus(); show(n);
-  });
+// ページの行き来: 読み込み直さず、相手のページの main だけ取ってきて差し替える
+document.addEventListener('click', (e) => {
+  const a = e.target.closest('.tabs a');
+  if (!a || e.button || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+  e.preventDefault();
+  if (a.getAttribute('aria-current') !== 'page') go(a.href, true);
 });
-if (location.hash === '#art') show($('tab-art'));
+addEventListener('popstate', () => go(location.href, false));
+
+async function go(url, push) {
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(r.status);
+    const doc = new DOMParser().parseFromString(await r.text(), 'text/html');
+    const next = doc.getElementById('main');
+    if (!next) throw new Error('main がない');
+    $('main').replaceWith(document.adoptNode(next));
+    document.title = doc.title;
+    document.querySelector('meta[name=description]').content = doc.querySelector('meta[name=description]').content;
+    document.querySelectorAll('.tabs a').forEach((l) => {
+      if (l.dataset.page === next.dataset.page) l.setAttribute('aria-current', 'page'); else l.removeAttribute('aria-current');
+    });
+    if (push) history.pushState(null, '', url);
+    scrollTo(0, 0);
+    paint();
+  } catch {
+    location.href = url; // 取れなければふつうに移る
+  }
+}
 
 function countUp(el, to) {
   if (reduce || to === 0) { el.textContent = to; return; }

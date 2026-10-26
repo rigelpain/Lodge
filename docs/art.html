@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lodge アートコンセプト</title>
+<meta name="description" content="Lodge の見た目の考え方。フェルト・羊毛・ワタでつくった手芸の雪山。素材、色、いまある景色、まだ決めていないもの。">
+<meta name="color-scheme" content="light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="index.css?v=2">
+</head>
+<body>
+<a class="skip" href="#main">本文へ移る</a>
+
+<nav class="tabs" aria-label="ページ">
+  <a href="./" data-page="all">全体</a>
+  <a href="art.html" data-page="art" aria-current="page">アート</a>
+</nav>
+
+<!-- アート: 見た目の考え方 -->
+<main id="main" class="grid" data-page="art">
+  <header class="tile hero art-hero" aria-labelledby="art-goal">
+    <p class="kicker">アートコンセプト</p>
+    <h1 id="art-goal"></h1>
+    <p class="pitch" id="art-pitch"></p>
+  </header>
+  <section class="tile art-rules" aria-labelledby="rules-h">
+    <h2 id="rules-h">決まり</h2>
+    <ol class="list plain" id="art-rules"></ol>
+  </section>
+  <section class="tile art-mat" aria-labelledby="mat-h">
+    <h2 id="mat-h">素材</h2>
+    <dl class="mats" id="art-mats"></dl>
+  </section>
+  <section class="tile art-pal" aria-labelledby="pal-h">
+    <h2 id="pal-h">色</h2>
+    <ul class="swatches" id="art-pal"></ul>
+    <p class="cap">ゲームの中で使っている色（game/ のコードから）</p>
+  </section>
+  <section class="tile art-scene" aria-labelledby="scene-h">
+    <h2 id="scene-h">いまある景色</h2>
+    <ol class="list" id="art-scene"></ol>
+  </section>
+  <section class="tile art-open" aria-labelledby="aopen-h">
+    <h2 id="aopen-h">まだ決めていない</h2>
+    <dl class="pairs" id="art-open"></dl>
+  </section>
+</main>
+
+<script src="index.js?v=2"></script>
+</body>
+</html>

@@ -2,6 +2,10 @@
 
 ゲレンデで大きなソリをみんなで押して丘を登り、一緒に乗って一気に下る、3D 一人称の協力ゲーム。Steam での販売を目指しています。
 
+- 設計の文書: `design/`
+  - [ゲームの構想](design/game-concept.md) … ふたつの原体験、狙い、場所、ロッジ、通信、売り方
+  - [アートコンセプト](design/art-concept.md) … 手芸の世界（毛糸・フェルト・紙）、色、光、動き、音
+  - [操作と物理の決まり](design/controls-and-physics.md) … 力の向きだけ入力し、あとは物理。仲間の挙動、確かめ方
 - 開発ダッシュボード: `docs/`（GitHub Pages で公開。中身は `docs/data.json` を書き換える）
 - ゲーム本体（Godot 4.6）: `game/`
 - 絵柄の見本: これから `prototypes/` に置く
