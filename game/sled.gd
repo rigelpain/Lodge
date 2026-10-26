@@ -1,4 +1,6 @@
 extends RigidBody3D
+
+const Look := preload("res://look.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
 
@@ -46,10 +48,8 @@ func _ready() -> void:
 	col.position.y = 0.22
 	add_child(col)
 
-	var red := StandardMaterial3D.new()
-	red.albedo_color = Color(0.88, 0.38, 0.23)
-	var wood := StandardMaterial3D.new()
-	wood.albedo_color = Color(0.55, 0.36, 0.22)
+	var red := Look.felt(Color(0.88, 0.38, 0.23), 1.2)
+	var wood := Look.wood()
 	_box(Vector3(1.5, 0.25, 2.8), Vector3(0, 0.3, 0), red)
 	_box(Vector3(1.5, 0.6, 0.18), Vector3(0, 0.6, 1.3), red)      # 背もたれ（後ろ）
 	for x in [-0.6, 0.6]:

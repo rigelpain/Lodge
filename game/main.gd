@@ -1,4 +1,6 @@
 extends Node3D
+
+const Look := preload("res://look.gd")
 ## 原型の場面: こんもりした丘、ソリ、あなた（手だけ見える一人称）、押すのを手伝う仲間。
 ## 確かめ用の起動引数（-- のあとに付ける）:
 ##   --bots=N      仲間の数（既定 1）
@@ -69,6 +71,9 @@ func _ready() -> void:
 
 	if player:
 		_make_pip()
+		_make_snowfall(player)
+	else:
+		_make_snowfall(self)
 
 	hud = Label.new()
 	hud.position = Vector2(16, 12)
@@ -271,30 +276,93 @@ func _process(_dt: float) -> void:
 
 
 func _make_world() -> void:
-	var sky_mat := ProceduralSkyMaterial.new()
-	sky_mat.sky_top_color = Color(0.55, 0.72, 0.86)
-	sky_mat.sky_horizon_color = Color(0.86, 0.9, 0.93)
-	sky_mat.ground_horizon_color = Color(0.86, 0.9, 0.93)
-	var sky := Sky.new()
-	sky.sky_material = sky_mat
 	var env := Environment.new()
 	env.background_mode = Environment.BG_SKY
-	env.sky = sky
+	env.sky = Look.sky()
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+	env.ambient_light_sky_contribution = 0.7
+	env.ambient_light_energy = 0.75   # 影の側を少し落として、丘の形が読めるように
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_white = 1.4
+	env.ssao_enabled = true          # くぼみに影が落ちる
+	env.ssao_radius = 2.5
+	env.ssao_intensity = 3.0
+	env.ssao_light_affect = 0.3
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.86, 0.9, 0.93)
-	env.fog_density = 0.006
+	env.fog_light_color = Color(0.86, 0.9, 0.94)
+	env.fog_density = 0.004
+	env.fog_sky_affect = 0.2
+	env.adjustment_enabled = true
+	env.adjustment_saturation = 1.05
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
+	# 太陽: 少し低めの午後の光。影の縁をやわらかく
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-40, -35, 0)
-	sun.light_energy = 1.1
+	sun.rotation_degrees = Vector3(-32, -40, 0)
+	sun.light_color = Color(1.0, 0.95, 0.86)
+	sun.light_energy = 1.45
+	sun.light_angular_distance = 2.0
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 80
+	sun.directional_shadow_max_distance = 90
+	sun.directional_shadow_blend_splits = true
 	add_child(sun)
+
+	# 遠景: 地平線にフェルトの山なみ
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	var far_mat := Look.felt(Color(0.72, 0.79, 0.90), 0.3)
+	for k in 14:
+		var a := k * TAU / 14.0 + rng.randf_range(-0.1, 0.1)
+		var r := rng.randf_range(118, 140)
+		var m := MeshInstance3D.new()
+		m.mesh = SphereMesh.new()
+		m.material_override = far_mat
+		m.position = Vector3(cos(a) * r, -3.0, sin(a) * r)
+		m.scale = Vector3(rng.randf_range(40, 70), rng.randf_range(14, 26), rng.randf_range(30, 50))
+		m.rotation.y = rng.randf() * TAU
+		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(m)
+
+
+## 舞う雪: 羊毛のふわふわが、あなたのまわりでゆっくり落ちる
+func _make_snowfall(follow: Node3D) -> void:
+	var p := GPUParticles3D.new()
+	p.amount = 500
+	p.lifetime = 14.0
+	p.preprocess = 10.0
+	p.visibility_aabb = AABB(Vector3(-40, -20, -40), Vector3(80, 50, 80))
+	var pm := ParticleProcessMaterial.new()
+	pm.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	pm.emission_box_extents = Vector3(32, 2, 32)
+	pm.direction = Vector3(0, -1, 0)
+	pm.spread = 25.0
+	pm.initial_velocity_min = 0.3
+	pm.initial_velocity_max = 0.7
+	pm.gravity = Vector3(0, -0.35, 0)
+	pm.turbulence_enabled = true
+	pm.turbulence_noise_strength = 0.6
+	pm.turbulence_noise_scale = 4.0
+	pm.scale_min = 0.6
+	pm.scale_max = 1.4
+	p.process_material = pm
+	var flake := SphereMesh.new()
+	flake.radius = 0.045
+	flake.height = 0.09
+	flake.radial_segments = 6
+	flake.rings = 3
+	p.draw_pass_1 = flake
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(1, 1, 1, 0.9)
+	fm.roughness = 1.0
+	fm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	fm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	p.material_override = fm
+	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	p.position = Vector3(0, 22, 0)
+	follow.add_child(p)
+	p.top_level = false
 
 
 func _make_ground() -> void:
@@ -320,33 +388,47 @@ func _make_ground() -> void:
 	body.physics_material_override = pm
 	add_child(body)
 
-	# 見た目（2m 刻み）
+	# 見た目: 1 m 刻み、頂点を共有してなめらかな法線に。わずかなうねりで雪の吹きだまりを出す
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var step := 2
-	for j in range(0, SIZE, step):
-		for i in range(0, SIZE, step):
-			var x0 := i - half
-			var z0 := j - half
-			var q := [Vector3(x0, 0, z0), Vector3(x0 + step, 0, z0), Vector3(x0, 0, z0 + step), Vector3(x0 + step, 0, z0 + step)]
-			for k in 4:
-				q[k].y = height(q[k].x, q[k].z)
-			for v in [q[0], q[1], q[2], q[2], q[1], q[3]]:
-				st.add_vertex(v)
+	var drift := FastNoiseLite.new()
+	drift.seed = 5
+	drift.frequency = 0.06
+	drift.fractal_octaves = 3
+	var step := 1
+	var cols := SIZE / step + 1
+	for j in cols:
+		for i in cols:
+			var x := i * step - half
+			var z := j * step - half
+			var y := height(x, z) + drift.get_noise_2d(x, z) * 0.35
+			st.set_uv(Vector2(x, z) * 0.5)
+			st.add_vertex(Vector3(x, y, z))
+	for j in cols - 1:
+		for i in cols - 1:
+			var a := j * cols + i
+			st.add_index(a)
+			st.add_index(a + 1)
+			st.add_index(a + cols)
+			st.add_index(a + cols)
+			st.add_index(a + 1)
+			st.add_index(a + cols + 1)
 	st.generate_normals()
+	st.generate_tangents()
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = st.commit()
-	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.96, 0.96, 0.97)
-	mat.roughness = 1.0
-	mesh.material_override = mat
+	mesh.material_override = Look.snow()
 	add_child(mesh)
 
-	# 木（ソリの通り道は空ける）
+	# 木（ソリの通り道は空ける）。フェルトの円錐を 2 段、幹は木
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	var tree_mat := StandardMaterial3D.new()
-	tree_mat.albedo_color = Color(0.31, 0.54, 0.35)
+	var greens := [Color(0.30, 0.52, 0.36), Color(0.26, 0.47, 0.40), Color(0.36, 0.56, 0.34)]
+	var tree_mats: Array[StandardMaterial3D] = []
+	for g in greens:
+		tree_mats.append(Look.felt(g, 1.5))
+	var trunk_mat := Look.wood(Color(0.42, 0.29, 0.2))
+	var snow_cap := Look.felt(Color(0.97, 0.97, 0.99), 1.5)
 	for k in 70:
 		var a := rng.randf() * TAU
 		var r := rng.randf_range(32, 90)
@@ -354,16 +436,38 @@ func _make_ground() -> void:
 		if p.z > 20 and abs(p.x) < 14:
 			continue
 		var h := rng.randf_range(4, 8)
-		var cone := CylinderMesh.new()
-		cone.top_radius = 0
-		cone.bottom_radius = h * 0.32
-		cone.height = h
-		cone.radial_segments = 7
-		var t := MeshInstance3D.new()
-		t.mesh = cone
-		t.material_override = tree_mat
-		t.position = p + Vector3(0, height(p.x, p.z) + h / 2.0, 0)
-		add_child(t)
+		var base_y := height(p.x, p.z)
+		var tm: StandardMaterial3D = tree_mats[k % tree_mats.size()]
+		for tier in 2:
+			var cone := CylinderMesh.new()
+			cone.top_radius = 0
+			cone.bottom_radius = h * (0.34 if tier == 0 else 0.26)
+			cone.height = h * (0.7 if tier == 0 else 0.6)
+			cone.radial_segments = 9
+			var t := MeshInstance3D.new()
+			t.mesh = cone
+			t.material_override = tm
+			t.position = p + Vector3(0, base_y + h * (0.45 if tier == 0 else 0.78), 0)
+			t.rotation.y = rng.randf() * TAU
+			add_child(t)
+		# てっぺんの雪
+		var cap := MeshInstance3D.new()
+		var cm := SphereMesh.new()
+		cm.radius = h * 0.07
+		cm.height = h * 0.1
+		cap.mesh = cm
+		cap.material_override = snow_cap
+		cap.position = p + Vector3(0, base_y + h * 1.06, 0)
+		add_child(cap)
+		var trunk := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = h * 0.04
+		cyl.bottom_radius = h * 0.05
+		cyl.height = h * 0.2
+		trunk.mesh = cyl
+		trunk.material_override = trunk_mat
+		trunk.position = p + Vector3(0, base_y + h * 0.1, 0)
+		add_child(trunk)
 
 
 func _physics_process(dt: float) -> void:

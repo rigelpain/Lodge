@@ -1,4 +1,6 @@
 extends CharacterBody3D
+
+const Look := preload("res://look.gd")
 ## あなた。一人称で、見えるのはフェルトの手袋をした両手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
@@ -53,11 +55,8 @@ func _ready() -> void:
 	cam.make_current()
 
 	# 自分の体。一人称の画面には映さず、右上のライブ映像と影にだけ出る（層 2）
-	var body_felt := StandardMaterial3D.new()
-	body_felt.albedo_color = Color(0.85, 0.33, 0.31)
-	body_felt.roughness = 1.0
-	var paper := StandardMaterial3D.new()
-	paper.albedo_color = Color(0.95, 0.93, 0.88)
+	var body_felt := Look.felt(Color(0.85, 0.33, 0.31), 2.0)
+	var paper := Look.paper()
 	_body_part(CapsuleMesh.new(), Vector3(0, 0.85, 0), Vector3(0.75, 0.9, 0.75), body_felt)
 	_body_part(SphereMesh.new(), Vector3(0, 1.62, 0), Vector3(0.5, 0.5, 0.5), paper)
 	var hat := CylinderMesh.new()
@@ -66,9 +65,7 @@ func _ready() -> void:
 	hat.height = 0.4
 	_body_part(hat, Vector3(0, 1.95, 0), Vector3.ONE, body_felt)
 
-	var felt := StandardMaterial3D.new()
-	felt.albedo_color = Color(0.85, 0.33, 0.31)
-	felt.roughness = 1.0
+	var felt := Look.felt(Color(0.85, 0.33, 0.31), 6.0)
 	for s in [-1, 1]:
 		var h := Node3D.new()
 		cam.add_child(h)
@@ -94,9 +91,7 @@ func _ready() -> void:
 		hands.append(h)
 
 	# 紐: 短い円柱をつないで描く（持っていないときはソリの前に垂れている）
-	var rope_mat := StandardMaterial3D.new()
-	rope_mat.albedo_color = Color(0.82, 0.72, 0.5)
-	rope_mat.roughness = 1.0
+	var rope_mat := Look.felt(Color(0.82, 0.72, 0.5), 8.0)
 	for i in ROPE_SEGS:
 		var seg := MeshInstance3D.new()
 		var cm := CylinderMesh.new()

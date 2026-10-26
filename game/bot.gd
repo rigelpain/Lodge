@@ -1,4 +1,6 @@
 extends CharacterBody3D
+
+const Look := preload("res://look.gd")
 ## 押すのを手伝う仲間（通信を入れるまでの代わり）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
 
@@ -30,11 +32,8 @@ func _ready() -> void:
 	add_child(_col)
 
 	# 紙の体にフェルトの上着と帽子
-	var felt := StandardMaterial3D.new()
-	felt.albedo_color = Color(0.18, 0.44, 0.56) if side > 0 else Color(0.85, 0.63, 0.19)
-	felt.roughness = 1.0
-	var paper := StandardMaterial3D.new()
-	paper.albedo_color = Color(0.95, 0.93, 0.88)
+	var felt := Look.felt(Color(0.18, 0.44, 0.56) if side > 0 else Color(0.85, 0.63, 0.19), 2.0)
+	var paper := Look.paper()
 	_part(CapsuleMesh.new(), Vector3(0, 0.85, 0), Vector3(0.75, 0.9, 0.75), felt)
 	_part(SphereMesh.new(), Vector3(0, 1.62, 0), Vector3(0.5, 0.5, 0.5), paper)
 	var hat := CylinderMesh.new()
