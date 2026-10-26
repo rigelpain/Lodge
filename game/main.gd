@@ -42,6 +42,8 @@ func _ready() -> void:
 	sled = Sled.new()
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
 	add_child(sled)
+	if args.has("sled-yaw"):   # 確かめ用: 最初からソリを横や逆に向けておく
+		sled.rotation.y = deg_to_rad(float(args["sled-yaw"]))
 
 	if not args.has("no-player"):
 		player = Player.new()
@@ -430,6 +432,9 @@ func _physics_process(dt: float) -> void:
 			var bd: float = bots[0].global_position.distance_to(s) if bots.size() > 0 else 0.0
 			var me := ("　あなた=%s 向き=%.0f°" % [["歩く", "つかむ", "乗る", "紐"][player.mode], rad_to_deg(player.rotation.y)]) if player else ""
 			me += "　ソリ向き=%.0f° 速さ=%.2f 保持=%s" % [rad_to_deg(sled.rotation.y), sled.linear_velocity.length(), sled.hold_debug]
+			me += "　つかんでいる人=%d 回転=%.2f 横滑り=%.2f" % [sled.holders.size(), sled.angular_velocity.y, sled.linear_velocity.dot(sled.global_basis.x)]
+			if bots.size() > 0:
+				me += "　仲間=%s" % bots[0].debug
 			print("t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
 			_duty = 0
 			_frames = 0

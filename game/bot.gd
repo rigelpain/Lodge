@@ -14,6 +14,7 @@ var state := State.PUSH
 var seat := Vector3.INF
 var handle := Vector3.INF   # つかんでいる所（ソリの座標）
 var _mitts: Array[MeshInstance3D] = []
+var debug := ""
 var _col: CollisionShape3D
 var _still := 0.0
 var _wait := 0.0
@@ -114,12 +115,21 @@ func _physics_process(dt: float) -> void:
 		elif handle != Vector3.INF:
 			# つかんでいる: 体はソリについて行き、縁に手をかけて頂上へ押す
 			global_position = sled.to_global(handle)
-			# 片側だけを押すとソリの向きがずれるので、ずれを打ち消す向きに少し斜めに押す
+			# ソリの軸に沿って押しながら、向きを頂上へ向け直す。
+			# 大きくずれているときは進める力をかけず、まず向きを直す（縁を横に押して回す）
 			var fwd: Vector3 = -sled.global_basis.z
 			fwd.y = 0
+			fwd = fwd.normalized()
 			var err := atan2(fwd.cross(up).y, fwd.dot(up))
-			var push_dir: Vector3 = up + sled.global_basis.x * clamp(err * 3.0, -1.0, 1.0) * 1.2
-			sled.push(push_dir.normalized(), global_position + up * 0.6 + Vector3.UP * 0.4)
+			# ソリの軸に沿って押し、縁を横に押して向きを頂上へ向け直す。
+			# 60° 以上ずれているときは進めず、その場で向きを直す（止まったソリは静止摩擦で留まる）。
+			# 回りすぎないよう、いま回っている速さの分は弱める
+			var steer: float = clamp(err * 2.5 - sled.angular_velocity.y * 0.5, -1.0, 1.0)
+			var ahead: float = max(0.0, cos(err)) if abs(err) < deg_to_rad(60.0) else 0.0
+			var push_dir: Vector3 = fwd * ahead + sled.global_basis.x * steer * 1.2
+			if push_dir.length() > 0.05:
+				sled.push(push_dir.normalized(), global_position + fwd * 0.6 + Vector3.UP * 0.4)
+			debug = "err=%.0f° steer=%.2f ahead=%.2f 手=%s" % [rad_to_deg(err), steer, ahead, str(sled.to_local(global_position + fwd * 0.6 + Vector3.UP * 0.4).snapped(Vector3(0.1, 0.1, 0.1)))]
 			var face := s - global_position
 			face.y = 0
 			if face.length() > 0.1:
@@ -129,16 +139,40 @@ func _physics_process(dt: float) -> void:
 			_pose_mitts(dt)
 			return
 		else:
-			# ソリの横の縁（後ろ寄り）の持ち場へ回り込み、着いたらつかむ。後ろの真ん中はあなたの分
-			var post := s - up * 0.9 + up.cross(Vector3.UP) * 1.5 * side
+			# 持ち場はソリの横の縁の後ろの角。いま自分がいる側を選び、他の仲間が持っていれば反対側。
+			# 後ろの真ん中はあなたの分
+			var lp0: Vector3 = sled.to_local(global_position)
+			var want: float = signf(lp0.x) if abs(lp0.x) > 0.05 else float(side)
+			if _post_taken(want):
+				want = -want
+			var stand_l := Vector3((sled.HALF.x + sled.STAND) * want, 0, 1.4)   # 後ろの角のつかみ所
+			var post: Vector3 = sled.to_global(stand_l)
 			var to := post - global_position
 			to.y = 0
+			# ソリに突き当たらない経路: 反対側の持ち場へは、自分側の後ろの角 → 後ろの通路 → 持ち場、と回る
+			var lp: Vector3 = sled.to_local(global_position)
+			var lpost: Vector3 = sled.to_local(post)
+			var hx: float = sled.HALF.x
+			var hz: float = sled.HALF.y
+			var sx := signf(lp.x) if abs(lp.x) > 0.05 else float(side)
+			var lane := hz + 0.9
+			var outside := hx + 0.7
+			var target_l: Vector3
+			if lp.z >= lane:
+				target_l = Vector3(lpost.x, 0, hz + 1.1) if abs(lp.x - lpost.x) > 0.3 else lpost
+			elif signf(lp.x) == signf(lpost.x) and abs(lp.x) >= outside:
+				target_l = lpost
+			elif abs(lp.x) < outside:
+				target_l = Vector3(sx * (hx + 1.1), 0, lp.z)       # まず横へ出る
+			else:
+				target_l = Vector3(sx * (hx + 1.1), 0, hz + 1.1)   # 自分側の後ろの角へ
+			to = sled.to_global(target_l) - global_position
+			to.y = 0
 			dir = to.normalized() if to.length() > 0.2 else up
-			if to.length() < 0.8:
-				var gp: Array = sled.grip_point_near(global_position)
-				var stand: Vector3 = gp[0]
-				if sled.take_handle(self, stand):
-					handle = stand
+			debug = "持ち場まで%.2f" % (post - global_position).length()
+			if (post - global_position).length() < 0.8:
+				if sled.take_handle(self, stand_l):
+					handle = stand_l
 					_col.disabled = true
 	elif state == State.WAIT:
 		_wait += dt
@@ -163,6 +197,17 @@ func _physics_process(dt: float) -> void:
 	if dir.length() > 0.1:
 		look_at(global_position + dir, Vector3.UP)
 	_pose_mitts(dt)
+
+
+## その側の後ろの持ち場を、他の仲間がすでにつかんでいるか
+func _post_taken(side_sign: float) -> bool:
+	for who in sled.holders:
+		if who == self:
+			continue
+		var h: Vector3 = sled.holders[who]
+		if h.z > 0.5 and signf(h.x) == side_sign and abs(h.x) > 0.9:
+			return true
+	return false
 
 
 func _pose_mitts(dt: float) -> void:
