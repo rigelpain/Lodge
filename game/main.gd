@@ -24,6 +24,8 @@ var log_t := 0.0
 var _duty := 0
 var _frames := 0
 var _sim_sent := false
+var pip_cam: Camera3D
+var pip_label: Label
 
 
 static func height(x: float, z: float) -> float:
@@ -64,6 +66,9 @@ func _ready() -> void:
 		cam.position = Vector3(-30, 26, 40)
 		cam.look_at(Vector3(0, 8, 10))
 
+	if player:
+		_make_pip()
+
 	hud = Label.new()
 	hud.position = Vector2(16, 12)
 	hud.add_theme_font_size_override("font_size", 18)
@@ -71,6 +76,86 @@ func _ready() -> void:
 	var layer := CanvasLayer.new()
 	layer.add_child(hud)
 	add_child(layer)
+
+
+## 右上の縦長のライブ映像: 後ろ上から自分を追う、もう一つのカメラ
+func _make_pip() -> void:
+	var vp := SubViewport.new()
+	vp.size = Vector2i(396, 704)
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	vp.msaa_3d = Viewport.MSAA_2X
+	add_child(vp)
+	pip_cam = Camera3D.new()
+	pip_cam.fov = 82
+	pip_cam.near = 0.1
+	pip_cam.cull_mask = (1 << 0) | (1 << 1)   # 世界と、あなたの体。手は映さない
+	vp.add_child(pip_cam)
+	pip_cam.current = true
+	pip_cam.global_position = player.global_position + Vector3.UP * 2.5 + player.global_basis.z * 2.2
+
+	var layer := CanvasLayer.new()
+	layer.layer = 2
+	add_child(layer)
+	var w := 198.0
+	var h := 352.0
+	var frame := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1, 1, 1, 0.22)
+	sb.border_color = Color(1, 1, 1, 0.85)
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(16)
+	sb.set_content_margin_all(5)
+	sb.shadow_size = 14
+	sb.shadow_color = Color(0.1, 0.15, 0.3, 0.2)
+	frame.add_theme_stylebox_override("panel", sb)
+	frame.anchor_left = 1.0
+	frame.anchor_right = 1.0
+	frame.offset_left = -(w + 16)
+	frame.offset_right = -16
+	frame.offset_top = 16
+	frame.offset_bottom = 16 + h
+	layer.add_child(frame)
+	var tex := TextureRect.new()
+	tex.texture = vp.get_texture()
+	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tex.stretch_mode = TextureRect.STRETCH_SCALE
+	frame.add_child(tex)
+	pip_label = Label.new()
+	pip_label.add_theme_font_size_override("font_size", 13)
+	pip_label.add_theme_color_override("font_color", Color.WHITE)
+	pip_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
+	pip_label.add_theme_constant_override("shadow_offset_y", 1)
+	pip_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	pip_label.offset_left = frame.offset_left + 16
+	pip_label.offset_right = frame.offset_right - 8
+	pip_label.offset_top = 28
+	pip_label.offset_bottom = 48
+	layer.add_child(pip_label)
+	var dot := ColorRect.new()
+	dot.color = Color(0.95, 0.2, 0.15)
+	dot.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	dot.offset_left = frame.offset_left + 18
+	dot.offset_right = dot.offset_left + 8
+	dot.offset_top = 34
+	dot.offset_bottom = 42
+	layer.add_child(dot)
+	pip_label.text = "    LIVE"
+
+
+func _process(dt: float) -> void:
+	if pip_cam == null:
+		return
+	# 自撮り棒のように、頭の後ろ上から前を向いて追う
+	var head: Vector3 = player.global_position + Vector3.UP * 1.5
+	var back: Vector3 = player.global_basis.z
+	back.y = 0
+	back = back.normalized()
+	var want := head + back * 2.2 + Vector3.UP * 1.1
+	want.y = max(want.y, height(want.x, want.z) + 0.5)
+	pip_cam.global_position = pip_cam.global_position.lerp(want, 1.0 - exp(-6.0 * dt))
+	pip_cam.look_at(head - back * 1.0, Vector3.UP)
+	var t := int(elapsed)
+	pip_label.text = "    LIVE  %02d:%02d" % [t / 60, t % 60]
 
 
 func _make_world() -> void:
@@ -219,6 +304,9 @@ func _physics_process(dt: float) -> void:
 		ev.physical_keycode = KEY_W
 		ev.pressed = true
 		Input.parse_input_event(ev)
+	if args.has("sim") and player and _sim_sent and player.mode == player.Mode.GRIP and args["sim"] == "1":
+		var fwd: Vector3 = -sled.global_basis.z
+		player.rotation.y = atan2(-fwd.x, -fwd.z)
 	if args.has("log"):
 		_duty += 1 if sled.pushers > 0 else 0
 		_frames += 1
@@ -227,7 +315,8 @@ func _physics_process(dt: float) -> void:
 			log_t = 0.0
 			var bots := get_children().filter(func(c): return c.get_script() == Bot)
 			var bd: float = bots[0].global_position.distance_to(s) if bots.size() > 0 else 0.0
-			var me := ("　あなた=%s 向き=%.0f° ソリ向き=%.0f°" % [["歩く", "つかむ", "乗る", "紐"][player.mode], rad_to_deg(player.rotation.y), rad_to_deg(sled.rotation.y)]) if player else ""
+			var me := ("　あなた=%s 向き=%.0f°" % [["歩く", "つかむ", "乗る", "紐"][player.mode], rad_to_deg(player.rotation.y)]) if player else ""
+			me += "　ソリ向き=%.0f° 速さ=%.2f 保持=%s" % [rad_to_deg(sled.rotation.y), sled.linear_velocity.length(), sled.hold_debug]
 			print("t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
 			_duty = 0
 			_frames = 0

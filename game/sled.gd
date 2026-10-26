@@ -13,12 +13,21 @@ const ROPE_LEN := 3.0
 const ROPE_K := 260.0              # 紐が張ったときの引く力 (N/m)
 const SLIP_RESIST := 18.0          # 滑り木の横滑りのしにくさ（前後 2 点それぞれ）
 const RUNNER_Z := 1.1              # 滑り木の前後の接地点（中心からの距離）
+const RUNNER_X := 0.6              # 左右の滑り木の位置
+const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N per m/s)
+const LEAN_DIG := 14.0             # 体重をかけた側の滑り木が食い込んで増える抵抗
+const BRAKE_DRAG := 14.0           # 後ろに体重をかけたときの制動（両側）
+const HOLD_FRICTION := 0.7         # 遅いときに働く静止摩擦（重さに対する割合）。丘のどこでも留まる
 
 var pushers := 0            # 前のコマで押していた人数（表示用）
 var riders: Array[Node3D] = []
 var holders := {}           # つかんでいる人 → つかんだ所（ソリの座標）
 var rope_holder: Node3D = null
 var _push_count := 0
+var _steer := 0.0           # 乗っている人の左右の体重移動の合計（このコマ）
+var _lean_fwd := false
+var _lean_back := false
+var hold_debug := ""
 
 
 func _ready() -> void:
@@ -135,13 +144,12 @@ func dismount(who: Node3D) -> void:
 	riders.erase(who)
 
 
-## 乗っている人の操作。steer は -1〜1、forward は前へ体重をかける
-func lean(steer: float, forward: bool) -> void:
-	apply_torque(Vector3.UP * -steer * 120.0)
-	if forward:
-		var f := -global_basis.z
-		f.y = 0
-		apply_central_force(f.normalized() * 160.0)
+## 乗っている人の体重移動。steer は -1（左）〜1（右）、forward は前傾、back は後傾。
+## 力を直接かけるのではなく、滑り木の食い込み（抵抗）が変わることで曲がる・止まる
+func lean(steer: float, forward: bool, back: bool = false) -> void:
+	_steer += steer
+	_lean_fwd = _lean_fwd or forward
+	_lean_back = _lean_back or back
 
 
 func reset_to(pos: Vector3) -> void:
@@ -158,18 +166,63 @@ func reset_to(pos: Vector3) -> void:
 	global_transform = Transform3D(Basis(), pos)
 
 
+func _ground_normal() -> Vector3:
+	var from := global_position + Vector3.UP * 0.5
+	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 2.0)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	return hit.normal if hit else Vector3.UP
+
+
 func _physics_process(_dt: float) -> void:
 	pushers = _push_count
 	_push_count = 0
-	linear_damp = RIDE_DAMP if riders.size() > 0 else CLIMB_DAMP
+	var riding := riders.size() > 0
+	linear_damp = (RIDE_DAMP * (0.4 if _lean_fwd else 1.0)) if riding else CLIMB_DAMP
+	var side := global_basis.x
+	var fwd := -global_basis.z
 	# 滑り木: 前後にはよく滑り、横には滑らない。前後 2 点で横滑りを止めるので、
 	# 縁に偏った力をかけると、横にずれるのでなく向きが変わる
-	var side := global_basis.x
 	for z in [-RUNNER_Z, RUNNER_Z]:
 		var r := global_basis * Vector3(0, 0, z)
 		var v_point := linear_velocity + angular_velocity.cross(r)
 		var slip := side * v_point.dot(side)
 		apply_force(-slip * mass * SLIP_RESIST * 0.5, r)
+	# 左右の滑り木の前後方向の抵抗。体重をかけた側が雪に食い込んで抵抗が増え、曲がる。
+	# 後ろに体重をかけると両側が食い込んで止まる
+	var steer: float = clamp(_steer, -1.0, 1.0)
+	for x in [-RUNNER_X, RUNNER_X]:
+		var r := global_basis * Vector3(x, 0, 0)
+		var v_point := linear_velocity + angular_velocity.cross(r)
+		var v_long := v_point.dot(fwd)
+		var c := RUNNER_DRAG
+		if riding:
+			if steer * signf(x) > 0.0:
+				c += LEAN_DIG * abs(steer)
+			if _lean_back:
+				c += BRAKE_DRAG
+		apply_force(-fwd * v_long * c, r)
+	# 止まっているソリは静止摩擦で坂に留まる（押す・引く・乗る人がいないとき）
+	var speed := linear_velocity.length()
+	if speed < 2.0 and _push_count == 0 and pushers == 0 and not riding:
+		var n := _ground_normal()
+		var g := Vector3(0, -9.8, 0)
+		var g_t := g - n * g.dot(n)
+		var hold := -g_t * mass
+		var cap: float = HOLD_FRICTION * mass * 9.8 * abs(n.y)
+		if hold.length() > cap:
+			hold = hold.normalized() * cap
+		apply_central_force(hold)
+		linear_velocity *= 0.9
+		hold_debug = "n.y=%.2f 力=%.0f" % [n.y, hold.length()]
+	else:
+		hold_debug = "なし(速さ%.2f 押%d/%d 乗%d)" % [speed, _push_count, pushers, riders.size()]
+	# 頂上などで、乗ったまま前傾すると手で雪をかいて動き出す
+	if riding and _lean_fwd and speed < 1.5:
+		apply_central_force(Vector3(fwd.x, 0, fwd.z).normalized() * 120.0)
+	_steer = 0.0
+	_lean_fwd = false
+	_lean_back = false
 	# 起き上がり: 大きく傾いたら少しずつ戻す
 	var up := global_basis.y
 	if up.y < 0.5:

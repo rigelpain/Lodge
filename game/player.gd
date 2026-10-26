@@ -46,8 +46,23 @@ func _ready() -> void:
 	cam.position.y = 1.55
 	cam.fov = 75
 	cam.near = 0.05
+	cam.cull_mask = (1 << 0) | (1 << 2)   # 世界と手。自分の体（層 2）は映さない
 	add_child(cam)
 	cam.make_current()
+
+	# 自分の体。一人称の画面には映さず、右上のライブ映像と影にだけ出る（層 2）
+	var body_felt := StandardMaterial3D.new()
+	body_felt.albedo_color = Color(0.85, 0.33, 0.31)
+	body_felt.roughness = 1.0
+	var paper := StandardMaterial3D.new()
+	paper.albedo_color = Color(0.95, 0.93, 0.88)
+	_body_part(CapsuleMesh.new(), Vector3(0, 0.85, 0), Vector3(0.75, 0.9, 0.75), body_felt)
+	_body_part(SphereMesh.new(), Vector3(0, 1.62, 0), Vector3(0.5, 0.5, 0.5), paper)
+	var hat := CylinderMesh.new()
+	hat.top_radius = 0
+	hat.bottom_radius = 0.24
+	hat.height = 0.4
+	_body_part(hat, Vector3(0, 1.95, 0), Vector3.ONE, body_felt)
 
 	var felt := StandardMaterial3D.new()
 	felt.albedo_color = Color(0.85, 0.33, 0.31)
@@ -62,6 +77,7 @@ func _ready() -> void:
 		m.mesh = sm
 		m.scale = Vector3(1.0, 0.8, 1.4)
 		m.material_override = felt
+		m.layers = 1 << 2   # 手は層 3。一人称の画面にだけ映す
 		h.add_child(m)
 		var thumb := MeshInstance3D.new()
 		var tm := SphereMesh.new()
@@ -69,6 +85,7 @@ func _ready() -> void:
 		tm.height = 0.06
 		thumb.mesh = tm
 		thumb.material_override = felt
+		thumb.layers = 1 << 2
 		thumb.position = Vector3(-0.06 * s, 0.03, -0.02)
 		h.add_child(thumb)
 		h.set_meta("side", s)
@@ -92,6 +109,16 @@ func _ready() -> void:
 		_rope.append(seg)
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+func _body_part(mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
+	var m := MeshInstance3D.new()
+	m.mesh = mesh
+	m.position = pos
+	m.scale = scl
+	m.material_override = mat
+	m.layers = 1 << 1
+	add_child(m)
 
 
 func _unhandled_input(e: InputEvent) -> void:
@@ -208,8 +235,8 @@ func _physics_process(dt: float) -> void:
 	match mode:
 		Mode.RIDE:
 			global_position = sled.to_global(seat)
-			sled.lean(_key(KEY_D) - _key(KEY_A), Input.is_physical_key_pressed(KEY_W))
-			prompt = "W 前へ　A/D 曲がる　E 降りる"
+			sled.lean(_key(KEY_D) - _key(KEY_A), Input.is_physical_key_pressed(KEY_W), Input.is_physical_key_pressed(KEY_S))
+			prompt = "W 前傾　S 後傾で止まる　A/D 体重をかけて曲がる　E 降りる"
 		Mode.GRIP:
 			_grip(dt)
 		Mode.ROPE:

@@ -12,6 +12,8 @@ var player: Node3D          # いないとき（確かめ用）は仲間だけ�
 var side := 1
 var state := State.PUSH
 var seat := Vector3.INF
+var handle := Vector3.INF   # つかんでいる所（ソリの座標）
+var _mitts: Array[MeshInstance3D] = []
 var _col: CollisionShape3D
 var _still := 0.0
 var _wait := 0.0
@@ -39,6 +41,18 @@ func _ready() -> void:
 	hat.bottom_radius = 0.24
 	hat.height = 0.4
 	_part(hat, Vector3(0, 1.95, 0), Vector3.ONE, felt)
+	# 手袋。つかむとソリの縁に伸びる
+	for sx in [-1, 1]:
+		var m := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.1
+		sm.height = 0.2
+		m.mesh = sm
+		m.material_override = felt
+		m.position = Vector3(0.45 * sx, 0.8, 0)
+		m.set_meta("side", sx)
+		add_child(m)
+		_mitts.append(m)
 
 
 func _part(mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
@@ -48,6 +62,15 @@ func _part(mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
 	m.scale = scl
 	m.material_override = mat
 	add_child(m)
+
+
+func let_go() -> void:
+	if handle == Vector3.INF:
+		return
+	sled.release_handle(self)
+	handle = Vector3.INF
+	_col.disabled = false
+	velocity = Vector3.ZERO
 
 
 func get_off() -> void:
@@ -85,16 +108,38 @@ func _physics_process(dt: float) -> void:
 	var dir := Vector3.ZERO
 	if state == State.PUSH:
 		if to_top < 4.0:
+			let_go()
 			state = State.WAIT
 			_wait = 0.0
+		elif handle != Vector3.INF:
+			# つかんでいる: 体はソリについて行き、縁に手をかけて頂上へ押す
+			global_position = sled.to_global(handle)
+			# 片側だけを押すとソリの向きがずれるので、ずれを打ち消す向きに少し斜めに押す
+			var fwd: Vector3 = -sled.global_basis.z
+			fwd.y = 0
+			var err := atan2(fwd.cross(up).y, fwd.dot(up))
+			var push_dir: Vector3 = up + sled.global_basis.x * clamp(err * 3.0, -1.0, 1.0) * 1.2
+			sled.push(push_dir.normalized(), global_position + up * 0.6 + Vector3.UP * 0.4)
+			var face := s - global_position
+			face.y = 0
+			if face.length() > 0.1:
+				look_at(global_position + face, Vector3.UP)
+			if sled.linear_velocity.length() > 5.0:
+				let_go()
+			_pose_mitts(dt)
+			return
 		else:
-			# ソリの下り側の、自分の持ち場へ回り込み、そこに着いたら押しながら一緒に登る
-			var post := s - up * 1.7 + up.cross(Vector3.UP) * 0.85 * side  # 真ん中の取っ手はあなたの分
+			# ソリの横の縁（後ろ寄り）の持ち場へ回り込み、着いたらつかむ。後ろの真ん中はあなたの分
+			var post := s - up * 0.9 + up.cross(Vector3.UP) * 1.5 * side
 			var to := post - global_position
 			to.y = 0
 			dir = to.normalized() if to.length() > 0.2 else up
-			if to.length() < 1.0:
-				sled.push(up, global_position + up * 0.6 + Vector3.UP * 0.4)
+			if to.length() < 0.8:
+				var gp: Array = sled.grip_point_near(global_position)
+				var stand: Vector3 = gp[0]
+				if sled.take_handle(self, stand):
+					handle = stand
+					_col.disabled = true
 	elif state == State.WAIT:
 		_wait += dt
 		var rider_ok: bool = player == null or (player.get("seat") != null and player.seat != Vector3.INF)
@@ -117,3 +162,11 @@ func _physics_process(dt: float) -> void:
 	move_and_slide()
 	if dir.length() > 0.1:
 		look_at(global_position + dir, Vector3.UP)
+	_pose_mitts(dt)
+
+
+func _pose_mitts(dt: float) -> void:
+	for m in _mitts:
+		var sx: int = m.get_meta("side")
+		var target := Vector3(0.28 * sx, 0.95, -0.5) if handle != Vector3.INF else Vector3(0.45 * sx, 0.8, 0)
+		m.position = m.position.lerp(target, min(1.0, dt * 10.0))
