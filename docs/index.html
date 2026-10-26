@@ -4,50 +4,98 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ソリのゲーム 開発ダッシュボード</title>
-<meta name="description" content="みんなでソリを押して丘を登り、一緒に滑り降りるゲームの開発の現在地。発売までの段階ごとに、決めたこと・作業・まだ決めていないことを一枚で。">
+<meta name="description" content="みんなでソリを押して丘を登り、一緒に滑り降りるゲームの開発の現在地。次の節目、発売までの道のり、作業、決めたことを一枚で。">
 <meta name="color-scheme" content="light">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+JP:wght@400;500;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="index.css">
 </head>
 <body>
 <a class="skip" href="#main">本文へ移る</a>
 
-<header class="top">
-  <p class="kicker"><span id="title"></span><span class="sep" aria-hidden="true"></span><time id="updated"></time> 更新</p>
-  <h1 id="goal"></h1>
-  <p class="pitch" id="pitch"></p>
-</header>
+<main id="main" class="grid">
+  <!-- 何を目指すか -->
+  <header class="tile hero" aria-labelledby="goal">
+    <p class="kicker"><span id="title"></span><span class="dot" aria-hidden="true"></span><time id="updated"></time> 更新</p>
+    <h1 id="goal"></h1>
+    <p class="pitch" id="pitch"></p>
+  </header>
 
-<main id="main">
-  <section class="next" aria-labelledby="next-h">
+  <!-- 次の節目 -->
+  <section class="tile next" aria-labelledby="next-h">
     <h2 id="next-h">次の節目</h2>
+    <div class="ring-wrap">
+      <svg class="ring" viewBox="0 0 120 120" aria-hidden="true">
+        <circle class="ring-track" cx="60" cy="60" r="52"/>
+        <circle class="ring-fill" cx="60" cy="60" r="52" id="ring"/>
+      </svg>
+      <p class="big"><span class="num" id="days">0</span><span class="unit">日</span></p>
+    </div>
     <p class="next-what" id="next-label"></p>
-    <p class="next-when"><time id="next-due"></time><span id="next-left"></span></p>
+    <p class="next-when"><time id="next-due"></time>まで</p>
   </section>
 
-  <!-- 段階 × 状態の行列。横: 発売までの段階、縦: 決めた・作業・まだ -->
-  <section class="matrix" aria-labelledby="road-h" id="matrix">
-    <h2 id="road-h" class="rail rail-head">発売までの段階</h2>
-    <p class="rail rail-decided" id="rail-decided" aria-hidden="true">決めた</p>
-    <p class="rail rail-tasks" id="rail-tasks" aria-hidden="true">作業</p>
-    <p class="rail rail-open" id="rail-open" aria-hidden="true">まだ</p>
-    <ol class="phases" id="phases"></ol>
+  <!-- 発売までの道のり -->
+  <section class="tile road" aria-labelledby="road-h">
+    <h2 id="road-h">発売までの道のり</h2>
+    <ol class="track" id="track"></ol>
   </section>
 
-  <section class="facts" aria-label="計測・場所・お金・参考">
-    <table class="fact" id="climb"></table>
-    <table class="fact" id="places"></table>
-    <table class="fact" id="costs"></table>
-    <table class="fact" id="refs"></table>
+  <!-- 作業 -->
+  <section class="tile tasks" aria-labelledby="tasks-h">
+    <h2 id="tasks-h">作業 <span class="count num" id="tasks-count"></span></h2>
+    <div class="meter" aria-hidden="true"><span id="tasks-meter"></span></div>
+    <ol class="list" id="tasks"></ol>
   </section>
+
+  <!-- 決めたこと -->
+  <section class="tile decisions" aria-labelledby="dec-h">
+    <h2 id="dec-h">決めたこと</h2>
+    <ol class="timeline" id="decisions"></ol>
+  </section>
+
+  <!-- まだ決めていない -->
+  <section class="tile open" aria-labelledby="open-h">
+    <h2 id="open-h">まだ決めていない</h2>
+    <ol class="list plain" id="questions"></ol>
+  </section>
+
+  <!-- 計測 -->
+  <section class="tile climb" aria-labelledby="climb-h">
+    <h2 id="climb-h"></h2>
+    <div class="bars" id="bars"></div>
+    <p class="cap" id="climb-cap"></p>
+  </section>
+
+  <!-- 場所 -->
+  <section class="tile places" aria-labelledby="places-h">
+    <h2 id="places-h">場所</h2>
+    <dl class="pairs" id="places"></dl>
+  </section>
+
+  <!-- お金 -->
+  <section class="tile costs" aria-labelledby="costs-h">
+    <h2 id="costs-h">かかるお金</h2>
+    <table class="money">
+      <thead class="sr"><tr><th scope="col">項目</th><th scope="col">金額（円）</th><th scope="col">備考</th></tr></thead>
+      <tbody id="costs"></tbody>
+    </table>
+  </section>
+
+  <!-- 参考 -->
+  <section class="tile refs" aria-labelledby="refs-h">
+    <h2 id="refs-h">参考にするゲーム</h2>
+    <dl class="pairs" id="refs"></dl>
+  </section>
+
+  <!-- はじまり -->
+  <aside class="tile origin" aria-labelledby="origin-h">
+    <h2 id="origin-h">はじまり</h2>
+    <blockquote><p id="origin"></p></blockquote>
+    <p class="foot"><a href="https://github.com/rigelpain/sled-game">GitHub rigelpain/sled-game</a>　中身は docs/data.json</p>
+  </aside>
 </main>
-
-<footer class="foot">
-  <p id="origin"></p>
-  <p><a href="https://github.com/rigelpain/sled-game">GitHub rigelpain/sled-game</a></p>
-</footer>
 
 <script src="index.js"></script>
 </body>

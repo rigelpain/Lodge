@@ -1,83 +1,103 @@
-// 中身は data.json だけ。画面はそれを「段階 × 状態」の行列に置く
+// docs/data.json を読んで、ガラスのタイルに描く
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const ymd = (d) => { const [y, m, day] = d.split('-'); return `${y}年${+m}月${+day}日`; };
-const md = (d) => { const [, m, day] = d.split('-'); return `${+m}月${+day}日`; };
-const mdShort = (d) => { const [, m, day] = d.split('-'); return `${+m}/${+day}`; };
-const daysLeft = (d) => Math.max(0, Math.ceil((new Date(d + 'T23:59:59') - new Date()) / 86400000));
+const fmt = (d) => { const [y, m, day] = d.split('-'); return `${y}年${+m}月${+day}日`; };
+const short = (d) => { const [, m, day] = d.split('-'); return `${+m}/${+day}`; };
+const day = (s) => new Date(s + 'T00:00:00');
 const STATE = { done: '済', now: 'いま', todo: 'これから' };
-const pad2 = (n) => String(n).padStart(2, '0');
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 fetch('data.json')
   .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then(render)
   .catch((e) => {
-    $('main').insertAdjacentHTML('afterbegin', `<p role="alert" class="alert">data.json を読めませんでした（${esc(e.message)}）。</p>`);
+    $('main').insertAdjacentHTML('afterbegin', `<p class="tile in" style="grid-column:span 12" role="alert">data.json を読めませんでした（${esc(e.message)}）。GitHub Pages か手元のサーバーで開いてください。</p>`);
   });
 
 function render(d) {
-  document.title = `${d.title} 開発ダッシュボード`;
   $('title').textContent = d.title;
-  $('updated').textContent = ymd(d.updated);
   $('updated').dateTime = d.updated;
+  $('updated').textContent = fmt(d.updated);
   $('goal').textContent = d.goal;
   $('pitch').textContent = d.pitch;
 
-  // 次の節目
+  // 次の節目: 最後に決めた日から節目の日までを環にする
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const due = day(d.next.due);
+  const left = Math.max(0, Math.ceil((due - today) / 86400000));
+  const start = day(d.decisions[d.decisions.length - 1].date);
+  const total = Math.max(1, Math.round((due - start) / 86400000));
+  const passed = Math.min(total, Math.max(0, Math.round((today - start) / 86400000)));
   $('next-label').textContent = d.next.label;
-  $('next-due').textContent = md(d.next.due);
   $('next-due').dateTime = d.next.due;
-  const left = daysLeft(d.next.due);
-  $('next-left').innerHTML = `あと<b>${left}</b>日`;
+  $('next-due').textContent = fmt(d.next.due);
 
-  // 段階 × 状態
-  const names = d.phases.map((p) => p.name);
-  const nowName = (d.phases.find((p) => p.state === 'now') || d.phases[0]).name;
-  const phaseOf = (name) => (names.includes(name) ? name : nowName);
-  const qPhase = d.question_phases || {};
-  const by = (list, key) => {
-    const m = Object.fromEntries(names.map((n) => [n, []]));
-    list.forEach((x) => m[phaseOf(key(x))].push(x));
-    return m;
-  };
-  const decided = by(d.decisions, (x) => x.phase);
-  const tasks = by(d.tasks, (x) => x.phase);
-  const open = by(d.questions, (q) => qPhase[q]);
+  // 道のり
+  const ni = Math.max(0, d.phases.findIndex((p) => p.state === 'now'));
+  const track = $('track');
+  track.style.setProperty('--n', d.phases.length);
+  track.innerHTML = d.phases.map((p, i) =>
+    `<li class="${p.state}"${p.state === 'now' ? ' aria-current="step"' : ''}><span class="node" aria-hidden="true"></span><span class="no num">${String(i + 1).padStart(2, '0')}</span><span class="nm">${esc(p.name)}</span><span class="nt">${esc(p.note)}</span></li>`).join('');
 
-  const cell = (kind, label, items, row) => {
-    if (!items.length) return `<div class="cell ${kind} empty" data-label="${label}"></div>`;
-    return `<ul class="cell ${kind}" data-label="${label}" aria-label="${label}">${items.map(row).join('')}</ul>`;
-  };
+  // 作業: いま → これから → 済
+  const order = { now: 0, todo: 1, done: 2 };
+  const tasks = [...d.tasks].sort((a, b) => order[a.state] - order[b.state]);
+  const done = tasks.filter((t) => t.state === 'done').length;
+  $('tasks-count').textContent = `${done} / ${tasks.length}`;
+  $('tasks').innerHTML = tasks.map((t) =>
+    `<li class="${t.state}"><span class="mark" aria-hidden="true"></span><span><span class="sr">${STATE[t.state]}: </span>${esc(t.text)}</span></li>`).join('');
 
-  // 広い画面の列幅: いちばん字の多いマスに応じて、段階の列を少し広くする
-  const weight = (n) => {
-    const chars = (xs, f) => xs.reduce((s, x) => s + f(x).length, 0);
-    const most = Math.max(chars(decided[n], (x) => x.text), chars(tasks[n], (x) => x.text), chars(open[n], (q) => q));
-    return (1 + Math.min(0.9, most / 90)).toFixed(2) + 'fr';
-  };
-  $('matrix').style.setProperty('--n', d.phases.length);
-  $('matrix').style.setProperty('--cols', names.map((n) => `minmax(0, ${weight(n)})`).join(' '));
-  $('phases').innerHTML = d.phases.map((p, i) => {
-    const n = p.name;
-    return `<li class="phase ${p.state}" style="--p:${i + 2}">
-      <h3 class="ph-head"><span class="ph-no">${pad2(i + 1)}</span><span class="ph-nm">${esc(n)}</span><span class="ph-nt">${esc(p.note)}</span><span class="sr">（${STATE[p.state]}）</span></h3>
-      ${cell('decided', '決めた', decided[n], (x) => `<li><time datetime="${x.date}">${mdShort(x.date)}</time><span>${esc(x.text)}</span></li>`)}
-      ${cell('tasks', '作業', tasks[n], (t) => `<li class="${t.state}"><span class="sr">${STATE[t.state]}　</span><span>${esc(t.text)}</span></li>`)}
-      ${cell('open', 'まだ', open[n], (q) => `<li><span>${esc(q)}</span></li>`)}
-    </li>`;
-  }).join('');
+  // 決めたこと（新しい順）
+  $('decisions').innerHTML = [...d.decisions].reverse().map((x) =>
+    `<li><time datetime="${x.date}">${short(x.date)}</time>${esc(x.text)}</li>`).join('');
 
-  // 小さな表
-  $('climb').innerHTML = `<caption>${esc(d.climb.label)}<small>${esc(d.climb.note)}</small></caption>
-    <thead><tr><th scope="col">押す人数</th><th scope="col" class="num">${esc(d.climb.unit)}</th></tr></thead>
-    <tbody>${d.climb.rows.map((r) => `<tr><th scope="row">${r.people}人</th><td class="num">${r.sec}</td></tr>`).join('')}</tbody>`;
-  $('places').innerHTML = `<caption>場所</caption>
-    <tbody>${d.places.map((p) => `<tr><th scope="row">${esc(p.name)}</th><td>${esc(p.note)}</td></tr>`).join('')}</tbody>`;
-  $('costs').innerHTML = `<caption>お金</caption>
-    <thead><tr><th scope="col">項目</th><th scope="col" class="num">円</th><th scope="col">備考</th></tr></thead>
-    <tbody>${d.costs.map((c) => `<tr><th scope="row">${esc(c.item)}</th><td class="num">${esc(c.yen)}</td><td>${esc(c.note)}</td></tr>`).join('')}</tbody>`;
-  $('refs').innerHTML = `<caption>参考にするゲーム</caption>
-    <tbody>${d.refs.map((r) => `<tr><th scope="row">${esc(r.name)}</th><td>${esc(r.note)}</td></tr>`).join('')}</tbody>`;
+  // まだ決めていない
+  $('questions').innerHTML = d.questions.map((q, i) =>
+    `<li><span class="idx">${String(i + 1).padStart(2, '0')}</span><span>${esc(q)}</span></li>`).join('');
 
+  // 計測: 一番長い時間を 78% の幅として比べる
+  let barFills = [];
+  if (d.climb) {
+    $('climb-h').textContent = d.climb.label;
+    const max = Math.max(...d.climb.rows.map((r) => r.sec));
+    const min = Math.min(...d.climb.rows.map((r) => r.sec));
+    $('bars').innerHTML = d.climb.rows.map((r) => {
+      const w = (r.sec / max * 78).toFixed(1) + '%';
+      return `<div class="bar${r.sec === min ? ' fast' : ''}" style="--w:${w}"><span class="who">${r.people}人</span><span class="rail"><span class="fill" data-w="${w}"></span><span class="val">${r.sec}<small>${esc(d.climb.unit)}</small></span></span></div>`;
+    }).join('');
+    $('climb-cap').textContent = d.climb.note;
+    barFills = [...document.querySelectorAll('.bar .fill')];
+  } else {
+    $('climb-h').closest('.tile').hidden = true;
+  }
+
+  // 場所・お金・参考・はじまり
+  $('places').innerHTML = d.places.map((p) => `<div><dt>${esc(p.name)}</dt><dd>${esc(p.note)}</dd></div>`).join('');
+  $('costs').innerHTML = d.costs.map((c) =>
+    `<tr><td>${esc(c.item)}</td><td class="amt">${esc(c.yen)}${/\d/.test(c.yen) ? '<small>円</small>' : ''}</td><td class="note">${esc(c.note)}</td></tr>`).join('');
+  $('refs').innerHTML = d.refs.map((r) => `<div><dt>${esc(r.name)}</dt><dd>${esc(r.note)}</dd></div>`).join('');
   $('origin').textContent = d.origin;
+
+  // 現れ方: タイルを順に浮かせ、図を伸ばし、数字を数え上げる
+  const tiles = [...document.querySelectorAll('.tile')];
+  tiles.forEach((t, i) => setTimeout(() => t.classList.add('in'), reduce ? 0 : 60 * i));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    $('ring').style.strokeDashoffset = (326.7 * (1 - passed / total)).toFixed(1);
+    track.style.setProperty('--progress', (ni / (d.phases.length - 1) * 100).toFixed(1) + '%');
+    $('tasks-meter').style.width = (done / tasks.length * 100).toFixed(1) + '%';
+    barFills.forEach((f) => { f.style.width = f.dataset.w; });
+    countUp($('days'), left);
+  }));
+}
+
+function countUp(el, to) {
+  if (reduce || to === 0) { el.textContent = to; return; }
+  const t0 = performance.now(), dur = 900;
+  const step = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(to * e);
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
 }
