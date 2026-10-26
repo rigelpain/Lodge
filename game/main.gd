@@ -177,12 +177,23 @@ func _physics_process(dt: float) -> void:
 		"押している人: %d　ソリの高さ: %.1f m（頂上 %.0f m）　速さ: %.1f m/s" % [sled.pushers, s.y, HILL_H, sled.linear_velocity.length()],
 	]
 	if player:
-		lines.append(player.prompt if player.prompt != "" else "WASD 歩く　マウス 見回す　Space ジャンプ　ソリの後ろで F つかむ　E 乗る　R ソリをふもとへ　Esc マウスを離す")
+		lines.append(player.prompt if player.prompt != "" else "WASD 歩く　マウス 見回す　ホイール 視野角　Space ジャンプ　ソリのそばで F つかむ（前では紐を持つ）　E 乗る　R ソリをふもとへ　Esc マウスを離す")
 	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）
+	# --sim=rope: 先にソリの前に回って紐を持ち、それから W で歩く（引く確かめ用）
+	# --sim=side: 先にソリの横に立ち、それから W で押す（横から押す確かめ用）
 	if args.has("sim") and player and elapsed > 1.0 and not _sim_sent:
 		_sim_sent = true
+		var fwd: Vector3 = -sled.global_basis.z
+		if args["sim"] == "rope":
+			player.global_position = sled.to_global(Vector3(0, 0, -2.6)) + Vector3.UP * 0.2
+			player.rotation.y = atan2(-fwd.x, -fwd.z)
+			player.grab_rope()
+		elif args["sim"] == "side":
+			player.global_position = sled.to_global(Vector3(2.0, 0, 0)) + Vector3.UP * 0.2
+			var inward: Vector3 = -sled.global_basis.x
+			player.rotation.y = atan2(-inward.x, -inward.z)
 		var ev := InputEventKey.new()
 		ev.physical_keycode = KEY_W
 		ev.pressed = true
@@ -195,7 +206,7 @@ func _physics_process(dt: float) -> void:
 			log_t = 0.0
 			var bots := get_children().filter(func(c): return c.get_script() == Bot)
 			var bd: float = bots[0].global_position.distance_to(s) if bots.size() > 0 else 0.0
-			var me := ("　あなた=%s %s" % [["歩く", "つかむ", "乗る"][player.mode], player.prompt]) if player else ""
+			var me := ("　あなた=%s %s" % [["歩く", "つかむ", "乗る", "紐"][player.mode], player.prompt]) if player else ""
 			print("t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
 			_duty = 0
 			_frames = 0

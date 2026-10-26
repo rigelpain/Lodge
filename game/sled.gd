@@ -6,12 +6,17 @@ const PUSH_FORCE := 340.0   # 1人が押す力 (N)。1人でも最も急な所�
 const CLIMB_DAMP := 1.6     # 登るときの減速（押すのをやめるとすぐ止まる）
 const RIDE_DAMP := 0.12     # 乗って滑るときの減速
 const SEATS := [Vector3(0, 0.45, -0.75), Vector3(0, 0.45, 0.15), Vector3(0, 0.45, 1.0)]
-## つかめる取っ手（ソリの座標）。後ろの真ん中・左・右、それに前（逆から押す用）
-const HANDLES := [Vector3(0, 0, 2.0), Vector3(-0.9, 0, 2.0), Vector3(0.9, 0, 2.0), Vector3(0, 0, -2.1)]
+const HALF := Vector2(0.75, 1.4)   # 台の半分の幅と長さ
+const STAND := 0.6                 # つかむ人が立つ、縁からの距離
+const ROPE_ANCHOR := Vector3(0, 0.3, -1.45)
+const ROPE_LEN := 3.0
+const ROPE_K := 260.0              # 紐が張ったときの引く力 (N/m)
+const SLIP_RESIST := 3.0           # 滑り木の横滑りのしにくさ
 
 var pushers := 0            # 前のコマで押していた人数（表示用）
 var riders: Array[Node3D] = []
-var holders := {}           # 取っ手 → つかんでいる人
+var holders := {}           # つかんでいる人 → つかんだ所（ソリの座標）
+var rope_holder: Node3D = null
 var _push_count := 0
 
 
@@ -57,23 +62,62 @@ func push(dir: Vector3, at: Vector3) -> void:
 	if dir.length() < 0.01:
 		return
 	var f := dir.normalized() * PUSH_FORCE
-	# 手の位置で押すとソリが回って横に逃げ、1人では登れなくなるので、力は台の中心にかける
-	apply_force(f, global_basis * Vector3(0, 0.2, 0))
+	# 力は手の位置の近くにかける。ただし横のずれは弱めて、後ろから押したときに回りすぎないように
+	var p := to_local(at)
+	apply_force(f, global_basis * Vector3(p.x * 0.35, 0.2, clamp(p.z, -HALF.y, HALF.y) * 0.5))
 	_push_count += 1
 
 
+## 立っている所（世界座標）から、ソリの縁のいちばん近いつかみ所と、押す向きを返す
+## [立つ位置（ソリの座標）, 押す向き（ソリの座標）]
+func grip_point_near(world_pos: Vector3) -> Array:
+	var p := to_local(world_pos)
+	var ex := HALF.x + STAND
+	var ez := HALF.y + STAND
+	if abs(p.x) / ex > abs(p.z) / ez:
+		var sx := signf(p.x) if p.x != 0.0 else 1.0
+		return [Vector3(sx * ex, 0, clamp(p.z, -HALF.y, HALF.y)), Vector3(-sx, 0, 0)]
+	var sz := signf(p.z) if p.z != 0.0 else 1.0
+	return [Vector3(clamp(p.x, -HALF.x, HALF.x), 0, sz * ez), Vector3(0, 0, -sz)]
+
+
 func take_handle(who: Node3D, h: Vector3) -> bool:
-	if holders.has(h) and holders[h] != who:
-		return false
-	release_handle(who)
-	holders[h] = who
+	for other in holders:
+		if other != who and holders[other].distance_to(h) < 0.7:
+			return false
+	holders[who] = h
 	return true
 
 
 func release_handle(who: Node3D) -> void:
-	for k in holders.keys():
-		if holders[k] == who:
-			holders.erase(k)
+	holders.erase(who)
+
+
+func take_rope(who: Node3D) -> bool:
+	if rope_holder != null and rope_holder != who:
+		return false
+	rope_holder = who
+	return true
+
+
+func release_rope(who: Node3D) -> void:
+	if rope_holder == who:
+		rope_holder = null
+
+
+## 紐を持つ人の手の位置から、張っていれば引く。張った分の長さを返す（たるみなら負）
+func pull_rope(hand: Vector3) -> float:
+	var anchor := to_global(ROPE_ANCHOR)
+	var d := hand - anchor
+	var over := d.length() - ROPE_LEN
+	if over > 0.0:
+		var dir := d
+		dir.y = 0
+		apply_force(dir.normalized() * min(over * ROPE_K, 600.0), anchor - global_position)
+		_push_count += 1
+	return over
+
+
 
 
 ## 取っ手を握ったまま、押す向きを変える（乗っているときより弱い）
@@ -105,9 +149,11 @@ func reset_to(pos: Vector3) -> void:
 	for r in riders.duplicate():
 		if r.has_method("get_off"):
 			r.get_off()
-	for who in holders.values():
+	for who in holders.keys():
 		if who.has_method("let_go"):
 			who.let_go()
+	if rope_holder and rope_holder.has_method("let_go"):
+		rope_holder.let_go()
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	global_transform = Transform3D(Basis(), pos)
@@ -117,6 +163,10 @@ func _physics_process(_dt: float) -> void:
 	pushers = _push_count
 	_push_count = 0
 	linear_damp = RIDE_DAMP if riders.size() > 0 else CLIMB_DAMP
+	# 滑り木: 前後にはよく滑り、横には滑りにくい
+	var side := global_basis.x
+	var slip := side * linear_velocity.dot(side)
+	apply_central_force(-slip * mass * SLIP_RESIST)
 	# 起き上がり: 大きく傾いたら少しずつ戻す
 	var up := global_basis.y
 	if up.y < 0.5:
