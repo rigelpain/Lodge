@@ -1,7 +1,8 @@
 extends CharacterBody3D
 ## あなた。一人称で、見えるのはフェルトの手袋をした両手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
-## つかんだまま W で押し、S で手前に引き、A/D で回り込む。離すのは F だけ。Shift でダッシュ。
+## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
+## どう動くかはソリの滑り木と重力が決める。離すのは F だけ。Shift でダッシュ。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
 
 const SPEED := 4.0
@@ -11,7 +12,6 @@ const JUMP := 4.5
 const GRAVITY := 9.8
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
 const LET_GO_SPEED := 5.0    # ソリがこれより速く滑ると手が離れる (m/s)
-const PIVOT_RATE := 0.35     # 回り込む速さ (rad/s、毎秒 20°)
 const ROPE_SEGS := 14
 
 enum Mode { WALK, GRIP, RIDE, ROPE }
@@ -272,30 +272,16 @@ func _grip(dt: float) -> void:
 	global_position = global_position.lerp(target, _snap) if _snap < 1.0 else target
 	velocity = Vector3.ZERO
 
-	# 前後は視点の向き: W は見ている方へ押し、S は手前へ引く
+	# 視点基準の WASD を、つかんでいる所にかける力の向きにする
+	var input := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
 	var fwd: Vector3 = -global_basis.z
 	fwd.y = 0
 	fwd = fwd.normalized()
-	if Input.is_physical_key_pressed(KEY_W):
-		sled.push(fwd, target + fwd * 0.6 + Vector3.UP * 0.5)
+	if input.length() > 0.0:
+		var dir := (global_basis * Vector3(input.x, 0, input.y))
+		dir.y = 0
+		sled.push(dir.normalized(), target + Vector3.UP * 0.5)
 		pushing = true
-	elif Input.is_physical_key_pressed(KEY_S):
-		# 手前に引く（押すより少し弱い）
-		sled.push(-fwd * 0.7, target + fwd * 0.6 + Vector3.UP * 0.5)
-		pushing = true
-	# A/D: 真向かいの縁を軸に回り込む。D で自分の右へ動く向きに回す
-	var steer := _key(KEY_D) - _key(KEY_A)
-	if steer != 0.0:
-		var pivot_local := Vector3(-handle.x, 0, -handle.z)
-		var arm: Vector3 = global_position - sled.to_global(pivot_local)
-		arm.y = 0
-		var move_dir := Vector3.UP.cross(arm)   # 正の回転で自分が動く向き
-		var sgn := 1.0 if move_dir.dot(global_basis.x) >= 0.0 else -1.0
-		var omega := steer * sgn * PIVOT_RATE
-		sled.pivot_turn(handle, omega)
-		rotate_y(omega * dt)   # 体もソリと一緒に回り、ソリを向いたままになる
-	else:
-		sled.angular_velocity.y = lerp(sled.angular_velocity.y, 0.0, min(1.0, dt * 8.0))
 
 	# 速く滑り出したら手が離れる
 	if sled.linear_velocity.length() > LET_GO_SPEED:
@@ -303,7 +289,7 @@ func _grip(dt: float) -> void:
 		global_position -= fwd * 0.6
 		return
 
-	prompt = "押している　A/D 回り込む　F 手を離す　E 乗る" if pushing else "W 押す　S 引く　A/D 回り込む　F 手を離す　E 乗る"
+	prompt = "力をかけている　F 手を離す　E 乗る" if pushing else "WASD 見ている向きを基準に力をかける　F 手を離す　E 乗る"
 
 
 ## 紐を持つ手の位置（世界座標）

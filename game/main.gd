@@ -194,6 +194,16 @@ func _physics_process(dt: float) -> void:
 			player.global_position = sled.to_global(Vector3(2.0, 0, 0)) + Vector3.UP * 0.2
 			var inward: Vector3 = -sled.global_basis.x
 			player.rotation.y = atan2(-inward.x, -inward.z)
+		if args["sim"] == "left":
+			player.global_position = sled.to_global(Vector3(-2.0, 0, 0)) + Vector3.UP * 0.2
+			var inward: Vector3 = sled.global_basis.x
+			player.rotation.y = atan2(-inward.x, -inward.z)
+			player.grab()
+			var eva := InputEventKey.new()
+			eva.physical_keycode = KEY_A
+			eva.pressed = true
+			Input.parse_input_event(eva)
+			return
 		if args["sim"] == "turn":
 			player.global_position = sled.to_global(Vector3(0, 0, 2.4)) + Vector3.UP * 0.2
 			player.rotation.y = atan2(-fwd.x, -fwd.z)

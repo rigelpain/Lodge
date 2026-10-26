@@ -11,13 +11,13 @@ const STAND := 0.6                 # つかむ人が立つ、縁からの距離
 const ROPE_ANCHOR := Vector3(0, 0.3, -1.45)
 const ROPE_LEN := 3.0
 const ROPE_K := 260.0              # 紐が張ったときの引く力 (N/m)
-const SLIP_RESIST := 3.0           # 滑り木の横滑りのしにくさ
+const SLIP_RESIST := 18.0          # 滑り木の横滑りのしにくさ（前後 2 点それぞれ）
+const RUNNER_Z := 1.1              # 滑り木の前後の接地点（中心からの距離）
 
 var pushers := 0            # 前のコマで押していた人数（表示用）
 var riders: Array[Node3D] = []
 var holders := {}           # つかんでいる人 → つかんだ所（ソリの座標）
 var rope_holder: Node3D = null
-var _pivoting := false
 var _push_count := 0
 
 
@@ -25,7 +25,7 @@ func _ready() -> void:
 	mass = 60.0
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0, -0.25, 0)
-	angular_damp = 3.0
+	angular_damp = 6.0
 	var pm := PhysicsMaterial.new()
 	pm.friction = 0.04
 	physics_material_override = pm
@@ -63,9 +63,12 @@ func push(dir: Vector3, at: Vector3) -> void:
 	if dir.length() < 0.01:
 		return
 	var f: Vector3 = dir.normalized() * PUSH_FORCE * min(1.0, dir.length())
-	# 力は手の位置の近くにかける。ただし横のずれは弱めて、後ろから押したときに回りすぎないように
+	# 力は手が触れている所にそのままかける。どう動くかは滑り木と重力が決める
 	var p := to_local(at)
-	apply_force(f, global_basis * Vector3(p.x * 0.35, 0.2, clamp(p.z, -HALF.y, HALF.y) * 0.5))
+	p.x = clamp(p.x, -HALF.x, HALF.x)
+	p.z = clamp(p.z, -HALF.y, HALF.y)
+	p.y = 0.2
+	apply_force(f, global_basis * p)
 	_push_count += 1
 
 
@@ -121,23 +124,6 @@ func pull_rope(hand: Vector3) -> float:
 
 
 
-## つかんでいる人が左右に回り込む: つかんだ所の真向かいの縁を軸に、ソリ全体を回す。
-## omega は回す速さ (rad/s、上から見て反時計回りが正)。軸の点（世界座標）を返す
-func pivot_turn(handle: Vector3, omega: float) -> Vector3:
-	var pivot_local := Vector3(-handle.x, 0, -handle.z)
-	var pivot := to_global(pivot_local)
-	var r := global_position - pivot
-	r.y = 0
-	var lateral := Vector3.UP.cross(r)   # 軸まわりに回るとき、重心が動く向き（長さ |r|）
-	angular_velocity.y = omega
-	if lateral.length() > 0.01:
-		var dir := lateral.normalized()
-		var want := omega * lateral.length()
-		linear_velocity += dir * (want - linear_velocity.dot(dir))
-	_pivoting = true
-	return pivot
-
-
 func mount(who: Node3D) -> Vector3:
 	if riders.size() >= SEATS.size() or who in riders:
 		return Vector3.INF
@@ -176,12 +162,14 @@ func _physics_process(_dt: float) -> void:
 	pushers = _push_count
 	_push_count = 0
 	linear_damp = RIDE_DAMP if riders.size() > 0 else CLIMB_DAMP
-	# 滑り木: 前後にはよく滑り、横には滑りにくい（回り込みの最中は邪魔しない）
-	if not _pivoting:
-		var side := global_basis.x
-		var slip := side * linear_velocity.dot(side)
-		apply_central_force(-slip * mass * SLIP_RESIST)
-	_pivoting = false
+	# 滑り木: 前後にはよく滑り、横には滑らない。前後 2 点で横滑りを止めるので、
+	# 縁に偏った力をかけると、横にずれるのでなく向きが変わる
+	var side := global_basis.x
+	for z in [-RUNNER_Z, RUNNER_Z]:
+		var r := global_basis * Vector3(0, 0, z)
+		var v_point := linear_velocity + angular_velocity.cross(r)
+		var slip := side * v_point.dot(side)
+		apply_force(-slip * mass * SLIP_RESIST * 0.5, r)
 	# 起き上がり: 大きく傾いたら少しずつ戻す
 	var up := global_basis.y
 	if up.y < 0.5:
