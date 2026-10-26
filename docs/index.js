@@ -8,7 +8,8 @@ const STATE = { done: '済', now: 'いま', todo: 'これから' };
 const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 let data = null;
-fetch('data.json')
+// 中身は頻繁に書き換えるので、毎回サーバーに新しいか確かめる
+fetch('data.json', { cache: 'no-cache' })
   .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
   .then((d) => { data = d; paint(); })
   .catch((e) => {
@@ -18,7 +19,9 @@ fetch('data.json')
 // いま開いているページ（main の data-page）に合わせて描く
 function paint() {
   if (!data) return;
-  if ($('main').dataset.page === 'art') { renderArt(data.art); reveal(); } else render(data);
+  if ($('main').dataset.page !== 'art') return render(data);
+  if (!data.art) throw new Error('data.json に art がない');
+  renderArt(data.art); reveal();
 }
 
 // タイルを順に浮かせる
