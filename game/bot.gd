@@ -89,7 +89,7 @@ func _physics_process(dt: float) -> void:
 			_wait = 0.0
 		else:
 			# ソリの下り側の、自分の持ち場へ回り込み、そこに着いたら押しながら一緒に登る
-			var post := s - up * 1.6 + up.cross(Vector3.UP) * 0.45 * side
+			var post := s - up * 1.7 + up.cross(Vector3.UP) * 0.85 * side  # 真ん中の取っ手はあなたの分
 			var to := post - global_position
 			to.y = 0
 			dir = to.normalized() if to.length() > 0.2 else up

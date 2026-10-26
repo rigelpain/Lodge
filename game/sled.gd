@@ -6,9 +6,12 @@ const PUSH_FORCE := 340.0   # 1人が押す力 (N)。1人でも最も急な所�
 const CLIMB_DAMP := 1.6     # 登るときの減速（押すのをやめるとすぐ止まる）
 const RIDE_DAMP := 0.12     # 乗って滑るときの減速
 const SEATS := [Vector3(0, 0.45, -0.75), Vector3(0, 0.45, 0.15), Vector3(0, 0.45, 1.0)]
+## つかめる取っ手（ソリの座標）。後ろの真ん中・左・右、それに前（逆から押す用）
+const HANDLES := [Vector3(0, 0, 2.0), Vector3(-0.9, 0, 2.0), Vector3(0.9, 0, 2.0), Vector3(0, 0, -2.1)]
 
 var pushers := 0            # 前のコマで押していた人数（表示用）
 var riders: Array[Node3D] = []
+var holders := {}           # 取っ手 → つかんでいる人
 var _push_count := 0
 
 
@@ -59,6 +62,25 @@ func push(dir: Vector3, at: Vector3) -> void:
 	_push_count += 1
 
 
+func take_handle(who: Node3D, h: Vector3) -> bool:
+	if holders.has(h) and holders[h] != who:
+		return false
+	release_handle(who)
+	holders[h] = who
+	return true
+
+
+func release_handle(who: Node3D) -> void:
+	for k in holders.keys():
+		if holders[k] == who:
+			holders.erase(k)
+
+
+## 取っ手を握ったまま、押す向きを変える（乗っているときより弱い）
+func steer_from_handle(steer: float) -> void:
+	apply_torque(Vector3.UP * -steer * 70.0)
+
+
 func mount(who: Node3D) -> Vector3:
 	if riders.size() >= SEATS.size() or who in riders:
 		return Vector3.INF
@@ -83,6 +105,9 @@ func reset_to(pos: Vector3) -> void:
 	for r in riders.duplicate():
 		if r.has_method("get_off"):
 			r.get_off()
+	for who in holders.values():
+		if who.has_method("let_go"):
+			who.let_go()
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	global_transform = Transform3D(Basis(), pos)

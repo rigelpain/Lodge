@@ -1,19 +1,30 @@
 extends CharacterBody3D
 ## あなた。一人称で、見えるのはフェルトの手袋をした両手だけ。
-## ソリに向かって W で押す（ふさぐのも、逆から押すのも同じ仕組みでできる）。
+## ソリの後ろの取っ手を F でつかむ（近くで W を押し続けても吸い付く）。
+## つかんだまま W で押し、A/D で向きを変え、S を引き続けるか F で手を離す。
+## ふさぐのも、逆から押すのも、取っ手でなく横や前からつかめば同じ仕組みでできる。
 
 const SPEED := 4.0
 const JUMP := 4.5
 const GRAVITY := 9.8
-const REACH := 1.4
+const GRAB_REACH := 2.2      # F でつかめる距離 (m)
+const SNAP_REACH := 1.1      # W で歩いて近づくと吸い付く距離 (m)
+const LET_GO_SPEED := 5.0    # ソリがこれより速く滑ると手が離れる (m/s)
+
+enum Mode { WALK, GRIP, RIDE }
 
 var sled: RigidBody3D
 var cam: Camera3D
 var hands: Array[Node3D] = []
+var mode := Mode.WALK
 var seat := Vector3.INF
+var handle := Vector3.INF    # つかんでいる取っ手（ソリの座標）
 var pushing := false
+var prompt := ""             # 画面に出す一言（main.gd が読む）
 var _col: CollisionShape3D
 var _t := 0.0
+var _pull := 0.0             # S を引き続けた時間
+var _snap := 0.0             # 吸い付きの途中（0→1）
 
 
 func _ready() -> void:
@@ -67,28 +78,77 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e is InputEventMouseButton and e.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif e is InputEventKey and e.pressed and not e.echo:
-		if e.physical_keycode == KEY_ESCAPE:
-			Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-		elif e.physical_keycode == KEY_E:
-			if seat == Vector3.INF:
-				get_on()
-			else:
-				get_off()
+		match e.physical_keycode:
+			KEY_ESCAPE:
+				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			KEY_F:
+				if mode == Mode.GRIP:
+					let_go()
+				elif mode == Mode.WALK:
+					grab()
+			KEY_E:
+				if mode == Mode.RIDE:
+					get_off()
+				else:
+					get_on()
+
+
+## いちばん近い取っ手。届かなければ INF
+func _nearest_handle(reach: float) -> Vector3:
+	var best := Vector3.INF
+	var best_d := reach
+	for h in sled.HANDLES:
+		var d := global_position.distance_to(sled.to_global(h))
+		if d < best_d:
+			best_d = d
+			best = h
+	return best
+
+
+func grab() -> void:
+	var h := _nearest_handle(GRAB_REACH)
+	if h == Vector3.INF or not sled.take_handle(self, h):
+		return
+	handle = h
+	mode = Mode.GRIP
+	_col.disabled = true
+	_snap = 0.0
+	_pull = 0.0
+	# 体をソリの進む向きに向ける（視線はそのあと自由）
+	var fwd := -sled.global_basis.z
+	rotation.y = atan2(-fwd.x, -fwd.z)
+
+
+func let_go() -> void:
+	if mode != Mode.GRIP:
+		return
+	sled.release_handle(self)
+	handle = Vector3.INF
+	mode = Mode.WALK
+	_col.disabled = false
+	velocity = Vector3.ZERO
 
 
 func get_on() -> void:
 	if global_position.distance_to(sled.global_position) > 2.8:
 		return
-	seat = sled.mount(self)
-	if seat != Vector3.INF:
-		_col.disabled = true
+	var s: Vector3 = sled.mount(self)
+	if s == Vector3.INF:
+		return
+	if mode == Mode.GRIP:
+		sled.release_handle(self)
+		handle = Vector3.INF
+	seat = s
+	mode = Mode.RIDE
+	_col.disabled = true
 
 
 func get_off() -> void:
-	if seat == Vector3.INF:
+	if mode != Mode.RIDE:
 		return
 	sled.dismount(self)
 	seat = Vector3.INF
+	mode = Mode.WALK
 	_col.disabled = false
 	global_position = sled.global_position + sled.global_basis.x * 1.4 + Vector3.UP * 0.5
 	velocity = Vector3.ZERO
@@ -101,13 +161,21 @@ func _key(k: Key) -> float:
 func _physics_process(dt: float) -> void:
 	_t += dt
 	pushing = false
+	prompt = ""
 
-	if seat != Vector3.INF:
-		global_position = sled.to_global(seat)
-		sled.lean(_key(KEY_D) - _key(KEY_A), Input.is_physical_key_pressed(KEY_W))
-		_pose_hands(dt, true)
-		return
+	match mode:
+		Mode.RIDE:
+			global_position = sled.to_global(seat)
+			sled.lean(_key(KEY_D) - _key(KEY_A), Input.is_physical_key_pressed(KEY_W))
+			prompt = "W 前へ　A/D 曲がる　E 降りる"
+		Mode.GRIP:
+			_grip(dt)
+		Mode.WALK:
+			_walk(dt)
+	_pose_hands(dt)
 
+
+func _walk(dt: float) -> void:
 	var input := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
 	var dir := (global_basis * Vector3(input.x, 0, input.y)).normalized()
 	velocity.x = dir.x * SPEED
@@ -119,27 +187,61 @@ func _physics_process(dt: float) -> void:
 		velocity.y -= GRAVITY * dt
 	move_and_slide()
 
-	# 前に手を伸ばして、ソリに届けば押す
-	if input.y < 0:
-		var fwd := -global_basis.z
-		var from := global_position + Vector3(0, 0.45, 0)
-		var q := PhysicsRayQueryParameters3D.create(from, from + fwd * REACH)
-		q.exclude = [get_rid()]
-		var hit := get_world_3d().direct_space_state.intersect_ray(q)
-		if hit and hit.collider == sled:
-			sled.push(fwd, hit.position)
-			pushing = true
-	_pose_hands(dt, false)
+	var h := _nearest_handle(GRAB_REACH)
+	if h == Vector3.INF:
+		return
+	var hp := sled.to_global(h)
+	var to := hp - global_position
+	to.y = 0
+	var facing := to.normalized().dot(-global_basis.z) > 0.6
+	# 前へ歩いて取っ手に触れたら吸い付く
+	if input.y < 0 and facing and to.length() < SNAP_REACH:
+		grab()
+		return
+	if facing:
+		prompt = "F でソリをつかむ"
 
 
-func _pose_hands(dt: float, riding: bool) -> void:
+func _grip(dt: float) -> void:
+	# 手が取っ手に吸い付き、体はソリについて行く
+	_snap = min(1.0, _snap + dt * 5.0)
+	var target := sled.to_global(handle)
+	global_position = global_position.lerp(target, _snap) if _snap < 1.0 else target
+	velocity = Vector3.ZERO
+
+	var fwd := -sled.global_basis.z
+	fwd.y = 0
+	fwd = fwd.normalized()
+	if Input.is_physical_key_pressed(KEY_W):
+		sled.push(fwd, sled.to_global(handle) + fwd * 0.6 + Vector3.UP * 0.5)
+		pushing = true
+	var steer := _key(KEY_D) - _key(KEY_A)
+	if steer != 0.0:
+		sled.steer_from_handle(steer)
+
+	# 後ろへ引き続けると手を離す
+	_pull = _pull + dt if Input.is_physical_key_pressed(KEY_S) else 0.0
+	if _pull > 0.35 or sled.linear_velocity.length() > LET_GO_SPEED:
+		let_go()
+		global_position -= fwd * 0.6
+		return
+
+	prompt = "押している　A/D 向き　S 手を離す　E 乗る" if pushing else "W 押す　A/D 向き　S 手を離す　E 乗る"
+
+
+func _pose_hands(dt: float) -> void:
+	var bob := sin(_t * 9.0)
+	# 押すと視点がわずかに揺れ、画角が少し広がる
+	cam.position.y = lerp(cam.position.y, 1.55 + (bob * 0.02 if pushing else 0.0), min(1.0, dt * 10.0))
+	cam.fov = lerp(cam.fov, 79.0 if pushing else 75.0, min(1.0, dt * 4.0))
 	for h in hands:
 		var s: int = h.get_meta("side")
 		var target: Vector3
-		if pushing:
-			# 押すときは両手を前に、歩みに合わせて少し揺れる
-			target = Vector3(0.18 * s, -0.24 + sin(_t * 9.0 + s) * 0.02, -0.55)
-		elif riding:
+		if mode == Mode.GRIP:
+			# 取っ手を握る。押すと腕が少し伸びる
+			var reach := -0.5 - (0.06 if pushing else 0.0)
+			target = Vector3(0.17 * s, -0.22 + (bob * 0.015 if pushing else 0.0), reach)
+		elif mode == Mode.RIDE:
 			target = Vector3(0.28 * s, -0.32, -0.35)
 		else:
 			target = Vector3(0.3 * s, -0.3 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.45)
