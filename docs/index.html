@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ソリのゲーム 開発ダッシュボード</title>
+<meta name="description" content="みんなでソリを押して丘を登り、一緒に滑り降りるゲームの開発の進み具合。Steam での販売を目指しています。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23C8473B'/%3E%3Crect x='6' y='17' width='20' height='5' rx='2' fill='%23F6F2EA'/%3E%3Crect x='5' y='24' width='22' height='2' rx='1' fill='%23F6F2EA'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<a class="skip" href="#main">本文へ移る</a>
+
+<header class="top">
+  <div class="brand">
+    <p class="eyebrow">開発ダッシュボード</p>
+    <h1 id="title">ソリのゲーム（仮題）</h1>
+    <p class="goal" id="goal"></p>
+  </div>
+  <aside class="next" aria-labelledby="next-h">
+    <h2 id="next-h" class="label"><i class="ph ph-flag-pennant" aria-hidden="true"></i>次の節目</h2>
+    <p class="next-text" id="next-label"></p>
+    <p class="next-due"><time id="next-due"></time>まで あと <span id="next-days"></span> 日</p>
+  </aside>
+</header>
+
+<main id="main" class="grid">
+  <section class="card span-12" aria-labelledby="phases-h">
+    <h2 id="phases-h" class="label"><i class="ph ph-path" aria-hidden="true"></i>発売までの道のり</h2>
+    <ol class="phases" id="phases"></ol>
+  </section>
+
+  <section class="card span-4" aria-labelledby="tasks-h">
+    <h2 id="tasks-h" class="label"><i class="ph ph-check-square" aria-hidden="true"></i>いまの作業</h2>
+    <ul class="tasks" id="tasks"></ul>
+  </section>
+
+  <section class="card span-4" aria-labelledby="dec-h">
+    <h2 id="dec-h" class="label"><i class="ph ph-seal-check" aria-hidden="true"></i>決めたこと</h2>
+    <ul class="decisions" id="decisions"></ul>
+  </section>
+
+  <section class="card span-4 card-open" aria-labelledby="q-h">
+    <h2 id="q-h" class="label"><i class="ph ph-question" aria-hidden="true"></i>まだ決めていないこと</h2>
+    <ul class="questions" id="questions"></ul>
+  </section>
+
+  <section class="card span-5 card-pitch" aria-labelledby="pitch-h">
+    <h2 id="pitch-h" class="label"><i class="ph ph-mountains" aria-hidden="true"></i>どんなゲームか</h2>
+    <p class="pitch" id="pitch"></p>
+    <blockquote class="origin">
+      <p id="origin"></p>
+      <footer>代表の原体験</footer>
+    </blockquote>
+  </section>
+
+  <section class="card span-4" aria-labelledby="places-h">
+    <h2 id="places-h" class="label"><i class="ph ph-map-trifold" aria-hidden="true"></i>場所</h2>
+    <dl class="places" id="places"></dl>
+  </section>
+
+  <section class="card span-3" aria-labelledby="cost-h">
+    <h2 id="cost-h" class="label"><i class="ph ph-coins" aria-hidden="true"></i>かかるお金</h2>
+    <table class="costs">
+      <thead><tr><th scope="col">項目</th><th scope="col">円</th></tr></thead>
+      <tbody id="costs"></tbody>
+    </table>
+  </section>
+
+  <section class="card span-12" aria-labelledby="refs-h">
+    <h2 id="refs-h" class="label"><i class="ph ph-game-controller" aria-hidden="true"></i>参考にするゲーム</h2>
+    <ul class="refs" id="refs"></ul>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>更新 <time id="updated"></time>。中身は <code>docs/data.json</code> を書き換えると変わります。</p>
+  <p><a href="https://github.com/rigelpain/sled-game">GitHub のリポジトリ</a></p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

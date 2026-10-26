@@ -1,0 +1,173 @@
+/* 色は手芸の世界観から: 生成りの地、フェルトの赤・藍・山吹 */
+:root {
+  --bg: #F6F2EA;
+  --surface: #FFFFFF;
+  --ink: #1F1F1F;
+  --ink-2: #5B5650;
+  --line: #E4DDD0;
+  --red: #C8473B;
+  --red-soft: #F6E1DD;
+  --blue: #2F6F8F;
+  --blue-soft: #DCEAF0;
+  --ochre: #B07A12;
+  --ochre-soft: #F5E8C8;
+  --done: #4F7A5A;
+  --done-soft: #E0EDE2;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Manrope", "Noto Sans JP", system-ui, sans-serif;
+  font-size: 16px;
+  line-height: 24px;
+}
+h1, h2, p, ul, ol, dl, dd, blockquote { margin: 0; }
+ul, ol { padding: 0; list-style: none; }
+p, li, dd { text-wrap: pretty; }
+h1, h2 { text-wrap: balance; }
+
+.skip {
+  position: absolute; left: 16px; top: -48px;
+  background: var(--ink); color: #fff; padding: 8px 12px; border-radius: 8px;
+  transition: transform 300ms var(--ease);
+}
+.skip:focus { transform: translateY(64px); }
+a { color: var(--blue); }
+a:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 4px; }
+
+/* 上の帯 */
+.top {
+  max-width: 1280px; margin: 0 auto; padding: 32px 24px 24px;
+  display: flex; gap: 24px; align-items: flex-end; justify-content: space-between; flex-wrap: wrap;
+}
+.eyebrow { font-size: 14px; line-height: 20px; font-weight: 600; color: var(--red); letter-spacing: 0.04em; }
+h1 { font-size: 36px; line-height: 40px; font-weight: 700; margin-top: 4px; }
+.goal { font-size: 18px; line-height: 28px; color: var(--ink-2); margin-top: 8px; max-width: 680px; }
+
+.next {
+  background: var(--ink); color: #fff; border-radius: 16px; padding: 16px 24px; min-width: 280px;
+}
+.next .label { color: #CFC8BC; }
+.next-text { font-size: 20px; line-height: 28px; font-weight: 600; margin-top: 4px; }
+.next-due { font-size: 14px; line-height: 20px; color: #CFC8BC; margin-top: 4px; }
+#next-days { font-family: "Manrope", sans-serif; font-weight: 700; color: #fff; font-size: 18px; }
+
+/* 札の並び */
+.grid {
+  max-width: 1280px; margin: 0 auto; padding: 0 24px 32px;
+  display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px;
+}
+.card {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 24px;
+  min-width: 0;
+}
+.span-12 { grid-column: span 12; }
+.span-5 { grid-column: span 5; }
+.span-4 { grid-column: span 4; }
+.span-3 { grid-column: span 3; }
+.label {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 14px; line-height: 20px; font-weight: 700; color: var(--ink-2);
+  margin-bottom: 16px;
+}
+.label i { font-size: 18px; }
+
+/* 道のり */
+.phases { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 8px; counter-reset: ph; }
+.phases li {
+  border-radius: 12px; padding: 12px 16px; background: var(--bg); border: 1px solid var(--line);
+  counter-increment: ph;
+}
+.phases li::before {
+  content: counter(ph); display: inline-block; font-family: "Manrope", sans-serif; font-weight: 700;
+  font-size: 12px; line-height: 16px; color: var(--ink-2); margin-bottom: 4px;
+}
+.phases .name { display: block; font-weight: 700; }
+.phases .note { display: block; font-size: 14px; line-height: 20px; color: var(--ink-2); margin-top: 4px; }
+.phases .done { background: var(--done-soft); border-color: var(--done-soft); }
+.phases .done::before { content: "済"; color: var(--done); }
+.phases .now { background: var(--red); border-color: var(--red); color: #fff; }
+.phases .now::before { content: "いまここ"; color: #fff; }
+.phases .now .note { color: #FBE9E6; }
+
+/* いまの作業 */
+.tasks li { display: flex; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.tasks li:first-child { border-top: 0; padding-top: 0; }
+.tasks i { font-size: 20px; line-height: 24px; flex: none; }
+.tasks .done { color: var(--ink-2); }
+.tasks .done i { color: var(--done); }
+.tasks .now { font-weight: 600; }
+.tasks .now i { color: var(--red); }
+.tasks .todo i { color: #B9B1A3; }
+
+/* 決めたこと */
+.decisions li { padding: 8px 0; border-top: 1px solid var(--line); font-size: 14px; line-height: 20px; }
+.decisions li:first-child { border-top: 0; padding-top: 0; }
+.decisions time { display: block; font-family: "Manrope", sans-serif; font-size: 12px; line-height: 16px; color: var(--ink-2); font-weight: 600; }
+
+/* まだ決めていないこと */
+.card-open { background: var(--ochre-soft); border-color: var(--ochre-soft); }
+.card-open .label { color: var(--ochre); }
+.questions li { display: flex; gap: 8px; padding: 8px 0; border-top: 1px solid #EAD9AE; }
+.questions li:first-child { border-top: 0; padding-top: 0; }
+.questions li::before { content: "?"; font-family: "Manrope", sans-serif; font-weight: 700; color: var(--ochre); }
+
+/* どんなゲームか */
+.card-pitch { background: var(--blue-soft); border-color: var(--blue-soft); }
+.card-pitch .label { color: var(--blue); }
+.pitch { font-size: 16px; line-height: 24px; }
+.origin { margin-top: 16px; padding: 16px; background: var(--surface); border-radius: 8px; }
+.origin p { font-size: 14px; line-height: 20px; }
+.origin footer { font-size: 12px; line-height: 16px; color: var(--ink-2); margin-top: 8px; }
+
+/* 場所 */
+.places { display: grid; gap: 12px; }
+.places div { padding: 12px 16px; border-radius: 12px; background: var(--bg); }
+.places dt { font-weight: 700; }
+.places dd { font-size: 14px; line-height: 20px; color: var(--ink-2); margin-top: 4px; }
+
+/* お金 */
+.costs { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 20px; }
+.costs th { text-align: left; font-size: 12px; line-height: 16px; color: var(--ink-2); font-weight: 600; padding-bottom: 8px; }
+.costs th:last-child, .costs td:last-child { text-align: right; }
+.costs td { padding: 8px 0; border-top: 1px solid var(--line); vertical-align: top; }
+.costs td:last-child { font-family: "Manrope", sans-serif; font-weight: 700; white-space: nowrap; padding-left: 8px; }
+.costs small { display: block; font-size: 12px; line-height: 16px; color: var(--ink-2); }
+
+/* 参考 */
+.refs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+.refs li { padding: 12px 16px; border-radius: 12px; border: 1px solid var(--line); }
+.refs b { display: block; }
+.refs span { display: block; font-size: 14px; line-height: 20px; color: var(--ink-2); margin-top: 4px; }
+
+.foot {
+  max-width: 1280px; margin: 0 auto; padding: 0 24px 40px;
+  display: flex; gap: 16px; justify-content: space-between; flex-wrap: wrap;
+  font-size: 14px; line-height: 20px; color: var(--ink-2);
+}
+
+/* 読み込み中の形 */
+.skeleton { display: block; height: 16px; border-radius: 4px; background: var(--line); margin: 8px 0; }
+
+@media (max-width: 1024px) {
+  .span-5, .span-4, .span-3 { grid-column: span 6; }
+  .card-pitch { grid-column: span 12; }
+  .phases { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .refs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 640px) {
+  .top, .grid, .foot { padding-left: 16px; padding-right: 16px; }
+  .grid > .card { grid-column: span 12; }
+  .phases, .refs { grid-template-columns: minmax(0, 1fr); }
+  h1 { font-size: 30px; line-height: 36px; }
+  .next { width: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skip { transition: opacity 300ms var(--ease); }
+}
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
