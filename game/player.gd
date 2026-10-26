@@ -11,7 +11,7 @@ const JUMP := 4.5
 const GRAVITY := 9.8
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
 const LET_GO_SPEED := 5.0    # ソリがこれより速く滑ると手が離れる (m/s)
-const PIVOT_RATE := 0.7      # 回り込む速さ (rad/s)
+const PIVOT_RATE := 0.35     # 回り込む速さ (rad/s、毎秒 20°)
 const ROPE_SEGS := 14
 
 enum Mode { WALK, GRIP, RIDE, ROPE }
@@ -272,7 +272,8 @@ func _grip(dt: float) -> void:
 	global_position = global_position.lerp(target, _snap) if _snap < 1.0 else target
 	velocity = Vector3.ZERO
 
-	var fwd: Vector3 = sled.global_basis * push_dir
+	# 前後は視点の向き: W は見ている方へ押し、S は手前へ引く
+	var fwd: Vector3 = -global_basis.z
 	fwd.y = 0
 	fwd = fwd.normalized()
 	if Input.is_physical_key_pressed(KEY_W):
