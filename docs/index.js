@@ -104,7 +104,7 @@ function render(d) {
   }));
 }
 
-// アート: 素材・色・景色・未定
+// アート: 決まり・素材・色・ゲームに入っているか・未定
 function renderArt(a) {
   $('art-goal').textContent = a.concept;
   $('art-pitch').textContent = a.pitch;
@@ -115,7 +115,7 @@ function renderArt(a) {
   $('art-pal').innerHTML = a.palette.map((c) =>
     `<li><span class="chip" style="--c:${esc(c.hex)}" aria-hidden="true"></span><span class="cn">${esc(c.name)}</span><span class="hex num">${esc(c.hex)}</span></li>`).join('');
   $('art-scene').innerHTML = a.scene.map((s) =>
-    `<li class="${s.state}"><span class="mark" aria-hidden="true"></span><span><b>${esc(s.name)}</b>　${esc(s.note)}</span></li>`).join('');
+    `<li class="${s.state}"><span class="mark" aria-hidden="true"></span><span><span class="sr">${s.state === 'done' ? '入っている' : 'これから'}: </span><b>${esc(s.name)}</b><span class="sn">${esc(s.note)}</span></span></li>`).join('');
   $('art-open').innerHTML = a.open.map((o) => `<div><dt>${esc(o.name)}</dt><dd>${esc(o.note)}</dd></div>`).join('');
 }
 
