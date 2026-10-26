@@ -1,0 +1,193 @@
+/* 段階 × 状態の行列。幅に応じて、横並び（段階が列）→ 転置（段階が行）→ 縦積み と連続的に変わる。
+   数は文字のまま。図は「どの段階の、決めた・作業・まだのどこに置かれているか」という位置だけに使う */
+:root {
+  --bg: #e9eef2;
+  --paper: #ffffff;
+  --ink: #16222e;
+  --ink-2: #566675;
+  --ink-3: #93a0ab;
+  --line: #cdd6dd;
+  --line-2: #b3bfc9;
+  --navy: #1f4f7a;
+  --red: #d7472b;
+
+  --pad: clamp(16px, 4vw, 72px);
+  --t-xs: clamp(11px, 0.62rem + 0.22vw, 13px);
+  --t-s: clamp(13px, 0.74rem + 0.2vw, 14.5px);
+  --t-m: clamp(15px, 0.8rem + 0.45vw, 19px);
+  --t-l: clamp(18px, 0.9rem + 1vw, 30px);
+  --t-xl: clamp(26px, 1rem + 2.2vw, 46px);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font-family: "IBM Plex Sans JP", "Hiragino Sans", "Noto Sans JP", sans-serif;
+  font-size: var(--t-s); line-height: 1.65; font-weight: 400;
+  font-feature-settings: "palt";
+  overflow-x: hidden;
+}
+h1, h2, h3, p, ol, ul { margin: 0; }
+ol, ul { padding: 0; list-style: none; }
+h1, h2, h3 { text-wrap: balance; font-weight: 500; }
+p, li, td, th { text-wrap: pretty; }
+b { font-weight: 600; }
+a { color: inherit; text-underline-offset: 0.2em; text-decoration-thickness: 1px; transition: color 300ms var(--ease); }
+a:hover { color: var(--red); }
+a:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+.num { font-variant-numeric: tabular-nums; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.skip { position: absolute; left: var(--pad); top: -64px; background: var(--ink); color: #fff; padding: 8px 12px; z-index: 1; }
+.skip:focus { top: 8px; }
+.alert { padding: 16px 0; color: var(--red); }
+
+/* 頭 */
+.top { padding: clamp(20px, 2.6vw, 40px) var(--pad) 0; }
+.kicker { font-size: var(--t-xs); color: var(--ink-2); letter-spacing: 0.06em; display: flex; align-items: center; flex-wrap: wrap; gap: 0 0.6em; }
+.kicker .sep { width: 1px; height: 1em; background: var(--line-2); }
+.top h1 { font-size: var(--t-xl); font-weight: 600; line-height: 1.22; letter-spacing: -0.01em; margin-top: 0.4em; max-width: 24em; }
+.pitch { font-size: var(--t-s); color: var(--ink-2); max-width: 44em; margin-top: 1em; }
+
+main { padding: 0 var(--pad); }
+
+/* 次の節目: 1行の帯 */
+.next {
+  margin-top: clamp(20px, 2.6vw, 40px);
+  border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2);
+  padding: clamp(10px, 1.2vw, 16px) 0;
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 0.2em clamp(14px, 2vw, 32px);
+}
+.next h2 { font-size: var(--t-xs); font-weight: 500; color: var(--ink-2); letter-spacing: 0.1em; }
+.next-what { font-size: var(--t-l); font-weight: 500; line-height: 1.3; }
+.next-when { font-size: var(--t-s); color: var(--ink-2); margin-left: auto; white-space: nowrap; }
+.next-when time { margin-right: 0.9em; }
+.next-when b { color: var(--red); font-size: var(--t-l); font-weight: 600; line-height: 1; margin: 0 0.1em; font-variant-numeric: tabular-nums; }
+
+/* 行列 */
+.matrix { margin-top: clamp(24px, 3vw, 48px); display: grid; }
+.rail { font-size: var(--t-xs); font-weight: 500; color: var(--ink-2); letter-spacing: 0.1em; }
+.rail-head { color: var(--ink); }
+.phases, .phase { display: contents; }
+
+.ph-head, .cell, .rail { min-width: 0; position: relative; }
+.cell { padding: clamp(10px, 1vw, 14px) clamp(10px, 1.4vw, 22px) clamp(14px, 1.4vw, 22px) 0; }
+.phase.now .ph-head, .phase.now .cell { background: var(--paper); }
+
+/* 段階の頭: 道（線）と節（丸）。向きは幅ごとに決める */
+.ph-head::before, .ph-head::after { content: ""; position: absolute; }
+.ph-head::before { border: 0 dashed var(--line-2); }
+.ph-head::after { width: 10px; height: 10px; border-radius: 50%; background: var(--paper); border: 2px solid var(--line-2); }
+.phase.done .ph-head::before { border-color: var(--navy); border-style: solid; }
+.phase.done .ph-head::after { background: var(--navy); border-color: var(--navy); }
+.phase.now .ph-head::before { border-color: var(--red); border-style: solid; }
+.phase.now .ph-head::after { background: var(--red); border-color: var(--red); box-shadow: 0 0 0 3px var(--paper), 0 0 0 4px var(--red); }
+.ph-no { display: block; font-size: var(--t-xs); color: var(--ink-3); font-variant-numeric: tabular-nums; letter-spacing: 0.08em; }
+.ph-nm { display: block; font-size: var(--t-m); font-weight: 600; line-height: 1.35; margin-top: 0.1em; word-break: keep-all; overflow-wrap: anywhere; }
+.ph-nt { display: block; font-size: var(--t-xs); color: var(--ink-2); margin-top: 0.25em; line-height: 1.5; }
+.phase.done .ph-nm { color: var(--ink-2); font-weight: 500; }
+.phase.todo .ph-nm { font-weight: 500; }
+
+/* 中身 */
+.cell li { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.55em; align-items: start; line-height: 1.5; }
+.cell li + li { margin-top: 0.5em; }
+.cell.decided time { font-size: var(--t-xs); color: var(--ink-3); font-variant-numeric: tabular-nums; line-height: inherit; padding-top: 0.15em; }
+.cell li::before { content: ""; width: 8px; height: 8px; align-self: start; margin-top: 0.5em; border-radius: 1px; }
+.cell.decided li::before { display: none; }
+.cell.tasks li::before { background: var(--line-2); }
+.cell.tasks li.done::before { background: var(--navy); }
+.cell.tasks li.done span { color: var(--ink-2); }
+.cell.tasks li.now::before { background: var(--red); }
+.cell.tasks li.now span { color: var(--red); font-weight: 500; }
+.cell.tasks li.todo::before { background: none; border: 1.5px solid var(--line-2); }
+.cell.open li::before { border-radius: 50%; border: 1.5px solid var(--ink-3); }
+
+/* 広い: 段階が列、決めた・作業・まだが行。道は横 */
+@media (min-width: 1200px) {
+  .top { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); column-gap: clamp(24px, 4vw, 72px); align-items: end; }
+  .top .kicker { grid-column: 1 / -1; }
+  .top .pitch { margin-top: 0; padding-bottom: 0.3em; }
+
+  .matrix { grid-template-columns: minmax(5em, 6.5em) var(--cols, repeat(var(--n), minmax(0, 1fr))); }
+  .rail-head { grid-column: 1; grid-row: 1; padding-top: 22px; }
+  .rail-decided { grid-column: 1; grid-row: 2; }
+  .rail-tasks { grid-column: 1; grid-row: 3; }
+  .rail-open { grid-column: 1; grid-row: 4; }
+  .rail:not(.rail-head) { border-top: 1px solid var(--line); padding-top: clamp(11px, 1.1vw, 15px); }
+  .ph-head { grid-column: var(--p); grid-row: 1; padding: 22px clamp(10px, 1.4vw, 22px) clamp(12px, 1.4vw, 20px) 0; }
+  .cell { border-top: 1px solid var(--line); }
+  .cell.decided { grid-column: var(--p); grid-row: 2; }
+  .cell.tasks { grid-column: var(--p); grid-row: 3; }
+  .cell.open { grid-column: var(--p); grid-row: 4; }
+  .phase.now .cell, .phase.now .ph-head { padding-left: clamp(10px, 1.4vw, 22px); }
+
+  .ph-head::before { left: 0; right: 0; top: 4px; border-top-width: 2px; }
+  .ph-head::after { left: 0; top: 0; }
+  .phase.done .ph-head::before, .phase.now .ph-head::before { top: 3.5px; border-top-width: 3px; }
+  .phase.now .ph-head::before, .phase.now .ph-head::after { left: clamp(10px, 1.4vw, 22px); }
+  .phase.now .ph-head::before { border-image: linear-gradient(90deg, var(--red) 0 50%, var(--line-2) 50% 100%) 1; }
+}
+
+/* 中くらい: 転置。段階が行、決めた・作業・まだが列。道は縦 */
+@media (min-width: 640px) and (max-width: 1199.98px) {
+  .matrix { grid-template-columns: minmax(11em, 0.8fr) repeat(3, minmax(0, 1fr)); }
+  .rail { padding-bottom: 10px; }
+  .rail-head { grid-column: 1; grid-row: 1; }
+  .rail-decided { grid-column: 2; grid-row: 1; }
+  .rail-tasks { grid-column: 3; grid-row: 1; }
+  .rail-open { grid-column: 4; grid-row: 1; }
+  .ph-head { grid-column: 1; grid-row: var(--p); padding: clamp(10px, 1.1vw, 16px) 16px clamp(14px, 1.6vw, 24px) 22px; }
+  .ph-head, .cell { border-top: 1px solid var(--line); }
+  .cell.decided { grid-column: 2; grid-row: var(--p); }
+  .cell.tasks { grid-column: 3; grid-row: var(--p); }
+  .cell.open { grid-column: 4; grid-row: var(--p); }
+  .phase.now .cell { padding-left: 12px; margin-left: -12px; }
+
+  .ph-head::before { left: 4px; top: 0; bottom: 0; border-left-width: 2px; }
+  .ph-head::after { left: 0; top: clamp(14px, 1.3vw, 20px); }
+  .phase.done .ph-head::before, .phase.now .ph-head::before { left: 3.5px; border-left-width: 3px; }
+  .phase.now .ph-head::before { border-image: linear-gradient(180deg, var(--red) 0 50%, var(--line-2) 50% 100%) 1; }
+}
+
+/* 狭い: 縦積み。各段階の中に 決めた・作業・まだ */
+@media (max-width: 639.98px) {
+  .rail:not(.rail-head) { display: none; }
+  .rail-head { padding-bottom: 8px; }
+  .phases { display: block; }
+  .phase { display: block; border-top: 1px solid var(--line); padding: 14px 0 18px 22px; position: relative; }
+  .phase.now { background: var(--paper); margin: 0 calc(-1 * var(--pad)); padding-left: calc(var(--pad) + 22px); padding-right: var(--pad); }
+  .ph-head { padding: 0 0 8px; }
+  .cell { padding: 6px 0 0; }
+  .cell.empty { display: none; }
+  .cell::before { content: attr(data-label); display: block; font-size: var(--t-xs); color: var(--ink-3); letter-spacing: 0.1em; margin: 6px 0 2px; }
+
+  .ph-head::before { left: -18px; top: 0; bottom: -18px; border-left-width: 2px; }
+  .ph-head::after { left: -22px; top: 6px; }
+  .phase.done .ph-head::before, .phase.now .ph-head::before { left: -18.5px; border-left-width: 3px; }
+  .phase.now .ph-head::before { border-image: linear-gradient(180deg, var(--red) 0 50%, var(--line-2) 50% 100%) 1; }
+  .phase:last-child .ph-head::before { bottom: auto; height: 12px; }
+}
+
+/* 小さな表 */
+.facts { margin-top: clamp(28px, 3.5vw, 56px); display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: clamp(20px, 3vw, 48px); align-items: start; }
+@media (max-width: 900px) { .facts { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .facts { grid-template-columns: minmax(0, 1fr); } }
+.fact { border-collapse: collapse; width: 100%; font-size: var(--t-s); }
+.fact caption { text-align: left; font-size: var(--t-xs); font-weight: 500; letter-spacing: 0.1em; color: var(--ink); padding-bottom: 0.6em; border-bottom: 1px solid var(--ink); caption-side: top; }
+.fact caption small { display: block; font-size: var(--t-xs); font-weight: 400; color: var(--ink-3); letter-spacing: 0; margin-top: 0.2em; }
+.fact th, .fact td { text-align: left; vertical-align: top; padding: 0.5em 0.8em 0.5em 0; border-top: 1px solid var(--line); line-height: 1.5; }
+.fact tr:first-child > * { border-top: 0; }
+.fact thead th { font-size: var(--t-xs); font-weight: 400; color: var(--ink-3); padding-top: 0.6em; padding-bottom: 0.2em; }
+.fact tbody th { font-weight: 500; word-break: keep-all; }
+.fact td { color: var(--ink-2); }
+.fact td:last-child, .fact th:last-child { padding-right: 0; }
+.fact .num { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); white-space: nowrap; }
+.fact thead .num { color: var(--ink-3); }
+#climb tbody td.num { font-size: var(--t-m); font-weight: 500; }
+
+/* 足 */
+.foot { margin-top: clamp(28px, 3.5vw, 56px); padding: clamp(16px, 2vw, 28px) var(--pad) clamp(28px, 4vw, 56px); border-top: 1px solid var(--line-2); font-size: var(--t-xs); color: var(--ink-2); display: flex; flex-wrap: wrap; gap: 0.6em 3em; justify-content: space-between; }
+.foot p:first-child { max-width: 40em; }
+
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
