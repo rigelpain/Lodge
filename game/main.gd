@@ -24,7 +24,6 @@ var log_t := 0.0
 var _duty := 0
 var _frames := 0
 var _sim_sent := false
-var pip_cam: Camera3D
 var pip_label: Label
 
 
@@ -78,27 +77,104 @@ func _ready() -> void:
 	add_child(layer)
 
 
-## 右上の縦長のライブ映像: 後ろ上から自分を追う、もう一つのカメラ
+## 右上のライブ映像: 自分の頭の上に載せた 360° カメラの映像。
+## 6 方向を同時に撮り、シェーダで 1 枚の全天球（正距円筒）に合成する。V でリトルプラネット
+const FACE_PX := 320
+const PIP_EQ := Vector2(420, 210)       # 全天球の窓 (2:1)
+const PIP_PLANET := Vector2(260, 260)   # リトルプラネットの窓
+# 面ごとの [前 A, 上 U, 右 R]。シェーダ側も同じ向きで読む
+const FACES := [
+	[Vector3(0, 0, -1), Vector3(0, 1, 0), Vector3(1, 0, 0)],   # 前
+	[Vector3(0, 0, 1), Vector3(0, 1, 0), Vector3(-1, 0, 0)],   # 後ろ
+	[Vector3(1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, 1)],    # 右
+	[Vector3(-1, 0, 0), Vector3(0, 1, 0), Vector3(0, 0, -1)],  # 左
+	[Vector3(0, 1, 0), Vector3(0, 0, 1), Vector3(1, 0, 0)],    # 上
+	[Vector3(0, -1, 0), Vector3(0, 0, -1), Vector3(1, 0, 0)],  # 下
+]
+const PIP_SHADER := """
+shader_type canvas_item;
+uniform sampler2D f0; uniform sampler2D f1; uniform sampler2D f2;
+uniform sampler2D f3; uniform sampler2D f4; uniform sampler2D f5;
+uniform int mode = 0;   // 0: 全天球  1: リトルプラネット
+
+vec4 sample_face(int i, vec2 uv) {
+	if (i == 0) return texture(f0, uv);
+	if (i == 1) return texture(f1, uv);
+	if (i == 2) return texture(f2, uv);
+	if (i == 3) return texture(f3, uv);
+	if (i == 4) return texture(f4, uv);
+	return texture(f5, uv);
+}
+
+// 向き d をどの面のどこで読むか（カメラの座標: 前 -z, 上 +y, 右 +x）
+vec4 sample_dir(vec3 d) {
+	vec3 a = abs(d);
+	int i; vec3 A; vec3 U; vec3 R;
+	if (a.x >= a.y && a.x >= a.z) {
+		if (d.x > 0.0) { i = 2; A = vec3(1,0,0); U = vec3(0,1,0); R = vec3(0,0,1); }
+		else { i = 3; A = vec3(-1,0,0); U = vec3(0,1,0); R = vec3(0,0,-1); }
+	} else if (a.y >= a.z) {
+		if (d.y > 0.0) { i = 4; A = vec3(0,1,0); U = vec3(0,0,1); R = vec3(1,0,0); }
+		else { i = 5; A = vec3(0,-1,0); U = vec3(0,0,-1); R = vec3(1,0,0); }
+	} else {
+		if (d.z < 0.0) { i = 0; A = vec3(0,0,-1); U = vec3(0,1,0); R = vec3(1,0,0); }
+		else { i = 1; A = vec3(0,0,1); U = vec3(0,1,0); R = vec3(-1,0,0); }
+	}
+	float t = dot(d, A);
+	vec2 uv = vec2(0.5 + 0.5 * dot(d, R) / t, 0.5 - 0.5 * dot(d, U) / t);
+	return sample_face(i, uv);
+}
+
+void fragment() {
+	vec3 d;
+	if (mode == 0) {
+		float lon = (UV.x - 0.5) * 6.2831853;
+		float lat = (0.5 - UV.y) * 3.1415927;
+		d = vec3(sin(lon) * cos(lat), sin(lat), -cos(lon) * cos(lat));
+		COLOR = sample_dir(d);
+	} else {
+		vec2 p = (UV - 0.5) * 2.0;
+		float r = length(p);
+		if (r > 1.0) { COLOR = vec4(0.08, 0.1, 0.16, 1.0); }
+		else {
+			float theta = 2.0 * atan(r * 5.0);          // 真下 0 → 地平線 → 空
+			float el = theta - 1.5707963;
+			float phi = atan(p.x, -p.y);                 // 上が前
+			d = vec3(sin(phi) * cos(el), sin(el), -cos(phi) * cos(el));
+			COLOR = sample_dir(d);
+		}
+	}
+}
+"""
+
+var pip_cams: Array[Camera3D] = []
+var pip_frame: PanelContainer
+var pip_mat: ShaderMaterial
+var pip_mode := 0
+
+
 func _make_pip() -> void:
-	var vp := SubViewport.new()
-	vp.size = Vector2i(396, 704)
-	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	vp.msaa_3d = Viewport.MSAA_2X
-	add_child(vp)
-	pip_cam = Camera3D.new()
-	pip_cam.fov = 82
-	pip_cam.near = 0.1
-	pip_cam.cull_mask = (1 << 0) | (1 << 1)   # 世界と、あなたの体。手は映さない
-	vp.add_child(pip_cam)
-	pip_cam.current = true
-	pip_cam.global_position = player.global_position + Vector3.UP * 2.5 + player.global_basis.z * 2.2
+	var textures: Array[Texture2D] = []
+	for f in FACES:
+		var vp := SubViewport.new()
+		vp.size = Vector2i(FACE_PX, FACE_PX)
+		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(vp)
+		var cam := Camera3D.new()
+		cam.fov = 90.0
+		cam.keep_aspect = Camera3D.KEEP_WIDTH
+		cam.near = 0.08
+		cam.cull_mask = (1 << 0) | (1 << 1)   # 世界と、あなたの体。手は映さない
+		vp.add_child(cam)
+		cam.current = true
+		pip_cams.append(cam)
+		textures.append(vp.get_texture())
+	_place_pip_cams()
 
 	var layer := CanvasLayer.new()
 	layer.layer = 2
 	add_child(layer)
-	var w := 198.0
-	var h := 352.0
-	var frame := PanelContainer.new()
+	pip_frame = PanelContainer.new()
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(1, 1, 1, 0.22)
 	sb.border_color = Color(1, 1, 1, 0.85)
@@ -107,55 +183,69 @@ func _make_pip() -> void:
 	sb.set_content_margin_all(5)
 	sb.shadow_size = 14
 	sb.shadow_color = Color(0.1, 0.15, 0.3, 0.2)
-	frame.add_theme_stylebox_override("panel", sb)
-	frame.anchor_left = 1.0
-	frame.anchor_right = 1.0
-	frame.offset_left = -(w + 16)
-	frame.offset_right = -16
-	frame.offset_top = 16
-	frame.offset_bottom = 16 + h
-	layer.add_child(frame)
-	var tex := TextureRect.new()
-	tex.texture = vp.get_texture()
-	tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	tex.stretch_mode = TextureRect.STRETCH_SCALE
-	frame.add_child(tex)
+	pip_frame.add_theme_stylebox_override("panel", sb)
+	layer.add_child(pip_frame)
+	var view := ColorRect.new()
+	var sh := Shader.new()
+	sh.code = PIP_SHADER
+	pip_mat = ShaderMaterial.new()
+	pip_mat.shader = sh
+	for i in 6:
+		pip_mat.set_shader_parameter("f%d" % i, textures[i])
+	pip_mat.set_shader_parameter("mode", pip_mode)
+	view.material = pip_mat
+	pip_frame.add_child(view)
 	pip_label = Label.new()
 	pip_label.add_theme_font_size_override("font_size", 13)
 	pip_label.add_theme_color_override("font_color", Color.WHITE)
 	pip_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
 	pip_label.add_theme_constant_override("shadow_offset_y", 1)
-	pip_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	pip_label.offset_left = frame.offset_left + 16
-	pip_label.offset_right = frame.offset_right - 8
-	pip_label.offset_top = 28
-	pip_label.offset_bottom = 48
 	layer.add_child(pip_label)
 	var dot := ColorRect.new()
+	dot.name = "Dot"
 	dot.color = Color(0.95, 0.2, 0.15)
+	layer.add_child(dot)
+	_layout_pip()
+
+
+func _layout_pip() -> void:
+	var size: Vector2 = PIP_EQ if pip_mode == 0 else PIP_PLANET
+	pip_frame.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	pip_frame.offset_left = -(size.x + 16)
+	pip_frame.offset_right = -16
+	pip_frame.offset_top = 16
+	pip_frame.offset_bottom = 16 + size.y
+	pip_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	pip_label.offset_left = pip_frame.offset_left + 16
+	pip_label.offset_right = pip_frame.offset_right - 8
+	pip_label.offset_top = 28
+	pip_label.offset_bottom = 48
+	var dot: ColorRect = pip_label.get_parent().get_node("Dot")
 	dot.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	dot.offset_left = frame.offset_left + 18
+	dot.offset_left = pip_frame.offset_left + 18
 	dot.offset_right = dot.offset_left + 8
 	dot.offset_top = 34
 	dot.offset_bottom = 42
-	layer.add_child(dot)
-	pip_label.text = "    LIVE"
 
 
-func _process(dt: float) -> void:
-	if pip_cam == null:
+## 6 台のカメラを、頭のてっぺんに、体の向きに合わせて置く（水平は固定）
+func _place_pip_cams() -> void:
+	var head: Vector3 = player.global_position + Vector3.UP * 2.15
+	var yaw := Basis(Vector3.UP, player.rotation.y)
+	for i in FACES.size():
+		var f: Array = FACES[i]
+		var A: Vector3 = f[0]
+		var U: Vector3 = f[1]
+		var R: Vector3 = f[2]
+		pip_cams[i].global_transform = Transform3D(yaw * Basis(R, U, -A), head)
+
+
+func _process(_dt: float) -> void:
+	if pip_cams.is_empty():
 		return
-	# 自撮り棒のように、頭の後ろ上から前を向いて追う
-	var head: Vector3 = player.global_position + Vector3.UP * 1.5
-	var back: Vector3 = player.global_basis.z
-	back.y = 0
-	back = back.normalized()
-	var want := head + back * 2.2 + Vector3.UP * 1.1
-	want.y = max(want.y, height(want.x, want.z) + 0.5)
-	pip_cam.global_position = pip_cam.global_position.lerp(want, 1.0 - exp(-6.0 * dt))
-	pip_cam.look_at(head - back * 1.0, Vector3.UP)
+	_place_pip_cams()
 	var t := int(elapsed)
-	pip_label.text = "    LIVE  %02d:%02d" % [t / 60, t % 60]
+	pip_label.text = "    360 LIVE  %02d:%02d" % [t / 60, t % 60]
 
 
 func _make_world() -> void:
@@ -262,7 +352,7 @@ func _physics_process(dt: float) -> void:
 		"押している人: %d　ソリの高さ: %.1f m（頂上 %.0f m）　速さ: %.1f m/s" % [sled.pushers, s.y, HILL_H, sled.linear_velocity.length()],
 	]
 	if player:
-		lines.append(player.prompt if player.prompt != "" else "WASD 歩く　Shift 走る　マウス 見回す　ホイール／ピンチ 視野角　Space ジャンプ　ソリのそばで F つかむ（前では紐を持つ）　E 乗る　R ソリをふもとへ　Esc マウスを離す")
+		lines.append(player.prompt if player.prompt != "" else "WASD 歩く　Shift 走る　マウス 見回す　ホイール／ピンチ 視野角　V 360映像の見せ方　C 一人称／三人称　Space ジャンプ　ソリのそばで F つかむ（前では紐を持つ）　E 乗る　R ソリをふもとへ　Esc マウスを離す")
 	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）
@@ -298,6 +388,9 @@ func _physics_process(dt: float) -> void:
 			evd.pressed = true
 			Input.parse_input_event(evd)
 			return
+		if args.has("third"):
+			player.third = true
+			player.cam.cull_mask = (1 << 0) | (1 << 1)
 		if args["sim"] == "1":
 			player.grab()
 		var ev := InputEventKey.new()
@@ -331,5 +424,10 @@ func _physics_process(dt: float) -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
-	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode == KEY_R:
-		sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
+	if e is InputEventKey and e.pressed and not e.echo:
+		if e.physical_keycode == KEY_R:
+			sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
+		elif e.physical_keycode == KEY_V and pip_mat:
+			pip_mode = 1 - pip_mode
+			pip_mat.set_shader_parameter("mode", pip_mode)
+			_layout_pip()

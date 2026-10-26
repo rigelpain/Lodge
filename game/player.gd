@@ -27,6 +27,8 @@ var pushing := false
 var pulling := false
 var prompt := ""             # 画面に出す一言（main.gd が読む）
 var base_fov := 75.0         # ホイールで変える視野角
+var third := false           # C で三人称
+var _pitch := 0.0
 var _col: CollisionShape3D
 var _t := 0.0
 var _snap := 0.0             # 吸い付きの途中（0→1）
@@ -124,7 +126,7 @@ func _body_part(mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-e.relative.x * 0.003)
-		cam.rotation.x = clamp(cam.rotation.x - e.relative.y * 0.003, -1.4, 1.3)
+		_pitch = clamp(_pitch - e.relative.y * 0.003, -1.4, 1.3)
 	elif e is InputEventMagnifyGesture:
 		# トラックパッドのピンチ: 広げると寄る（視野角が狭まる）
 		base_fov = clamp(base_fov / e.factor, 50.0, 110.0)
@@ -139,6 +141,10 @@ func _unhandled_input(e: InputEvent) -> void:
 		match e.physical_keycode:
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			KEY_C:
+				third = not third
+				# 三人称では自分の体を映し、一人称の手は映さない
+				cam.cull_mask = (1 << 0) | (1 << 1) if third else (1 << 0) | (1 << 2)
 			KEY_F:
 				match mode:
 					Mode.GRIP, Mode.ROPE:
@@ -324,11 +330,29 @@ func _hand_world() -> Vector3:
 	return cam.to_global(Vector3(0.2, -0.3, -0.4))
 
 
+func _place_camera(dt: float, bob: float, working: bool) -> void:
+	var eye_y := 1.55 + (bob * 0.02 if working else 0.0)
+	if not third:
+		cam.position = cam.position.lerp(Vector3(0, eye_y, 0), min(1.0, dt * 10.0))
+		cam.rotation = Vector3(_pitch, 0, 0)
+		return
+	# 三人称: 頭の少し上を中心に、後ろ上から見下ろす。地面に潜らない
+	var pivot := Vector3(0, 1.6, 0)
+	var offset := Vector3(0, 0.6, 3.4).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
+	var want := pivot + offset
+	var want_w := to_global(want)
+	var floor_y: float = get_parent().height(want_w.x, want_w.z) + 0.4
+	if want_w.y < floor_y:
+		want.y += floor_y - want_w.y
+	cam.position = cam.position.lerp(want, min(1.0, dt * 8.0))
+	cam.look_at(to_global(pivot), Vector3.UP)
+
+
 func _pose_hands(dt: float) -> void:
 	var bob := sin(_t * 9.0)
 	var working := pushing or pulling
 	# 押す・引くと視点がわずかに揺れ、画角が少し広がる
-	cam.position.y = lerp(cam.position.y, 1.55 + (bob * 0.02 if working else 0.0), min(1.0, dt * 10.0))
+	_place_camera(dt, bob, working)
 	cam.fov = lerp(cam.fov, base_fov + (4.0 if working else 0.0), min(1.0, dt * 4.0))
 	for h in hands:
 		var s: int = h.get_meta("side")
