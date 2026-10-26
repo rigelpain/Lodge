@@ -5,83 +5,136 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ソリのゲーム 開発ダッシュボード</title>
 <meta name="description" content="みんなでソリを押して丘を登り、一緒に滑り降りるゲームの開発の進み具合。Steam での販売を目指しています。">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23C8473B'/%3E%3Crect x='6' y='17' width='20' height='5' rx='2' fill='%23F6F2EA'/%3E%3Crect x='5' y='24' width='22' height='2' rx='1' fill='%23F6F2EA'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700&family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="https://unpkg.com/@phosphor-icons/web@2.1.1/src/regular/style.css">
-<link rel="stylesheet" href="style.css">
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* 案内図: 発売までをゲレンデの丘とリフトで描き、下は案内板のように項目を並べる。主役の色は「いまの位置」の赤一つ */
+  :root { --sky: #e6edf1; --snow: #ffffff; --ink: #1d2b33; --ink-2: #5d6b73; --line: #d5dde2; --board: #1f3b34; --red: #c8412f; --tree: #2f5a48; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--snow); color: var(--ink); font-family: "BIZ UDPGothic", sans-serif; font-size: 15px; line-height: 1.75; }
+  h1, h2, h3, p, ol, ul, dl, dd { margin: 0; }
+  ol, ul { padding: 0; list-style: none; }
+
+  .map { background: var(--sky); position: relative; }
+  .map svg { display: block; width: 100%; height: auto; }
+  .map .name { position: absolute; left: 32px; top: 24px; }
+  .map h1 { font-size: 28px; letter-spacing: 0.08em; }
+  .map .name p { font-size: 13px; color: var(--ink-2); }
+
+  .board { background: var(--board); color: #fff; }
+  .board .in { max-width: 1240px; margin: 0 auto; padding: 18px 32px; display: flex; gap: 32px; align-items: baseline; flex-wrap: wrap; }
+  .board .k { font-size: 13px; color: #b9cbc4; letter-spacing: 0.12em; }
+  .board .v { font-size: 26px; font-weight: 700; }
+  .board .t { color: #b9cbc4; }
+  .board .t b { color: #fff; font-size: 20px; }
+
+  .cols { max-width: 1240px; margin: 0 auto; padding: 24px 32px 8px; display: grid; grid-template-columns: 1.2fr 1.2fr 1fr; gap: 0; }
+  .cols > section { padding: 0 24px; border-left: 1px solid var(--line); }
+  .cols > section:first-child { padding-left: 0; border-left: 0; }
+  h2 { font-size: 13px; color: var(--ink-2); letter-spacing: 0.12em; padding-bottom: 6px; border-bottom: 2px solid var(--ink); margin-bottom: 4px; }
+  .rows li { display: grid; grid-template-columns: 4em 1fr; padding: 7px 0; border-bottom: 1px solid var(--line); }
+  .rows .s { font-size: 13px; color: var(--ink-2); }
+  .rows li.now { font-weight: 700; }
+  .rows li.now .s { color: var(--red); }
+  .rows li.done { color: var(--ink-2); }
+  .plain li { padding: 7px 0; border-bottom: 1px solid var(--line); }
+
+  .small { max-width: 1240px; margin: 0 auto; padding: 16px 32px 40px; display: grid; grid-template-columns: 1.2fr 1fr 1.2fr; gap: 32px; font-size: 14px; }
+  .small dt { font-weight: 700; margin-top: 6px; }
+  .small dd { color: var(--ink-2); }
+  table { width: 100%; border-collapse: collapse; }
+  td { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  td + td { text-align: right; font-feature-settings: "tnum"; }
+  .refs li { padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .refs span { color: var(--ink-2); }
+
+  @media (max-width: 900px) {
+    .map .name { position: static; padding: 16px 16px 0; }
+    .board .in, .cols, .small { padding-left: 16px; padding-right: 16px; }
+    .cols, .small { grid-template-columns: 1fr; gap: 24px; }
+    .cols > section { padding: 0; border-left: 0; }
+  }
+</style>
 </head>
 <body>
-<a class="skip" href="#main">本文へ移る</a>
-
-<header class="top">
-  <div class="brand">
-    <p class="eyebrow">開発ダッシュボード</p>
-    <h1 id="title">ソリのゲーム（仮題）</h1>
-    <p class="goal" id="goal"></p>
-  </div>
-  <aside class="next" aria-labelledby="next-h">
-    <h2 id="next-h" class="label"><i class="ph ph-flag-pennant" aria-hidden="true"></i>次の節目</h2>
-    <p class="next-text" id="next-label"></p>
-    <p class="next-due"><time id="next-due"></time>まで あと <span id="next-days"></span> 日</p>
-  </aside>
+<header class="map">
+  <div class="name"><h1>ソリのゲーム　コース案内</h1><p id="goal"></p></div>
+  <svg id="hill" viewBox="0 0 1200 380" role="img" aria-labelledby="hill-t"><title id="hill-t">発売までの道のり</title></svg>
 </header>
-
-<main id="main" class="grid">
-  <section class="card span-12" aria-labelledby="phases-h">
-    <h2 id="phases-h" class="label"><i class="ph ph-path" aria-hidden="true"></i>発売までの道のり</h2>
-    <ol class="phases" id="phases"></ol>
-  </section>
-
-  <section class="card span-4" aria-labelledby="tasks-h">
-    <h2 id="tasks-h" class="label"><i class="ph ph-check-square" aria-hidden="true"></i>いまの作業</h2>
-    <ul class="tasks" id="tasks"></ul>
-  </section>
-
-  <section class="card span-4" aria-labelledby="dec-h">
-    <h2 id="dec-h" class="label"><i class="ph ph-seal-check" aria-hidden="true"></i>決めたこと</h2>
-    <ul class="decisions" id="decisions"></ul>
-  </section>
-
-  <section class="card span-4 card-open" aria-labelledby="q-h">
-    <h2 id="q-h" class="label"><i class="ph ph-question" aria-hidden="true"></i>まだ決めていないこと</h2>
-    <ul class="questions" id="questions"></ul>
-  </section>
-
-  <section class="card span-5 card-pitch" aria-labelledby="pitch-h">
-    <h2 id="pitch-h" class="label"><i class="ph ph-mountains" aria-hidden="true"></i>どんなゲームか</h2>
-    <p class="pitch" id="pitch"></p>
-    <blockquote class="origin">
-      <p id="origin"></p>
-      <footer>代表の原体験</footer>
-    </blockquote>
-  </section>
-
-  <section class="card span-4" aria-labelledby="places-h">
-    <h2 id="places-h" class="label"><i class="ph ph-map-trifold" aria-hidden="true"></i>場所</h2>
-    <dl class="places" id="places"></dl>
-  </section>
-
-  <section class="card span-3" aria-labelledby="cost-h">
-    <h2 id="cost-h" class="label"><i class="ph ph-coins" aria-hidden="true"></i>かかるお金</h2>
-    <table class="costs">
-      <thead><tr><th scope="col">項目</th><th scope="col">円</th></tr></thead>
-      <tbody id="costs"></tbody>
-    </table>
-  </section>
-
-  <section class="card span-12" aria-labelledby="refs-h">
-    <h2 id="refs-h" class="label"><i class="ph ph-game-controller" aria-hidden="true"></i>参考にするゲーム</h2>
-    <ul class="refs" id="refs"></ul>
-  </section>
+<div class="board" role="status">
+  <div class="in">
+    <span class="k">次の節目</span>
+    <span class="v" id="next"></span>
+    <span class="t" id="due"></span>
+  </div>
+</div>
+<main class="cols">
+  <section><h2>いまの作業</h2><ul class="rows" id="work"></ul></section>
+  <section><h2>決めたこと</h2><ul class="rows" id="dec"></ul></section>
+  <section><h2>まだ決めていない</h2><ul class="plain" id="q"></ul></section>
 </main>
-
-<footer class="foot">
-  <p>更新 <time id="updated"></time>。中身は <code>docs/data.json</code> を書き換えると変わります。</p>
-  <p><a href="https://github.com/rigelpain/sled-game">GitHub のリポジトリ</a></p>
+<footer class="small">
+  <section><h2>場所</h2><dl id="places"></dl></section>
+  <section><h2>お金</h2><table><tbody id="costs"></tbody></table></section>
+  <section><h2>参考にするゲーム</h2><ul class="refs" id="refs"></ul></section>
 </footer>
+<script src="boards/common.js"></script>
+<script>
+load(d => {
+  $('goal').textContent = d.goal + '　' + fmt(d.updated) + ' 更新';
+  $('next').textContent = d.next.label;
+  $('due').innerHTML = `${fmt(d.next.due)}まで あと <b>${daysLeft(d.next.due)}</b> 日`;
+  const order = { now: 0, todo: 1, done: 2 };
+  $('work').innerHTML = [...d.tasks].sort((a, b) => order[a.state] - order[b.state]).map(t => `<li class="${t.state}"><span class="s">${STATE[t.state]}</span>${esc(t.text)}</li>`).join('');
+  $('dec').innerHTML = [...d.decisions].reverse().map(x => `<li><span class="s">${short(x.date)}</span>${esc(x.text)}</li>`).join('');
+  $('q').innerHTML = d.questions.map(q => `<li>${esc(q)}</li>`).join('');
+  $('places').innerHTML = d.places.map(p => `<dt>${esc(p.name)}</dt><dd>${esc(p.note)}</dd>`).join('');
+  $('costs').innerHTML = d.costs.map(c => `<tr><td>${esc(c.item)}</td><td>${esc(c.yen)}</td></tr>`).join('');
+  $('refs').innerHTML = d.refs.map(r => `<li>${esc(r.name)}　<span>${esc(r.note)}</span></li>`).join('');
 
-<script src="app.js"></script>
+  // 案内図: 奥の山なみ2枚と手前の丘。リフトは一直線、駅名は下の雪面に一列に揃える
+  const W = 1200, HGT = 440, BASE = 330, CX = 930;
+  const hill = (x) => BASE - 230 * Math.exp(-((x - CX) ** 2) / (2 * 330 * 330));
+  const ridge = (f) => { let p = `M0 ${HGT}`; for (let x = 0; x <= W; x += 8) p += ` L${x} ${f(x).toFixed(1)}`; return p + ` L${W} ${HGT}Z`; };
+  // 奥の連峰は尾根を直線で結ぶ。手前の山なみはなだらかに
+  const peaks = [[0, 210], [140, 150], [260, 190], [420, 96], [560, 170], [690, 118], [820, 176], [980, 84], [1100, 150], [1200, 120]];
+  const far = (x) => { for (let i = 1; i < peaks.length; i++) if (x <= peaks[i][0]) { const [x0, y0] = peaks[i - 1], [x1, y1] = peaks[i]; return y0 + (y1 - y0) * (x - x0) / (x1 - x0); } return 120; };
+  const mid = (x) => 250 - 38 * Math.sin(x / 260 + 2.4);
+  // リフト: ふもとから頂上へ一直線。丘に潜らないよう、線ごと持ち上げる
+  const n = d.phases.length, ni = Math.max(0, d.phases.findIndex(p => p.state === 'now'));
+  const A = { x: 150, y: hill(150) - 26 }, B = { x: CX, y: hill(CX) - 26 };
+  const chord = (x) => A.y + (B.y - A.y) * (x - A.x) / (B.x - A.x);
+  let raise = 0;
+  for (let x = A.x; x <= B.x; x += 4) raise = Math.max(raise, chord(x) - (hill(x) - 22));
+  A.y -= raise; B.y -= raise;
+  const st = d.phases.map((p, i) => { const t = i / (n - 1); return { p, x: A.x + (B.x - A.x) * t, y: A.y + (B.y - A.y) * t }; });
+
+  let g = '';
+  g += `<path d="${ridge(far)}" fill="#c9d5dc"/>`;
+  g += `<path d="${ridge(mid)}" fill="#dde5ea"/>`;
+  g += `<path d="${ridge(hill)}" fill="#ffffff"/>`;
+  // 支柱
+  for (let k = 0; k <= 10; k++) {
+    const t = k / 10, x = A.x + (B.x - A.x) * t, yy = A.y + (B.y - A.y) * t;
+    g += `<line x1="${x}" y1="${yy}" x2="${x}" y2="${hill(x)}" stroke="#8a979e" stroke-width="1.5"/>`;
+  }
+  // 索道: 通った所は墨、これからは薄く
+  const P = st[ni];
+  g += `<line x1="${A.x}" y1="${A.y}" x2="${P.x}" y2="${P.y}" stroke="var(--ink)" stroke-width="3"/>`;
+  g += `<line x1="${P.x}" y1="${P.y}" x2="${B.x}" y2="${B.y}" stroke="#a7b3ba" stroke-width="2"/>`;
+  // 駅と、下の雪面に揃えた駅名
+  const LY = HGT - 34;
+  st.forEach((o, i) => {
+    const now = i === ni, done = o.p.state === 'done';
+    g += `<line x1="${o.x}" y1="${o.y}" x2="${o.x}" y2="${LY - 20}" stroke="${now ? 'var(--red)' : '#b9c4ca'}" stroke-width="1" />`;
+    g += `<rect x="${o.x - 6}" y="${o.y - 6}" width="12" height="12" fill="${now ? 'var(--red)' : done ? 'var(--ink)' : '#fff'}" stroke="${now ? 'var(--red)' : 'var(--ink)'}" stroke-width="2"/>`;
+    g += `<text x="${o.x}" y="${LY}" text-anchor="middle" font-size="15" font-weight="${now ? 700 : 400}" fill="${now ? 'var(--red)' : done ? '#8a979e' : 'var(--ink)'}">${esc(o.p.name)}</text>`;
+    if (now) g += `<text x="${o.x}" y="${LY + 20}" text-anchor="middle" font-size="12" fill="var(--red)">いまここ</text>`;
+  });
+  $('hill').setAttribute('viewBox', `0 0 ${W} ${HGT}`);
+  $('hill').insertAdjacentHTML('beforeend', g);
+}, 'data.json');
+</script>
 </body>
 </html>

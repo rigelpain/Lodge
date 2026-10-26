@@ -6,8 +6,8 @@ const short = (d) => { const [, m, day] = d.split('-'); return `${+m}/${+day}`; 
 const daysLeft = (d) => Math.max(0, Math.ceil((new Date(d + 'T23:59:59') - new Date()) / 86400000));
 const STATE = { done: '済', now: 'いま', todo: 'これから' };
 
-function load(render) {
-  fetch('../data.json')
+function load(render, url = '../data.json') {
+  fetch(url)
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then(render)
     .catch((e) => {
