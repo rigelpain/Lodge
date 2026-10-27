@@ -28,6 +28,7 @@ ap.add_argument("--views", default="hill")
 ap.add_argument("--prefix", default="/tmp/lodge")
 ap.add_argument("--size", default="1280x800")
 ap.add_argument("--blend", default="")
+ap.add_argument("--look", default="clay", choices=("clay", "day", "dusk"))
 A = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
 PH = A.phase
 
@@ -43,11 +44,15 @@ CLAY = {
     "dark": (0.05, 0.04, 0.04), "tatami": (0.76, 0.74, 0.56), "cushion": (0.70, 0.46, 0.36),
     "quilt": (0.66, 0.52, 0.40), "paper": (0.95, 0.92, 0.85), "felt_red": (0.62, 0.30, 0.25),
     "felt_blue": (0.28, 0.38, 0.60), "felt_green": (0.40, 0.52, 0.32), "felt_yellow": (0.80, 0.64, 0.30),
+    "floor": (0.55, 0.45, 0.36), "ceiling": (0.70, 0.64, 0.54), "fire": (0.9, 0.5, 0.2), "tree": (0.30, 0.42, 0.34), "trunk": (0.36, 0.25, 0.16), "far": (0.78, 0.83, 0.90),
 }
 MAT = {}
 
 
 def mat(role):
+    if role not in MAT and A.look != "clay":
+        import materials
+        MAT[role] = materials.make(role, A.look)
     if role not in MAT:
         m = bpy.data.materials.new(role)
         m.use_nodes = True
@@ -123,9 +128,22 @@ class M:
         vs = [self.bm.verts.new(p) for p in pts]
         bmesh.ops.convex_hull(self.bm, input=vs)
 
-    def done(self, bevel=0.0, seg=2, array=None, smooth=False):
+    def done(self, bevel=0.0, seg=2, array=None, smooth=False, cap_uv=False):
         me = bpy.data.meshes.new(self.name)
         bmesh.ops.remove_doubles(self.bm, verts=self.bm.verts, dist=1e-5)
+        if cap_uv:   # 丸太の木口に渦を描くための UV（木口は u = 2..3、胴は 0.1）
+            self.bm.normal_update()
+            uvl = self.bm.loops.layers.uv.new("UVMap")
+            for f in self.bm.faces:
+                if len(f.verts) >= 8:
+                    c = f.calc_center_median()
+                    e1 = Vector((0, 1, 0)) if abs(f.normal.x) > 0.5 else Vector((1, 0, 0))
+                    for lp in f.loops:
+                        d = lp.vert.co - c
+                        lp[uvl].uv = (2.5 + d.dot(e1) / (4 * R), 0.5 + d.z / (4 * R))
+                else:
+                    for lp in f.loops:
+                        lp[uvl].uv = (0.1, 0.1)
         self.bm.to_mesh(me)
         self.bm.free()
         o = bpy.data.objects.new(self.name, me)
@@ -351,7 +369,7 @@ def build_base():
     st = M("plinth", "stone", "walls")
     st.box(X0 - 0.15, Y0 - 0.15, 0, X1 + 0.15, Y1 + 0.15, PLINTH)
     st.done(bevel=0.03 if PH >= 3 else 0)
-    fl = M("floor2", "board", "walls")
+    fl = M("floor2", "ceiling", "walls")
     fl.box(X0 - 0.09, Y0 - 0.09, CEIL1, X1 + 0.09, Y1 + 0.09, FL2)
     f = fl.done(bevel=0.015 if PH >= 2 else 0)
     if PH >= 2:
@@ -401,6 +419,13 @@ def build_chimney():
         mt = M("mantel", "board", "walls")
         mt.box(c["x0"] - 0.10, c["y0"] - 0.22, FL1 + 1.45, c["x1"] + 0.10, c["y0"] + 0.02, FL1 + 1.55)
         mt.done(bevel=0.012)
+        fr = M("fire", "fire", "walls")   # 炉の火（光る板と、くべた薪）
+        fr.box(cx - 0.42, c["y0"] + 0.40, FL1 + 0.20, cx + 0.42, c["y0"] + 0.45, FL1 + 0.85)
+        fr.done()
+        fw = M("firewood", "log", "walls")
+        for k, dz in ((-0.2, 0.0), (0.2, 0.0), (0.0, 0.1)):
+            fw.cyl((cx - 0.38, c["y0"] + 0.25 + k * 0.3, FL1 + 0.26 + dz), (cx + 0.38, c["y0"] + 0.25 - k * 0.3, FL1 + 0.26 + dz), 0.07)
+        fw.done(smooth=True, cap_uv=True)
 
 
 def roof_cutters():
@@ -568,8 +593,7 @@ def build_walls():
     vs = M("vest_snow", "snow", "crown")
     vs.box(V["x0"] - o + 0.05, y0 - o + 0.05, V["h"] + 0.21, V["x1"] + o - 0.05, Y0, V["h"] + 0.40)
     vs.done(bevel=0.07, seg=4, smooth=True)
-    for m in (Lg,):
-        m.done(smooth=True)
+    Lg.done(smooth=True, cap_uv=True)
     F.done(bevel=0.006)
     G.done()
     D.done(bevel=0.006)
@@ -663,6 +687,10 @@ def instance(src, name, loc, rot_z=0.0, group="interior"):
 
 
 def build_interior():
+    # 1 階の床板（土間でなく木の床。外のデッキと同じ高さ）
+    fb = M("floor1", "floor", "interior")
+    fb.box(X0 + R, Y0 + 0.05, FL1, X1 - R, Y1 - R, FL1 + 0.02)
+    fb.done()
     # 間仕切り（厨房の両脇）
     W = M("partitions", "board", "interior")
     for x in (KITCHEN["x0"], KITCHEN["x1"]):
@@ -678,7 +706,7 @@ def build_interior():
     for z in (0.5, 1.0, 1.5):
         C.box(RENTAL["x0"] - 0.02, BACK["y0"] - 0.04, FL1 + z, RENTAL["x1"] + 0.02, BACK["y0"], FL1 + z + 0.03)
     C.done(bevel=0.012)
-    mb = M("menu_board", "paper", "interior")
+    mb = M("menu_board", "felt_green", "interior")   # 色あせたフェルトの案内板
     mid = (COUNTER["x0"] + COUNTER["x1"]) / 2
     for k in (-1, 0, 1):   # 3 枚並べて吊る
         mb.box(mid + k * 1.0 - 0.45, COUNTER["y1"] - 0.03, FL1 + 2.45, mid + k * 1.0 + 0.45, COUNTER["y1"] + 0.01, FL1 + 3.05)
@@ -856,46 +884,121 @@ def build_interior():
 # ---------------------------------------------------------------- 地面・光・カメラ
 def build_ground():
     g = M("ground", "snow", "ground")
-    g.box(-90, -90, -0.3, 90, 90, 0)
+    g.box(-300, -300, -0.3, 300, 300, 0)
     g.done()
     me = bpy.data.meshes.new("hill")
-    verts, faces, N = [], [], 48
+    verts, faces, N = [], [], 64
     for j in range(N + 1):
         for i in range(N + 1):
-            x = -80 + i * 160 / N
-            y = HILL_Y - j * 70 / N
+            x = -120 + i * 240 / N
+            y = HILL_Y - j * 90 / N
             d = HILL_Y - y
             verts.append((x, y, (d ** 1.3) * 0.18))
     for j in range(N):
         for i in range(N):
             a = j * (N + 1) + i
-            faces.append([a, a + 1, a + N + 2, a + N + 1])
+            faces.append([a, a + N + 1, a + N + 2, a + 1])   # 上向き
     me.from_pydata(verts, [], faces)
     o = bpy.data.objects.new("hill", me)
     coll("ground").objects.link(o)
     me.materials.append(mat("snow"))
+    me.shade_smooth()
+
+
+def build_scenery():
+    """ロッジのまわりのフェルトの木と、遠くの山なみ（書き出さない）"""
+    import random
+    rnd = random.Random(7)
+    T = M("trees", "tree", "scenery")
+    S = M("tree_snow", "snow", "scenery")
+    W = M("trunks", "trunk", "scenery")
+    spots = [(-26, 14), (-31, 4), (-22, 26), (-12, 30), (2, 33), (16, 29), (27, 20), (33, 6), (30, -9),
+             (24, 40), (-36, 30), (-44, 12), (40, 26), (8, 46), (-28, -28), (-34, -44), (30, -32), (38, -48),
+             (-46, -18), (46, -6), (14, -30), (22, -44), (8, -60), (30, -62), (-40, -56), (-8, -72), (40, -80),
+             (-26, -84)]
+    for x, y in spots:
+        k = rnd.uniform(0.85, 1.5)
+        x += rnd.uniform(-2, 2)
+        y += rnd.uniform(-2, 2)
+        z = ((HILL_Y - y) ** 1.3) * 0.18 if y < HILL_Y else 0.0
+        W.cyl((x, y, z - 0.2), (x, y, z + 1.0 * k), 0.20 * k)
+        for z0, r, h in ((0.8, 1.7, 2.6), (2.5, 1.2, 2.3)):
+            bmesh.ops.create_cone(T.bm, cap_ends=True, segments=20, radius1=r * k, radius2=0.0, depth=h * k,
+                                  matrix=Matrix.Translation((x, y, z + (z0 + h / 2) * k)))
+        bmesh.ops.create_cone(S.bm, cap_ends=True, segments=20, radius1=0.62 * k, radius2=0.0, depth=0.95 * k,
+                              matrix=Matrix.Translation((x, y, z + (2.5 + 2.3 - 0.95 / 2 - 0.05) * k)))
+    T.done(bevel=0.05, seg=2, smooth=True)
+    S.done(bevel=0.04, seg=2, smooth=True)
+    W.done(smooth=True)
+    F = M("far_hills", "far", "scenery")
+    for x, y, sx, sz in ((-130, 280, 90, 16), (-10, 300, 120, 22), (120, 285, 90, 14), (230, 250, 80, 12),
+                         (-240, 240, 80, 12)):
+        bmesh.ops.create_uvsphere(F.bm, u_segments=32, v_segments=16, radius=1.0,
+                                  matrix=Matrix.Translation((x, y, 0)) @ Matrix.Diagonal((sx, 18, sz, 1)))
+    F.done(smooth=True)
+
+
+def point(name, loc, watts, color, radius=0.15, shadow=True):
+    L = bpy.data.objects.new(name, bpy.data.lights.new(name, "POINT"))
+    coll("lights").objects.link(L)
+    L.location = loc
+    L.data.energy = watts
+    L.data.color = color
+    L.data.shadow_soft_size = radius
+    L.data.use_shadow = shadow
+    return L
 
 
 def build_light():
+    """光源: 昼は南西から高度 28 度の午後の光（暖色）、環境は空の青。夕方は高度 6 度の橙、空は藍。
+    中は卓の上の紙の灯り、2 階の紙の行灯、北の炉の火。色相は外の青と中の橙の 2 つ"""
     sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
-    sc.collection.objects.link(sun)
-    sun.data.energy = 4.5
+    coll("lights").objects.link(sun)
     sun.data.angle = math.radians(2)
-    sun.rotation_euler = (math.radians(62), 0, math.radians(-45))   # 南西から、高度 28 度
-    w = bpy.data.worlds.new("w")
+    if A.look == "dusk":
+        sun.data.energy = 2.2
+        sun.data.color = (1.0, 0.52, 0.30)
+        sun.rotation_euler = (math.radians(84), 0, math.radians(-62))
+    else:
+        sun.data.energy = 4.5 if A.look == "day" else 4.5
+        sun.data.color = (1.0, 0.93, 0.82) if A.look == "day" else (1, 1, 1)
+        sun.rotation_euler = (math.radians(62), 0, math.radians(-45))   # 南西から、高度 28 度
+    if A.look == "clay":
+        w = bpy.data.worlds.new("w")
+        w.use_nodes = True
+        w.node_tree.nodes["Background"].inputs[0].default_value = (0.62, 0.70, 0.85, 1)
+        w.node_tree.nodes["Background"].inputs[1].default_value = 0.35
+    else:
+        import materials
+        w = materials.world(A.look)
     sc.world = w
-    w.use_nodes = True
-    w.node_tree.nodes["Background"].inputs[0].default_value = (0.62, 0.70, 0.85, 1)
-    w.node_tree.nodes["Background"].inputs[1].default_value = 0.35
-    if PH >= 4:   # 中を見るための仮の灯り（段階 3 で光を組み直す）
+    if PH < 4:
+        return
+    if A.look == "clay":   # 中を見るための仮の灯り
         for x, y, z, e in [(gx(3), gy(3.5), 3.4, 250), (gx(7), gy(4.6), 3.4, 250), (gx(10), gy(3.0), 3.4, 250),
                            (gx(3), gy(1.0), 3.0, 150), (gx(5), gy(2.6), FL2 + 2.6, 220), (gx(9), gy(2.6), FL2 + 2.6, 220)]:
-            L = bpy.data.objects.new("lamp", bpy.data.lights.new("lamp", "POINT"))
-            sc.collection.objects.link(L)
-            L.location = (x, y, z)
-            L.data.energy = e
-            L.data.shadow_soft_size = 0.5
-            L.data.color = (1.0, 0.86, 0.68)
+            point("lamp", (x, y, z), e, (1.0, 0.86, 0.68), 0.5)
+        return
+    k = 2.6 if A.look == "dusk" else 1.8
+    warm = (1.0, 0.80, 0.56)
+    tw, td = TABLE["w"], TABLE["d"]
+    for x, y in TABLES:
+        for j in (0.25, 0.75):
+            point("lamp_1f", (x + tw * j, y + td / 2, CEIL1 - 0.75), 45 * k, warm, 0.2, shadow=False)
+    for x in KOTATSU:
+        point("lantern_2f", (x + KOTATSU_W / 2, sum(KOTATSU_Y) / 2, FL2 + TATAMI["h"] + 1.95), 70 * k, warm, 0.25)
+    point("kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4), 120 * k, (1.0, 0.9, 0.75), 0.4)
+    point("rental", (gx(0.8), gy(0.9), CEIL1 - 0.4), 60 * k, (1.0, 0.9, 0.75), 0.4)
+    ar = bpy.data.objects.new("fill_2f", bpy.data.lights.new("fill_2f", "AREA"))   # 2 階の天井の柔らかい灯り
+    coll("lights").objects.link(ar)
+    ar.data.shape = "RECTANGLE"
+    ar.data.size, ar.data.size_y = 14.0, 4.0
+    ar.data.energy = 320 * k
+    ar.data.color = warm
+    ar.location = (gx(6.5), gy(2.6), roof_z(gy(2.6)) - 0.2)
+    cx = (CH["x0"] + CH["x1"]) / 2
+    point("fire", (cx, CH["y0"] - 0.35, FL1 + 0.6), 260, (1.0, 0.45, 0.16), 0.3)
+    point("fire_glow", (cx, CH["y0"] - 1.6, FL1 + 0.4), 90, (1.0, 0.5, 0.2), 0.6)
 
 
 CAMS = {
@@ -907,6 +1010,7 @@ CAMS = {
     "close": ((-9.5, -21, 3.2), (-3.5, -6.5, 4.6), 30),
     "in1": ((gx(2.5), Y0 + 1.0, FL1 + 1.55), (gx(9.0), Y1 - 1.0, FL1 + 1.2), 20),
     "in2": ((gx(0.5), gy(3.6), FL2 + 1.55), (gx(10.5), gy(2.4), FL2 + 0.55), 22),
+    "kotatsu": ((gx(5.4), gy(1.1), FL2 + TATAMI["h"] + 1.05), (gx(3.2), Y0 - 6, FL2 + 1.6), 22),
     "terrace": ((gx(7.0), Y2_0 - 0.7, FL2 + 1.55), (gx(3.0), Y0 - 18, 3.5), 24),
 }
 
@@ -941,6 +1045,8 @@ if PH >= 3:
 if PH >= 4:
     build_interior()
 build_ground()
+if A.look != "clay":
+    build_scenery()
 build_light()
 for c in ("cutters",):
     if bpy.data.collections.get(c):
@@ -955,6 +1061,29 @@ for eng in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
 rx, ry = (int(v) for v in A.size.split("x"))
 sc.render.resolution_x, sc.render.resolution_y = rx, ry
 sc.view_settings.view_transform = "AgX"
+if A.look != "clay":
+    sc.eevee.taa_render_samples = 64
+    if hasattr(sc.eevee, "shadow_pool_size"):
+        sc.eevee.shadow_pool_size = "1024"
+    for attr, v in (("use_raytracing", True), ("use_shadows", True), ("use_gtao", True)):
+        if hasattr(sc.eevee, attr):
+            setattr(sc.eevee, attr, v)
+    if hasattr(sc.eevee, "fast_gi_method"):
+        sc.eevee.use_fast_gi = True
+    sc.view_settings.look = "AgX - Medium High Contrast"
+    sc.view_settings.exposure = -0.35 if A.look == "day" else 0.0
+if A.look != "clay" and PH >= 4:
+    # 中に光の箱を置いて焼く。空の青が丸太の壁を抜けて中に回り込まないように
+    bpy.ops.object.lightprobe_add(type="VOLUME", location=(0, (Y0 + Y1) / 2, (FL1 + EAVE_S) / 2))
+    pv = bpy.context.object
+    pv.scale = ((X1 - X0) / 2 - 0.2, (Y1 - Y0) / 2 - 0.2, (EAVE_S - FL1) / 2 - 0.1)
+    for attr, v in (("resolution_x", 24), ("resolution_y", 14), ("resolution_z", 10)):
+        if hasattr(pv.data, attr):
+            setattr(pv.data, attr, v)
+    try:
+        bpy.ops.object.lightprobe_cache_bake(subset="ALL")
+    except Exception as e:   # 焼けないときはそのまま描く
+        print("bake failed", e)
 if A.blend:
     bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(A.blend))
 for v in A.views.split(","):
