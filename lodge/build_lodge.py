@@ -309,6 +309,25 @@ def opening(F, G, D, axis, fixed, sgn, c, w, cb, ct, kind):
         wbox(F, axis, fixed, sgn, (i0 + i1) / 2 - 0.022, (i0 + i1) / 2 + 0.022, -0.025, 0.025, j0, j1)
         wbox(F, axis, fixed, sgn, i0, i1, -0.025, 0.025, (j0 + j1) / 2 - 0.022, (j0 + j1) / 2 + 0.022)
         wbox(G, axis, fixed, sgn, i0, i1, -0.006, 0.006, j0, j1)
+    elif kind == "auto":   # 自動ドア: 金属の細い框のガラス 2 枚。ゲームで左右へ引き分ける（autodoor_l / _r）
+        wbox(F, axis, fixed, sgn, u0 - 0.05, u1 + 0.05, -t, t + 0.06, cb, cb + 0.03)   # 敷居
+        lw = (w - 2 * L) / 2
+        for k, side in enumerate(("l", "r")):
+            lm = M("autodoor_" + side, "metal", "walls")
+            lg = M("autodoor_glass_" + side, "glass", "walls")
+            a, b = u0 + L + k * lw + 0.004, u0 + L + (k + 1) * lw - 0.004
+            S = 0.05
+            for q0, q1, r0, r1 in ((a, a + S, cb + 0.03, ct - L), (b - S, b, cb + 0.03, ct - L),
+                                   (a, b, cb + 0.03, cb + 0.13), (a, b, ct - L - S, ct - L)):
+                wbox(lm, axis, fixed, sgn, q0, q1, -0.03, 0.03, r0, r1)
+            wbox(lm, axis, fixed, sgn, (a + b) / 2 - 0.15, (a + b) / 2 + 0.15, -0.035, 0.035, cb + 0.95, cb + 1.0)   # 押し板
+            wbox(lg, axis, fixed, sgn, a + S, b - S, -0.006, 0.006, cb + 0.13, ct - L - S)
+            lm.done(bevel=0.004)
+            lg.done()
+        wbox(F, axis, fixed, sgn, u0, u1, t + 0.01, t + 0.04, ct - 0.02, ct + 0.22)   # 外の幕板
+        sn = M("autodoor_sensor", "metal", "walls")
+        wbox(sn, axis, fixed, sgn, (u0 + u1) / 2 - 0.25, (u0 + u1) / 2 + 0.25, t + 0.04, t + 0.12, ct + 0.02, ct + 0.12)
+        sn.done(bevel=0.01)
     else:
         wbox(F, axis, fixed, sgn, u0 - 0.05, u1 + 0.05, -t, t + 0.06, cb, cb + 0.03)   # 敷居
         leaves = 2 if w > 1.2 else 1
@@ -558,7 +577,7 @@ def build_walls():
         if key == "1F_SW":
             cb, ct = snap(z0, z1, off, FL1, FL1 + DOOR_IN["h"])
             extra = [(DOOR_IN["x0"], DOOR_IN["x1"], cb, ct)]
-            ops = [((DOOR_IN["x0"] + DOOR_IN["x1"]) / 2, DOOR_IN["x1"] - DOOR_IN["x0"], cb, ct, "door")]
+            ops = [((DOOR_IN["x0"] + DOOR_IN["x1"]) / 2, DOOR_IN["x1"] - DOOR_IN["x0"], cb, ct, "auto")]
         holes = [(cc - w / 2, cc + w / 2, cb, ct) for cc, w, cb, ct, _ in ops] + list(extra)
         last = log_wall(Lg, axis, fixed, a0, a1, z0, z1, off, holes, top)
         for cc, w, cb, ct, kind in ops:
@@ -588,26 +607,7 @@ def build_walls():
         Cl.cyl((x, y, FL1), (x, y, FL2), COL_D / 2, seg=20)
         Cl.cyl((x, y, FL2), (x, y, roof_z(y) + (RAFTER["h"] if PH >= 3 else 0)), COL_D / 2 * 0.85, seg=20)
     Cl.done(smooth=True)
-    # 風除室（縦羽目の小屋）
-    V = VEST
-    Vb = M("vestibule", "board", "walls")
-    y0 = Y0 - V["d"]
-    Vb.box(V["x0"], y0, FL1, V["x0"] + 0.12, Y0, V["h"])
-    Vb.box(V["x1"] - 0.12, y0, FL1, V["x1"], Y0, V["h"])
-    cx = (V["x0"] + V["x1"]) / 2
-    dw = DOOR_OUT["w"]
-    Vb.box(V["x0"], y0, FL1, cx - dw / 2, y0 + 0.12, V["h"])
-    Vb.box(cx + dw / 2, y0, FL1, V["x1"], y0 + 0.12, V["h"])
-    Vb.box(cx - dw / 2, y0, FL1 + DOOR_OUT["h"], cx + dw / 2, y0 + 0.12, V["h"])
-    Vb.done(bevel=0.01)
-    opening(F, G, D, "x", y0 + 0.06, -1, cx, dw, FL1, FL1 + DOOR_OUT["h"], "door")
-    vr = M("vest_roof", "roof", "crown")
-    o = V["roof_out"]
-    vr.box(V["x0"] - o, y0 - o, V["h"], V["x1"] + o, Y0, V["h"] + 0.22)
-    vr.done(bevel=0.02)
-    vs = M("vest_snow", "snow", "crown")
-    vs.box(V["x0"] - o + 0.05, y0 - o + 0.05, V["h"] + 0.21, V["x1"] + o - 0.05, Y0, V["h"] + 0.40)
-    vs.done(bevel=0.07, seg=4, smooth=True)
+    build_vestibule()
     Lg.done(smooth=True, cap_uv=True)
     F.done(bevel=0.006)
     G.done()
@@ -616,6 +616,142 @@ def build_walls():
 
 
 # ---------------------------------------------------------------- 段階 3: 手すり・外階段
+def arch_top(x):
+    """アーチ戸の開口の上端の高さ（x は世界座標）"""
+    r, cx = ARCH["r"], VEST["cx"]
+    d = min(abs(x - cx), r)
+    return ARCH["spring"] + math.sqrt(max(r * r - d * d, 0.0))
+
+
+def arch_ring(m, cx, zs, r0, r1, y0, y1, n=18):
+    """半円の帯（アーチの額縁）を y0..y1 の厚みで"""
+    for i in range(n):
+        a0, a1 = math.pi * i / n, math.pi * (i + 1) / n
+        ring = [(cx + rr * math.cos(a), zs + rr * math.sin(a)) for a, rr in ((a0, r0), (a1, r0), (a1, r1), (a0, r1))]
+        m.solid([(x, y0, z) for x, z in ring], [(x, y1, z) for x, z in ring])
+
+
+def build_vestibule():
+    """風除室: 1 階の屋根まである木のアーチの両開き戸（外へ開け放す）、両脇は金網、中は自販機とマット"""
+    V, A = VEST, ARCH
+    cx, r, zs = V["cx"], A["r"], A["spring"]
+    y0, yb = Y0 - V["d"], Y0 - V["d"] + V["t"]          # 前の壁の外面と内面
+    # 床（デッキより先へ出る分も）と、アーチの前の 3 段
+    fl = M("vest_floor", "deck", "walls")
+    fl.box(V["x0"], y0, 0, V["x1"], Y0, FL1)
+    for k in range(3):
+        fl.box(cx - r - 0.6, y0 - 0.35 * (3 - k), 0, cx + r + 0.6, y0, FL1 * (k + 1) / 3)
+    fl.done(bevel=0.012)
+    # 前の壁（縦羽目の板）。アーチの左右と、アーチの上の三角を細い帯で
+    fw = M("vest_front", "board", "walls")
+    fw.box(V["x0"], y0, FL1, cx - r, yb, V["h"])
+    fw.box(cx + r, y0, FL1, V["x1"], yb, V["h"])
+    n = 24
+    for i in range(n):
+        xa, xb = cx - r + 2 * r * i / n, cx - r + 2 * r * (i + 1) / n
+        fw.prism_y([(xa, arch_top(xa)), (xb, arch_top(xb)), (xb, V["h"]), (xa, V["h"])], y0, yb)
+    bmesh.ops.recalc_face_normals(fw.bm, faces=fw.bm.faces)
+    fw.done(bevel=0.006)
+    # アーチの額縁（濃い木）と、縦の枠
+    fr = M("vest_arch_frame", "post", "walls")
+    arch_ring(fr, cx, zs, r, r + 0.22, y0 - 0.06, yb + 0.02)
+    fr.box(cx - r - 0.22, y0 - 0.06, FL1, cx - r, yb + 0.02, zs)
+    fr.box(cx + r, y0 - 0.06, FL1, cx + r + 0.22, yb + 0.02, zs)
+    fr.box(cx - r - 0.05, y0 - 0.02, FL1, cx + r + 0.05, yb, FL1 + 0.04)   # 敷居
+    bmesh.ops.recalc_face_normals(fr.bm, faces=fr.bm.faces)
+    fr.done(bevel=0.01)
+    # アーチ戸 2 枚: 縦の板を並べ、外へ 180° 開いて前の壁に沿わせる（蝶番は開口の両端）
+    lf = M("arch_doors", "door", "walls")
+    st = M("arch_door_straps", "metal", "walls")
+    planks = 8
+    yo0, yo1 = y0 - 0.14, y0 - 0.02            # 開いた戸の厚み（前の壁の外）
+    for sgn in (-1, 1):                         # -1 西の戸、+1 東の戸
+        hinge = cx + sgn * r
+        top = lambda d: zs + math.sqrt(max(r * r - (r - d) ** 2, 0.0))   # 蝶番から d 離れた所の戸の上端  # noqa: E731
+        for i in range(planks):
+            d0, d1 = r * i / planks + 0.006, r * (i + 1) / planks - 0.006
+            xa, xb = sorted((hinge + sgn * d0, hinge + sgn * d1))
+            ta, tb = (top(d0), top(d1)) if sgn > 0 else (top(d1), top(d0))
+            lf.prism_y([(xa, FL1 + 0.04), (xb, FL1 + 0.04), (xb, tb), (xa, ta)], yo0, yo1)
+        for zb in (FL1 + 0.55, FL1 + 1.75, zs - 0.15):   # 横の桟と、黒い鉄の帯
+            x_end = hinge + sgn * (r - 0.12)
+            xa, xb = sorted((hinge + sgn * 0.05, x_end))
+            lf.box(xa, yo0 - 0.06, zb - 0.09, xb, yo0, zb + 0.09)
+            xa, xb = sorted((hinge + sgn * 0.02, hinge + sgn * r * 0.75))
+            st.box(xa, yo0 - 0.085, zb - 0.045, xb, yo0 - 0.06, zb + 0.045)
+            st.cyl((hinge + sgn * r * 0.75, yo0 - 0.085, zb), (hinge + sgn * r * 0.75, yo0 - 0.06, zb), 0.07, seg=12)
+        hx = hinge + sgn * (r - 0.25)
+        st.cyl((hx, yo0 - 0.04, FL1 + 1.15), (hx, yo0 - 0.0, FL1 + 1.15), 0.05, seg=10)   # 取っ手の座
+        st.box(hx - 0.012, yo0 - 0.10, FL1 + 0.95, hx + 0.012, yo0 - 0.04, FL1 + 1.15)  # 輪の取っ手
+    bmesh.ops.recalc_face_normals(lf.bm, faces=lf.bm.faces)
+    lf.done(bevel=0.008)
+    st.done(bevel=0.004)
+    # 両脇の金網: 柱と上下の枠に、細い鉄の格子
+    pf = M("vest_mesh_frame", "post", "walls")
+    wire = M("vest_mesh", "metal", "walls")
+    for x in (V["x0"], V["x1"] - 0.16):
+        pf.box(x, yb, FL1, x + 0.16, yb + 0.16, V["h"])                  # 前の角の柱
+        pf.box(x, Y0 - 0.16, FL1, x + 0.16, Y0, V["h"])                  # 1 階の壁際の柱
+        pf.box(x, (yb + Y0) / 2 - 0.07, FL1, x + 0.16, (yb + Y0) / 2 + 0.07, V["h"])   # 中の柱
+        pf.box(x, yb, FL1, x + 0.16, Y0, FL1 + 0.12)                    # 下の枠（雪は下から抜ける）
+        pf.box(x, yb, V["h"] - 0.16, x + 0.16, Y0, V["h"])               # 上の枠
+        pf.box(x, yb, FL1 + 1.05, x + 0.16, Y0, FL1 + 1.15)              # 腰の桟
+        xm = x + 0.08
+        step = 0.15
+        ny = int((Y0 - yb) / step)
+        for j in range(1, ny):
+            y = yb + j * step
+            wire.box(xm - 0.008, y - 0.008, FL1 + 0.12, xm + 0.008, y + 0.008, V["h"] - 0.16)
+        nz = int((V["h"] - 0.16 - FL1 - 0.12) / step)
+        for j in range(1, nz):
+            z = FL1 + 0.12 + j * step
+            wire.box(xm - 0.008, yb, z - 0.008, xm + 0.008, Y0, z + 0.008)
+    pf.done(bevel=0.01)
+    wire.done()
+    ce = M("vest_ceiling", "ceiling", "walls")   # 板張りの天井
+    ce.box(V["x0"], yb, V["h"] - 0.04, V["x1"], Y0, V["h"])
+    ce.done()
+    # 屋根（1 階の屋根の高さ、テラスの床の下）と雪
+    vr = M("vest_roof", "roof", "crown")
+    o = V["roof_out"]
+    zr = V["h"]
+    vr.box(V["x0"] - o, y0 - o, zr, V["x1"] + o, Y0, zr + 0.18)
+    vr.done(bevel=0.02)
+    vs = M("vest_snow", "snow", "crown")
+    vs.box(V["x0"] - o + 0.05, y0 - o + 0.05, zr + 0.17, V["x1"] + o - 0.05, Y0 - 0.05, zr + 0.36)
+    vs.done(bevel=0.07, seg=4, smooth=True)
+    # 中: 靴の雪を落とすマット（溝の刻まれたゴム）、自販機 2 台、吊り灯り
+    mt = M("vest_mat", "dark", "interior")
+    mx0, mx1 = cx - 1.6, cx + 1.6
+    mt.box(mx0, yb + 0.25, FL1, mx1, Y0 - 0.15, FL1 + 0.015)
+    mt.done(bevel=0.004)
+    rb = M("vest_mat_ribs", "metal", "interior")
+    rb.box(mx0 + 0.05, yb + 0.30, FL1 + 0.015, mx0 + 0.09, Y0 - 0.20, FL1 + 0.035)
+    rb.done(array=(int((mx1 - mx0 - 0.1) / 0.08), (0.08, 0, 0)))
+    VM = VENDING
+    for k, (body, face) in enumerate((("felt_red", "paper"), ("felt_blue", "paper"))):
+        x0 = V["x0"] + 0.30 + k * (VM["w"] + VM["gap"])
+        x1 = x0 + VM["w"]
+        ya = Y0 - 0.05 - VM["d"]
+        vb = M("vending_%d" % k, body, "interior")
+        vb.box(x0, ya, FL1, x1, Y0 - 0.05, FL1 + VM["h"])
+        vb.done(bevel=0.02)
+        vf = M("vending_face_%d" % k, face, "interior")   # 飲み物の並ぶ明るい窓
+        vf.box(x0 + 0.08, ya - 0.01, FL1 + 0.95, x1 - 0.08, ya + 0.02, FL1 + VM["h"] - 0.12)
+        vf.done(bevel=0.005)
+        vd = M("vending_slot_%d" % k, "dark", "interior")  # 取り出し口とお金の口
+        vd.box(x0 + 0.12, ya - 0.01, FL1 + 0.15, x1 - 0.12, ya + 0.02, FL1 + 0.40)
+        vd.box(x1 - 0.22, ya - 0.01, FL1 + 0.65, x1 - 0.12, ya + 0.02, FL1 + 0.85)
+        vd.done(bevel=0.004)
+    lp = M("vest_lamp", "paper", "interior")
+    lp.cyl((cx, (yb + Y0) / 2, V["h"] - 0.95), (cx, (yb + Y0) / 2, V["h"] - 0.45), 0.32, seg=24)
+    lp.done(smooth=True)
+    cd = M("vest_lamp_cord", "dark", "interior")
+    cd.cyl((cx, (yb + Y0) / 2, V["h"] - 0.45), (cx, (yb + Y0) / 2, V["h"]), 0.008, seg=6)
+    cd.done()
+
+
+
 def rail_run(Rm, p0, p1, h=RAIL_H, posts_every=K, name=None):
     """p0→p1（歩く面の上の線）に沿う手すり。上桟・下桟・柱は Rm に、縦材は配列の物体"""
     p0, p1 = Vector(p0), Vector(p1)
@@ -947,6 +1083,7 @@ def build_interior():
                for i, (x, ky) in enumerate(KOTATSU)]
     lights.append(("light_fire", ((CH["x0"] + CH["x1"]) / 2, CH["y0"] - 0.35, FL1 + 0.6)))
     lights.append(("light_kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4)))
+    lights.append(("light_vestibule", (VEST["cx"], Y0 - VEST["d"] / 2, VEST["h"] - 1.1)))
     for name, loc in lights:
         e = bpy.data.objects.new(name, None)
         e.empty_display_type = "SPHERE"
@@ -1063,6 +1200,7 @@ def build_light():
         point("lantern_2f", (x + KOTATSU_W / 2, ky + KOTATSU_D / 2, FL2 + TATAMI["h"] + 1.95), 70 * k, warm, 0.25)
     point("kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4), 120 * k, (1.0, 0.74, 0.48), 0.4)
     point("rental", (gx(0.8), gy(0.9), CEIL1 - 0.4), 60 * k, (1.0, 0.74, 0.48), 0.4)
+    point("vestibule", (VEST["cx"], Y0 - VEST["d"] / 2, VEST["h"] - 1.1), 90 * k, warm, 0.3)
     ar = bpy.data.objects.new("fill_2f", bpy.data.lights.new("fill_2f", "AREA"))   # 2 階の天井の柔らかい灯り
     coll("lights").objects.link(ar)
     ar.data.shape = "RECTANGLE"
@@ -1085,6 +1223,8 @@ CAMS = {
     "in1": ((gx(2.5), Y0 + 1.0, FL1 + 1.55), (gx(9.0), Y1 - 1.0, FL1 + 1.2), 20),
     "in2": ((gx(0.5), gy(3.6), FL2 + 1.55), (gx(10.5), gy(2.4), FL2 + 0.55), 22),
     "kotatsu": ((gx(5.3), gy(1.2), FL2 + TATAMI["h"] + 1.05), (gx(3.0), Y0 - 8, FL2 + 1.6), 24),
+    "entrance": ((VEST["cx"] - 9, Y0 - VEST["d"] - 13, 3.2), (VEST["cx"], Y0 - VEST["d"], 2.8), 30),
+    "vest_in": ((VEST["cx"] + 2.6, Y0 - VEST["d"] + 0.8, FL1 + 1.6), (VEST["x0"] + 0.8, Y0 - 0.4, FL1 + 1.0), 22),
     "stair1": ((gx(8.2), gy(3.2), FL1 + 1.6), (INSTAIR["xm"], INSTAIR["y_land"], 2.6), 24),
     "stair2": ((INSTAIR["x0"] - 4.0, INSTAIR["hole_y0"] - 4.5, FL2 + 1.6), (INSTAIR["xm"], INSTAIR["y_land"], FL2 - 0.8), 24),
     "bar": ((gx(4.2), Y0 + 2.6, FL1 + 1.6), (gx(9.5), Y0 + 0.2, FL1 + 0.9), 24),
@@ -1154,13 +1294,20 @@ def build_collision():
     wall(Wl, "x", Y0, GLASS_S_X0, X1, FL1, CEIL1, t=POST)
     wp = sorted(GLASS_W_POSTS)
     wall(Wl, "y", X0, Y0, Y1, FL1, CEIL1, [(wp[GLASS_W_DOOR_BAY] + POST / 2, wp[GLASS_W_DOOR_BAY + 1] - POST / 2, TRANSOM)], t=POST)
-    V = VEST
-    y0v, cx = Y0 - V["d"], (V["x0"] + V["x1"]) / 2
-    Wl.box(V["x0"], y0v, FL1, V["x0"] + 0.12, Y0, V["h"])
-    Wl.box(V["x1"] - 0.12, y0v, FL1, V["x1"], Y0, V["h"])
-    wall(Wl, "x", y0v + 0.06, V["x0"], V["x1"], FL1, V["h"],
-         [(cx - DOOR_OUT["w"] / 2, cx + DOOR_OUT["w"] / 2, FL1 + DOOR_OUT["h"])], t=0.12)
-    Rf.box(V["x0"] - V["roof_out"], y0v - V["roof_out"], V["h"], V["x1"] + V["roof_out"], Y0, V["h"] + 0.4)
+    V, A_ = VEST, ARCH
+    y0v, cx = Y0 - V["d"], V["cx"]
+    F.box(V["x0"], y0v, 0, V["x1"], Y0, FL1)
+    ramp_y(St, cx - A_["r"] - 0.6, cx + A_["r"] + 0.6, y0v - 1.05, 0, y0v, FL1)   # アーチの前の 3 段は坂に
+    Wl.box(V["x0"], y0v + V["t"], FL1, V["x0"] + 0.16, Y0, V["h"])          # 金網
+    Wl.box(V["x1"] - 0.16, y0v + V["t"], FL1, V["x1"], Y0, V["h"])
+    wall(Wl, "x", y0v + V["t"] / 2, V["x0"], V["x1"], FL1, V["h"],
+         [(cx - A_["r"], cx + A_["r"], A_["spring"] + A_["r"] * 0.7)], t=V["t"])
+    for sgn in (-1, 1):                                                      # 開いたアーチ戸
+        h0 = cx + sgn * A_["r"]
+        Wl.box(min(h0, h0 + sgn * A_["r"]), y0v - 0.14, FL1, max(h0, h0 + sgn * A_["r"]), y0v, A_["spring"])
+    Rf.box(V["x0"] - V["roof_out"], y0v - V["roof_out"], V["h"], V["x1"] + V["roof_out"], Y0, V["h"] + 0.36)
+    VM = VENDING
+    Fu.box(V["x0"] + 0.30, Y0 - 0.05 - VM["d"], FL1, V["x0"] + 0.30 + 2 * VM["w"] + VM["gap"], Y0, FL1 + VM["h"])
     # 2 階の壁（テラスへの戸を抜く）。妻は屋根の勾配まで
     c2 = [c for c, k in OPENINGS["2F_S"] if k == "door2"][0]
     wall(Wl, "x", Y2_0, X0, X1, FL2, EAVE_S, [(c2 - DOOR2["w"] / 2, c2 + DOOR2["w"] / 2, FL2 + DOOR2["h"])])

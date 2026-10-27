@@ -8,6 +8,12 @@ const Look := preload("res://look.gd")
 
 var fire_light: OmniLight3D
 var _t := 0.0
+var _auto_doors: Array[Node3D] = []   # 風除室の内の自動ドア（左右へ引き分ける）
+var _auto_home: Array[float] = []
+var _auto_sign: Array[float] = []
+var _auto_area: Area3D
+var _auto_open := 0.0
+const AUTO_SLIDE := 1.40               # 引き分ける幅 (m)。開くと丸太の壁の中へ隠れる
 
 
 func _ready() -> void:
@@ -42,6 +48,8 @@ func _ready() -> void:
 		"felt_yellow": Look.felt(Color(0.84, 0.64, 0.29)),
 		"paper": lamp,
 		"fire": fire,
+		"metal": _metal(),
+		"dark": Look.felt(Color(0.17, 0.16, 0.16), 2.0),   # 雪落としのマット、自販機の口
 	}
 	for n in find_children("*", "MeshInstance3D", true, false):
 		var mi: MeshInstance3D = n
@@ -63,8 +71,58 @@ func _ready() -> void:
 			fire_light = l
 		e.add_child(l)
 
+	_make_auto_door()
+
+
+static func _metal() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()   # 鉄（金網、戸の帯、自動ドアの框）
+	m.albedo_color = Color(0.20, 0.20, 0.22)
+	m.metallic = 0.6
+	m.roughness = 0.45
+	return m
+
+
+## 自動ドア: 人（CharacterBody3D）が戸の前後 3 m に入ると左右へ開き、いなくなると閉まる
+func _make_auto_door() -> void:
+	var box := AABB()
+	var first := true
+	for side in ["l", "r"]:
+		for nm in ["autodoor_" + side, "autodoor_glass_" + side]:
+			var n := find_child(nm, true, false) as Node3D
+			if n == null:
+				continue
+			_auto_doors.append(n)
+			_auto_home.append(n.position.x)
+			_auto_sign.append(-1.0 if side == "l" else 1.0)
+			if n is MeshInstance3D:
+				var b := (n as MeshInstance3D).get_aabb()
+				b = (global_transform.affine_inverse() * n.global_transform) * b
+				box = b if first else box.merge(b)
+				first = false
+	if _auto_doors.is_empty() or Engine.is_editor_hint():
+		return
+	_auto_area = Area3D.new()
+	_auto_area.name = "AutoDoorSensor"
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = Vector3(box.size.x + 1.0, 3.0, 6.0)
+	cs.shape = sh
+	_auto_area.add_child(cs)
+	_auto_area.position = box.get_center()
+	add_child(_auto_area)
+
 
 func _process(dt: float) -> void:
 	_t += dt
 	if fire_light:   # 炉の火の揺らぎ
 		fire_light.light_energy = 1.2 + 0.3 * sin(_t * 13.0) + 0.2 * sin(_t * 7.3 + 1.0)
+	if _auto_area:
+		var someone := false
+		for b in _auto_area.get_overlapping_bodies():
+			if b is CharacterBody3D:
+				someone = true
+				break
+		_auto_open = move_toward(_auto_open, 1.0 if someone else 0.0, dt / (0.9 if someone else 1.6))
+		var e := _auto_open * _auto_open * (3.0 - 2.0 * _auto_open)   # なめらかに
+		for i in _auto_doors.size():
+			_auto_doors[i].position.x = _auto_home[i] + _auto_sign[i] * AUTO_SLIDE * e
