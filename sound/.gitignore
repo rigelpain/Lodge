@@ -1,2 +1,5 @@
 .venv/
+.venv-ears/
 __pycache__/
+raw/*
+!raw/README.md
