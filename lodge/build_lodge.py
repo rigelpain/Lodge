@@ -757,6 +757,38 @@ def build_interior():
         coll("interior").objects.unlink(src)
         coll("sources").objects.link(src)
         src.hide_render = True
+    # 窓向きのカウンター（南のガラス面いっぱい）と、一人用の高い椅子
+    wb = WINDOW_BAR
+    bar = M("window_bar", "board", "interior")
+    yb0, yb1 = wb["y0"], wb["y0"] + wb["d"]
+    bar.box(wb["x0"], yb0 - 0.02, FL1 + wb["h"] - wb["t"], wb["x1"], yb1 + 0.03, FL1 + wb["h"])   # 天板
+    bar.box(wb["x0"], yb0, FL1, wb["x1"], yb0 + 0.06, FL1 + wb["h"] - wb["t"])                  # 腰板（ガラス側）
+    n_leg = int((wb["x1"] - wb["x0"]) / 2.4) + 1
+    for i in range(n_leg + 1):   # 天板を受ける板脚
+        x = wb["x0"] + (wb["x1"] - wb["x0"]) * i / n_leg
+        bar.box(x - 0.03, yb0, FL1, x + 0.03, yb1 - 0.05, FL1 + wb["h"] - wb["t"])
+    bar.box(wb["x0"], yb1 - 0.12, FL1 + 0.25, wb["x1"], yb1 - 0.06, FL1 + 0.29)                  # 足掛けの横木
+    bar.done(bevel=0.012)
+    st = STOOL
+    sm = M("stool_src", "post", "interior")
+    sm.cyl((0, 0, 0), (0, 0, 0.02), 0.20, seg=20)                       # 台
+    sm.cyl((0, 0, 0.02), (0, 0, st["seat"] - 0.06), 0.035, seg=10)       # 柱
+    sm.cyl((0, 0, 0.30), (0, 0, 0.33), 0.17, seg=20)                     # 足掛けの輪
+    sm.cyl((0, 0, st["seat"] - 0.06), (0, 0, st["seat"] - 0.02), st["r"], seg=24)
+    ssrc = sm.done(bevel=0.008, smooth=True)
+    sc_ = M("stool_cushion_src", "cushion", "interior")
+    sc_.cyl((0, 0, st["seat"] - 0.02), (0, 0, st["seat"] + 0.04), st["r"] - 0.01, seg=24)
+    scsrc = sc_.done(bevel=0.02, seg=3, smooth=True)
+    n_st = int((wb["x1"] - wb["x0"] - 0.4) / st["step"])
+    off = (wb["x1"] - wb["x0"] - (n_st - 1) * st["step"]) / 2
+    for i in range(n_st):
+        x = wb["x0"] + off + i * st["step"]
+        instance(ssrc, "stool_%d" % i, (x, st["y"], FL1))
+        instance(scsrc, "stool_cushion_%d" % i, (x, st["y"], FL1))
+    for src in (ssrc, scsrc):
+        coll("interior").objects.unlink(src)
+        coll("sources").objects.link(src)
+        src.hide_render = True
     # 炉を囲む長椅子（コの字）
     B = M("hearth_bench", "board", "interior")
     Cu = M("hearth_cushion", "cushion", "interior")
@@ -778,23 +810,33 @@ def build_interior():
         sm.box((S["x0"] + S["x1"]) / 2 - 0.05, y - 0.03, FL1 + 0.12, (S["x0"] + S["x1"]) / 2 + 0.05, y + 0.03,
                FL1 + 1.75)
         sm.done(bevel=0.02, seg=3, array=(math.ceil((S["n"] - i) / 4), (0, step * 4, 0)))
-    # 内階段（北へ上る）
+    # 内階段: 東の壁際を北へ上り、北の壁際の踊り場で折り返して、南へ上って 2 階に出る
     I = INSTAIR
     st = M("instair", "board", "interior")
-    n = I["risers"]
+    n, n1, tr = I["risers"], I["n1"], I["tread"]
     ri = (FL2 - FL1) / n
-    tr = (I["y_top"] - I["y_bottom"]) / (n - 1)
-    for k in range(1, n):
+    for k in range(1, n1):                       # 1 本目（東）: 北へ
         z = FL1 + k * ri
-        st.box(I["x0"], I["y_bottom"] + (k - 1) * tr - 0.03, z - 0.05, I["x1"], I["y_bottom"] + k * tr, z)
-    st.beam((I["x0"] + 0.03, I["y_bottom"] - 0.05, FL1 + 0.05), (I["x0"] + 0.03, I["y_top"], FL2 - 0.05), 0.06, 0.3)
+        y = I["y_bottom"] + (k - 1) * tr
+        st.box(I["xm"], y - 0.03, z - 0.05, I["x1"], y + tr, z)
+    st.box(I["x0"], I["y_land"], I["z_land"] - 0.15, I["x1"], I["y_top"], I["z_land"])   # 踊り場
+    for k in range(1, n - n1):                   # 2 本目（西）: 南へ
+        z = I["z_land"] + k * ri
+        y = I["y_land"] - k * tr
+        st.box(I["x0"], y, z - 0.05, I["xm"], y + tr + 0.03, z)
+    st.beam((I["xm"] + 0.03, I["y_bottom"] - 0.05, FL1 + 0.05), (I["xm"] + 0.03, I["y_land"], I["z_land"] - 0.05), 0.06, 0.3)
+    st.beam((I["xm"] - 0.03, I["y_land"], I["z_land"] + 0.05), (I["xm"] - 0.03, I["hole_y0"], FL2 - 0.05), 0.06, 0.3)
+    st.beam((I["x0"] + 0.03, I["y_land"], I["z_land"] + 0.05), (I["x0"] + 0.03, I["hole_y0"], FL2 - 0.05), 0.06, 0.3)
+    st.box(I["x0"], I["y_land"] + 0.1, FL1, I["x0"] + 0.12, I["y_land"] + 0.22, I["z_land"] - 0.15)   # 踊り場の柱
     st.done(bevel=0.01)
     ir = M("instair_rail", "rail", "interior")
-    rail_run(ir, (I["x0"] + 0.04, I["y_bottom"], FL1 + ri), (I["x0"] + 0.04, I["y_top"] - 0.3, FL2), h=0.9,
-             posts_every=5, name="bal_instair")
+    rail_run(ir, (I["xm"] + 0.04, I["y_bottom"], FL1 + ri), (I["xm"] + 0.04, I["y_land"], I["z_land"]), h=0.9,
+             posts_every=5, name="bal_instair_1")
+    rail_run(ir, (I["x0"] + 0.04, I["y_land"], I["z_land"]), (I["x0"] + 0.04, I["hole_y0"], FL2), h=0.9,
+             posts_every=5, name="bal_instair_2")
     rail_run(ir, (I["x0"] - 0.05, I["hole_y0"], FL2), (I["x0"] - 0.05, I["y_top"], FL2), h=RAIL_H,
              name="bal_stairwell_w")
-    rail_run(ir, (I["x0"] - 0.05, I["hole_y0"], FL2), (I["x1"], I["hole_y0"], FL2), h=RAIL_H,
+    rail_run(ir, (I["xm"], I["hole_y0"], FL2), (I["x1"], I["hole_y0"], FL2), h=RAIL_H,   # 2 本目の上がり口は空ける
              name="bal_stairwell_s")
     ir.done(bevel=0.01)
     # 1 階の吊り灯り（卓の上）と 2 階の紙の灯り
@@ -1043,6 +1085,9 @@ CAMS = {
     "in1": ((gx(2.5), Y0 + 1.0, FL1 + 1.55), (gx(9.0), Y1 - 1.0, FL1 + 1.2), 20),
     "in2": ((gx(0.5), gy(3.6), FL2 + 1.55), (gx(10.5), gy(2.4), FL2 + 0.55), 22),
     "kotatsu": ((gx(5.3), gy(1.2), FL2 + TATAMI["h"] + 1.05), (gx(3.0), Y0 - 8, FL2 + 1.6), 24),
+    "stair1": ((gx(8.2), gy(3.2), FL1 + 1.6), (INSTAIR["xm"], INSTAIR["y_land"], 2.6), 24),
+    "stair2": ((INSTAIR["x0"] - 4.0, INSTAIR["hole_y0"] - 4.5, FL2 + 1.6), (INSTAIR["xm"], INSTAIR["y_land"], FL2 - 0.8), 24),
+    "bar": ((gx(4.2), Y0 + 2.6, FL1 + 1.6), (gx(9.5), Y0 + 0.2, FL1 + 0.9), 24),
     "terrace": ((gx(7.0), Y2_0 - 0.7, FL2 + 1.55), (gx(3.0), Y0 - 30, 4.5), 24),
 }
 
@@ -1142,7 +1187,7 @@ def build_collision():
     # 手すり（テラス・外階段・吹き抜け）
     for b in ((X0 + K, Y0, FL2, X1, Y0 + 0.12, FL2 + RAIL_H), (X1 - 0.12, Y0, FL2, X1, Y2_0, FL2 + RAIL_H),
               (X0, Y0, FL2, X0 + 0.12, Y2_0, FL2 + RAIL_H),
-              (hx - 0.1, hy, FL2, hx, Y1, FL2 + RAIL_H), (hx, hy - 0.1, FL2, X1, hy, FL2 + RAIL_H)):
+              (hx - 0.1, hy, FL2, hx, Y1, FL2 + RAIL_H), (I["xm"], hy - 0.1, FL2, X1, hy, FL2 + RAIL_H)):
         Wl.box(*b)
     # 階段は坂にする（外階段 2 本と踊り場、内階段、デッキの東の段）
     E = ESTAIR
@@ -1154,7 +1199,10 @@ def build_collision():
         St.box(x, E["y_land"] - E["landing"], E["z_land"], x + 0.08, E["y_land"], E["z_land"] + 1.0)
     St.box(E["x_lo"][0], E["y_land"] - E["landing"], E["z_land"], E["x_up"][1], E["y_land"] - E["landing"] + 0.08,
            E["z_land"] + 1.0)
-    ramp_y(St, I["x0"], I["x1"], I["y_bottom"], FL1, I["y_top"], FL2)
+    ramp_y(St, I["xm"], I["x1"], I["y_bottom"] - I["tread"], FL1, I["y_land"], I["z_land"])
+    St.box(I["x0"], I["y_land"], I["z_land"] - 0.15, I["x1"], I["y_top"], I["z_land"])
+    ramp_y(St, I["x0"], I["xm"], I["y_land"], I["z_land"], I["hole_y0"], FL2)
+    Wl.box(I["xm"] - 0.04, I["hole_y0"], I["z_land"], I["xm"] + 0.04, I["y_land"], FL2 + 1.0)   # 2 本の間の手すり
     St.prism_y([(D_["x1"], D_["z"]), (D_["x1"] + 0.6, 0.0), (D_["x1"], 0.0)][::-1], D_["y0"], D_["y1"])
     # 家具（座れる・ぶつかるもの）
     for x, y in TABLES:
@@ -1162,6 +1210,8 @@ def build_collision():
     for cc in (COUNTER, RENTAL):
         Fu.box(cc["x0"], cc["y0"], FL1, cc["x1"], cc["y1"], FL1 + cc["h"])
     Fu.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
+    Fu.box(WINDOW_BAR["x0"], WINDOW_BAR["y0"], FL1, WINDOW_BAR["x1"], WINDOW_BAR["y0"] + WINDOW_BAR["d"],
+           FL1 + WINDOW_BAR["h"])
     for x in (KITCHEN["x0"], KITCHEN["x1"]):
         Fu.box(x - 0.06, KITCHEN["y_front"], FL1, x + 0.06, Y1, CEIL1 - 0.3)
     for x0, y0, x1, y1 in HEARTH_BENCH:

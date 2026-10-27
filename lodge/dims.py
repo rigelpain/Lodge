@@ -123,10 +123,14 @@ ESTAIR["y_land"] = ESTAIR["y_start"] - ESTAIR["run"]                 # 踊り場
 # ---- 中 ----
 COLS = [(gx(n), Y2_0 + 0.2) for n in (2, 4, 6, 8, 10)]   # 2 階の南の壁を受ける丸柱（屋根まで通す）
 COL_D = 0.50
-_ir = round((FL2 - FL1) / 0.18)    # 内階段: 蹴上げ約 0.18、踏面 0.26、幅 1.6 m。東の壁に沿って北へ上る
-INSTAIR = dict(x0=X1 - LOG_D / 2 - 1.6, x1=X1 - LOG_D / 2, y_top=Y1 - LOG_D / 2, risers=_ir)
-INSTAIR["y_bottom"] = INSTAIR["y_top"] - (_ir - 1) * 0.26
-INSTAIR["hole_y0"] = INSTAIR["y_bottom"] + 3.6   # 2 階の床の穴はここから（頭が天井に当たらない所から）
+_ir = round((FL2 - FL1) / 0.18)    # 内階段: 蹴上げ約 0.18、踏面 0.26、幅 1.6 m の 2 本。東の隅で踊り場を挟んで折り返す
+INSTAIR = dict(x1=X1 - LOG_D / 2, y_top=Y1 - LOG_D / 2, risers=_ir, n1=_ir // 2, tread=0.26, width=1.6, landing=1.6)
+INSTAIR["xm"] = INSTAIR["x1"] - INSTAIR["width"]          # 1 本目（東）と 2 本目（西）の境
+INSTAIR["x0"] = INSTAIR["xm"] - INSTAIR["width"]          # 2 本目の西の縁
+INSTAIR["y_land"] = INSTAIR["y_top"] - INSTAIR["landing"]  # 踊り場の南の縁（北の壁際に踊り場）
+INSTAIR["y_bottom"] = INSTAIR["y_land"] - (INSTAIR["n1"] - 1) * INSTAIR["tread"]   # 1 本目の上り口（南）
+INSTAIR["z_land"] = FL1 + INSTAIR["n1"] * (FL2 - FL1) / _ir
+INSTAIR["hole_y0"] = INSTAIR["y_land"] - (_ir - INSTAIR["n1"] - 1) * INSTAIR["tread"]   # 2 本目の上がり口＝穴の南の縁
 KITCHEN = dict(x0=gx(1.46), x1=gx(6.0), y_front=gy(1.5))   # 間仕切りの位置
 COUNTER = dict(x0=gx(1.6), x1=gx(5.9), y0=gy(1.5) - 0.75, y1=gy(1.5), h=1.05)   # レジ・配膳
 BACK = dict(x0=gx(1.6), x1=gx(5.9), y0=Y1 - LOG_D / 2 - 0.70, y1=Y1 - LOG_D / 2, h=0.90)
@@ -134,7 +138,11 @@ RENTAL = dict(x0=gx(0.15), x1=gx(1.40), y0=gy(1.5) - 0.75, y1=gy(1.5), h=1.05)
 SKI_RACK = dict(x0=X0 + LOG_D / 2 + 0.5, x1=X0 + LOG_D / 2 + 1.2, y0=gy(5.4), y1=gy(1.9), n=40)
 TABLE = dict(w=2 * K, d=0.6 * K, h=0.72)
 # 卓 18（6 人掛け）。3 列 x 6。2 階の南の壁の丸柱の列は、2 列目と 3 列目の間の通路に入る
-TABLES = [(gx(3.8 + 1.3 * i), y) for y in (gy(3.4), gy(4.6), gy(6.2)) for i in range(6)]   # 南西の角
+TABLES = [(gx(3.8 + 1.3 * i), y) for y in (gy(3.4), gy(4.6), gy(6.0)) for i in range(6)]   # 南西の角
+# 窓向きのカウンター: 正面（南）のガラス面いっぱいに一続き。一人用の高い椅子で外の丘を眺める
+WINDOW_BAR = dict(x0=GLASS_S_X0 + 0.35, x1=X1 - LOG_D / 2 - 0.05, y0=Y0 + POST / 2 + 0.10,
+                  d=0.50, h=1.05, t=0.06)
+STOOL = dict(step=0.80, y=WINDOW_BAR["y0"] + 0.50 + 0.38, seat=0.76, r=0.21)
 # 炉をコの字に囲む長椅子（奥行き 0.45）
 HEARTH_BENCH = [(CH["x0"], CH["y0"] - 2.8, CH["x1"], CH["y0"] - 2.35),
                 (CH["x0"] - 1.6, CH["y0"] - 2.8, CH["x0"] - 1.15, CH["y0"] - 0.6),
