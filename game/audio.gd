@@ -6,7 +6,10 @@ const Look := preload("res://look.gd")
 ##
 ## wav は sound/wav/ から実行時に読む（原型なので res:// の外。書き出すときは res:// に写す）。
 ## バス: Outdoor（外。ロッジの中ではこもる）← Speaker（柱の曲）、Wind（風）
-##       Inside（ロッジの中。短い残響。外からは壁ごしにこもる）、Self（自分の足あとと息）
+##       Inside（ロッジの中。短い残響。外からは壁ごしにこもる）、Self（自分の足あと、戸）
+## main.gd の _make_volume_buses() が、このあとに設定の音量バスを挿す:
+##       Speaker → Music → Outdoor、Inside・Self → SFX → Master（Wind は Outdoor のまま、音量だけ SFX と同じ）、
+##       息・声・スタンプの声は Voice → Master。バスの名前は設定が引くので変えない
 
 const C_SOUND := 340.0          # 音の速さ (m/s)。柱ごとの遅れに使う
 const SPEAKER_RATE := 16000     # 柱の曲の生成ストリームのレート。曲は 4 kHz までしかないので足りる
@@ -370,12 +373,12 @@ func _make_walkers() -> void:
 		_self_step.bus = "Self"
 		add_child(_self_step)
 		_self_breath = AudioStreamPlayer.new()
-		_self_breath.bus = "Self"
+		_self_breath.bus = "Voice"   # 息は Voice（main.gd の設定の音量バス。再生時に名前で引く）
 		add_child(_self_breath)
 		_walkers[player] = {"acc": 0.0, "push_t": 0.4, "breath_t": 2.0, "pushing": 0.0, "step": _self_step, "breath": _self_breath}
 	for b in bots:
 		_walkers[b] = {"acc": rng.randf(), "push_t": rng.randf(), "breath_t": rng.randf_range(1.0, 3.0), "pushing": 0.0,
-				"step": _p3(b, "Outdoor", -8, 4.0, 40.0), "breath": _p3(b, "Outdoor", -16, 3.0, 20.0)}
+				"step": _p3(b, "Outdoor", -8, 4.0, 40.0), "breath": _p3(b, "Voice", -16, 3.0, 20.0)}
 
 
 func _update_walkers(dt: float) -> void:
@@ -455,7 +458,7 @@ func _make_lodge() -> void:
 		_dish_spots.append(lodge.to_local((n as Node3D).global_position) - Vector3(0, 1.3, 0))
 	if _dish_spots.is_empty():
 		_dish_spots.append(Vector3(0, 1.0, 6.0))
-	_door = _p3(lodge, "Master", -8, 4.0, 40.0)
+	_door = _p3(lodge, "Self", -8, 4.0, 40.0)   # Master に直結しない（Self → SFX の音量を通す）
 	_door.position = _marker("light_vestibule", VEST)
 
 
