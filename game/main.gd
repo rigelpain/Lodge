@@ -25,6 +25,7 @@ const Sled := preload("res://sled.gd")
 const Player := preload("res://player.gd")
 const Bot := preload("res://bot.gd")
 const Settings := preload("res://settings.gd")
+const Audio := preload("res://audio.gd")
 
 var sled: RigidBody3D
 var player: CharacterBody3D
@@ -88,6 +89,14 @@ func _ready() -> void:
 		b.side = 1 if i % 2 == 0 else -1
 		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
 		add_child(b)
+
+	# 音（game/audio.gd）。--spawn=lodge でロッジの前から、--spawn=inside で食堂の中から始める（音の確かめ用）
+	var audio := Audio.new()
+	audio.name = "Audio"
+	audio.setup(self, sled, player, get_children().filter(func(c): return c.get_script() == Bot), get_node_or_null("Lodge"))
+	add_child(audio)
+	if player and args.has("spawn"):
+		player.global_position = audio.spawn_point(args["spawn"])
 
 	if player == null:
 		var cam := Camera3D.new()
@@ -608,6 +617,7 @@ func _physics_process(dt: float) -> void:
 			me += "　つかんでいる人=%d 回転=%.2f 横滑り=%.2f" % [sled.holders.size(), sled.angular_velocity.y, sled.linear_velocity.dot(sled.global_basis.x)]
 			if bots.size() > 0:
 				me += "　仲間=%s" % bots[0].debug
+			me += "　" + get_node("Audio").debug
 			print("fps=%d " % Engine.get_frames_per_second(), "t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
 			_duty = 0
 			_frames = 0
