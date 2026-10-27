@@ -5,6 +5,7 @@ extends CanvasLayer
 signal changed(key: String, value)
 
 const PATH := "user://settings.cfg"
+const VERSION := 2   # 既定値を変えたら上げる。古い保存は、その項目だけ既定に戻す
 # [鍵, 見出し, 種類, 既定, 範囲や段]
 const ITEMS := [
 	["bob", "視点の揺れ（押す・引くとき）", "bool", true, null],
@@ -15,9 +16,9 @@ const ITEMS := [
 	["fov", "視野角", "float", 75.0, [50.0, 110.0, 1.0]],
 	["sens", "マウスの感度", "float", 1.0, [0.3, 2.5, 0.05]],
 	["scale", "3D の描画の解像度（軽さ）", "float", 0.67, [0.5, 1.0, 0.01]],
-	["vol_music", "音量: 音楽", "float", 0.8, [0.0, 1.0, 0.01]],
-	["vol_sfx", "音量: 効果音", "float", 0.8, [0.0, 1.0, 0.01]],
-	["vol_voice", "音量: ボイス", "float", 0.8, [0.0, 1.0, 0.01]],
+	["vol_music", "音量: 音楽", "float", 0.5, [0.0, 1.0, 0.01]],
+	["vol_sfx", "音量: 効果音", "float", 0.5, [0.0, 1.0, 0.01]],
+	["vol_voice", "音量: ボイス", "float", 0.5, [0.0, 1.0, 0.01]],
 ]
 
 var values := {}
@@ -148,7 +149,10 @@ func _load() -> void:
 	var cf := ConfigFile.new()
 	if cf.load(PATH) != OK:
 		return
+	var saved_version: int = cf.get_value("settings", "_version", 1)
 	for key in values:
+		if saved_version < 2 and key.begins_with("vol_"):
+			continue   # 音量の既定を 50% に変えた（版 2）。古い保存の音量は読まない
 		values[key] = cf.get_value("settings", key, values[key])
 
 
@@ -156,4 +160,5 @@ func _save() -> void:
 	var cf := ConfigFile.new()
 	for key in values:
 		cf.set_value("settings", key, values[key])
+	cf.set_value("settings", "_version", VERSION)
 	cf.save(PATH)
