@@ -1,150 +1,148 @@
-"""ロッジの寸法。図面（drawings.py）と Blender の台本（build_lodge.py）が同じ数を使う。
+"""ロッジの寸法。Blender の台本（massing は build_lodge.py の段階 1）が同じ数を使う。
 
-単位は m。1 間 K = 1.818 m（6 尺）を柱の間隔にする。
-座標: x = 東、y = 北、z = 上。丘は南（-y）にあり、正面（丘に面した側）は南。
-原点は 1 階の床面の中心の真下、雪の地面の高さ。
+元は代表の図面（drawings/daihyo.svg、1 間 = 54px）。そこから読み取った数に、
+直した 3 点（煙突を高く、南の軒を深く、外階段を短く）を入れてある。
+
+単位は m。1 間 K = 1.818 m（6 尺）。
+座標: x = 東、y = 北、z = 上。丘（ゲレンデ）は南（-y）にあり、正面は南。
+原点は 1 階の外形の中心の真下、雪の地面の高さ。
 """
 
 K = 1.818            # 1 間
 
-# ---- 1 階（土間の大広間）10 間 x 6 間 ----
-X0, X1 = -5 * K, 5 * K          # -9.09 .. 9.09
-Y0, Y1 = -3 * K, 3 * K          # -5.454 .. 5.454（Y0 が南＝丘の側）
-PLINTH = 0.80                   # 石の基壇の高さ＝1 階の床
-H1 = 2 * K                      # 1 階の階高 3.636
-FL2 = PLINTH + H1               # 2 階の床 4.436
-FLOOR2_T = 0.45                 # 2 階の床の構造の厚み（下は 1 階の天井）
-WALL_T = 0.20                   # 外壁の厚み
-POST = 0.16                     # 柱の太さ
-
-# ---- 2 階（掘りごたつの座敷）8 間 x 4 間。西にそろえ、南を 2 間さげる ----
-X2_0, X2_1 = X0, X0 + 8 * K     # -9.09 .. 5.454
-Y2_0, Y2_1 = Y0 + 2 * K, Y1     # -1.818 .. 5.454
-H2 = 2.20                       # 2 階の壁の高さ（床から桁まで）。上は屋根の中
-EAVE_Z = FL2 + H2               # 6.636 桁の上端
-# 屋根は腰折れ（北海道の牧舎の形）。下の急な流れは雪が載らず藍のフェルトが見え、
-# 上のゆるい流れに雪が積もる。軒先は 4 寸 5 分にはね出して影の帯を落とす。
-LOW_RUN, LOW_RISE = 0.72, 1.25  # 下の流れ（60 度）
-KNEE_Z = EAVE_Z + LOW_RISE      # 7.886 折れ点
-UPPER_PITCH = 0.5               # 上の流れ 5 寸
-RIDGE_Y = (Y2_0 + Y2_1) / 2     # 棟の位置 1.818
-RIDGE_Z = KNEE_Z + ((Y2_1 - Y2_0) / 2 - LOW_RUN) * UPPER_PITCH   # 9.052
-EAVE_OUT = 0.75                 # 軒の出（1 階の階高の 21%）
-KICK = 0.45                     # 軒先のはね出しの勾配
-EAVE_EDGE_Z = EAVE_Z - EAVE_OUT * KICK   # 6.299
-VERGE_OUT = 0.50                # けらばの出
-ROOF_T = 0.22                   # 屋根（藍のフェルトの板）の厚み
-SNOW_T = 0.34                   # 屋根の雪（毛糸の編み地）の厚み
-# 屋根の下端の線（南の軒先 → 棟 → 北の軒先）。y-z の折れ線
-ROOF_LINE = [(Y2_0 - EAVE_OUT, EAVE_EDGE_Z), (Y2_0, EAVE_Z), (Y2_0 + LOW_RUN, KNEE_Z), (RIDGE_Y, RIDGE_Z),
-             (Y2_1 - LOW_RUN, KNEE_Z), (Y2_1, EAVE_Z), (Y2_1 + EAVE_OUT, EAVE_EDGE_Z)]
+# ---- 1 階（食堂）12 間 x 7 間 ----
+X0, X1 = -6 * K, 6 * K            # -10.908 .. 10.908
+Y0, Y1 = -3.5 * K, 3.5 * K        # -6.363 .. 6.363（Y0 が南＝丘の側）
 
 
-def offset_line(pts, d):
-    """折れ線を外（上）側へ d だけ平行にずらす（角は留め）"""
-    import math
-    out = []
-    n = len(pts)
-    def nrm(a, b):
-        dy, dz = b[0] - a[0], b[1] - a[1]
-        L = math.hypot(dy, dz)
-        return (-dz / L, dy / L)
-    for i in range(n):
-        if i == 0:
-            ny, nz = nrm(pts[0], pts[1])
-        elif i == n - 1:
-            ny, nz = nrm(pts[-2], pts[-1])
-        else:
-            a, b = nrm(pts[i - 1], pts[i]), nrm(pts[i], pts[i + 1])
-            ny, nz = a[0] + b[0], a[1] + b[1]
-            L = (ny * a[0] + nz * a[1])
-            ny, nz = ny / L, nz / L
-        out.append((pts[i][0] + ny * d, pts[i][1] + nz * d))
-    return out
+def gx(n):
+    """西の壁から n 間（代表の平面の ③ 通りが 0）"""
+    return X0 + n * K
+
+
+def gy(n):
+    """北の壁から n 間（代表の平面の わ 通りが 0）"""
+    return Y1 - n * K
+
+
+PLINTH = 0.45                     # 石の基壇＝1 階の床
+FL1 = PLINTH
+CEIL1 = 3.95                      # 1 階のガラスの上端＝天井
+FL2 = 4.25                        # 2 階の床＝テラスの床
+FLOOR2_T = FL2 - CEIL1            # 2 階の床の厚み（縁の帯になる）
+
+# 丸太（巻いたフェルトのロールに見立てる）。壁の厚み＝丸太の径
+LOG_D = 0.26
+LOG_H = 0.25                      # 1 段の高さ（丸太が少し重なる）
+LOG_OUT = 0.30                    # 角で交差して突き出す長さ
+POST = 0.26                       # ガラスの壁の柱
+
+# ---- 2 階（休憩の座敷）12 間 x 5 間。南を 2 間さげ、さげた分がテラス ----
+X2_0, X2_1 = X0, X1
+Y2_0, Y2_1 = gy(5), Y1            # -2.727 .. 6.363
+H2_S, H2_N = 4.30, 2.45           # 2 階の壁の高さ。南（丘の側）が高い片流れ
+EAVE_S = FL2 + H2_S               # 8.55
+EAVE_N = FL2 + H2_N               # 6.70
+ROOF_PITCH = (EAVE_S - EAVE_N) / (Y2_1 - Y2_0)   # 約 2 寸。雪は北の裏へ落ちる
+EAVE_OUT_S = 1.20                 # 南の軒（直した点。代表の図面は 0.6）。垂木の先を見せて 2 階の壁に影の帯
+EAVE_OUT_N = 0.60
+VERGE_OUT = 1.00                  # 東西のけらば
+ROOF_T = 0.30                     # 屋根（藍のフェルトの板）
+SNOW_T = 0.25                     # 屋根の雪（毛糸の編み地）
+RAFTER = dict(w=0.12, h=0.22, step=K / 2)
 
 
 def roof_z(y):
-    """屋根の下端の線の高さ（y の位置で）"""
-    for (y0, z0), (y1, z1) in zip(ROOF_LINE, ROOF_LINE[1:]):
-        if y0 <= y <= y1:
-            return z0 + (z1 - z0) * (y - y0) / (y1 - y0)
-    return None
+    """屋根の下端（壁の上端の線）の高さ。y の位置で"""
+    return EAVE_N + (Y2_1 - y) * ROOF_PITCH
 
 
-# ---- テラス（1 階の屋上。南の帯 10 x 2 間 + 東の帯 2 x 4 間）----
-CANTI = 0.90                    # 南へ片持ちで張り出す（半間）。持ち送りで支える
-DECK_T = 0.10
-DECK_Z = FL2 - 0.12             # テラスの床（座敷より 1 段低く、水を切る）
-FASCIA_H = 0.42                 # テラスの縁の梁（鼻隠し）の高さ
-RAIL_H = 1.10                   # 手すり（1 階の階高の 0.30。建築基準法の 1.1 m）
-BALUSTER = 0.152                # 縦材の間隔（1 間の 1/12）
+# ---- テラス（1 階の屋上の南 2 間）----
+RAIL_H = 1.10
+BALUSTER = 0.15
 
-# ---- 下屋（東の貸し出し・ソリ置き）3 間 x 4 間 片流れ ----
-WX0, WX1 = X1, X1 + 3 * K       # 9.09 .. 14.544
-WY0, WY1 = -2 * K, 2 * K        # -3.636 .. 3.636（南を 1 間さげる）
-W_FL = 0.15                     # 下屋の床（ソリを引き込めるよう地面に近い）
-W_HIGH = 3.60                   # 母屋の壁に当たる側の桁の高さ（テラスの縁の梁の下に収める）
-W_PITCH = 0.25                  # 2 寸 5 分勾配で東へ下がる
-W_EAVE_OUT = 0.6
-W_LOW = W_HIGH - (WX1 - WX0) * W_PITCH   # 2.24
+# ---- 風除室（玄関）----
+VEST = dict(x0=gx(1.75), x1=gx(3.25), d=2.0, h=2.45, roof_out=0.35)
+DOOR_OUT = dict(w=1.45, h=2.10)   # 風除室の外の両開き
+DOOR_IN = dict(x0=gx(2.0), x1=gx(3.0), h=2.10)   # 1 階の壁の内の戸
 
-# ---- 煙突（西の妻に立つ石の塔）----
-CH_Y = Y2_0 + K                 # 棟から 1 間南へずらす（妻の中心に置かない）
-CH_W0, CH_D0 = 1.60, 1.10       # 下（1 階）の幅（y）と出（x）
-CH_W1, CH_D1 = 1.20, 0.85       # 肩より上
-CH_SHOULDER = FL2               # 肩（すぼまる高さ）
-CH_TOP = RIDGE_Z + 0.95         # 棟より 0.9 m 上（雪の上に 0.4 m）
-CH_CAP_OUT = 0.14               # 笠の出
+# ---- 窓のモジュール: 1 間 x 1.3、窓台は床から 0.9。十字の桟で 4 枚 ----
+WIN = dict(w=K, h=1.30, sill=0.90, frame=0.08)
+DOOR2 = dict(w=1.45, h=2.10)      # 2 階からテラスへの戸
 
-# ---- 開口のモジュール ----
-# 1 階の窓 0.9 x 1.8（1:2）、窓台 0.6、まぐさ 2.4。各間の中央に 1 つ
-WIN1 = dict(w=0.90, h=1.80, sill=0.60, depth=0.16)
-# 2 階の窓 0.86 x 1.55（1:1.8）、窓台 0.45、まぐさ 2.0（掃き出しと揃える）
-WIN2 = dict(w=0.86, h=1.55, sill=0.45, depth=0.14)
-# 2 階の掃き出し（テラスへ）: 1 間いっぱいのガラス戸 2 枚
-SLIDE2 = dict(w=K - POST, h=2.00, sill=0.0, depth=0.12)
-# 玄関: 1 間引っ込んだ壁に両開き 1.8 x 2.2 + 欄間 0.2（まぐさ 2.4 で窓と揃える）
-DOOR1 = dict(w=1.80, h=2.40, sill=0.0, depth=0.20)
-# 下屋のソリの戸（引き戸）と小窓
-SHED_DOOR = dict(w=2.40, h=2.10, sill=0.0, depth=0.12)
-WINS = dict(w=0.60, h=1.10, sill=0.70, depth=0.12)
+# 1 階の南: 西 3.5 間は丸太の壁（風除室）、東 8.5 間はガラス。柱は 1.7 間ごと
+GLASS_S_X0 = gx(3.5)
+GLASS_S_POSTS = [gx(3.5 + 1.7 * i) for i in range(6)]
+# 1 階の西: 全面ガラス（貸出の下屋に開く）。柱は 1.4 間ごと、北の端の間は戸
+GLASS_W_POSTS = [gy(1.4 * i) for i in range(6)]
+TRANSOM = FL1 + 2.30              # ガラスの欄間の横桟
 
-# 玄関の引っ込み（1 階南、6・7 間目）
-PORCH_X0, PORCH_X1 = X0 + 5 * K, X0 + 7 * K   # 0 .. 3.636
-PORCH_DEPTH = K
-PORCH_STEPS = 4                 # 基壇を 4 段で上がる（蹴上げ 0.2）
-# 玄関の上だけテラスをさらに 1 間張り出し、石の束に立つ 2 本の柱で受ける（入口の印）
-BAY_Y = Y0 - K                  # 張り出しの先 -7.272
-BAY_POST = 0.24
-BAY_PIER = dict(w=0.46, h=0.55)
-
-# 壁ごとの開口。(間の番号, 種類)。間は壁の始点から 0, 1, 2 ...
-# 1 階の南: 端の間は壁で閉じ、窓 4 つ・玄関・窓 2 つ
+# 壁ごとの開口（中心の位置, 種類）。位置は壁に沿った世界座標
 OPENINGS = {
-    "1F_S": [(1, "win1"), (2, "win1"), (3, "win1"), (4, "win1"), (7, "win1"), (8, "win1")],
-    "1F_W": [(1, "win1"), (4, "win1"), (5, "win1")],     # 煙突は 2 と 3 の境
-    "1F_N": [(1, "win1"), (2, "win1"), (3, "win1"), (5, "win1"), (6, "win1"), (7, "win1")],   # 8・9 は荷物棚
-    "1F_E": [(0, "win1"), (5, "win1")],                 # 1〜4 は下屋に開く
-    "2F_S": [(1, "win2"), (2, "slide2"), (3, "win2"), (4, "win2"), (5, "slide2"), (6, "win2")],
-    "2F_W": [(2, "win2"), (3, "win2")],                 # 煙突は 0 と 1 の境
-    "2F_N": [(1, "win2"), (2, "win2"), (5, "win2"), (6, "win2")],
-    "2F_E": [(1, "slide2"), (2, "win2")],
-    "W_S": [(0.5, "shed_door")],                        # 0.5 = 0〜1 間目にまたがる
-    "W_E": [(1, "wins"), (2, "wins")],
+    "1F_N": [(gx(4.8), "win"), (gx(10.5), "win"), (gx(2.78), "door1")],
+    "1F_E": [(gy(3.9), "win"), (gy(5.5), "win")],
+    "2F_S": [(gx(1.0), "win"), (gx(2.5), "door2"), (gx(4.5), "win"), (gx(6.5), "win"),
+             (gx(8.5), "win"), (gx(10.5), "win")],
+    "2F_N": [(gx(4.8), "win"), (gx(7.0), "win"), (gx(11.0), "win")],
+    "2F_W": [(gy(3.0), "win")],
+    "2F_E": [(gy(3.9), "win")],
 }
-KINDS = {"win1": WIN1, "win2": WIN2, "slide2": SLIDE2, "door1": DOOR1,
-         "shed_door": SHED_DOOR, "wins": WINS}
+DOOR1 = dict(w=1.00, h=2.10)      # 厨房の勝手口
 
-# 1 階の中の柱（2 階の南の壁と棟を受ける 2 列）
-INNER_POSTS_Y = (Y2_0, RIDGE_Y)
-INNER_POSTS_X = (X0 + 2 * K, X0 + 4 * K, X0 + 6 * K, X0 + 8 * K)
+# ---- 煙突（北の壁にまたがる石の塔）----
+CH = dict(x0=gx(8.3), x1=gx(9.7), y0=Y1 - 1.08, y1=Y1 + 1.0,          # 1 階: 炉
+          ux0=gx(8.55), ux1=gx(9.45), uy0=Y1 - 0.50, uy1=Y1 + 0.95,   # 2 階より上
+          top=EAVE_S + ROOF_T + SNOW_T + 1.20,   # 直した点: 南の屋根の上端より 1.2 m 上に出す（10.3）
+          cap_out=0.14, cap_t=0.16)
+VENTS = [gx(6.25)]                # 厨房の排気の筒（屋根の上）
 
-# ---- 中身 ----
-STAIR = dict(x_bottom=X2_1, y0=Y1 - WALL_T / 2 - 1.0, y1=Y1 - WALL_T / 2,
-             risers=20, rise=H1 / 20, tread=0.26)        # 北の壁に沿って西へ上る
-STAIR["x_top"] = STAIR["x_bottom"] - (STAIR["risers"] - 1) * STAIR["tread"]
-STOVE = dict(x=X0 + 1.25, y=CH_Y, w=0.75, d=0.55, h=0.80)  # 煙突の前
-COUNTER = dict(x0=X0 + 1 * K, x1=X0 + 4 * K, y=Y1 - 1.9, d=0.60, h=1.05)
-KOTATSU_X = (X0 + 1.5 * K, X0 + 4 * K, X0 + 6.5 * K)       # 掘りごたつ 3 卓
-KOTATSU_Y = Y2_0 + 1 * K + 0.05
-KOTATSU = dict(w=1.80, d=0.90, pit_w=1.50, pit_d=0.62, pit_depth=0.42, h=0.36)
+# ---- 西の下屋（屋根だけの貸出）----
+LEAN = dict(x_out=gx(-2.3), x_post=gx(-2.0), y0=gy(7.1), y1=gy(-0.1),
+            z_wall=3.15, z_out=2.40, posts=[gy(1.75 * i) for i in range(5)])
+
+# ---- デッキ（地面から 0.45）----
+DECK = dict(x0=gx(-1.5), x1=gx(6.0), y0=Y0 - 1.5 * K, y1=Y0, z=FL1, t=0.12)
+
+# ---- 外階段（デッキからテラスへ折り返す）----
+# 直した点: 代表の図面は踊り場が 1 階の壁から 8.9 m 丘へ出ていた。蹴上げをふつうにして 4.2 m に縮め、
+# デッキの先から 1.5 m だけ出る。西の端なので、正面に滑り込むソリの道をふさがない。
+ESTAIR = dict(x_lo=(gx(-1), gx(0)), x_up=(gx(0), gx(1)), y_start=Y0 - 0.30,
+              risers=22, tread=0.27, landing=1.20, width=K)
+ESTAIR["rise"] = (FL2 - FL1) / ESTAIR["risers"]
+ESTAIR["run"] = (ESTAIR["risers"] // 2 - 1) * ESTAIR["tread"]       # 1 本の流れ 2.7 m
+ESTAIR["z_land"] = FL1 + ESTAIR["risers"] // 2 * ESTAIR["rise"]
+ESTAIR["y_land"] = ESTAIR["y_start"] - ESTAIR["run"]                 # 踊り場の北の縁
+
+# ---- 中 ----
+COLS = [(gx(6.3), Y2_0 + 0.13), (gx(8.9), Y2_0 + 0.13)]   # 2 階の南の壁を受ける丸柱（屋根まで通す）
+COL_D = 0.36
+INSTAIR = dict(x0=gx(11.1), x1=X1 - LOG_D / 2, y_bottom=gy(2.8), y_top=Y1 - LOG_D / 2, risers=22)
+KITCHEN = dict(x0=gx(1.46), x1=gx(6.0), y_front=gy(1.5))   # 間仕切りの位置
+COUNTER = dict(x0=gx(1.6), x1=gx(5.9), y0=gy(1.65), y1=gy(1.35), h=1.05)   # レジ・配膳
+BACK = dict(x0=gx(1.6), x1=gx(5.9), y0=gy(0.40), y1=Y1 - LOG_D / 2, h=0.90)
+RENTAL = dict(x0=gx(0.15), x1=gx(1.40), y0=gy(1.65), y1=gy(1.35), h=1.05)
+SKI_RACK = dict(x0=gx(0.35), x1=gx(1.05), y0=gy(5.4), y1=gy(1.7), n=18)
+TABLES = [(x, y) for y in (gy(3.9), gy(6.1)) for x in (gx(4.0), gx(6.6), gx(9.2))]   # 南西の角
+TABLE = dict(w=2 * K, d=0.6 * K, h=0.72)
+HEARTH_BENCH = [(gx(8.3), gy(2.2), gx(9.7), gy(1.9)), (gx(10.3), gy(1.6), gx(10.6), gy(0.4)),
+                (gx(7.5), gy(2.3), gx(7.8), gy(1.6))]
+# 2 階
+TATAMI = dict(x0=gx(3.25), x1=gx(10.75), y0=gy(4.6), y1=gy(0.6), h=0.40)   # 小上がり
+KOTATSU = [gx(3.9), gx(6.4), gx(8.9)]    # 西の端
+KOTATSU_Y = (gy(2.95), gy(2.25))
+KOTATSU_W = 1.2 * K
+PIT_DEPTH = 0.40
+BENCH2 = (gx(0.3), gy(4.85), gx(2.0), gy(4.55))
+TABLE2 = (gx(0.3), gy(3.8), gx(2.2), gy(3.1))
+
+# 機械の置き場（代表があとで置く）。床を空け、glb に空の目印を入れる
+SLOTS = {
+    "slot_food_kitchen": (gx(3.75), gy(0.75), FL1),
+    "slot_craft_rental": (gx(0.75), gy(0.75), FL1),
+    "slot_vending_1": (gx(6.55), gy(0.30), FL1),
+    "slot_vending_2": (gx(7.15), gy(0.30), FL1),
+    "slot_vending_3": (gx(3.7), Y0 - 0.45, FL1),
+}
+
+# ---- 地面 ----
+HILL_Y = Y0 - 14.0                # ここから南へ丘が上る
