@@ -29,7 +29,7 @@ func _ready() -> void:
 		values[it[0]] = it[3]
 	_load()
 	_build()
-	_panel.visible = false
+	_panel.get_parent().visible = false
 
 
 func _build() -> void:
@@ -41,10 +41,14 @@ func _build() -> void:
 	sb.border_color = Color(1, 1, 1, 0.18)
 	sb.set_border_width_all(1)
 	_panel.add_theme_stylebox_override("panel", sb)
-	_panel.set_anchors_preset(Control.PRESET_CENTER)
 	_panel.custom_minimum_size = Vector2(440, 0)
 	_panel.mouse_filter = Control.MOUSE_FILTER_STOP
-	add_child(_panel)
+	# 画面いっぱいの入れ物の中で中央に置く（大きさが決まってから中央に来る）
+	var center := CenterContainer.new()
+	center.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(center)
+	center.add_child(_panel)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 10)
@@ -133,7 +137,7 @@ func sync(key: String, v) -> void:
 
 func set_open(on: bool) -> void:
 	is_open = on
-	_panel.visible = on
+	_panel.get_parent().visible = on
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if on else Input.MOUSE_MODE_CAPTURED
 
 
