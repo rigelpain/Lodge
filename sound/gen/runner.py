@@ -1,7 +1,8 @@
-"""ソリの滑り木が雪をこする音。遅いループと速いループを、Godot 側で速さに応じて混ぜる。
+"""ソリの滑り木が雪をこする音。「しゃー」の 1 本を、Godot 側で速さに応じて音量とピッチを変える。
 
-runner_slow_loop  じりじり（1 m/s 未満）。低く粗い「ざ、ざ」
-runner_fast_loop  滑走。高く連続した「しゃー」。ピッチも速さで上げる
+runner_fast_loop  高く連続した「しゃー」
+（止まりかけの「ざ、ざ」の遅いループは、代表が要らないと言ったので 2026-10-27 に外した。
+  作り方は slow_loop() に残す。--slow で書ける）
 """
 import numpy as np
 
@@ -52,5 +53,7 @@ def fast_loop(rng):
 
 
 if __name__ == "__main__":
-    write("runner_slow_loop.wav", slow_loop(np.random.default_rng(500)), -6)
+    import sys
+    if "--slow" in sys.argv:
+        write("runner_slow_loop.wav", slow_loop(np.random.default_rng(500)), -6)
     write("runner_fast_loop.wav", fast_loop(np.random.default_rng(501)), -4)

@@ -38,7 +38,6 @@ var _zone := -1                 # 0 外、1 風除室、2 中
 var _launched := false
 var _rush_gate := 1.0
 
-var _runner_slow: AudioStreamPlayer3D
 var _runner_fast: AudioStreamPlayer3D
 var _creak: AudioStreamPlayer3D
 var _wind_calm: AudioStreamPlayer
@@ -277,9 +276,6 @@ func _feed_posts(listener: Vector3) -> void:
 # ---- ソリ -----------------------------------------------------------------------
 
 func _make_sled() -> void:
-	_runner_slow = _p3(sled, "Outdoor", -80, 4.0, 40.0)
-	_runner_slow.stream = _wav("runner_slow_loop")
-	_runner_slow.play()
 	_runner_fast = _p3(sled, "Outdoor", -80, 5.0, 50.0)
 	_runner_fast.stream = _wav("runner_fast_loop")
 	_runner_fast.play()
@@ -287,11 +283,9 @@ func _make_sled() -> void:
 
 
 func _update_sled(dt: float) -> void:
+	# 滑り木は「しゃー」の 1 本だけ。止まりかけの「ざ、ざ」は代表が要らないと言ったので外した（2026-10-27）
 	var v := sled.linear_velocity.length()
-	var slow := lerpf(-26.0, -12.0, clampf(v / 1.0, 0.0, 1.0)) if v > 0.05 else -80.0
-	slow -= 30.0 * clampf((v - 2.0) / 2.0, 0.0, 1.0)   # 速くなると遅いループは消える
-	var fast := lerpf(-60.0, -6.0, clampf((v - 0.6) / 7.0, 0.0, 1.0))
-	_runner_slow.volume_db = lerpf(_runner_slow.volume_db, slow, minf(1.0, dt * 8.0))
+	var fast := lerpf(-60.0, -6.0, clampf((v - 0.4) / 7.2, 0.0, 1.0)) if v > 0.3 else -80.0
 	_runner_fast.volume_db = lerpf(_runner_fast.volume_db, fast, minf(1.0, dt * 8.0))
 	_runner_fast.pitch_scale = clampf(0.85 + 0.04 * v, 0.85, 1.25)
 	# 押す力が入った瞬間に、まれに木がきしむ
@@ -568,6 +562,6 @@ func _physics_process(dt: float) -> void:
 			if d < best:
 				best = d
 				near = post
-		debug = "音: 区域=%d 風=%.0f/%.0f dB 滑り木=%.0f/%.0f dB 近い柱 %.0f m 遅れ %.0f ms ゲート %.1f" % [
-				_zone, _wind_calm.volume_db, _wind_rush.volume_db, _runner_slow.volume_db, _runner_fast.volume_db,
+		debug = "音: 区域=%d 風=%.0f/%.0f dB 滑り木=%.0f dB 近い柱 %.0f m 遅れ %.0f ms ゲート %.1f" % [
+				_zone, _wind_calm.volume_db, _wind_rush.volume_db, _runner_fast.volume_db,
 				best, near.last_delay * 1000.0, _rush_gate]

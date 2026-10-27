@@ -33,7 +33,6 @@
 | [pot_lid_03.wav](pot_lid_03.png) | 0.65 | -10.0 | -25.7 | 2064 | 4301 | — |
 | [pot_steam_loop.wav](pot_steam_loop.png) | 6.10 | -12.0 | -26.7 | 6407 | 9926 | 0.049 |
 | [runner_fast_loop.wav](runner_fast_loop.png) | 4.00 | -4.0 | -17.8 | 3635 | 6727 | 0.011 |
-| [runner_slow_loop.wav](runner_slow_loop.png) | 4.00 | -6.0 | -24.2 | 325 | 656 | 0.004 |
 | [sled_creak_01.wav](sled_creak_01.png) | 0.26 | -12.0 | -29.5 | 967 | 1652 | — |
 | [sled_creak_02.wav](sled_creak_02.png) | 0.31 | -12.0 | -27.7 | 922 | 1594 | — |
 | [sled_creak_03.wav](sled_creak_03.png) | 0.24 | -12.0 | -29.4 | 746 | 855 | — |

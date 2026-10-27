@@ -203,13 +203,6 @@
   "loop": true
  },
  {
-  "file": "runner_slow_loop.wav",
-  "dur": 4.0,
-  "peak": -6.0,
-  "rms": -24.2,
-  "loop": true
- },
- {
   "file": "sled_creak_01.wav",
   "dur": 0.26,
   "peak": -12.0,
