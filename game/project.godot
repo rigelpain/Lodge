@@ -7,6 +7,10 @@ config/name="Lodge"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.6")
 
+[autoload]
+
+DayCycle="*res://daycycle.gd"
+
 [display]
 
 window/size/viewport_width=1280
