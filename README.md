@@ -4,6 +4,7 @@
 
 - 設計の文書: `design/`
   - [ゲームの構想](design/game-concept.md) … ふたつの原体験、狙い、場所、ロッジ、通信、売り方
+  - [ゲームデザインの骨組み](design/game-design.md) … 体験の柱 5 本、進め方、柱どうしがぶつかる所
   - [アートコンセプト](design/art-concept.md) … 手芸の世界（毛糸・フェルト・紙）、色、光、動き、音
   - [操作と物理の決まり](design/controls-and-physics.md) … 力の向きだけ入力し、あとは物理。仲間の挙動、確かめ方
 - 開発ダッシュボード: `docs/`（GitHub Pages で公開。中身は `docs/data.json` を書き換える）
