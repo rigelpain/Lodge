@@ -16,10 +16,10 @@ const START := Vector3(0, 0, 38)
 
 ## ロッジ（lodge/ の Blender の台本で作った glb）。スタートの先、少し西の麓に置き、
 ## 正面（ガラスの食堂とテラス、glb の +Z）を頂上へ向ける。足もとの地面はならす
-const LODGE_POS := Vector2(-22, 62)          # (x, z)
-const LODGE_YAW := 2.8006                    # atan2(22, -62): 正面を頂上の向きへ
-const LODGE_PAD := Rect2(-17, -10, 31, 23)   # ならす範囲（ロッジの座標の x, z）。下屋から外階段の踊り場まで
-const LODGE_BLEND := 8.0                     # ならした所から丘へ戻るまでの幅 (m)
+const LODGE_POS := Vector2(-27, 76)          # (x, z)
+const LODGE_YAW := 2.8004                    # atan2(27, -76): 正面を頂上の向きへ
+const LODGE_PAD := Rect2(-32, -16, 57, 37)   # ならす範囲（ロッジの座標の x, z）。下屋から外階段の踊り場まで
+const LODGE_BLEND := 10.0                    # ならした所から丘へ戻るまでの幅 (m)
 
 const Sled := preload("res://sled.gd")
 const Player := preload("res://player.gd")

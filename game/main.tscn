@@ -7,4 +7,4 @@
 script = ExtResource("1")
 
 [node name="Lodge" parent="." instance=ExtResource("2")]
-transform = Transform3D(-0.942423, 0, -0.334423, 0, 1, 0, 0.334423, 0, -0.942423, -22, 0.5644, 62)
+transform = Transform3D(-0.942356, 0, -0.334611, 0, 1, 0, 0.334611, 0, -0.942356, -27, 0.0989, 76)

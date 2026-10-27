@@ -388,7 +388,7 @@ def build_base():
     f = fl.done(bevel=0.015 if PH >= 2 else 0)
     if PH >= 2:
         I = INSTAIR
-        cut(f, cutter("cut_stairwell", I["x0"] - 0.05, I["y_bottom"] + 0.8, CEIL1 - 0.1, I["x1"] + 0.2,
+        cut(f, cutter("cut_stairwell", I["x0"] - 0.05, I["hole_y0"], CEIL1 - 0.1, I["x1"] + 0.2,
                       I["y_top"] + 0.05, FL2 + 0.1))
     dk = M("deck", "deck", "crown")
     D_ = DECK
@@ -426,19 +426,20 @@ def build_chimney():
     ch = m.done(bevel=0.03 if PH >= 3 else 0)
     if PH >= 2:   # 炉の口（1 階の中へ）
         cx = (c["x0"] + c["x1"]) / 2
-        cut(ch, cutter("cut_firebox", cx - 0.55, c["y0"] - 0.1, FL1 + 0.18, cx + 0.55, c["y0"] + 0.55, FL1 + 1.05))
+        fw_, fh_ = c["fire_w"], c["fire_h"]
+        cut(ch, cutter("cut_firebox", cx - fw_ / 2, c["y0"] - 0.1, FL1 + 0.18, cx + fw_ / 2, c["y0"] + 0.8, FL1 + fh_))
         h = M("hearth", "stone", "walls")
         h.box(c["x0"] - 0.25, c["y0"] - 0.65, FL1, c["x1"] + 0.25, c["y0"], FL1 + 0.12)
         h.done(bevel=0.02)
         mt = M("mantel", "board", "walls")
-        mt.box(c["x0"] - 0.10, c["y0"] - 0.22, FL1 + 1.45, c["x1"] + 0.10, c["y0"] + 0.02, FL1 + 1.55)
+        mt.box(c["x0"] - 0.10, c["y0"] - 0.26, FL1 + fh_ + 0.15, c["x1"] + 0.10, c["y0"] + 0.02, FL1 + fh_ + 0.27)
         mt.done(bevel=0.012)
         fr = M("fire", "fire", "walls")   # 炉の火（光る板と、くべた薪）
-        fr.box(cx - 0.42, c["y0"] + 0.40, FL1 + 0.20, cx + 0.42, c["y0"] + 0.45, FL1 + 0.85)
+        fr.box(cx - fw_ / 2 + 0.12, c["y0"] + 0.65, FL1 + 0.20, cx + fw_ / 2 - 0.12, c["y0"] + 0.70, FL1 + fh_ - 0.25)
         fr.done()
         fw = M("firewood", "log", "walls")
         for k, dz in ((-0.2, 0.0), (0.2, 0.0), (0.0, 0.1)):
-            fw.cyl((cx - 0.38, c["y0"] + 0.25 + k * 0.3, FL1 + 0.26 + dz), (cx + 0.38, c["y0"] + 0.25 - k * 0.3, FL1 + 0.26 + dz), 0.07)
+            fw.cyl((cx - fw_ / 2 + 0.2, c["y0"] + 0.35 + k * 0.4, FL1 + 0.28 + dz), (cx + fw_ / 2 - 0.2, c["y0"] + 0.35 - k * 0.4, FL1 + 0.28 + dz), 0.10)
         fw.done(smooth=True, cap_uv=True)
 
 
@@ -577,7 +578,7 @@ def build_walls():
                       (fixed + R, u1, roof_z(u1)), (fixed - R, u1, roof_z(u1))])
     # 1 階のガラスの壁（南の東 8.5 間、西の全面）。西の北の間は貸出への戸
     glass_wall(P, F, G, D, "x", Y0, -1, GLASS_S_POSTS, FL1, CEIL1)
-    glass_wall(P, F, G, D, "y", X0, -1, GLASS_W_POSTS, FL1, CEIL1, door_bay=4)
+    glass_wall(P, F, G, D, "y", X0, -1, GLASS_W_POSTS, FL1, CEIL1, door_bay=GLASS_W_DOOR_BAY)
     # 2 階の南の壁を受ける梁と丸柱
     Bm = M("beam", "post", "walls")
     Bm.box(X0, Y2_0 - R, CEIL1 - 0.30, X1, Y2_0 + R + 0.12, CEIL1)
@@ -723,7 +724,7 @@ def build_interior():
     mb = M("menu_board", "felt_green", "interior")   # 色あせたフェルトの案内板
     mid = (COUNTER["x0"] + COUNTER["x1"]) / 2
     for k in (-1, 0, 1):   # 3 枚並べて吊る
-        mb.box(mid + k * 1.0 - 0.45, COUNTER["y1"] - 0.03, FL1 + 2.45, mid + k * 1.0 + 0.45, COUNTER["y1"] + 0.01, FL1 + 3.05)
+        mb.box(mid + k * 1.6 - 0.65, COUNTER["y1"] - 0.03, FL1 + 2.6, mid + k * 1.6 + 0.65, COUNTER["y1"] + 0.01, FL1 + 3.4)
     mb.done(bevel=0.01)
     # 卓 6 つと椅子（3 脚ずつ向かい合う）
     tw, td, th = TABLE["w"], TABLE["d"], TABLE["h"]
@@ -791,9 +792,9 @@ def build_interior():
     ir = M("instair_rail", "rail", "interior")
     rail_run(ir, (I["x0"] + 0.04, I["y_bottom"], FL1 + ri), (I["x0"] + 0.04, I["y_top"] - 0.3, FL2), h=0.9,
              posts_every=5, name="bal_instair")
-    rail_run(ir, (I["x0"] - 0.05, I["y_bottom"] + 0.8, FL2), (I["x0"] - 0.05, I["y_top"], FL2), h=RAIL_H,
+    rail_run(ir, (I["x0"] - 0.05, I["hole_y0"], FL2), (I["x0"] - 0.05, I["y_top"], FL2), h=RAIL_H,
              name="bal_stairwell_w")
-    rail_run(ir, (I["x0"] - 0.05, I["y_bottom"] + 0.8, FL2), (I["x1"], I["y_bottom"] + 0.8, FL2), h=RAIL_H,
+    rail_run(ir, (I["x0"] - 0.05, I["hole_y0"], FL2), (I["x1"], I["hole_y0"], FL2), h=RAIL_H,
              name="bal_stairwell_s")
     ir.done(bevel=0.01)
     # 1 階の吊り灯り（卓の上）と 2 階の紙の灯り
@@ -802,9 +803,9 @@ def build_interior():
         for j in (0.25, 0.75):
             cx, cy = x + tw * j, y + td / 2
             lp.cyl((cx, cy, CEIL1 - 0.9), (cx, cy, CEIL1 - 0.55), 0.22, seg=20)
-    for x in KOTATSU:
+    for x, ky in KOTATSU:
         cx = x + KOTATSU_W / 2
-        cy = sum(KOTATSU_Y) / 2
+        cy = ky + KOTATSU_D / 2
         lp.cyl((cx, cy, FL2 + TATAMI["h"] + 1.75), (cx, cy, FL2 + TATAMI["h"] + 2.2), 0.30, seg=24)
     lp.done(bevel=0.03, seg=3, smooth=True)
     cords = M("cords", "metal", "interior")
@@ -819,9 +820,9 @@ def build_interior():
     pl = M("tatami_platform", "board", "interior")
     pl.box(T_["x0"], T_["y0"], FL2, T_["x1"], T_["y1"], zt - 0.03)
     plo = pl.done(bevel=0.01)
-    ky0, ky1 = KOTATSU_Y
     pits = []
-    for i, x in enumerate(KOTATSU):
+    for i, (x, ky0) in enumerate(KOTATSU):
+        ky1 = ky0 + KOTATSU_D
         pits.append((x - 0.25, ky0 - 0.45, x + KOTATSU_W + 0.25, ky1 + 0.45))
         cut(plo, cutter("cut_pit_%d" % i, x - 0.25, ky0 - 0.45, zt - PIT_DEPTH, x + KOTATSU_W + 0.25, ky1 + 0.45, zt + 0.1))
     # 畳: 半間 x 1 間を目地で並べる。掘りごたつの穴にかかる畳は外す
@@ -847,7 +848,8 @@ def build_interior():
     kt = M("kotatsu", "board", "interior")
     qu = M("kotatsu_quilt", "quilt", "interior")
     zb = M("zabuton", "cushion", "interior")
-    for x in KOTATSU:
+    for x, ky0 in KOTATSU:
+        ky1 = ky0 + KOTATSU_D
         kt.box(x, ky0, zt + 0.36, x + KOTATSU_W, ky1, zt + 0.40)
         qu.box(x - 0.12, ky0 - 0.12, zt + 0.02, x + KOTATSU_W + 0.12, ky1 + 0.12, zt + 0.36)
         for j in range(3):
@@ -867,7 +869,7 @@ def build_interior():
     b2.box(x0, y0, FL2 + 0.68, x1, y1, FL2 + 0.72)
     for lx in (x0 + 0.1, x1 - 0.1):
         b2.box(lx - 0.04, y0 + 0.1, FL2, lx + 0.04, y1 - 0.1, FL2 + 0.68)
-    b2.box(INSTAIR["x0"] - 1.6, gy(3.25), FL2, INSTAIR["x0"] - 0.3, gy(2.95), FL2 + 0.9)   # 下足箱
+    b2.box(INSTAIR["x0"] - 2.0, INSTAIR["hole_y0"] - 0.5, FL2, INSTAIR["x0"] - 0.5, INSTAIR["hole_y0"] - 0.15, FL2 + 0.9)   # 下足箱
     b2.done(bevel=0.012)
 
     # ---- 下屋: 貸出のスキー立てと腰掛け ----
@@ -899,8 +901,8 @@ def build_interior():
     # 灯りの場所の目印。glTF の灯りは明るさの単位が合わないので、ゲームの側で灯りを置く
     lights = [("light_lamp_%d" % i, (x + tw * j, y + td / 2, CEIL1 - 0.75))
               for i, (x, y, j) in enumerate((x, y, j) for x, y in TABLES for j in (0.25, 0.75))]
-    lights += [("light_lantern_%d" % i, (x + KOTATSU_W / 2, sum(KOTATSU_Y) / 2, FL2 + TATAMI["h"] + 1.95))
-               for i, x in enumerate(KOTATSU)]
+    lights += [("light_lantern_%d" % i, (x + KOTATSU_W / 2, ky + KOTATSU_D / 2, FL2 + TATAMI["h"] + 1.95))
+               for i, (x, ky) in enumerate(KOTATSU)]
     lights.append(("light_fire", ((CH["x0"] + CH["x1"]) / 2, CH["y0"] - 0.35, FL1 + 0.6)))
     lights.append(("light_kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4)))
     for name, loc in lights:
@@ -942,10 +944,10 @@ def build_scenery():
     T = M("trees", "tree", "scenery")
     S = M("tree_snow", "snow", "scenery")
     W = M("trunks", "trunk", "scenery")
-    spots = [(-26, 14), (-31, 4), (-22, 26), (-12, 30), (2, 33), (16, 29), (27, 20), (33, 6), (30, -9),
-             (24, 40), (-36, 30), (-44, 12), (40, 26), (8, 46), (-28, -28), (-34, -44), (30, -32), (38, -48),
-             (-46, -18), (46, -6), (14, -30), (22, -44), (8, -60), (30, -62), (-40, -56), (-8, -72), (40, -80),
-             (-26, -84)]
+    spots = [(-52, 28), (-62, 8), (-44, 52), (-24, 60), (4, 66), (32, 58), (54, 40), (66, 12), (60, -18),
+             (48, 80), (-72, 60), (-88, 24), (80, 52), (16, 92), (-56, -56), (-68, -88), (60, -64), (76, -96),
+             (-92, -36), (92, -12), (28, -60), (44, -88), (16, -120), (60, -124), (-80, -112), (-16, -144), (80, -160),
+             (-52, -168)]
     for x, y in spots:
         k = rnd.uniform(0.85, 1.5)
         x += rnd.uniform(-2, 2)
@@ -1015,15 +1017,15 @@ def build_light():
     for x, y in TABLES:
         for j in (0.25, 0.75):
             point("lamp_1f", (x + tw * j, y + td / 2, CEIL1 - 0.75), 45 * k, warm, 0.2, shadow=False)
-    for x in KOTATSU:
-        point("lantern_2f", (x + KOTATSU_W / 2, sum(KOTATSU_Y) / 2, FL2 + TATAMI["h"] + 1.95), 70 * k, warm, 0.25)
+    for x, ky in KOTATSU:
+        point("lantern_2f", (x + KOTATSU_W / 2, ky + KOTATSU_D / 2, FL2 + TATAMI["h"] + 1.95), 70 * k, warm, 0.25)
     point("kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4), 120 * k, (1.0, 0.74, 0.48), 0.4)
     point("rental", (gx(0.8), gy(0.9), CEIL1 - 0.4), 60 * k, (1.0, 0.74, 0.48), 0.4)
     ar = bpy.data.objects.new("fill_2f", bpy.data.lights.new("fill_2f", "AREA"))   # 2 階の天井の柔らかい灯り
     coll("lights").objects.link(ar)
     ar.data.shape = "RECTANGLE"
-    ar.data.size, ar.data.size_y = 14.0, 4.0
-    ar.data.energy = 320 * k
+    ar.data.size, ar.data.size_y = 28.0, 9.0
+    ar.data.energy = 1300 * k
     ar.data.color = warm
     ar.location = (gx(6.5), gy(2.6), roof_z(gy(2.6)) - 0.2)
     cx = (CH["x0"] + CH["x1"]) / 2
@@ -1032,16 +1034,16 @@ def build_light():
 
 
 CAMS = {
-    "hill": ((-17, -38, 12.5), (0.5, -2, 4.4), 35),
-    "west": ((-44, -7, 6.5), (0, 0, 4.4), 36),
-    "east": ((40, -22, 9), (0, -1, 4.2), 36),
-    "north": ((14, 40, 9), (0, 0, 4.0), 36),
-    "aerial": ((-34, -42, 34), (0, -1, 2), 32),
-    "close": ((-9.5, -21, 3.2), (-3.5, -6.5, 4.6), 30),
+    "hill": ((-34, -76, 24), (1, -4, 7.5), 35),
+    "west": ((-88, -14, 12), (0, 0, 7.5), 36),
+    "east": ((80, -44, 18), (0, -2, 7), 36),
+    "north": ((28, 80, 18), (0, 0, 6.5), 36),
+    "aerial": ((-68, -84, 68), (0, -2, 4), 32),
+    "close": ((-19, -42, 4.5), (-7, -13, 7.0), 30),
     "in1": ((gx(2.5), Y0 + 1.0, FL1 + 1.55), (gx(9.0), Y1 - 1.0, FL1 + 1.2), 20),
     "in2": ((gx(0.5), gy(3.6), FL2 + 1.55), (gx(10.5), gy(2.4), FL2 + 0.55), 22),
-    "kotatsu": ((gx(5.4), gy(1.1), FL2 + TATAMI["h"] + 1.05), (gx(3.2), Y0 - 6, FL2 + 1.6), 22),
-    "terrace": ((gx(7.0), Y2_0 - 0.7, FL2 + 1.55), (gx(3.0), Y0 - 18, 3.5), 24),
+    "kotatsu": ((gx(5.3), gy(1.2), FL2 + TATAMI["h"] + 1.05), (gx(3.0), Y0 - 8, FL2 + 1.6), 24),
+    "terrace": ((gx(7.0), Y2_0 - 0.7, FL2 + 1.55), (gx(3.0), Y0 - 30, 4.5), 24),
 }
 
 
@@ -1094,7 +1096,7 @@ def build_collision():
     D_ = DECK
     F.box(D_["x0"], D_["y0"], 0, D_["x1"], D_["y1"], D_["z"])
     I = INSTAIR
-    hx, hy = I["x0"] - 0.05, I["y_bottom"] + 0.8
+    hx, hy = I["x0"] - 0.05, I["hole_y0"]
     F.box(X0 - 0.09, Y0 - 0.09, CEIL1, hx, Y1 + 0.09, FL2)
     F.box(hx, Y0 - 0.09, CEIL1, X1 + 0.09, hy, FL2)
     F.box(TATAMI["x0"], TATAMI["y0"], FL2, TATAMI["x1"], TATAMI["y1"], FL2 + TATAMI["h"])
@@ -1106,7 +1108,7 @@ def build_collision():
     wall(Wl, "x", Y0, X0, GLASS_S_X0, FL1, CEIL1, [(DOOR_IN["x0"], DOOR_IN["x1"], FL1 + DOOR_IN["h"])])
     wall(Wl, "x", Y0, GLASS_S_X0, X1, FL1, CEIL1, t=POST)
     wp = sorted(GLASS_W_POSTS)
-    wall(Wl, "y", X0, Y0, Y1, FL1, CEIL1, [(wp[4] + POST / 2, wp[5] - POST / 2, TRANSOM)], t=POST)
+    wall(Wl, "y", X0, Y0, Y1, FL1, CEIL1, [(wp[GLASS_W_DOOR_BAY] + POST / 2, wp[GLASS_W_DOOR_BAY + 1] - POST / 2, TRANSOM)], t=POST)
     V = VEST
     y0v, cx = Y0 - V["d"], (V["x0"] + V["x1"]) / 2
     Wl.box(V["x0"], y0v, FL1, V["x0"] + 0.12, Y0, V["h"])
@@ -1168,8 +1170,8 @@ def build_collision():
     S_ = SKI_RACK
     Fu.box(S_["x0"], S_["y0"], FL1, S_["x1"], S_["y1"], FL1 + 1.75)
     zt = FL2 + TATAMI["h"]
-    for x in KOTATSU:
-        Fu.box(x - 0.12, KOTATSU_Y[0] - 0.12, zt, x + KOTATSU_W + 0.12, KOTATSU_Y[1] + 0.12, zt + 0.40)
+    for x, ky in KOTATSU:
+        Fu.box(x - 0.12, ky - 0.12, zt, x + KOTATSU_W + 0.12, ky + KOTATSU_D + 0.12, zt + 0.40)
     Fu.box(*BENCH2[:2], FL2, *BENCH2[2:], FL2 + 0.42)
     Fu.box(TABLE2[0], TABLE2[1], FL2, TABLE2[2], TABLE2[3], FL2 + 0.72)
     return [m.done() for m in groups.values()]

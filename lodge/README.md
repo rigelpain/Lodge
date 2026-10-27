@@ -44,7 +44,7 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 
 ## Godot で使う
 
-ゲームでは `game/main.gd` の `_make_lodge()` が置く。場所はスタートの先の少し西の麓（x = -22, z = 62）で、正面（ガラスの食堂とテラス）を頂上へ向ける。足もとの地面は `lodge_weight()` で平らにならし、木を重ねない。
+ゲームでは `game/main.gd` の `_make_lodge()` が置く。場所はスタートの先の少し西の麓（x = -27, z = 76）で、正面（ガラスの食堂とテラス）を頂上へ向ける。足もとの地面は `lodge_weight()` で平らにならし、木を重ねない。
 
 - `lodge.glb` の素材は役割の名前（`log` `roof` `snow` `stone` `post` `board` `floor` `glass` `paper` …）と色だけ。手芸の質感はゲームの `game/look.gd`（`felt()` `snow()` `paper()` `wood()`）に名前で差し替える
 - 丸太の木口の渦は UV の u が 2〜3 の面にある（胴は 0.1）。Godot で渦を描くなら、この UV で切り分ける
@@ -53,7 +53,7 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 - 2 階の小上がりは 0.4 m の段。プレイヤーが上がれる高さかは、ゲームの側で確かめる
 - 原点は 1 階の外形の中心の真下、雪の地面の高さ。正面（南）が -Y（Blender）＝ +Z（Godot）を向く
 - 機械の置き場の目印（空の節点）: `slot_food_kitchen`、`slot_craft_rental`、`slot_vending_1`〜`3`。機械は代表があとで置く
-- 灯りの場所の目印（空の節点）: `light_lamp_0`〜`11`（卓の上）、`light_lantern_0`〜`2`（2 階の行灯）、`light_fire`、`light_kitchen`。ゲームはここに暖色の OmniLight3D を灯し、炉の火だけ揺らす
+- 灯りの場所の目印（空の節点）: `light_lamp_0`〜`35`（卓の上）、`light_lantern_0`〜`7`（2 階の行灯）、`light_fire`、`light_kitchen`。ゲームはここに暖色の OmniLight3D を灯し、炉の火だけ揺らす
 
 ## 画像
 
