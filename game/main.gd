@@ -24,6 +24,7 @@ const LODGE_BLEND := 10.0                    # ならした所から丘へ戻る
 const Sled := preload("res://sled.gd")
 const Player := preload("res://player.gd")
 const Bot := preload("res://bot.gd")
+const Settings := preload("res://settings.gd")
 
 var sled: RigidBody3D
 var player: CharacterBody3D
@@ -102,6 +103,16 @@ func _ready() -> void:
 		_make_pip()
 	if not args.has("no-snow"):
 		_make_snowfall(player if player else self)
+
+	# 設定画面（Esc）。保存してある値を起動時に当てる
+	settings = Settings.new()
+	add_child(settings)
+	settings.changed.connect(_apply_setting)
+	for key in settings.values:
+		_apply_setting(key, settings.values[key])
+	if args.has("settings"):   # 確かめ用: 設定画面を開いた状態で始める
+		settings.set_open(true)
+		if player: player.menu_open = true
 
 	hud = Label.new()
 	hud.position = Vector2(16, 12)
@@ -204,6 +215,8 @@ var pip_cams: Array[Camera3D] = []
 var _pip_vps: Array[SubViewport] = []
 var _pip_tick := 0
 var pip_hidden := false
+var settings: CanvasLayer
+var snowfall: GPUParticles3D
 var _pip_layer: CanvasLayer
 var pip_frame: PanelContainer
 var pip_mat: ShaderMaterial
@@ -411,6 +424,7 @@ func _make_snowfall(follow: Node3D) -> void:
 	p.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	p.position = Vector3(0, 22, 0)
 	follow.add_child(p)
+	snowfall = p
 	p.top_level = false
 
 
@@ -603,14 +617,40 @@ func _physics_process(dt: float) -> void:
 		get_tree().quit()
 
 
+func _apply_setting(key: String, v) -> void:
+	match key:
+		"bob":
+			if player: player.bob_enabled = v
+		"fov_kick":
+			if player: player.fov_kick_enabled = v
+		"pip":
+			pip_hidden = not v
+			if _pip_layer: _pip_layer.visible = v
+		"snow":
+			if snowfall: snowfall.emitting = v; snowfall.visible = v
+		"third":
+			if player: player.set_third(v)
+		"fov":
+			if player: player.base_fov = v
+		"sens":
+			if player: player.mouse_sens = v
+		"scale":
+			get_viewport().scaling_3d_scale = v
+
+
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventKey and e.pressed and not e.echo:
+		if e.physical_keycode == KEY_ESCAPE and settings:
+			settings.set_open(not settings.is_open)
+			if player: player.menu_open = settings.is_open
+			return
 		if e.physical_keycode == KEY_R:
 			sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
 		elif e.physical_keycode == KEY_P and _pip_layer:
 			# 右上の 360° 映像を消す／出す（消している間は描画もしない）
 			pip_hidden = not pip_hidden
 			_pip_layer.visible = not pip_hidden
+			settings.sync("pip", not pip_hidden)
 		elif e.physical_keycode == KEY_V and pip_mat:
 			pip_mode = (pip_mode + 1) % 3
 			pip_mat.set_shader_parameter("mode", pip_mode)

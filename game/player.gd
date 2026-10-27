@@ -30,6 +30,10 @@ var pulling := false
 var prompt := ""             # 画面に出す一言（main.gd が読む）
 var base_fov := 75.0         # ホイールで変える視野角
 var third := false           # C で三人称
+var bob_enabled := true      # 設定: 押す・引くときの視点の揺れ
+var fov_kick_enabled := true # 設定: 押すときに画角が少し広がる
+var mouse_sens := 1.0        # 設定: マウスの感度
+var menu_open := false       # 設定画面が開いている間は、クリックでマウスをつかまない
 var _pitch := 0.0
 var _col: CollisionShape3D
 var _t := 0.0
@@ -108,6 +112,12 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+## 三人称では自分の体を映し、一人称の手は映さない
+func set_third(on: bool) -> void:
+	third = on
+	cam.cull_mask = (1 << 0) | (1 << 1) if third else (1 << 0) | (1 << 2)
+
+
 func _body_part(mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
 	var m := MeshInstance3D.new()
 	m.mesh = mesh
@@ -120,8 +130,8 @@ func _body_part(mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
 
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		rotate_y(-e.relative.x * 0.003)
-		_pitch = clamp(_pitch - e.relative.y * 0.003, -1.4, 1.3)
+		rotate_y(-e.relative.x * 0.003 * mouse_sens)
+		_pitch = clamp(_pitch - e.relative.y * 0.003 * mouse_sens, -1.4, 1.3)
 	elif e is InputEventMagnifyGesture:
 		# トラックパッドのピンチ: 広げると寄る（視野角が狭まる）
 		base_fov = clamp(base_fov / e.factor, 50.0, 110.0)
@@ -130,16 +140,13 @@ func _unhandled_input(e: InputEvent) -> void:
 			base_fov = clamp(base_fov - 3.0, 50.0, 110.0)
 		elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			base_fov = clamp(base_fov + 3.0, 50.0, 110.0)
-		elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED:
+		elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu_open:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif e is InputEventKey and e.pressed and not e.echo:
 		match e.physical_keycode:
-			KEY_ESCAPE:
-				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 			KEY_C:
-				third = not third
-				# 三人称では自分の体を映し、一人称の手は映さない
-				cam.cull_mask = (1 << 0) | (1 << 1) if third else (1 << 0) | (1 << 2)
+				set_third(not third)
+				get_parent().settings.sync("third", third)
 			KEY_F:
 				match mode:
 					Mode.GRIP, Mode.ROPE:
@@ -344,11 +351,11 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 
 
 func _pose_hands(dt: float) -> void:
-	var bob := sin(_t * 9.0)
 	var working := pushing or pulling
+	var bob := sin(_t * 9.0) if bob_enabled else 0.0
 	# 押す・引くと視点がわずかに揺れ、画角が少し広がる
 	_place_camera(dt, bob, working)
-	cam.fov = lerp(cam.fov, base_fov + (4.0 if working else 0.0), min(1.0, dt * 4.0))
+	cam.fov = lerp(cam.fov, base_fov + (4.0 if working and fov_kick_enabled else 0.0), min(1.0, dt * 4.0))
 	for h in hands:
 		var s: int = h.get_meta("side")
 		var target: Vector3
