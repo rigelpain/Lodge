@@ -2,7 +2,7 @@ extends Node
 ## 一日の巡り（自動読み込み）。20 分で一日が経つ。
 ## 場面の太陽（DirectionalLight3D）と WorldEnvironment を見つけて、時刻に合わせて太陽の高さと向き・光の色、
 ## 空と霧の色、環境光を変える。夜は同じ灯りを月にして、青く淡く照らす（空の円は月の色になる）。
-## 画面の右下に日時計を出す。数字は出さず、扇形の目盛りの上を、昼は太陽、夜は月が東から西へ渡る。
+## 画面の右下に日時計を出す。数字は出さず、細い線の扇形の目盛りの上を、昼は太陽、夜は月が東から西へ渡る。
 ## 確かめ用: --time=時（例 --time=17.5 で 17:30 から）、--day=秒（一日の長さ）
 
 const DAY_SECONDS := 1200.0       # 20 分で一日
@@ -17,7 +17,8 @@ var _env: Environment
 var _sky_mat: ShaderMaterial
 var _sky_t := 0.0
 var _dial: Control
-var _sky_top := DAY_TOP          # 日時計の扇の地の色（いまの空の上の色）
+var _ink_t := 0.0
+var _ink_target := 1.0
 
 # 空の色: 昼・夕・夜（上・地平・地面・雲）
 const DAY_TOP := Color(0.50, 0.66, 0.88)
@@ -52,6 +53,8 @@ func _process(dt: float) -> void:
 	_sky_t += dt
 	_apply(_sky_t >= SKY_EVERY)
 	if _dial:
+		_update_ink(dt)
+		_dial.ink = move_toward(_dial.ink, _ink_target, dt * 2.0)
 		_dial.queue_redraw()
 
 
@@ -69,7 +72,7 @@ func _make_dial() -> void:
 	_dial = Dial.new()
 	_dial.cycle = self
 	_dial.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_dial.offset_left = -(Dial.R * 2 + 16 + 12)
+	_dial.offset_left = -(Dial.R * 2 + 16 + 10)
 	_dial.offset_right = -16
 	_dial.offset_top = -(Dial.R + 16 + 14)
 	_dial.offset_bottom = -12
@@ -79,58 +82,69 @@ func _make_dial() -> void:
 
 
 ## 扇形の日時計: 左が東（6 時・18 時の地平）、上が南中（正午・真夜中）、右が西。
-## 昼の 12 時間は太陽が、夜の 12 時間は月が、同じ扇を左から右へ渡る。目盛りは 3 時間ごと
+## 昼の 12 時間は太陽が、夜の 12 時間は月が、同じ扇を左から右へ渡る。目盛りは 3 時間ごと。
+## 塗りはなく、細い線だけ。線の色は後ろの明るさを見て白と黒のあいだで変える（ink: 1 白、0 黒）
 class Dial extends Control:
-	const R := 42.0
+	const R := 40.0
+	const W := 1.2
 	var cycle: Node
+	var ink := 1.0
 
 	func _draw() -> void:
+		var col := Color(ink, ink, ink, 0.85)
 		var c := Vector2(size.x / 2.0, size.y - 6.0)       # 扇の要（地平の真ん中）
 		var h: float = cycle.hour
 		var day := h >= 6.0 and h < 18.0
 		var f := (h - 6.0) / 12.0 if day else fposmod(h - 18.0, 24.0) / 12.0
-		# 扇の地: いまの空の色を淡く
-		var fan := PackedVector2Array([c])
-		for i in 33:
-			var a := PI * (1.0 - i / 32.0)
-			fan.append(c + Vector2(cos(a), -sin(a)) * R)
-		var bg: Color = cycle._sky_top
-		bg.a = 0.55
-		draw_colored_polygon(fan, bg)
-		for pass_ in 2:   # 下に薄い影の線を敷いてから白い線（白い雪の上でも読めるように）
-			var col := Color(0.15, 0.18, 0.25, 0.35) if pass_ == 0 else Color(1, 1, 1, 0.9)
-			var w := 4.5 if pass_ == 0 else 2.0
-			draw_arc(c, R, PI, TAU, 40, col, w, true)
-			draw_line(c - Vector2(R + 6, 0), c + Vector2(R + 6, 0), col, w, true)   # 地平
-			for k in 5:                                       # 目盛り（3 時間ごと）
-				var a := PI * (1.0 - k / 4.0)
-				var d := Vector2(cos(a), -sin(a))
-				draw_line(c + d * (R - 7.0), c + d * R, col, w, true)
+		draw_arc(c, R, PI, TAU, 48, col, W, true)
+		draw_line(c - Vector2(R + 5, 0), c + Vector2(R + 5, 0), col, W, true)   # 地平
+		for k in 5:                                           # 目盛り（3 時間ごと）
+			var a := PI * (1.0 - k / 4.0)
+			var d := Vector2(cos(a), -sin(a))
+			draw_line(c + d * (R - 5.0), c + d * R, col, W, true)
 		var ang := PI * (1.0 - f)
-		var p := c + Vector2(cos(ang), -sin(ang)) * (R - 15.0)
+		var p := c + Vector2(cos(ang), -sin(ang)) * (R - 14.0)
 		if day:
-			_sun(p)
+			draw_arc(p, 5.0, 0.0, TAU, 24, col, W, true)     # 太陽: 円と 8 本の光
+			for i in 8:
+				var d := Vector2(cos(TAU * i / 8.0), sin(TAU * i / 8.0))
+				draw_line(p + d * 7.5, p + d * 10.0, col, W, true)
 		else:
-			_moon(p)
+			var pts := PackedVector2Array()                   # 月: 三日月の輪郭
+			for i in 17:
+				var t := -PI / 2.0 + PI * i / 16.0
+				pts.append(p + Vector2(cos(t), sin(t)) * 7.0)
+			for i in 17:
+				var t := PI / 2.0 - PI * i / 16.0
+				pts.append(p + Vector2(cos(t) * 2.8, sin(t) * 7.0))
+			pts.append(pts[0])
+			draw_polyline(pts, col, W, true)
 
-	func _sun(p: Vector2) -> void:
-		for i in 8:                                           # 光の筋
-			var a := TAU * i / 8.0
-			var d := Vector2(cos(a), sin(a))
-			draw_line(p + d * 8.5, p + d * 12.0, Color(1.0, 0.80, 0.30), 2.0, true)
-		draw_circle(p, 7.0, Color(1.0, 0.82, 0.35))
-		draw_circle(p, 7.0, Color(0.85, 0.55, 0.15, 0.9), false, 1.5, true)
 
-	func _moon(p: Vector2) -> void:
-		var pts := PackedVector2Array()                       # 三日月: 外の円の右半分と、内の楕円の弧
-		for i in 17:
-			var t := -PI / 2.0 + PI * i / 16.0
-			pts.append(p + Vector2(cos(t), sin(t)) * 8.0)
-		for i in 17:
-			var t := PI / 2.0 - PI * i / 16.0
-			pts.append(p + Vector2(cos(t) * 3.2, sin(t) * 8.0))
-		draw_colored_polygon(pts, Color(0.97, 0.95, 0.82))
-		draw_polyline(pts + PackedVector2Array([pts[0]]), Color(0.75, 0.72, 0.55, 0.9), 1.2, true)
+## 日時計の後ろの明るさを見て、線を白か黒に寄せる（0.5 秒ごと。画面を読み戻すのは軽くないので間を空ける）
+func _update_ink(dt: float) -> void:
+	_ink_t += dt
+	if _ink_t < 0.5:
+		return
+	_ink_t = 0.0
+	var img := get_viewport().get_texture().get_image()
+	if img == null:
+		return
+	var r := _dial.get_global_rect()
+	var sum := 0.0
+	var n := 0
+	for iy in 6:
+		for ix in 10:
+			var x := int(r.position.x + r.size.x * (ix + 0.5) / 10.0)
+			var y := int(r.position.y + r.size.y * (iy + 0.5) / 6.0)
+			if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
+				continue
+			sum += img.get_pixel(x, y).get_luminance()
+			n += 1
+	if n == 0:
+		return
+	var lum := sum / n
+	_ink_target = 0.0 if lum > 0.58 else (1.0 if lum < 0.48 else _ink_target)   # 境目で行き来しないよう、間を空ける
 
 
 func _find() -> bool:
@@ -170,7 +184,6 @@ func _apply(sky_too: bool) -> void:
 		return
 	_sky_t = 0.0
 	var top := NIGHT_TOP.lerp(DAY_TOP, day).lerp(DUSK_TOP, dusk * 0.5)
-	_sky_top = top
 	var hor := NIGHT_HOR.lerp(DAY_HOR, day).lerp(DUSK_HOR, dusk * 0.7)
 	var gnd := NIGHT_GND.lerp(DAY_GND, day).lerp(DUSK_GND, dusk * 0.5)
 	var cloud := NIGHT_CLOUD.lerp(DAY_CLOUD, day).lerp(DUSK_CLOUD, dusk * 0.6)
