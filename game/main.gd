@@ -203,6 +203,8 @@ void fragment() {
 var pip_cams: Array[Camera3D] = []
 var _pip_vps: Array[SubViewport] = []
 var _pip_tick := 0
+var pip_hidden := false
+var _pip_layer: CanvasLayer
 var pip_frame: PanelContainer
 var pip_mat: ShaderMaterial
 var pip_mode := 0
@@ -230,6 +232,7 @@ func _make_pip() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 2
 	add_child(layer)
+	_pip_layer = layer
 	pip_frame = PanelContainer.new()
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = Color(1, 1, 1, 0.22)
@@ -303,7 +306,7 @@ func _process(_dt: float) -> void:
 		return
 	_place_pip_cams()
 	_pip_tick += 1
-	if _pip_tick % 2 == 0:
+	if _pip_tick % 2 == 0 and not pip_hidden:
 		for vp in _pip_vps:
 			vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var t := int(elapsed)
@@ -604,6 +607,10 @@ func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventKey and e.pressed and not e.echo:
 		if e.physical_keycode == KEY_R:
 			sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
+		elif e.physical_keycode == KEY_P and _pip_layer:
+			# 右上の 360° 映像を消す／出す（消している間は描画もしない）
+			pip_hidden = not pip_hidden
+			_pip_layer.visible = not pip_hidden
 		elif e.physical_keycode == KEY_V and pip_mat:
 			pip_mode = (pip_mode + 1) % 3
 			pip_mat.set_shader_parameter("mode", pip_mode)
