@@ -13,7 +13,7 @@ HEX = {
     "log": "7E5535", "log_cap": "A97F4F", "post": "6F4628", "frame": "EDE1C9", "board": "C8A26C",
     "door": "6E4A30", "deck": "B99465", "rail": "A97F4F", "stone": "CDC5B8", "roof": "283268",
     "snow": "F6F7FA", "glass": "B9CBE3", "metal": "3A2A1E", "dark": "1A1410", "tatami": "D9D2A8",
-    "cushion": "C98A67", "quilt": "B45A4A", "paper": "F4EBD8", "felt_red": "B45A4A",
+    "cushion": "C98A67", "quilt": "B45A4A", "paper": "F5D6A0", "felt_red": "B45A4A",
     "felt_blue": "4C6FA8", "felt_green": "7C9A5C", "felt_yellow": "D7A24A", "tree": "3E5C48",
     "trunk": "5C3B23", "fire": "FF8A3A", "far": "A9BCD6", "floor": "9A714A", "ceiling": "C8A26C",
 }

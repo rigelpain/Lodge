@@ -961,7 +961,7 @@ def build_light():
         sun.rotation_euler = (math.radians(84), 0, math.radians(-62))
     else:
         sun.data.energy = 4.5 if A.look == "day" else 4.5
-        sun.data.color = (1.0, 0.93, 0.82) if A.look == "day" else (1, 1, 1)
+        sun.data.color = (1.0, 0.86, 0.68) if A.look == "day" else (1, 1, 1)
         sun.rotation_euler = (math.radians(62), 0, math.radians(-45))   # 南西から、高度 28 度
     if A.look == "clay":
         w = bpy.data.worlds.new("w")
@@ -980,15 +980,15 @@ def build_light():
             point("lamp", (x, y, z), e, (1.0, 0.86, 0.68), 0.5)
         return
     k = 2.6 if A.look == "dusk" else 1.8
-    warm = (1.0, 0.80, 0.56)
+    warm = (1.0, 0.68, 0.40)   # 電球色より少し赤み
     tw, td = TABLE["w"], TABLE["d"]
     for x, y in TABLES:
         for j in (0.25, 0.75):
             point("lamp_1f", (x + tw * j, y + td / 2, CEIL1 - 0.75), 45 * k, warm, 0.2, shadow=False)
     for x in KOTATSU:
         point("lantern_2f", (x + KOTATSU_W / 2, sum(KOTATSU_Y) / 2, FL2 + TATAMI["h"] + 1.95), 70 * k, warm, 0.25)
-    point("kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4), 120 * k, (1.0, 0.9, 0.75), 0.4)
-    point("rental", (gx(0.8), gy(0.9), CEIL1 - 0.4), 60 * k, (1.0, 0.9, 0.75), 0.4)
+    point("kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4), 120 * k, (1.0, 0.74, 0.48), 0.4)
+    point("rental", (gx(0.8), gy(0.9), CEIL1 - 0.4), 60 * k, (1.0, 0.74, 0.48), 0.4)
     ar = bpy.data.objects.new("fill_2f", bpy.data.lights.new("fill_2f", "AREA"))   # 2 階の天井の柔らかい灯り
     coll("lights").objects.link(ar)
     ar.data.shape = "RECTANGLE"
