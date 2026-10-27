@@ -632,16 +632,43 @@ def arch_ring(m, cx, zs, r0, r1, y0, y1, n=18):
 
 
 def build_vestibule():
-    """風除室: 1 階の屋根まである木のアーチの両開き戸（外へ開け放す）、両脇は金網、中は自販機とマット"""
+    """風除室: 1 階の屋根まである木のアーチの両開き戸（外へ開け放す）。中は自販機とマット、マットの両横は格子の溝"""
     V, A = VEST, ARCH
     cx, r, zs = V["cx"], A["r"], A["spring"]
     y0, yb = Y0 - V["d"], Y0 - V["d"] + V["t"]          # 前の壁の外面と内面
-    # 床（デッキより先へ出る分も）と、アーチの前の 3 段
+    # 床: マットの帯と自販機の前は木の床。マットの両横は、雪が下へ落ちる鉄の格子（溝蓋）を敷いた浅い溝
+    mx0, mx1 = cx - 1.6, cx + 1.6                        # マット
+    gy0, gy1 = yb + 0.15, Y0 - 0.95                      # 格子の溝の南北（北は自販機の前を空ける）
+    gx_ = [(V["x0"] + V["t"] + 0.05, mx0 - 0.08), (mx1 + 0.08, V["x1"] - V["t"] - 0.05)]
+    PIT = 0.22
     fl = M("vest_floor", "deck", "walls")
-    fl.box(V["x0"], y0, 0, V["x1"], Y0, FL1)
+    fl.box(V["x0"], y0, 0, V["x1"], Y0, FL1 - PIT)
+    fl.box(V["x0"], y0, FL1 - PIT, V["x1"], gy0, FL1)            # 前の壁の内の帯
+    fl.box(V["x0"], gy1, FL1 - PIT, V["x1"], Y0, FL1)            # 自販機の前の帯
+    fl.box(V["x0"], gy0, FL1 - PIT, gx_[0][0], gy1, FL1)        # 壁際
+    fl.box(gx_[0][1], gy0, FL1 - PIT, gx_[1][0], gy1, FL1)      # マットの帯
+    fl.box(gx_[1][1], gy0, FL1 - PIT, V["x1"], gy1, FL1)
     for k in range(3):
         fl.box(cx - r - 0.6, y0 - 0.35 * (3 - k), 0, cx + r + 0.6, y0, FL1 * (k + 1) / 3)
     fl.done(bevel=0.012)
+    pit = M("vest_drain", "dark", "walls")                        # 溝の底（暗い）
+    grate = M("vest_grating", "metal", "walls")
+    for a, b in gx_:
+        pit.box(a, gy0, FL1 - PIT, b, gy1, FL1 - PIT + 0.01)
+        grate.box(a, gy0, FL1 - 0.05, a + 0.03, gy1, FL1)         # 受けの枠
+        grate.box(b - 0.03, gy0, FL1 - 0.05, b, gy1, FL1)
+        grate.box(a, gy0, FL1 - 0.05, b, gy0 + 0.03, FL1)
+        grate.box(a, gy1 - 0.03, FL1 - 0.05, b, gy1, FL1)
+        n = int((b - a - 0.06) / 0.045)
+        for i in range(1, n):                                     # 南北に通る受けの平鋼（人の歩く向き）
+            x = a + 0.03 + (b - a - 0.06) * i / n
+            grate.box(x - 0.0045, gy0, FL1 - 0.05, x + 0.0045, gy1, FL1)
+        m = int((gy1 - gy0) / 0.10)
+        for j in range(1, m):                                     # 東西のねじり棒
+            y = gy0 + (gy1 - gy0) * j / m
+            grate.box(a, y - 0.005, FL1 - 0.012, b, y + 0.005, FL1)
+    pit.done()
+    grate.done()
     # 前の壁（縦羽目の板）。アーチの左右と、アーチの上の三角を細い帯で
     fw = M("vest_front", "board", "walls")
     fw.box(V["x0"], y0, FL1, cx - r, yb, V["h"])
@@ -686,28 +713,11 @@ def build_vestibule():
     bmesh.ops.recalc_face_normals(lf.bm, faces=lf.bm.faces)
     lf.done(bevel=0.008)
     st.done(bevel=0.004)
-    # 両脇の金網: 柱と上下の枠に、細い鉄の格子
-    pf = M("vest_mesh_frame", "post", "walls")
-    wire = M("vest_mesh", "metal", "walls")
-    for x in (V["x0"], V["x1"] - 0.16):
-        pf.box(x, yb, FL1, x + 0.16, yb + 0.16, V["h"])                  # 前の角の柱
-        pf.box(x, Y0 - 0.16, FL1, x + 0.16, Y0, V["h"])                  # 1 階の壁際の柱
-        pf.box(x, (yb + Y0) / 2 - 0.07, FL1, x + 0.16, (yb + Y0) / 2 + 0.07, V["h"])   # 中の柱
-        pf.box(x, yb, FL1, x + 0.16, Y0, FL1 + 0.12)                    # 下の枠（雪は下から抜ける）
-        pf.box(x, yb, V["h"] - 0.16, x + 0.16, Y0, V["h"])               # 上の枠
-        pf.box(x, yb, FL1 + 1.05, x + 0.16, Y0, FL1 + 1.15)              # 腰の桟
-        xm = x + 0.08
-        step = 0.15
-        ny = int((Y0 - yb) / step)
-        for j in range(1, ny):
-            y = yb + j * step
-            wire.box(xm - 0.008, y - 0.008, FL1 + 0.12, xm + 0.008, y + 0.008, V["h"] - 0.16)
-        nz = int((V["h"] - 0.16 - FL1 - 0.12) / step)
-        for j in range(1, nz):
-            z = FL1 + 0.12 + j * step
-            wire.box(xm - 0.008, yb, z - 0.008, xm + 0.008, Y0, z + 0.008)
-    pf.done(bevel=0.01)
-    wire.done()
+    # 両脇の壁（縦羽目の板）
+    sw = M("vest_side", "board", "walls")
+    sw.box(V["x0"], yb, FL1, V["x0"] + V["t"], Y0, V["h"])
+    sw.box(V["x1"] - V["t"], yb, FL1, V["x1"], Y0, V["h"])
+    sw.done(bevel=0.006)
     ce = M("vest_ceiling", "ceiling", "walls")   # 板張りの天井
     ce.box(V["x0"], yb, V["h"] - 0.04, V["x1"], Y0, V["h"])
     ce.done()
@@ -722,7 +732,6 @@ def build_vestibule():
     vs.done(bevel=0.07, seg=4, smooth=True)
     # 中: 靴の雪を落とすマット（溝の刻まれたゴム）、自販機 2 台、吊り灯り
     mt = M("vest_mat", "dark", "interior")
-    mx0, mx1 = cx - 1.6, cx + 1.6
     mt.box(mx0, yb + 0.25, FL1, mx1, Y0 - 0.15, FL1 + 0.015)
     mt.done(bevel=0.004)
     rb = M("vest_mat_ribs", "metal", "interior")
@@ -1298,8 +1307,8 @@ def build_collision():
     y0v, cx = Y0 - V["d"], V["cx"]
     F.box(V["x0"], y0v, 0, V["x1"], Y0, FL1)
     ramp_y(St, cx - A_["r"] - 0.6, cx + A_["r"] + 0.6, y0v - 1.05, 0, y0v, FL1)   # アーチの前の 3 段は坂に
-    Wl.box(V["x0"], y0v + V["t"], FL1, V["x0"] + 0.16, Y0, V["h"])          # 金網
-    Wl.box(V["x1"] - 0.16, y0v + V["t"], FL1, V["x1"], Y0, V["h"])
+    Wl.box(V["x0"], y0v + V["t"], FL1, V["x0"] + V["t"], Y0, V["h"])        # 両脇の壁（溝の格子は床として歩ける）
+    Wl.box(V["x1"] - V["t"], y0v + V["t"], FL1, V["x1"], Y0, V["h"])
     wall(Wl, "x", y0v + V["t"] / 2, V["x0"], V["x1"], FL1, V["h"],
          [(cx - A_["r"], cx + A_["r"], A_["spring"] + A_["r"] * 0.7)], t=V["t"])
     for sgn in (-1, 1):                                                      # 開いたアーチ戸
