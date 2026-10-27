@@ -28,7 +28,8 @@ ap.add_argument("--views", default="hill")
 ap.add_argument("--prefix", default="/tmp/lodge")
 ap.add_argument("--size", default="1280x800")
 ap.add_argument("--blend", default="")
-ap.add_argument("--look", default="clay", choices=("clay", "day", "dusk"))
+ap.add_argument("--look", default="clay", choices=("clay", "day", "dusk", "flat"))
+ap.add_argument("--export", default="", help="この場所に lodge.glb と lodge_collision.glb を書き出す（描画しない）")
 A = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
 PH = A.phase
 
@@ -50,6 +51,19 @@ MAT = {}
 
 
 def mat(role):
+    if role not in MAT and A.look == "flat":   # 書き出し用: 役割の名前と色だけ。Godot で look.gd の素材に差し替える
+        import materials
+        m = bpy.data.materials.new(role)
+        m.use_nodes = True
+        b = m.node_tree.nodes["Principled BSDF"]
+        b.inputs["Base Color"].default_value = materials.lin(materials.HEX[role])
+        b.inputs["Roughness"].default_value = 0.06 if role == "glass" else 0.9
+        if role == "glass":
+            b.inputs["Alpha"].default_value = 0.32
+        if role in ("paper", "fire"):
+            b.inputs["Emission Color"].default_value = materials.lin(materials.HEX[role])
+            b.inputs["Emission Strength"].default_value = 2.0
+        MAT[role] = m
     if role not in MAT and A.look != "clay":
         import materials
         MAT[role] = materials.make(role, A.look)
@@ -738,7 +752,10 @@ def build_interior():
                 instance(csrc, "chair_%d_%d_%d" % (k, j, rz > 0), (cx, cy, FL1), rz)
                 instance(usrc, "cushion_%d_%d_%d" % (k, j, rz > 0), (cx, cy, FL1), rz)
         k += 1
-    tsrc.location.z = csrc.location.z = usrc.location.z = -50   # 元の形は地面の下へ
+    for src in (tsrc, csrc, usrc):   # 元の形は書き出さない置き場へ
+        coll("interior").objects.unlink(src)
+        coll("sources").objects.link(src)
+        src.hide_render = True
     # 炉を囲む長椅子（コの字）
     B = M("hearth_bench", "board", "interior")
     Cu = M("hearth_cushion", "cushion", "interior")
@@ -1031,6 +1048,141 @@ def render(view, path):
     print("wrote", path)
 
 
+# ---------------------------------------------------------------- 当たり判定（書き出し用）
+def build_collision():
+    """箱と坂だけの当たり判定。名前の -colonly で、Godot は見た目なしの当たり判定として読み込む。
+    戸の開口は抜き、窓は塞ぐ。椅子・灯り・小物は入れない"""
+    groups = {}
+
+    def g(name):
+        if name not in groups:
+            groups[name] = M("col_%s-colonly" % name, "dark", "collision")
+        return groups[name]
+
+    def wall(m, axis, fixed, a0, a1, z0, z1, gaps=(), t=LOG_D):
+        """壁を箱で。gaps は戸の開口 (u0, u1, 上端)"""
+        segs = [(a0, a1)]
+        for u0, u1, zt in gaps:
+            segs = subtract(segs, u0, u1)
+            wbox(m, axis, fixed, 1, u0, u1, -t / 2, t / 2, zt, z1)
+        for u0, u1 in segs:
+            wbox(m, axis, fixed, 1, u0, u1, -t / 2, t / 2, z0, z1)
+
+    def ramp_y(m, x0, x1, ya, za, yb, zb, t=0.25):
+        """y 方向に上る坂（階段の代わり）"""
+        prof = [(ya, za - t), (yb, zb - t), (yb, zb), (ya, za)]
+        if yb < ya:
+            prof = prof[::-1]
+        m.prism_x(prof[::-1], x0, x1)
+
+    F, Wl, Rf, St, Fu = g("floor"), g("walls"), g("roof"), g("stairs"), g("furniture")
+    # 床: 基壇、デッキ、2 階の床（階段の穴を抜く）
+    F.box(X0 - 0.15, Y0 - 0.15, 0, X1 + 0.15, Y1 + 0.15, FL1)
+    D_ = DECK
+    F.box(D_["x0"], D_["y0"], 0, D_["x1"], D_["y1"], D_["z"])
+    I = INSTAIR
+    hx, hy = I["x0"] - 0.05, I["y_bottom"] + 0.8
+    F.box(X0 - 0.09, Y0 - 0.09, CEIL1, hx, Y1 + 0.09, FL2)
+    F.box(hx, Y0 - 0.09, CEIL1, X1 + 0.09, hy, FL2)
+    F.box(TATAMI["x0"], TATAMI["y0"], FL2, TATAMI["x1"], TATAMI["y1"], FL2 + TATAMI["h"])
+    # 1 階の壁（ガラスの壁も塞ぐ）
+    dw = DOOR1["w"]
+    c1 = [c for c, k in OPENINGS["1F_N"] if k == "door1"][0]
+    wall(Wl, "x", Y1, X0, X1, FL1, CEIL1, [(c1 - dw / 2, c1 + dw / 2, FL1 + DOOR1["h"])])
+    wall(Wl, "y", X1, Y0, Y1, FL1, CEIL1)
+    wall(Wl, "x", Y0, X0, GLASS_S_X0, FL1, CEIL1, [(DOOR_IN["x0"], DOOR_IN["x1"], FL1 + DOOR_IN["h"])])
+    wall(Wl, "x", Y0, GLASS_S_X0, X1, FL1, CEIL1, t=POST)
+    wp = sorted(GLASS_W_POSTS)
+    wall(Wl, "y", X0, Y0, Y1, FL1, CEIL1, [(wp[4] + POST / 2, wp[5] - POST / 2, TRANSOM)], t=POST)
+    V = VEST
+    y0v, cx = Y0 - V["d"], (V["x0"] + V["x1"]) / 2
+    Wl.box(V["x0"], y0v, FL1, V["x0"] + 0.12, Y0, V["h"])
+    Wl.box(V["x1"] - 0.12, y0v, FL1, V["x1"], Y0, V["h"])
+    wall(Wl, "x", y0v + 0.06, V["x0"], V["x1"], FL1, V["h"],
+         [(cx - DOOR_OUT["w"] / 2, cx + DOOR_OUT["w"] / 2, FL1 + DOOR_OUT["h"])], t=0.12)
+    Rf.box(V["x0"] - V["roof_out"], y0v - V["roof_out"], V["h"], V["x1"] + V["roof_out"], Y0, V["h"] + 0.4)
+    # 2 階の壁（テラスへの戸を抜く）。妻は屋根の勾配まで
+    c2 = [c for c, k in OPENINGS["2F_S"] if k == "door2"][0]
+    wall(Wl, "x", Y2_0, X0, X1, FL2, EAVE_S, [(c2 - DOOR2["w"] / 2, c2 + DOOR2["w"] / 2, FL2 + DOOR2["h"])])
+    wall(Wl, "x", Y1, X0, X1, FL2, EAVE_N)
+    for x in (X0, X1):
+        Wl.solid([(x - R, Y2_0, FL2), (x + R, Y2_0, FL2), (x + R, Y1, FL2), (x - R, Y1, FL2)],
+                 [(x - R, Y2_0, roof_z(Y2_0)), (x + R, Y2_0, roof_z(Y2_0)), (x + R, Y1, roof_z(Y1)), (x - R, Y1, roof_z(Y1))])
+    for x, y in COLS:
+        Wl.box(x - COL_D / 2, y - COL_D / 2, FL1, x + COL_D / 2, y + COL_D / 2, roof_z(y))
+    # 煙突と炉
+    c = CH
+    Wl.box(c["x0"], c["y0"], 0, c["x1"], c["y1"], FL2)
+    Wl.box(c["ux0"], c["uy0"], FL2, c["ux1"], c["uy1"], c["top"] + 0.56)
+    # 屋根（雪まで含めた厚み）と下屋の屋根
+    ys, yn = Y2_0 - EAVE_OUT_S, Y2_1 + EAVE_OUT_N
+    tv = (RAFTER["h"] + ROOF_T + SNOW_T) / math.cos(math.atan(ROOF_PITCH))
+    Rf.prism_x([(ys, roof_z(ys)), (yn, roof_z(yn)), (yn, roof_z(yn) + tv), (ys, roof_z(ys) + tv)][::-1],
+               X0 - VERGE_OUT, X1 + VERGE_OUT)
+    L = LEAN
+    Rf.prism_y([(L["x_out"], L["z_out"]), (X0, L["z_wall"]), (X0, L["z_wall"] + 0.4), (L["x_out"], L["z_out"] + 0.4)],
+               L["y0"], L["y1"])
+    for y in L["posts"]:
+        Wl.box(L["x_post"] - 0.10, y - 0.10, 0, L["x_post"] + 0.10, y + 0.10, L["z_out"])
+    # 手すり（テラス・外階段・吹き抜け）
+    for b in ((X0 + K, Y0, FL2, X1, Y0 + 0.12, FL2 + RAIL_H), (X1 - 0.12, Y0, FL2, X1, Y2_0, FL2 + RAIL_H),
+              (X0, Y0, FL2, X0 + 0.12, Y2_0, FL2 + RAIL_H),
+              (hx - 0.1, hy, FL2, hx, Y1, FL2 + RAIL_H), (hx, hy - 0.1, FL2, X1, hy, FL2 + RAIL_H)):
+        Wl.box(*b)
+    # 階段は坂にする（外階段 2 本と踊り場、内階段、デッキの東の段）
+    E = ESTAIR
+    ramp_y(St, *E["x_lo"], E["y_start"], FL1, E["y_land"], E["z_land"])
+    ramp_y(St, *E["x_up"], E["y_land"], E["z_land"], E["y_start"], FL2)
+    St.box(E["x_lo"][0], E["y_land"] - E["landing"], E["z_land"] - 0.15, E["x_up"][1], E["y_land"], E["z_land"])
+    St.box(E["x_up"][0], E["y_start"], FL2 - 0.15, E["x_up"][1], Y0, FL2)
+    for x in (E["x_lo"][0], E["x_up"][1] - 0.08):
+        St.box(x, E["y_land"] - E["landing"], E["z_land"], x + 0.08, E["y_land"], E["z_land"] + 1.0)
+    St.box(E["x_lo"][0], E["y_land"] - E["landing"], E["z_land"], E["x_up"][1], E["y_land"] - E["landing"] + 0.08,
+           E["z_land"] + 1.0)
+    ramp_y(St, I["x0"], I["x1"], I["y_bottom"], FL1, I["y_top"], FL2)
+    St.prism_y([(D_["x1"], D_["z"]), (D_["x1"] + 0.6, 0.0), (D_["x1"], 0.0)][::-1], D_["y0"], D_["y1"])
+    # 家具（座れる・ぶつかるもの）
+    for x, y in TABLES:
+        Fu.box(x, y, FL1, x + TABLE["w"], y + TABLE["d"], FL1 + TABLE["h"])
+    for cc in (COUNTER, RENTAL):
+        Fu.box(cc["x0"], cc["y0"], FL1, cc["x1"], cc["y1"], FL1 + cc["h"])
+    Fu.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
+    for x in (KITCHEN["x0"], KITCHEN["x1"]):
+        Fu.box(x - 0.06, KITCHEN["y_front"], FL1, x + 0.06, Y1, CEIL1 - 0.3)
+    for x0, y0, x1, y1 in HEARTH_BENCH:
+        Fu.box(x0, y0, FL1, x1, y1, FL1 + 0.45)
+    Fu.box(c["x0"] - 0.25, c["y0"] - 0.65, FL1, c["x1"] + 0.25, c["y0"], FL1 + 0.12)
+    S_ = SKI_RACK
+    Fu.box(S_["x0"], S_["y0"], FL1, S_["x1"], S_["y1"], FL1 + 1.75)
+    zt = FL2 + TATAMI["h"]
+    for x in KOTATSU:
+        Fu.box(x - 0.12, KOTATSU_Y[0] - 0.12, zt, x + KOTATSU_W + 0.12, KOTATSU_Y[1] + 0.12, zt + 0.40)
+    Fu.box(*BENCH2[:2], FL2, *BENCH2[2:], FL2 + 0.42)
+    Fu.box(TABLE2[0], TABLE2[1], FL2, TABLE2[2], TABLE2[3], FL2 + 0.72)
+    return [m.done() for m in groups.values()]
+
+
+def export(folder):
+    """lodge.glb（見た目と置き場の目印）と lodge_collision.glb（当たり判定）"""
+    os.makedirs(folder, exist_ok=True)
+    keep = ("walls", "crown", "interior", "setsue", "markers")
+
+    def write(objs, name):
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in objs:
+            o.hide_set(False)
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = objs[0]
+        path = os.path.abspath(os.path.join(folder, name))
+        bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_apply=True,
+                                  export_lights=False, export_cameras=False, export_yup=True)
+        print("wrote", path)
+
+    write([o for c in keep if bpy.data.collections.get(c) for o in bpy.data.collections[c].objects], "lodge.glb")
+    write(build_collision(), "lodge_collision.glb")
+
+
+
 # ---------------------------------------------------------------- 組む
 if PH == 1:
     build_massing()
@@ -1045,7 +1197,7 @@ if PH >= 3:
 if PH >= 4:
     build_interior()
 build_ground()
-if A.look != "clay":
+if A.look in ("day", "dusk"):
     build_scenery()
 build_light()
 for c in ("cutters",):
@@ -1061,7 +1213,7 @@ for eng in ("BLENDER_EEVEE", "BLENDER_EEVEE_NEXT"):
 rx, ry = (int(v) for v in A.size.split("x"))
 sc.render.resolution_x, sc.render.resolution_y = rx, ry
 sc.view_settings.view_transform = "AgX"
-if A.look != "clay":
+if A.look in ("day", "dusk"):
     sc.eevee.taa_render_samples = 64
     if hasattr(sc.eevee, "shadow_pool_size"):
         sc.eevee.shadow_pool_size = "1024"
@@ -1072,7 +1224,7 @@ if A.look != "clay":
         sc.eevee.use_fast_gi = True
     sc.view_settings.look = "AgX - Medium High Contrast"
     sc.view_settings.exposure = -0.35 if A.look == "day" else 0.0
-if A.look != "clay" and PH >= 4:
+if A.look in ("day", "dusk") and PH >= 4:
     # 中に光の箱を置いて焼く。空の青が丸太の壁を抜けて中に回り込まないように
     bpy.ops.object.lightprobe_add(type="VOLUME", location=(0, (Y0 + Y1) / 2, (FL1 + EAVE_S) / 2))
     pv = bpy.context.object
@@ -1086,5 +1238,7 @@ if A.look != "clay" and PH >= 4:
         print("bake failed", e)
 if A.blend:
     bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(A.blend))
-for v in A.views.split(","):
+if A.export:
+    export(A.export)
+for v in ([] if A.export else A.views.split(",")):
     render(v, os.path.abspath("%s-%s.png" % (A.prefix, v)))
