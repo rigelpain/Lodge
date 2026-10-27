@@ -32,6 +32,7 @@ var gaze := Vector3.INF      # 見ている所（世界）
 var effort := false
 var airborne := false
 var waving := false
+var point := Vector3.INF     # 右腕を伸ばして指す所（世界）。指しているあいだは、そこを見る
 var sled: Node3D = null
 var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標）
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
@@ -310,6 +311,20 @@ func _pose() -> void:
 
 	_turn_axis("chest", X, -bend)
 
+	if point != Vector3.INF:
+		# 指さし: 指す所に近い側の腕をまっすぐ伸ばして指す（指は分けず、腕で指す）。
+		# ソリをつかんでいても、その手は離して指す。胸も少しそちらへ回す
+		var lp := global_basis.inverse() * (point - global_position)
+		var side := "R" if lp.x >= 0.0 else "L"
+		var ui := _id("upper_arm." + side)
+		var sh := skel.global_transform * _head_of(ui)
+		var dir := (point - sh).normalized()
+		var local_dir := global_basis.inverse() * dir
+		_turn_axis("chest", Vector3.UP, clampf(atan2(-local_dir.x, -local_dir.z), -0.8, 0.8) * 0.3)
+		sh = skel.global_transform * _head_of(ui)
+		var reach := (_len(ui) + _len(_id("forearm." + side)) + _len(_id("hand." + side)) * 0.5) * _scale * 0.98
+		_hold[1 if side == "R" else 0] = [self, to_local(sh + dir * reach)]
+
 	if waving and _hold[1] == null:
 		# 右手を上げて振る。4 コマで 1 往復
 		var k: float = [0.55, 0.1, -0.35, 0.1][_frame % 4]
@@ -321,14 +336,22 @@ func _pose() -> void:
 	if hi >= 0:
 		var hp := skel.global_transform * _head_of(hi)
 		var look := gaze if gaze != Vector3.INF else hp + global_basis * Vector3(0, -0.05, -1)
+		if point != Vector3.INF:
+			look = point
+		# 顔の向きは相互行為の手がかり。首と頭で大きく回し、届かない分は胸も少し回す
 		var ld := (skel.global_transform.basis.inverse() * (look - hp)).normalized()
-		var yaw := clampf(atan2(-ld.x, -ld.z), -1.1, 1.1)
-		var pitch := clampf(atan2(ld.y, Vector2(ld.x, ld.z).length()), -0.6, 0.5) + bend * 0.7
+		var yaw_all := atan2(-ld.x, -ld.z)
+		var yaw := clampf(yaw_all, -1.3, 1.3)
+		var pitch := clampf(atan2(ld.y, Vector2(ld.x, ld.z).length()), -0.9, 0.75) + bend * 0.7
 		if _voice > 0:
-			pitch = minf(pitch + 0.3, 0.7)
+			pitch = minf(pitch + 0.3, 0.85)
+		if point == Vector3.INF:
+			_turn_axis("chest", Vector3.UP, clampf(yaw_all, -1.6, 1.6) * 0.15)
 		_turn_axis("neck", Vector3.UP, yaw * 0.4)
 		_turn_axis("head", Vector3.UP, yaw * 0.6)
-		_turn_axis("head", X, pitch)
+		# うなずく向きは、首を回したあとの頭の横の軸で（横を向いたまま上下を見ても頭が傾かない）
+		var right: Vector3 = (_g[hi] as Transform3D).basis.x.normalized()
+		_turn(hi, Quaternion(right, pitch))
 
 	# クレイアニメの揺れ: 骨ごとに、コマごとにわずかに
 	_rng.seed = hash(Vector2i(_frame, get_instance_id()))

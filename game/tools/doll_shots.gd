@@ -3,6 +3,7 @@ extends SceneTree
 ##   Godot --path game -s res://tools/doll_shots.gd -- --out=/path/to.png [--at=秒] [--pose=idle|walk|wave|call|breath]
 ## 息の見本: --pose=breath --close（顔の近くから）[--dark（うしろに暗い壁。ロッジの壁や木の前の見え方）] [--caller=0〜2]
 ## kasa は立ってこちらを見る、origami は手を振る、news は横へ歩く（--pose で全員を同じにもできる）
+## 指さしの見本: --pose=point（① が赤い玉を指し、② と ③ がそこを見る）
 
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
@@ -68,6 +69,18 @@ func _initialize() -> void:
 		wall.material_override = wm
 		wall.position = Vector3(-1.0, 1, -1.4)
 		world.add_child(wall)
+	# 指さしの見本: 右前の地面に赤い玉を置き、① がそれを指し、② と ③ はそこへ顔を向ける
+	var target := Vector3(2.2, 0.15, 1.6)
+	if args.get("pose", "") == "point":
+		var ball := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.15
+		sm.height = 0.3
+		ball.mesh = sm
+		ball.material_override = Look.felt(Color(0.85, 0.25, 0.22), 3.0)
+		ball.position = target
+		world.add_child(ball)
+		cam.look_at_from_position(Vector3(-2.6, 2.0, 4.2), Vector3(0.6, 0.6, 0.6))
 	var kinds := ["kasa", "origami", "news"]
 	for k in 3:
 		var host := Node3D.new()
@@ -90,6 +103,12 @@ func _initialize() -> void:
 				walkers.append(host)
 			"call":
 				d.call_deferred("call_out")
+			"point":
+				d.facing = Vector3(0.3, 0, 1)
+				if k == 0:
+					d.point = target
+				else:
+					d.gaze = target
 			"breath":
 				d.facing = Vector3(1, 0, 0.5)
 				d.gaze = d.global_position + Vector3(3, 1.3, 1.2)

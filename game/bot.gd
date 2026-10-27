@@ -194,3 +194,11 @@ func _pose_doll() -> void:
 	doll.grip = handle
 	doll.effort = handle != Vector3.INF and sled.pushers > 0
 	doll.airborne = not is_on_floor() and state != State.RIDE and handle == Vector3.INF
+	# 顔の向き: あなたが指さしたら、指された所を一緒に見る。押していないときは、近くのあなたの顔を見る
+	doll.gaze = Vector3.INF
+	if player:
+		var pt: Vector3 = player.point_at
+		if pt != Vector3.INF:
+			doll.gaze = pt
+		elif handle == Vector3.INF and global_position.distance_to(player.global_position) < 8.0:
+			doll.gaze = player.global_position + Vector3.UP * 1.25

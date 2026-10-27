@@ -43,6 +43,8 @@ var _t := 0.0
 var _snap := 0.0             # 吸い付きの途中（0→1）
 var _rope: Array[MeshInstance3D] = []
 var _hand_frame := -1        # 一人称の手を最後に置き直したコマ
+var point_at := Vector3.INF  # 右クリックを押しているあいだ、右腕で指している所（世界）。仲間はここを見る
+var force_point := false     # 確かめ用: 右クリックを押したことにする
 
 
 func _ready() -> void:
@@ -242,6 +244,7 @@ func _physics_process(dt: float) -> void:
 			_walk(dt, true)
 		Mode.WALK:
 			_walk(dt, false)
+	_update_point()
 	_pose_hands(dt)
 	_pose_doll()
 	_draw_rope()
@@ -259,6 +262,22 @@ func _pose_doll() -> void:
 	doll.rope_hand = _hand_world() if mode == Mode.ROPE else Vector3.INF
 	doll.lean = Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_W) - _key(KEY_S)) if mode == Mode.RIDE else Vector2.ZERO
 	doll.waving = Input.is_physical_key_pressed(KEY_Q) and not menu_open
+	doll.point = point_at
+
+
+## 右クリックを押しているあいだ、画面のまんなかが指す所を右腕で指す。
+## 指は分けず腕で指す。押したまま見回せば腕もついてくる（振れば挨拶にもなる）。人やソリを指せば、そこに当たる
+func _update_point() -> void:
+	var held := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not menu_open
+	if not held and not force_point:
+		point_at = Vector3.INF
+		return
+	var from := cam.global_position
+	var to := from - cam.global_basis.z * 60.0
+	var q := PhysicsRayQueryParameters3D.create(from, to)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	point_at = hit.position if hit else to
 
 
 ## 小さな段差（STEP_UP まで）は、歩くだけで乗り上げる。
@@ -407,12 +426,17 @@ func _pose_hands(dt: float) -> void:
 				target = Vector3(0.28 * s, -0.32, -0.35)
 			_:
 				target = Vector3(0.3 * s, -0.3 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.45)
+		var pointing := s > 0 and point_at != Vector3.INF
+		if pointing:
+			# 指さし: 右の手袋を画面のまんなかへ伸ばす（自分が指しているのが見える）
+			target = Vector3(0.11, -0.12, -0.62)
 		# 手も姿勢と同じ決まり: コマが変わるときだけ置き直し、わずかに揺らす。
 		# ソリをつかんでいる間は、ソリに対しての位置で保つ（ソリが動いても手が縁から離れない）
 		if fi != _hand_frame:
 			target += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.004
-			h.set_meta("hold", sled.to_local(cam.to_global(target)) if mode == Mode.GRIP else target)
-			h.set_meta("on_sled", mode == Mode.GRIP)
+			var on_sled := mode == Mode.GRIP and not pointing
+			h.set_meta("hold", sled.to_local(cam.to_global(target)) if on_sled else target)
+			h.set_meta("on_sled", on_sled)
 			h.rotation = Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.03
 		var hold: Vector3 = h.get_meta("hold", target)
 		h.position = cam.to_local(sled.to_global(hold)) if h.get_meta("on_sled", false) else hold
