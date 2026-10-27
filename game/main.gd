@@ -63,7 +63,8 @@ func _ready() -> void:
 
 	_make_world()
 	_make_ground()
-	_make_lodge()
+	if not args.has("no-lodge"):
+		_make_lodge()
 
 	sled = Sled.new()
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
@@ -97,11 +98,10 @@ func _ready() -> void:
 			cam.position = Vector3(v[0], v[1], v[2])
 			cam.look_at(Vector3(v[3], v[4], v[5]))
 
-	if player:
+	if player and not args.has("no-pip"):
 		_make_pip()
-		_make_snowfall(player)
-	else:
-		_make_snowfall(self)
+	if not args.has("no-snow"):
+		_make_snowfall(player if player else self)
 
 	hud = Label.new()
 	hud.position = Vector2(16, 12)
@@ -114,7 +114,7 @@ func _ready() -> void:
 
 ## 右上のライブ映像: 自分の頭の上に載せた 360° カメラの映像。
 ## 6 方向を同時に撮り、シェーダで 1 枚の全天球（正距円筒）に合成する。V でリトルプラネット
-const FACE_PX := 320
+const FACE_PX := 224
 const PIP_PHONE := Vector2(216, 384)    # スマホ向けの縦長 (9:16)。超広角の魚眼で切り出す
 const PIP_EQ := Vector2(420, 210)       # 全天球の窓 (2:1)
 const PIP_PLANET := Vector2(260, 260)   # リトルプラネットの窓
@@ -201,6 +201,8 @@ void fragment() {
 """
 
 var pip_cams: Array[Camera3D] = []
+var _pip_vps: Array[SubViewport] = []
+var _pip_tick := 0
 var pip_frame: PanelContainer
 var pip_mat: ShaderMaterial
 var pip_mode := 0
@@ -211,8 +213,9 @@ func _make_pip() -> void:
 	for f in FACES:
 		var vp := SubViewport.new()
 		vp.size = Vector2i(FACE_PX, FACE_PX)
-		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 		add_child(vp)
+		_pip_vps.append(vp)
 		var cam := Camera3D.new()
 		cam.fov = 90.0
 		cam.keep_aspect = Camera3D.KEEP_WIDTH
@@ -299,6 +302,10 @@ func _process(_dt: float) -> void:
 	if pip_cams.is_empty():
 		return
 	_place_pip_cams()
+	_pip_tick += 1
+	if _pip_tick % 2 == 0:
+		for vp in _pip_vps:
+			vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var t := int(elapsed)
 	pip_label.text = "    360 LIVE  %02d:%02d%s" % [t / 60, t % 60, "  後ろ" if pip_mode == 0 else ""]
 
@@ -312,7 +319,7 @@ func _make_world() -> void:
 	env.ambient_light_energy = 0.75   # 影の側を少し落として、丘の形が読めるように
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_white = 1.4
-	env.ssao_enabled = true          # くぼみに影が落ちる
+	env.ssao_enabled = not args.has("no-ssao")          # くぼみに影が落ちる
 	env.ssao_radius = 2.5
 	env.ssao_intensity = 3.0
 	env.ssao_light_affect = 0.3
@@ -516,7 +523,7 @@ func _physics_process(dt: float) -> void:
 	var s := sled.global_position
 	var top := Vector2(s.x, s.z).length()
 	var lines := [
-		"押している人: %d　ソリの高さ: %.1f m（頂上 %.0f m）　速さ: %.1f m/s" % [sled.pushers, s.y, HILL_H, sled.linear_velocity.length()],
+		"押している人: %d　ソリの高さ: %.1f m（頂上 %.0f m）　速さ: %.1f m/s　%d fps" % [sled.pushers, s.y, HILL_H, sled.linear_velocity.length(), Engine.get_frames_per_second()],
 	]
 	if player:
 		lines.append(player.prompt if player.prompt != "" else "WASD 歩く　Shift 走る　マウス 見回す　ホイール／ピンチ 視野角　V 360映像の見せ方　C 一人称／三人称　Space ジャンプ　ソリのそばで F つかむ（前では紐を持つ）　E 乗る　R ソリをふもとへ　Esc マウスを離す")
@@ -580,7 +587,7 @@ func _physics_process(dt: float) -> void:
 			me += "　つかんでいる人=%d 回転=%.2f 横滑り=%.2f" % [sled.holders.size(), sled.angular_velocity.y, sled.linear_velocity.dot(sled.global_basis.x)]
 			if bots.size() > 0:
 				me += "　仲間=%s" % bots[0].debug
-			print("t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
+			print("fps=%d " % Engine.get_frames_per_second(), "t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
 			_duty = 0
 			_frames = 0
 
