@@ -670,15 +670,20 @@ def build_vestibule():
     pit.done()
     grate.done()
     # 前の壁（縦羽目の板）。アーチの左右と、アーチの上の三角を細い帯で
-    fw = M("vest_front", "board", "walls")
-    fw.box(V["x0"], y0, FL1, cx - r, yb, V["h"])
-    fw.box(cx + r, y0, FL1, V["x1"], yb, V["h"])
-    n = 24
-    for i in range(n):
-        xa, xb = cx - r + 2 * r * i / n, cx - r + 2 * r * (i + 1) / n
-        fw.prism_y([(xa, arch_top(xa)), (xb, arch_top(xb)), (xb, V["h"]), (xa, V["h"])], y0, yb)
-    bmesh.ops.recalc_face_normals(fw.bm, faces=fw.bm.faces)
-    fw.done(bevel=0.006)
+    # 壁は本体と同じ丸太。前の壁はアーチの形に切り抜く（丸の切り抜きは Blender のブール演算）
+    Lv = M("vest_logs", "log", "walls")
+    log_wall(Lv, "x", y0 + R, V["x0"] - LOG_OUT, V["x1"] + LOG_OUT, FL1, V["h"], 0.0, [(cx - r, cx + r, FL1, zs)])
+    lv = Lv.done(smooth=True, cap_uv=True)
+    Ls = M("vest_logs_side", "log", "walls")   # 両脇（切り抜かないので別の物体に）
+    for x in (V["x0"] + R, V["x1"] - R):
+        log_wall(Ls, "y", x, y0 - LOG_OUT, Y0, FL1, V["h"], LOG_H / 2)
+    Ls.done(smooth=True, cap_uv=True)
+    ac = M("cut_vest_arch", "dark", "cutters")
+    ac.cyl((cx, y0 - 0.6, zs), (cx, yb + 0.6, zs), r, seg=48)
+    aco = ac.done()
+    aco.hide_render = True
+    aco.display_type = "WIRE"
+    cut(lv, aco)
     # アーチの額縁（濃い木）と、縦の枠
     fr = M("vest_arch_frame", "post", "walls")
     arch_ring(fr, cx, zs, r, r + 0.22, y0 - 0.06, yb + 0.02)
@@ -713,11 +718,6 @@ def build_vestibule():
     bmesh.ops.recalc_face_normals(lf.bm, faces=lf.bm.faces)
     lf.done(bevel=0.008)
     st.done(bevel=0.004)
-    # 両脇の壁（縦羽目の板）
-    sw = M("vest_side", "board", "walls")
-    sw.box(V["x0"], yb, FL1, V["x0"] + V["t"], Y0, V["h"])
-    sw.box(V["x1"] - V["t"], yb, FL1, V["x1"], Y0, V["h"])
-    sw.done(bevel=0.006)
     ce = M("vest_ceiling", "ceiling", "walls")   # 板張りの天井
     ce.box(V["x0"], yb, V["h"] - 0.04, V["x1"], Y0, V["h"])
     ce.done()
@@ -739,7 +739,7 @@ def build_vestibule():
     rb.done(array=(int((mx1 - mx0 - 0.1) / 0.08), (0.08, 0, 0)))
     VM = VENDING
     for k, (body, face) in enumerate((("felt_red", "paper"), ("felt_blue", "paper"))):
-        x0 = V["x0"] + 0.30 + k * (VM["w"] + VM["gap"])
+        x0 = V["x0"] + V["t"] + 0.10 + k * (VM["w"] + VM["gap"])
         x1 = x0 + VM["w"]
         ya = Y0 - 0.05 - VM["d"]
         vb = M("vending_%d" % k, body, "interior")
@@ -1310,13 +1310,14 @@ def build_collision():
     Wl.box(V["x0"], y0v + V["t"], FL1, V["x0"] + V["t"], Y0, V["h"])        # 両脇の壁（溝の格子は床として歩ける）
     Wl.box(V["x1"] - V["t"], y0v + V["t"], FL1, V["x1"], Y0, V["h"])
     wall(Wl, "x", y0v + V["t"] / 2, V["x0"], V["x1"], FL1, V["h"],
-         [(cx - A_["r"], cx + A_["r"], A_["spring"] + A_["r"] * 0.7)], t=V["t"])
+         [(cx - A_["r"], cx + A_["r"], A_["spring"] + A_["r"] * 0.7)], t=V["t"])   # 丸太の壁
     for sgn in (-1, 1):                                                      # 開いたアーチ戸
         h0 = cx + sgn * A_["r"]
         Wl.box(min(h0, h0 + sgn * A_["r"]), y0v - 0.14, FL1, max(h0, h0 + sgn * A_["r"]), y0v, A_["spring"])
     Rf.box(V["x0"] - V["roof_out"], y0v - V["roof_out"], V["h"], V["x1"] + V["roof_out"], Y0, V["h"] + 0.36)
     VM = VENDING
-    Fu.box(V["x0"] + 0.30, Y0 - 0.05 - VM["d"], FL1, V["x0"] + 0.30 + 2 * VM["w"] + VM["gap"], Y0, FL1 + VM["h"])
+    Fu.box(V["x0"] + V["t"] + 0.10, Y0 - 0.05 - VM["d"], FL1, V["x0"] + V["t"] + 0.10 + 2 * VM["w"] + VM["gap"], Y0,
+           FL1 + VM["h"])
     # 2 階の壁（テラスへの戸を抜く）。妻は屋根の勾配まで
     c2 = [c for c, k in OPENINGS["2F_S"] if k == "door2"][0]
     wall(Wl, "x", Y2_0, X0, X1, FL2, EAVE_S, [(c2 - DOOR2["w"] / 2, c2 + DOOR2["w"] / 2, FL2 + DOOR2["h"])])
