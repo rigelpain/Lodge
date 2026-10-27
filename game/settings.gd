@@ -15,6 +15,9 @@ const ITEMS := [
 	["fov", "視野角", "float", 75.0, [50.0, 110.0, 1.0]],
 	["sens", "マウスの感度", "float", 1.0, [0.3, 2.5, 0.05]],
 	["scale", "3D の描画の解像度（軽さ）", "float", 0.67, [0.5, 1.0, 0.01]],
+	["vol_music", "音量: 音楽", "float", 0.8, [0.0, 1.0, 0.01]],
+	["vol_sfx", "音量: 効果音", "float", 0.8, [0.0, 1.0, 0.01]],
+	["vol_voice", "音量: ボイス", "float", 0.8, [0.0, 1.0, 0.01]],
 ]
 
 var values := {}
@@ -114,7 +117,7 @@ func _build() -> void:
 func _fmt(key: String, v: float) -> String:
 	match key:
 		"fov": return "%d°" % v
-		"scale": return "%d%%" % (v * 100)
+		"scale", "vol_music", "vol_sfx", "vol_voice": return "%d%%" % (v * 100)
 		_: return "%.2f" % v
 
 

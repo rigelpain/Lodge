@@ -95,6 +95,10 @@ func _ready() -> void:
 	audio.name = "Audio"
 	audio.setup(self, sled, player, get_children().filter(func(c): return c.get_script() == Bot), get_node_or_null("Lodge"))
 	add_child(audio)
+	_make_volume_buses()
+	if args.has("buses"):   # 確かめ用: バスのつながりを出す
+		for i in AudioServer.bus_count:
+			print("bus %d %s -> %s" % [i, AudioServer.get_bus_name(i), AudioServer.get_bus_send(i)])
 	if player and args.has("spawn"):
 		player.global_position = audio.spawn_point(args["spawn"])
 
@@ -631,8 +635,53 @@ func _physics_process(dt: float) -> void:
 		get_tree().quit()
 
 
+## 音量の区分のバス。音楽は Speaker → Music → Outdoor、効果音は Inside・Self → SFX → Master、
+## ボイスは Voice → Master。audio.gd の環境のバス（Outdoor・Inside）はそのまま生かす。
+## 送り先は自分より前のバスにしか指定できないので、挿す位置に注意する
+func _make_volume_buses() -> void:
+	if AudioServer.get_bus_index("Music") >= 0:
+		return
+	AudioServer.add_bus(1)
+	AudioServer.set_bus_name(1, "SFX")
+	AudioServer.set_bus_send(1, "Master")
+	AudioServer.add_bus(2)
+	AudioServer.set_bus_name(2, "Voice")
+	AudioServer.set_bus_send(2, "Master")
+	var o := AudioServer.get_bus_index("Outdoor")
+	if o >= 0:
+		AudioServer.add_bus(o + 1)
+		AudioServer.set_bus_name(o + 1, "Music")
+		AudioServer.set_bus_send(o + 1, "Outdoor")
+		var sp := AudioServer.get_bus_index("Speaker")
+		if sp >= 0:
+			AudioServer.set_bus_send(sp, "Music")
+	else:
+		AudioServer.add_bus(3)
+		AudioServer.set_bus_name(3, "Music")
+		AudioServer.set_bus_send(3, "Master")
+	for b in ["Inside", "Self"]:
+		var i := AudioServer.get_bus_index(b)
+		if i >= 0:
+			AudioServer.set_bus_send(i, "SFX")
+
+
+func _set_volume(buses: Array, v: float) -> void:
+	for b in buses:
+		var i := AudioServer.get_bus_index(b)
+		if i < 0:
+			continue
+		AudioServer.set_bus_volume_db(i, linear_to_db(maxf(v, 0.0001)))
+		AudioServer.set_bus_mute(i, v <= 0.001)
+
+
 func _apply_setting(key: String, v) -> void:
 	match key:
+		"vol_music":
+			_set_volume(["Music"], v)
+		"vol_sfx":
+			_set_volume(["SFX", "Wind"], v)   # 風は Outdoor の処理を通したいので、バスの音量で合わせる
+		"vol_voice":
+			_set_volume(["Voice"], v)
 		"bob":
 			if player: player.bob_enabled = v
 		"fov_kick":
