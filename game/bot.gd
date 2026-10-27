@@ -1,6 +1,6 @@
 extends CharacterBody3D
 
-const Look := preload("res://look.gd")
+const Doll := preload("res://doll.gd")
 ## 押すのを手伝う仲間（通信を入れるまでの代わり）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
 
@@ -15,7 +15,7 @@ var side := 1
 var state := State.PUSH
 var seat := Vector3.INF
 var handle := Vector3.INF   # つかんでいる所（ソリの座標）
-var _mitts: Array[MeshInstance3D] = []
+var doll: Doll               # 見た目の人形（右側の仲間は折り紙、左側は新聞紙）
 var debug := ""
 var _col: CollisionShape3D
 var _still := 0.0
@@ -31,37 +31,9 @@ func _ready() -> void:
 	_col.position.y = 0.85
 	add_child(_col)
 
-	# 紙の体にフェルトの上着と帽子
-	var felt := Look.felt(Color(0.18, 0.44, 0.56) if side > 0 else Color(0.85, 0.63, 0.19), 2.0)
-	var paper := Look.paper()
-	_part(CapsuleMesh.new(), Vector3(0, 0.85, 0), Vector3(0.75, 0.9, 0.75), felt)
-	_part(SphereMesh.new(), Vector3(0, 1.62, 0), Vector3(0.5, 0.5, 0.5), paper)
-	var hat := CylinderMesh.new()
-	hat.top_radius = 0
-	hat.bottom_radius = 0.24
-	hat.height = 0.4
-	_part(hat, Vector3(0, 1.95, 0), Vector3.ONE, felt)
-	# 手袋。つかむとソリの縁に伸びる
-	for sx in [-1, 1]:
-		var m := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 0.1
-		sm.height = 0.2
-		m.mesh = sm
-		m.material_override = felt
-		m.position = Vector3(0.45 * sx, 0.8, 0)
-		m.set_meta("side", sx)
-		add_child(m)
-		_mitts.append(m)
-
-
-func _part(mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
-	var m := MeshInstance3D.new()
-	m.mesh = mesh
-	m.position = pos
-	m.scale = scl
-	m.material_override = mat
-	add_child(m)
+	doll = Doll.new()
+	doll.kind = "origami" if side > 0 else "news"
+	add_child(doll)
 
 
 func let_go() -> void:
@@ -95,6 +67,7 @@ func _physics_process(dt: float) -> void:
 
 	if state == State.RIDE:
 		global_position = sled.to_global(seat)
+		_pose_doll()
 		# あなたがいないときは、仲間が体重をかけて滑り出す
 		if player == null and to_top < 8.0:
 			sled.lean(0.0, true)
@@ -135,7 +108,7 @@ func _physics_process(dt: float) -> void:
 				look_at(global_position + face, Vector3.UP)
 			if sled.linear_velocity.length() > 5.0:
 				let_go()
-			_pose_mitts(dt)
+			_pose_doll()
 			return
 		else:
 			# 持ち場はソリの横の縁の後ろの角。いま自分がいる側を選び、他の仲間が持っていれば反対側。
@@ -195,7 +168,7 @@ func _physics_process(dt: float) -> void:
 	move_and_slide()
 	if dir.length() > 0.1:
 		look_at(global_position + dir, Vector3.UP)
-	_pose_mitts(dt)
+	_pose_doll()
 
 
 ## その側の後ろの持ち場を、他の仲間がすでにつかんでいるか
@@ -209,8 +182,15 @@ func _post_taken(side_sign: float) -> bool:
 	return false
 
 
-func _pose_mitts(dt: float) -> void:
-	for m in _mitts:
-		var sx: int = m.get_meta("side")
-		var target := Vector3(0.28 * sx, 0.95, -0.5) if handle != Vector3.INF else Vector3(0.45 * sx, 0.8, 0)
-		m.position = m.position.lerp(target, min(1.0, dt * 10.0))
+## 人形に、いまの動きを伝える（姿勢は人形が 12 コマで刻む）
+func _pose_doll() -> void:
+	if state == State.RIDE:
+		doll.act = Doll.Act.RIDE
+	elif handle != Vector3.INF:
+		doll.act = Doll.Act.PUSH
+	else:
+		doll.act = Doll.Act.WALK
+	doll.sled = sled
+	doll.grip = handle
+	doll.effort = handle != Vector3.INF and sled.pushers > 0
+	doll.airborne = not is_on_floor() and state != State.RIDE and handle == Vector3.INF

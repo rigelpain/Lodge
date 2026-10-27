@@ -1,6 +1,7 @@
 extends CharacterBody3D
 
 const Look := preload("res://look.gd")
+const Doll := preload("res://doll.gd")
 ## あなた。一人称で、見えるのはフェルトの手袋をした両手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
@@ -22,6 +23,7 @@ enum Mode { WALK, GRIP, RIDE, ROPE }
 var sled: RigidBody3D
 var cam: Camera3D
 var hands: Array[Node3D] = []
+var doll: Doll               # 自分の体（笠と千代紙の人形）。一人称には映さず、右上の映像と三人称と影に出る
 var mode := Mode.WALK
 var seat := Vector3.INF
 var handle := Vector3.INF    # つかんでいる所（ソリの座標）
@@ -40,6 +42,7 @@ var _col: CollisionShape3D
 var _t := 0.0
 var _snap := 0.0             # 吸い付きの途中（0→1）
 var _rope: Array[MeshInstance3D] = []
+var _hand_frame := -1        # 一人称の手を最後に置き直したコマ
 
 
 func _ready() -> void:
@@ -60,15 +63,10 @@ func _ready() -> void:
 	cam.make_current()
 
 	# 自分の体。一人称の画面には映さず、右上のライブ映像と影にだけ出る（層 2）
-	var body_felt := Look.felt(Color(0.85, 0.33, 0.31), 2.0)
-	var paper := Look.paper()
-	_body_part(CapsuleMesh.new(), Vector3(0, 0.85, 0), Vector3(0.75, 0.9, 0.75), body_felt)
-	_body_part(SphereMesh.new(), Vector3(0, 1.62, 0), Vector3(0.5, 0.5, 0.5), paper)
-	var hat := CylinderMesh.new()
-	hat.top_radius = 0
-	hat.bottom_radius = 0.24
-	hat.height = 0.4
-	_body_part(hat, Vector3(0, 1.95, 0), Vector3.ONE, body_felt)
+	doll = Doll.new()
+	doll.kind = "kasa"
+	doll.layers = 1 << 1
+	add_child(doll)
 
 	var felt := Look.felt(Color(0.85, 0.33, 0.31), 6.0)
 	for s in [-1, 1]:
@@ -119,16 +117,6 @@ func set_third(on: bool) -> void:
 	cam.cull_mask = (1 << 0) | (1 << 1) if third else (1 << 0) | (1 << 2)
 
 
-func _body_part(mesh: Mesh, pos: Vector3, scl: Vector3, mat: Material) -> void:
-	var m := MeshInstance3D.new()
-	m.mesh = mesh
-	m.position = pos
-	m.scale = scl
-	m.material_override = mat
-	m.layers = 1 << 1
-	add_child(m)
-
-
 func _unhandled_input(e: InputEvent) -> void:
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-e.relative.x * 0.003 * mouse_sens)
@@ -157,6 +145,8 @@ func _unhandled_input(e: InputEvent) -> void:
 							grab_rope()
 						else:
 							grab()
+			KEY_G:
+				doll.call_out()   # 言葉にならない声（仮のキー）
 			KEY_E:
 				if mode == Mode.RIDE:
 					get_off()
@@ -253,7 +243,22 @@ func _physics_process(dt: float) -> void:
 		Mode.WALK:
 			_walk(dt, false)
 	_pose_hands(dt)
+	_pose_doll()
 	_draw_rope()
+
+
+## 人形に、いまの動きを伝える（姿勢は人形が 12 コマで刻む）。Q を押しているあいだ手を振る（仮のキー）
+func _pose_doll() -> void:
+	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE][mode]
+	doll.sled = sled
+	doll.grip = handle if mode == Mode.GRIP else Vector3.INF
+	doll.effort = pushing or pulling
+	doll.airborne = mode == Mode.WALK and not is_on_floor()
+	doll.facing = (sled.global_basis * push_dir) if mode == Mode.GRIP else Vector3.ZERO
+	doll.gaze = cam.global_position - cam.global_basis.z * 6.0
+	doll.rope_hand = _hand_world() if mode == Mode.ROPE else Vector3.INF
+	doll.lean = Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_W) - _key(KEY_S)) if mode == Mode.RIDE else Vector2.ZERO
+	doll.waving = Input.is_physical_key_pressed(KEY_Q) and not menu_open
 
 
 ## 小さな段差（STEP_UP まで）は、歩くだけで乗り上げる。
@@ -383,6 +388,7 @@ func _pose_hands(dt: float) -> void:
 	# 押す・引くと視点がわずかに揺れ、画角が少し広がる
 	_place_camera(dt, bob, working)
 	cam.fov = lerp(cam.fov, base_fov + (4.0 if working and fov_kick_enabled else 0.0), min(1.0, dt * 4.0))
+	var fi := Doll.frame_index()
 	for h in hands:
 		var s: int = h.get_meta("side")
 		var target: Vector3
@@ -401,7 +407,16 @@ func _pose_hands(dt: float) -> void:
 				target = Vector3(0.28 * s, -0.32, -0.35)
 			_:
 				target = Vector3(0.3 * s, -0.3 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.45)
-		h.position = h.position.lerp(target, clamp(dt * 12.0, 0.0, 1.0))
+		# 手も姿勢と同じ決まり: コマが変わるときだけ置き直し、わずかに揺らす。
+		# ソリをつかんでいる間は、ソリに対しての位置で保つ（ソリが動いても手が縁から離れない）
+		if fi != _hand_frame:
+			target += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.004
+			h.set_meta("hold", sled.to_local(cam.to_global(target)) if mode == Mode.GRIP else target)
+			h.set_meta("on_sled", mode == Mode.GRIP)
+			h.rotation = Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.03
+		var hold: Vector3 = h.get_meta("hold", target)
+		h.position = cam.to_local(sled.to_global(hold)) if h.get_meta("on_sled", false) else hold
+	_hand_frame = fi
 
 
 ## 紐を描く。持っていれば手まで、持っていなければソリの前に垂れる
