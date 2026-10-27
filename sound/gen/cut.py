@@ -76,10 +76,8 @@ def cut(x, start, env, floor, max_len=0.5, pre=0.006, settle_db=6.0, min_len=0.0
 
 # どの録音の、何秒の音を使うか（scan の絵を見て決めた）。時刻は音の頭のだいたいの位置
 PICKS = [
-    # 雪の足あと: eZZin の冷えた雪。高い所まで鳴る乾いたきしみ（絵で見て Vrymaa より上が出ていた）
-    dict(out="step_snow", src="683920", times=[0.84, 1.65, 2.89, 3.93, 4.53, 5.34], gap=0.3, max_len=0.4, min_len=0.15, peak=-9, rms=-25, hp_hz=150, tame=True),
-    # 比べる用 B: Vrymaa の粉雪の歩き。低い所が主で、靴の重みが出る
-    dict(out="step_snow_b", src="773740", times=[0.88, 1.50, 2.07, 2.94, 3.52, 4.17], gap=0.3, max_len=0.42, min_len=0.15, peak=-9, rms=-25, hp_hz=120),
+    # 雪の足あと: Vrymaa の粉雪の歩き（代表が 2026-10-27 に聞き比べて選んだ。eZZin の冷えた雪は針のような突起が多く不採用）
+    dict(out="step_snow", src="773740", times=[0.88, 1.50, 2.07, 2.94, 3.52, 4.17], gap=0.3, max_len=0.42, min_len=0.15, peak=-9, rms=-25, hp_hz=120),
     # 踏ん張り: Nox_Sound の山靴。重く長い
     dict(out="step_snow_push", src="613849", times=[0.03, 1.92, 2.79, 8.39], gap=0.5, max_len=0.5, min_len=0.3, peak=-8, rms=-24, hp_hz=100),
     # 器: Vrymaa の皿の片づけ 4 つと、bbrocer の皿を卓に置く 2 つ
