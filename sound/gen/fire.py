@@ -42,6 +42,9 @@ def crack(rng):
 
 
 if __name__ == "__main__":
-    write("fire_bed_loop.wav", bed_loop(np.random.default_rng(700)), -8)
-    for i in range(8):
-        write(f"fire_crack_{i + 1:02d}.wav", crack(np.random.default_rng(710 + i)), -6 if i % 3 else -3)
+    import sys
+    # 炉の音は 2026-10-27 に録音（gen/cut.py）へ差し替えた。合成は聞き比べ用に --synth
+    if "--synth" in sys.argv:
+        write("fire_bed_synth_loop.wav", bed_loop(np.random.default_rng(700)), -8)
+        for i in range(8):
+            write(f"fire_crack_synth_{i + 1:02d}.wav", crack(np.random.default_rng(710 + i)), -6 if i % 3 else -3)

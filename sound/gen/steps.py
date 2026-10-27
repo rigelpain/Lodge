@@ -1,4 +1,4 @@
-"""足あと。雪は、片栗粉を握ったときの「ギュッ」。板は乾いた木の鳴り。
+"""足あと。板は乾いた木の鳴り。雪は録音に差し替えた（gen/cut.py）。ここの合成の雪は聞き比べ用に残す。
 
 雪の音は粒の重なりではなく、狭い帯域の鳴きが短く上ずるもの。冷えた粉雪を踏むと
 粒どうしがこすれて止まり、を細かく繰り返して鳴く（片栗粉と同じ）。小さく、短く。
@@ -72,9 +72,12 @@ def wood_step(rng):
 
 
 if __name__ == "__main__":
-    for i in range(6):
-        write(f"step_snow_{i + 1:02d}.wav", snow_step(np.random.default_rng(100 + i)), -9)
-    for i in range(4):
-        write(f"step_snow_push_{i + 1:02d}.wav", snow_step(np.random.default_rng(200 + i), push=True), -8)
+    import sys
+    # 雪の足あとは 2026-10-27 に録音（gen/cut.py）へ差し替えた。合成の雪を聞き比べたいときだけ --synth
+    if "--synth" in sys.argv:
+        for i in range(6):
+            write(f"step_snow_synth_{i + 1:02d}.wav", snow_step(np.random.default_rng(100 + i)), -9)
+        for i in range(4):
+            write(f"step_snow_push_synth_{i + 1:02d}.wav", snow_step(np.random.default_rng(200 + i), push=True), -8)
     for i in range(4):
         write(f"step_wood_{i + 1:02d}.wav", wood_step(np.random.default_rng(300 + i)), -8)

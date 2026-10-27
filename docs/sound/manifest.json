@@ -29,44 +29,44 @@
  },
  {
   "file": "dish_01.wav",
-  "dur": 0.75,
+  "dur": 0.12,
   "peak": -9.0,
-  "rms": -25.5,
+  "rms": -24.9,
   "loop": false
  },
  {
   "file": "dish_02.wav",
-  "dur": 0.75,
+  "dur": 0.53,
   "peak": -9.0,
-  "rms": -26.0,
+  "rms": -27.0,
   "loop": false
  },
  {
   "file": "dish_03.wav",
-  "dur": 0.75,
+  "dur": 0.23,
   "peak": -9.0,
-  "rms": -26.7,
+  "rms": -27.0,
   "loop": false
  },
  {
   "file": "dish_04.wav",
-  "dur": 0.75,
+  "dur": 0.27,
   "peak": -9.0,
-  "rms": -28.0,
+  "rms": -28.3,
   "loop": false
  },
  {
   "file": "dish_05.wav",
-  "dur": 0.75,
+  "dur": 0.11,
   "peak": -9.0,
-  "rms": -28.1,
+  "rms": -26.4,
   "loop": false
  },
  {
   "file": "dish_06.wav",
-  "dur": 0.75,
+  "dur": 0.13,
   "peak": -9.0,
-  "rms": -28.0,
+  "rms": -29.7,
   "loop": false
  },
  {
@@ -87,63 +87,63 @@
   "file": "fire_bed_loop.wav",
   "dur": 8.0,
   "peak": -8.0,
-  "rms": -21.8,
+  "rms": -21.1,
   "loop": true
  },
  {
   "file": "fire_crack_01.wav",
-  "dur": 0.21,
-  "peak": -3.0,
-  "rms": -31.6,
+  "dur": 0.09,
+  "peak": -5.0,
+  "rms": -35.3,
   "loop": false
  },
  {
   "file": "fire_crack_02.wav",
-  "dur": 0.25,
-  "peak": -6.0,
-  "rms": -34.5,
+  "dur": 0.09,
+  "peak": -8.0,
+  "rms": -35.6,
   "loop": false
  },
  {
   "file": "fire_crack_03.wav",
-  "dur": 0.23,
-  "peak": -6.0,
-  "rms": -33.7,
+  "dur": 0.07,
+  "peak": -8.0,
+  "rms": -35.0,
   "loop": false
  },
  {
   "file": "fire_crack_04.wav",
-  "dur": 0.23,
-  "peak": -3.0,
-  "rms": -32.0,
-  "loop": false
- },
- {
-  "file": "fire_crack_05.wav",
-  "dur": 0.26,
-  "peak": -6.0,
-  "rms": -33.2,
-  "loop": false
- },
- {
-  "file": "fire_crack_06.wav",
-  "dur": 0.22,
-  "peak": -6.0,
+  "dur": 0.13,
+  "peak": -5.0,
   "rms": -37.4,
   "loop": false
  },
  {
+  "file": "fire_crack_05.wav",
+  "dur": 0.09,
+  "peak": -8.0,
+  "rms": -35.7,
+  "loop": false
+ },
+ {
+  "file": "fire_crack_06.wav",
+  "dur": 0.08,
+  "peak": -8.0,
+  "rms": -35.6,
+  "loop": false
+ },
+ {
   "file": "fire_crack_07.wav",
-  "dur": 0.3,
-  "peak": -3.0,
-  "rms": -33.4,
+  "dur": 0.08,
+  "peak": -5.0,
+  "rms": -35.6,
   "loop": false
  },
  {
   "file": "fire_crack_08.wav",
-  "dur": 0.26,
-  "peak": -6.0,
-  "rms": -32.0,
+  "dur": 0.08,
+  "peak": -8.0,
+  "rms": -37.0,
   "loop": false
  },
  {
@@ -232,72 +232,114 @@
  },
  {
   "file": "step_snow_01.wav",
-  "dur": 0.14,
-  "peak": -9.0,
-  "rms": -25.7,
+  "dur": 0.16,
+  "peak": -1.0,
+  "rms": -26.4,
   "loop": false
  },
  {
   "file": "step_snow_02.wav",
-  "dur": 0.14,
-  "peak": -9.0,
-  "rms": -24.1,
+  "dur": 0.32,
+  "peak": -3.0,
+  "rms": -25.0,
   "loop": false
  },
  {
   "file": "step_snow_03.wav",
-  "dur": 0.12,
-  "peak": -9.0,
-  "rms": -22.3,
+  "dur": 0.23,
+  "peak": -5.2,
+  "rms": -25.0,
   "loop": false
  },
  {
   "file": "step_snow_04.wav",
-  "dur": 0.12,
-  "peak": -9.0,
-  "rms": -23.9,
+  "dur": 0.16,
+  "peak": -3.4,
+  "rms": -25.0,
   "loop": false
  },
  {
   "file": "step_snow_05.wav",
-  "dur": 0.14,
-  "peak": -9.0,
-  "rms": -25.6,
+  "dur": 0.32,
+  "peak": -4.1,
+  "rms": -25.0,
   "loop": false
  },
  {
   "file": "step_snow_06.wav",
-  "dur": 0.13,
-  "peak": -9.0,
-  "rms": -22.4,
+  "dur": 0.31,
+  "peak": -7.2,
+  "rms": -25.0,
+  "loop": false
+ },
+ {
+  "file": "step_snow_b_01.wav",
+  "dur": 0.28,
+  "peak": -9.9,
+  "rms": -25.0,
+  "loop": false
+ },
+ {
+  "file": "step_snow_b_02.wav",
+  "dur": 0.24,
+  "peak": -10.5,
+  "rms": -25.0,
+  "loop": false
+ },
+ {
+  "file": "step_snow_b_03.wav",
+  "dur": 0.43,
+  "peak": -9.3,
+  "rms": -25.0,
+  "loop": false
+ },
+ {
+  "file": "step_snow_b_04.wav",
+  "dur": 0.35,
+  "peak": -10.2,
+  "rms": -25.0,
+  "loop": false
+ },
+ {
+  "file": "step_snow_b_05.wav",
+  "dur": 0.23,
+  "peak": -8.0,
+  "rms": -25.0,
+  "loop": false
+ },
+ {
+  "file": "step_snow_b_06.wav",
+  "dur": 0.31,
+  "peak": -9.5,
+  "rms": -25.0,
   "loop": false
  },
  {
   "file": "step_snow_push_01.wav",
   "dur": 0.31,
-  "peak": -8.0,
-  "rms": -22.1,
+  "peak": -7.1,
+  "rms": -24.0,
   "loop": false
  },
  {
   "file": "step_snow_push_02.wav",
-  "dur": 0.34,
-  "peak": -8.0,
-  "rms": -22.5,
+  "dur": 0.31,
+  "peak": -5.3,
+  "rms": -24.0,
   "loop": false
  },
  {
   "file": "step_snow_push_03.wav",
-  "dur": 0.28,
-  "peak": -8.0,
-  "rms": -22.9,
+  "dur": 0.33,
+  "peak": -5.6,
+  "rms": -24.0,
   "loop": false
  },
  {
   "file": "step_snow_push_04.wav",
-  "dur": 0.32,
-  "peak": -8.0,
-  "rms": -22.1,
+  "dur": 0.43,
+  "peak": -10.5,
+  "rms": -24.0,
   "loop": false
  },
  {

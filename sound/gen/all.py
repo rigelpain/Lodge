@@ -5,7 +5,7 @@ import pathlib
 
 here = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(here))
-for name in ["steps", "breath", "runner", "wind", "fire", "kitchen", "door", "sled", "music", "speaker", "check", "publish"]:
+for name in ["steps", "breath", "runner", "wind", "fire", "kitchen", "door", "sled", "music", "speaker", "cut", "check", "publish"]:
     print(f"--- {name}")
     sys.argv = [name]
     runpy.run_path(str(here / f"{name}.py"), run_name="__main__")

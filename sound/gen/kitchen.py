@@ -66,5 +66,8 @@ if __name__ == "__main__":
     write("pot_steam_loop.wav", steam_loop(np.random.default_rng(800)), -12)
     for i in range(3):
         write(f"pot_lid_{i + 1:02d}.wav", lid(np.random.default_rng(810 + i)), -10)
-    for i in range(6):
-        write(f"dish_{i + 1:02d}.wav", dish(np.random.default_rng(820 + i), on_table=(i >= 3)), -9)
+    # 器は 2026-10-27 に録音（gen/cut.py）へ差し替えた。合成は聞き比べ用に --synth
+    import sys
+    if "--synth" in sys.argv:
+        for i in range(6):
+            write(f"dish_synth_{i + 1:02d}.wav", dish(np.random.default_rng(820 + i), on_table=(i >= 3)), -9)
