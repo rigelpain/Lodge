@@ -12,6 +12,7 @@ const DASH := 7.0            # Shift で走る速さ
 const SPEED_TAUT := 2.6      # 紐が張っているときの歩く速さ
 const JUMP := 4.5
 const GRAVITY := 9.8
+const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
 const LET_GO_SPEED := 5.0    # ソリがこれより速く滑ると手が離れる (m/s)
 const ROPE_SEGS := 14
@@ -255,6 +256,30 @@ func _physics_process(dt: float) -> void:
 	_draw_rope()
 
 
+## 小さな段差（STEP_UP まで）は、歩くだけで乗り上げる。
+## 前がふさがっていて、持ち上げると前へ進め、その先に平らな床があるときだけ体を持ち上げる（壁やソリには上らない）
+func _step_up(dir: Vector3) -> void:
+	if dir.length() < 0.1:
+		return
+	var ahead := dir * 0.3
+	if not test_move(global_transform, ahead):
+		return
+	var up := Vector3(0, STEP_UP, 0)
+	if test_move(global_transform, up):
+		return
+	var raised := global_transform.translated(up)
+	if test_move(raised, ahead):
+		return
+	var col := KinematicCollision3D.new()
+	if not test_move(raised.translated(ahead), -up, col):
+		return
+	if col.get_normal().y < 0.7 or col.get_collider() is RigidBody3D:
+		return
+	var rise := STEP_UP - col.get_travel().length()
+	if rise > 0.02:
+		global_position.y += rise + 0.01
+
+
 func _walk(dt: float, with_rope: bool) -> void:
 	var input := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
 	var dir := (global_basis * Vector3(input.x, 0, input.y)).normalized()
@@ -276,6 +301,8 @@ func _walk(dt: float, with_rope: bool) -> void:
 	if is_on_floor():
 		if Input.is_physical_key_pressed(KEY_SPACE):
 			velocity.y = JUMP
+		else:
+			_step_up(dir)
 	else:
 		velocity.y -= GRAVITY * dt
 	move_and_slide()

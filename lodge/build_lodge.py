@@ -388,12 +388,11 @@ def build_massing():
     g.done()
     s = M("massing_stair", "deck", "massing")
     E = ESTAIR
-    s.prism_x([(E["y_start"], FL1), (E["y_land"], E["z_land"]), (E["y_land"], E["z_land"] - 0.3),
-               (E["y_start"], FL1 - 0.3)][::-1], *E["x_lo"])
-    s.prism_x([(E["y_land"], E["z_land"]), (E["y_start"], FL2), (E["y_start"], FL2 - 0.3),
-               (E["y_land"], E["z_land"] - 0.3)], *E["x_up"])
-    s.box(E["x_lo"][0], E["y_land"] - E["landing"], E["z_land"] - 0.15, E["x_up"][1], E["y_land"], E["z_land"])
-    s.box(E["x_up"][0], E["y_start"], FL2 - 0.15, E["x_up"][1], Y0, FL2)
+    s.prism_x([(E["y_foot"], FL1), (E["y_land0"], E["z_land"]), (E["y_land0"], E["z_land"] - 0.3),
+               (E["y_foot"], FL1 - 0.3)], E["x0"], E["x1"])
+    s.prism_x([(E["y_land1"], E["z_land"]), (E["y_top"], FL2), (E["y_top"], FL2 - 0.3),
+               (E["y_land1"], E["z_land"] - 0.3)], E["x0"], E["x1"])
+    s.box(E["x0"], E["y_land0"], E["z_land"] - 0.15, E["x1"], E["y_land1"], E["z_land"])
     s.done()
 
 
@@ -648,9 +647,17 @@ def build_vestibule():
     fl.box(V["x0"], gy0, FL1 - PIT, gx_[0][0], gy1, FL1)        # 壁際
     fl.box(gx_[0][1], gy0, FL1 - PIT, gx_[1][0], gy1, FL1)      # マットの帯
     fl.box(gx_[1][1], gy0, FL1 - PIT, V["x1"], gy1, FL1)
-    for k in range(3):
-        fl.box(cx - r - 0.6, y0 - 0.35 * (3 - k), 0, cx + r + 0.6, y0, FL1 * (k + 1) / 3)
     fl.done(bevel=0.012)
+    # 玄関前の広場: 風除室の前から外階段の登り口まで一続き。外まわりの段で東・南・西から上がれ、デッキにもつながる
+    P = PLAZA
+    pz = M("plaza", "deck", "walls")
+    for k in range(P["steps"]):
+        d = (P["steps"] - 1 - k) * P["tread"]
+        z = FL1 * (k + 1) / P["steps"]
+        pz.box(P["x0"] - d, P["y0"] - d, 0, P["x1"] + d, P["y1"], z)
+        pz.box(P["x0"] - d, P["y1"], 0, V["x0"], DECK["y0"], z)        # 風除室の西（外階段の下を通ってデッキへ）
+        pz.box(V["x1"], P["y1"], 0, P["x1"] + d, DECK["y0"], z)        # 風除室の東
+    pz.done(bevel=0.012)
     pit = M("vest_drain", "dark", "walls")                        # 溝の底（暗い）
     grate = M("vest_grating", "metal", "walls")
     for a, b in gx_:
@@ -786,7 +793,8 @@ def rail_run(Rm, p0, p1, h=RAIL_H, posts_every=K, name=None):
 def build_rails_and_stair():
     Rm = M("rails", "rail", "crown")
     zt = FL2
-    rail_run(Rm, (X0 + K, Y0 + 0.07, zt), (X1 - 0.07, Y0 + 0.07, zt), name="bal_terrace_s")
+    rail_run(Rm, (X0 + 0.07, Y0 + 0.07, zt), (ESTAIR["x0"], Y0 + 0.07, zt), name="bal_terrace_sw")   # 外階段の所は空ける
+    rail_run(Rm, (ESTAIR["x1"], Y0 + 0.07, zt), (X1 - 0.07, Y0 + 0.07, zt), name="bal_terrace_s")
     rail_run(Rm, (X1 - 0.07, Y0 + 0.07, zt), (X1 - 0.07, Y2_0 - R - 0.02, zt), name="bal_terrace_e")
     rail_run(Rm, (X0 + 0.07, Y0 + 0.07, zt), (X0 + 0.07, Y2_0 - R - 0.02, zt), name="bal_terrace_w")
     # テラスの床板
@@ -794,39 +802,38 @@ def build_rails_and_stair():
     n = int((Y2_0 - R - Y0) / 0.15)
     tb.box(X0, Y0 - 0.02, FL2, X1, Y0 + 0.13, FL2 + 0.03)
     tb.done(bevel=0.008, array=(n, (0, 0.15, 0)))
-    # 外階段
+    # 外階段: 玄関前の広場から北へまっすぐ上り、踊り場を挟んでテラスの南の縁に着く
     E = ESTAIR
     T = M("stair_treads", "deck", "crown")
     S = M("stair_frame", "post", "crown")
     ri, tr = E["rise"], E["tread"]
-    nf = E["risers"] // 2
-    for (xa, xb), ys, z0, dirn in ((E["x_lo"], E["y_start"], FL1, -1), (E["x_up"], E["y_land"], E["z_land"], 1)):
-        for k in range(1, nf):
+    xa, xb = E["x0"], E["x1"]
+    n1, n2 = E["n1"], E["risers"] - E["n1"]
+    for ys, z0, n in ((E["y_foot"], FL1, n1), (E["y_land1"], E["z_land"], n2)):
+        for k in range(1, n):
             z = z0 + k * ri
-            y_lo = ys + dirn * (k - 1) * tr
-            y_hi = ys + dirn * k * tr
-            T.box(xa + 0.06, y_lo - dirn * 0.03, z - 0.05, xb - 0.06, y_hi, z)
-        ye = ys + dirn * (nf - 1) * tr
-        ze = z0 + nf * ri
+            y0_, y1_ = ys + (k - 1) * tr, ys + k * tr
+            if z0 == FL1 and k <= E["flare"]:   # 登り口の段は左右に広げ、広場から三方で踏み込める
+                w = 0.3 * (E["flare"] - k + 1)
+                T.box(xa - w, y0_ - 0.03 * (k == 1), FL1, xb + w, y1_, z)
+            else:
+                T.box(xa + 0.06, y0_ - 0.03, z - 0.05, xb - 0.06, y1_, z)
+        ye, ze = ys + (n - 1) * tr, z0 + n * ri
+        yb_ = ys + E["flare"] * tr if z0 == FL1 else ys
+        zb_ = z0 + (E["flare"] * ri if z0 == FL1 else 0.0)
         for x in (xa + 0.03, xb - 0.03):   # 側桁
-            S.beam((x, ys - dirn * 0.05, z0 - 0.02), (x, ye + dirn * 0.05, ze - 0.02), 0.06, 0.30)
-        rail_run(Rm, (xa + 0.05, ys, z0 + ri), (xa + 0.05, ye, ze), h=1.0, posts_every=3,
-                 name="bal_stair_%d_w" % dirn)
-        rail_run(Rm, (xb - 0.05, ys, z0 + ri), (xb - 0.05, ye, ze), h=1.0, posts_every=3,
-                 name="bal_stair_%d_e" % dirn)
-    xa, xb = E["x_lo"][0], E["x_up"][1]
-    yl0, yl1 = E["y_land"] - E["landing"], E["y_land"]
+            S.beam((x, yb_ - 0.05, zb_ - 0.02), (x, ye + 0.05, ze - 0.02), 0.06, 0.30)
+            rail_run(Rm, (x + (0.02 if x < (xa + xb) / 2 else -0.02), yb_, zb_ + ri), (x + (0.02 if x < (xa + xb) / 2 else -0.02), ye, ze),
+                     h=1.0, posts_every=3, name="bal_stair_%d_%s" % (round(z0 * 10), "w" if x < (xa + xb) / 2 else "e"))
+    yl0, yl1 = E["y_land0"], E["y_land1"]
     T.box(xa, yl0, E["z_land"] - 0.12, xb, yl1, E["z_land"])                 # 踊り場
-    T.box(E["x_up"][0], E["y_start"], FL2 - 0.12, E["x_up"][1], Y0, FL2)     # テラスへの渡り
     for x in (xa + 0.08, xb - 0.08):
         for y in (yl0 + 0.08, yl1 - 0.08):
             S.box(x - 0.08, y - 0.08, 0, x + 0.08, y + 0.08, E["z_land"] - 0.12)
-    rail_run(Rm, (xa + 0.05, yl0 + 0.05, E["z_land"]), (xb - 0.05, yl0 + 0.05, E["z_land"]), h=1.0,
-             name="bal_landing_s")
-    rail_run(Rm, (xa + 0.05, yl1, E["z_land"]), (xa + 0.05, yl0 + 0.05, E["z_land"]), h=1.0, name="bal_landing_w")
-    rail_run(Rm, (xb - 0.05, yl1, E["z_land"]), (xb - 0.05, yl0 + 0.05, E["z_land"]), h=1.0, name="bal_landing_e")
-    rail_run(Rm, (E["x_up"][1] - 0.05, E["y_start"], FL2), (E["x_up"][1] - 0.05, Y0, FL2), h=RAIL_H,
-             name="bal_bridge")
+        S.box(x - 0.08, (yl1 + E["y_top"]) / 2 - 0.08, 0, x + 0.08, (yl1 + E["y_top"]) / 2 + 0.08,
+              (E["z_land"] + FL2) / 2 - 0.3)                                  # 2 本目の中ほどの柱
+    rail_run(Rm, (xa + 0.05, yl0, E["z_land"]), (xa + 0.05, yl1, E["z_land"]), h=1.0, name="bal_landing_w")
+    rail_run(Rm, (xb - 0.05, yl0, E["z_land"]), (xb - 0.05, yl1, E["z_land"]), h=1.0, name="bal_landing_e")
     T.done(bevel=0.012)
     S.done(bevel=0.012)
     Rm.done(bevel=0.012)
@@ -1232,6 +1239,7 @@ CAMS = {
     "in1": ((gx(2.5), Y0 + 1.0, FL1 + 1.55), (gx(9.0), Y1 - 1.0, FL1 + 1.2), 20),
     "in2": ((gx(0.5), gy(3.6), FL2 + 1.55), (gx(10.5), gy(2.4), FL2 + 0.55), 22),
     "kotatsu": ((gx(5.3), gy(1.2), FL2 + TATAMI["h"] + 1.05), (gx(3.0), Y0 - 8, FL2 + 1.6), 24),
+    "plaza": ((VEST["cx"] - 4, PLAZA["y0"] - 12, 4.5), (ESTAIR["x0"] + 1.5, ESTAIR["y_land0"] - 1, 2.0), 32),
     "entrance": ((VEST["cx"] - 9, Y0 - VEST["d"] - 13, 3.2), (VEST["cx"], Y0 - VEST["d"], 2.8), 30),
     "vest_in": ((VEST["cx"] + 2.6, Y0 - VEST["d"] + 0.8, FL1 + 1.6), (VEST["x0"] + 0.8, Y0 - 0.4, FL1 + 1.0), 22),
     "stair1": ((gx(8.2), gy(3.2), FL1 + 1.6), (INSTAIR["xm"], INSTAIR["y_land"], 2.6), 24),
@@ -1306,7 +1314,15 @@ def build_collision():
     V, A_ = VEST, ARCH
     y0v, cx = Y0 - V["d"], V["cx"]
     F.box(V["x0"], y0v, 0, V["x1"], Y0, FL1)
-    ramp_y(St, cx - A_["r"] - 0.6, cx + A_["r"] + 0.6, y0v - 1.05, 0, y0v, FL1)   # アーチの前の 3 段は坂に
+    P = PLAZA                                                                 # 玄関前の広場と、外まわりの段（坂）
+    F.box(P["x0"], P["y0"], 0, P["x1"], P["y1"], FL1)
+    F.box(P["x0"], P["y1"], 0, V["x0"], DECK["y0"], FL1)
+    F.box(V["x1"], P["y1"], 0, P["x1"], DECK["y0"], FL1)
+    run = P["steps"] * P["tread"]
+    ramp_y(St, P["x0"] - run, P["x1"] + run, P["y0"] - run, 0, P["y0"], FL1)
+    for xa_, xb_ in ((P["x0"] - run, P["x0"]), (P["x1"] + run, P["x1"])):
+        prof = [(xa_, -0.25), (xb_, FL1 - 0.25), (xb_, FL1), (xa_, 0.0)]
+        St.prism_y(prof if xa_ < xb_ else prof[::-1], P["y0"] - run, DECK["y0"])
     Wl.box(V["x0"], y0v + V["t"], FL1, V["x0"] + V["t"], Y0, V["h"])        # 両脇の壁（溝の格子は床として歩ける）
     Wl.box(V["x1"] - V["t"], y0v + V["t"], FL1, V["x1"], Y0, V["h"])
     wall(Wl, "x", y0v + V["t"] / 2, V["x0"], V["x1"], FL1, V["h"],
@@ -1342,20 +1358,21 @@ def build_collision():
     for y in L["posts"]:
         Wl.box(L["x_post"] - 0.10, y - 0.10, 0, L["x_post"] + 0.10, y + 0.10, L["z_out"])
     # 手すり（テラス・外階段・吹き抜け）
-    for b in ((X0 + K, Y0, FL2, X1, Y0 + 0.12, FL2 + RAIL_H), (X1 - 0.12, Y0, FL2, X1, Y2_0, FL2 + RAIL_H),
+    for b in ((X0, Y0, FL2, ESTAIR["x0"], Y0 + 0.12, FL2 + RAIL_H), (ESTAIR["x1"], Y0, FL2, X1, Y0 + 0.12, FL2 + RAIL_H),
+              (X1 - 0.12, Y0, FL2, X1, Y2_0, FL2 + RAIL_H),
               (X0, Y0, FL2, X0 + 0.12, Y2_0, FL2 + RAIL_H),
               (hx - 0.1, hy, FL2, hx, Y1, FL2 + RAIL_H), (I["xm"], hy - 0.1, FL2, X1, hy, FL2 + RAIL_H)):
         Wl.box(*b)
     # 階段は坂にする（外階段 2 本と踊り場、内階段、デッキの東の段）
     E = ESTAIR
-    ramp_y(St, *E["x_lo"], E["y_start"], FL1, E["y_land"], E["z_land"])
-    ramp_y(St, *E["x_up"], E["y_land"], E["z_land"], E["y_start"], FL2)
-    St.box(E["x_lo"][0], E["y_land"] - E["landing"], E["z_land"] - 0.15, E["x_up"][1], E["y_land"], E["z_land"])
-    St.box(E["x_up"][0], E["y_start"], FL2 - 0.15, E["x_up"][1], Y0, FL2)
-    for x in (E["x_lo"][0], E["x_up"][1] - 0.08):
-        St.box(x, E["y_land"] - E["landing"], E["z_land"], x + 0.08, E["y_land"], E["z_land"] + 1.0)
-    St.box(E["x_lo"][0], E["y_land"] - E["landing"], E["z_land"], E["x_up"][1], E["y_land"] - E["landing"] + 0.08,
-           E["z_land"] + 1.0)
+    ramp_y(St, E["x0"], E["x1"], E["y_foot"], FL1, E["y_land0"], E["z_land"])
+    fw_ = 0.3 * E["flare"]
+    ramp_y(St, E["x0"] - fw_, E["x1"] + fw_, E["y_foot"], FL1, E["y_foot"] + E["flare"] * E["tread"],
+           FL1 + E["flare"] * E["rise"])                                       # 広げた登り口
+    ramp_y(St, E["x0"], E["x1"], E["y_land1"], E["z_land"], E["y_top"], FL2)
+    St.box(E["x0"], E["y_land0"], E["z_land"] - 0.15, E["x1"], E["y_land1"], E["z_land"])
+    for x in (E["x0"], E["x1"] - 0.08):                                        # 踊り場と階段の脇の手すり
+        St.box(x, E["y_land0"], E["z_land"], x + 0.08, E["y_land1"], E["z_land"] + 1.0)
     ramp_y(St, I["xm"], I["x1"], I["y_bottom"] - I["tread"], FL1, I["y_land"], I["z_land"])
     St.box(I["x0"], I["y_land"], I["z_land"] - 0.15, I["x1"], I["y_top"], I["z_land"])
     ramp_y(St, I["x0"], I["xm"], I["y_land"], I["z_land"], I["hole_y0"], FL2)
@@ -1381,6 +1398,8 @@ def build_collision():
         Fu.box(x - 0.12, ky - 0.12, zt, x + KOTATSU_W + 0.12, ky + KOTATSU_D + 0.12, zt + 0.40)
     Fu.box(*BENCH2[:2], FL2, *BENCH2[2:], FL2 + 0.42)
     Fu.box(TABLE2[0], TABLE2[1], FL2, TABLE2[2], TABLE2[3], FL2 + 0.72)
+    for m in groups.values():
+        bmesh.ops.recalc_face_normals(m.bm, faces=m.bm.faces)
     return [m.done() for m in groups.values()]
 
 

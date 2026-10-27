@@ -115,15 +115,21 @@ LEAN = dict(x_out=gx(-2.3), x_post=gx(-2.0), y0=gy(7.05), y1=gy(-0.05),
 # ---- デッキ（地面から 0.45）----
 DECK = dict(x0=gx(-1.5), x1=gx(6.0), y0=Y0 - 1.5 * K, y1=Y0, z=FL1, t=0.12)
 
-# ---- 外階段（デッキからテラスへ折り返す）----
-# 直した点: 代表の図面は踊り場が丘へ大きく出ていた。蹴上げをふつうにして縮め、デッキの先から少しだけ出る。
-# 西の端なので、正面に滑り込むソリの道をふさがない。幅は人の大きさ（1 間）
-ESTAIR = dict(x_lo=(X0 - K, X0), x_up=(X0, X0 + K), y_start=Y0 - 0.30,
-              risers=2 * round((FL2 - FL1) / 0.175 / 2), tread=0.27, landing=1.40, width=K)
+# ---- 外階段と玄関前の広場 ----
+# 代表の指摘: 登り口が正面の入口から行きづらかった。風除室の西に沿って、広場から北へまっすぐ上り、
+# 途中の踊り場を挟んでテラスの南の縁に着く形にした。登り口は南を向き、広場の上で三方から寄れる。
+# 広場（玄関前の基壇）は風除室の前に広がり、外まわりの 3 段で東・南・西のどこからでも上がれる。デッキにもつながる。
+ESTAIR = dict(x1=VEST["x0"] - VEST["roof_out"] - 0.15, width=K, y_top=Y0 - 0.05,
+              risers=2 * round((FL2 - FL1) / 0.175 / 2), tread=0.27, landing=1.40, flare=3)
+ESTAIR["x0"] = ESTAIR["x1"] - ESTAIR["width"]
 ESTAIR["rise"] = (FL2 - FL1) / ESTAIR["risers"]
-ESTAIR["run"] = (ESTAIR["risers"] // 2 - 1) * ESTAIR["tread"]       # 1 本の流れ 2.7 m
-ESTAIR["z_land"] = FL1 + ESTAIR["risers"] // 2 * ESTAIR["rise"]
-ESTAIR["y_land"] = ESTAIR["y_start"] - ESTAIR["run"]                 # 踊り場の北の縁
+ESTAIR["n1"] = ESTAIR["risers"] // 2
+ESTAIR["z_land"] = FL1 + ESTAIR["n1"] * ESTAIR["rise"]
+ESTAIR["y_land1"] = ESTAIR["y_top"] - (ESTAIR["risers"] - ESTAIR["n1"] - 1) * ESTAIR["tread"]   # 踊り場の北の縁
+ESTAIR["y_land0"] = ESTAIR["y_land1"] - ESTAIR["landing"]                                       # 踊り場の南の縁
+ESTAIR["y_foot"] = ESTAIR["y_land0"] - (ESTAIR["n1"] - 1) * ESTAIR["tread"]                     # 登り口（1 段目の蹴上げ）
+PLAZA = dict(x0=ESTAIR["x0"] - 1.6, x1=VEST["x1"] + 0.8, y0=ESTAIR["y_foot"] - 1.6, y1=Y0 - VEST["d"],
+             steps=3, tread=0.35)
 
 # ---- 中 ----
 COLS = [(gx(n), Y2_0 + 0.2) for n in (2, 4, 6, 8, 10)]   # 2 階の南の壁を受ける丸柱（屋根まで通す）
