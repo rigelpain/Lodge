@@ -144,15 +144,10 @@ static func wood(color := Color(0.55, 0.36, 0.22)) -> StandardMaterial3D:
 	return m
 
 
-## 空: 羊毛の雲とフェルトの太陽
-const SKY_SHADER := """
-shader_type sky;
-
-uniform vec3 top_color : source_color = vec3(0.50, 0.66, 0.88);
-uniform vec3 horizon_color : source_color = vec3(0.87, 0.91, 0.95);
-uniform vec3 ground_color : source_color = vec3(0.80, 0.85, 0.90);
-uniform vec3 sun_color : source_color = vec3(1.0, 0.86, 0.60);
-uniform vec3 cloud_color : source_color = vec3(0.99, 0.98, 0.96);
+## 雲を焼く: 正距円筒の小さな画像に、雲の濃さ（R）と陰（G）を書く。空はこれを読むだけ
+const CLOUD_SHADER := """
+shader_type canvas_item;
+uniform float t = 0.0;
 
 float hash(vec3 p) {
 	p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
@@ -178,6 +173,46 @@ float fbm3(vec3 p) {
 	for (int i = 0; i < 3; i++) { v += a * vnoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; }
 	return v;
 }
+void fragment() {
+	float lon = (UV.x - 0.5) * 6.2831853;
+	float lat = (0.5 - UV.y) * 3.1415927;
+	vec3 d = vec3(sin(lon) * cos(lat), sin(lat), -cos(lon) * cos(lat));
+	float n = fbm(d * vec3(2.2, 4.0, 2.2) + vec3(t * 0.008, 0.0, 0.0));
+	float fluff = fbm3(d * 14.0 + vec3(0.0, t * 0.01, 0.0)) * 0.12;
+	COLOR = vec4(n + fluff, n + fluff * 0.5, 0.0, 1.0);
+}
+"""
+
+## 空: 焼いた雲の画像を読み、フェルトの太陽を描く。雲の計算を毎画素でしないので軽い
+const SKY_SHADER := """
+shader_type sky;
+
+uniform vec3 top_color : source_color = vec3(0.50, 0.66, 0.88);
+uniform vec3 horizon_color : source_color = vec3(0.87, 0.91, 0.95);
+uniform vec3 ground_color : source_color = vec3(0.80, 0.85, 0.90);
+uniform vec3 sun_color : source_color = vec3(1.0, 0.86, 0.60);
+uniform vec3 cloud_color : source_color = vec3(0.99, 0.98, 0.96);
+uniform sampler2D clouds : filter_linear, repeat_enable;
+
+float hash(vec3 p) {
+	p = fract(p * 0.3183099 + vec3(0.1, 0.2, 0.3));
+	p *= 17.0;
+	return fract(p.x * p.y * p.z * (p.x + p.y + p.z));
+}
+float vnoise(vec3 x) {
+	vec3 i = floor(x);
+	vec3 f = fract(x);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(mix(hash(i + vec3(0,0,0)), hash(i + vec3(1,0,0)), f.x),
+	               mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+	           mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+	               mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+float fbm3(vec3 p) {
+	float v = 0.0; float a = 0.5;
+	for (int i = 0; i < 3; i++) { v += a * vnoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; }
+	return v;
+}
 
 void sky() {
 	vec3 d = EYEDIR;
@@ -185,19 +220,18 @@ void sky() {
 	vec3 col = mix(horizon_color, top_color, smoothstep(0.0, 0.55, h));
 	if (h < 0.0) col = mix(horizon_color, ground_color, smoothstep(0.0, -0.3, h));
 
-	// 羊毛の雲: 低い所ほど大きく、縁はふわっと
-	vec3 q = d * vec3(2.2, 4.0, 2.2) + vec3(TIME * 0.008, 0.0, 0.0);
-	float n = fbm(q);
-	float fluff = fbm3(d * 14.0 + vec3(0.0, TIME * 0.01, 0.0)) * 0.12;
-	float cloud = smoothstep(0.50, 0.66, n + fluff) * smoothstep(0.02, 0.22, h);
-	vec3 shade = mix(cloud_color * 0.82, cloud_color, smoothstep(0.5, 0.75, n + fluff * 0.5));
+	// 羊毛の雲: 焼いた画像から読む（R 濃さ、G 陰）。低い所ほど大きく、縁はふわっと
+	vec2 cuv = vec2(atan(d.x, -d.z) / 6.2831853 + 0.5, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.1415927);
+	vec2 c = texture(clouds, cuv).rg;
+	float cloud = smoothstep(0.50, 0.66, c.r) * smoothstep(0.02, 0.22, h);
+	vec3 shade = mix(cloud_color * 0.82, cloud_color, smoothstep(0.5, 0.75, c.g));
 	col = mix(col, shade, cloud * 0.95);
 
 	// フェルトの太陽: はっきりした円と、毛羽立った縁、淡い光
 	if (LIGHT0_ENABLED) {
 		vec3 s = normalize(LIGHT0_DIRECTION);
 		float ang = acos(clamp(dot(d, s), -1.0, 1.0));
-		float fuzz = fbm3(d * 60.0) * 0.012;
+		float fuzz = (ang < 0.12) ? fbm3(d * 60.0) * 0.012 : 0.0;   // 毛羽は太陽の近くだけ計算
 		float disk = 1.0 - smoothstep(0.040, 0.046, ang + fuzz);
 		float halo = exp(-ang * 7.0) * 0.35;
 		col = mix(col, sun_color, disk);
@@ -208,16 +242,43 @@ void sky() {
 """
 
 
-static func sky() -> Sky:
+static var _cloud_vp: SubViewport
+static var _cloud_mat: ShaderMaterial
+
+
+## host（木に入っているノード）に雲を焼くビューポートをぶら下げ、空を返す。
+## 雲は tick_clouds() を呼んだときだけ描き直す（0.5 秒ごとで十分。ゆっくり流れる）
+static func sky(host: Node) -> Sky:
+	_cloud_vp = SubViewport.new()
+	_cloud_vp.size = Vector2i(1024, 512)
+	_cloud_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	_cloud_vp.transparent_bg = false
+	host.add_child(_cloud_vp)
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var csh := Shader.new()
+	csh.code = CLOUD_SHADER
+	_cloud_mat = ShaderMaterial.new()
+	_cloud_mat.shader = csh
+	rect.material = _cloud_mat
+	_cloud_vp.add_child(rect)
+
 	var sh := Shader.new()
 	sh.code = SKY_SHADER
 	var mat := ShaderMaterial.new()
 	mat.shader = sh
+	mat.set_shader_parameter("clouds", _cloud_vp.get_texture())
 	var s := Sky.new()
 	s.sky_material = mat
 	s.radiance_size = Sky.RADIANCE_SIZE_64
-	s.process_mode = Sky.PROCESS_MODE_INCREMENTAL   # 周囲光の更新を数フレームに分けて、山をなくす
 	return s
+
+
+static func tick_clouds(time: float) -> void:
+	if _cloud_mat == null or _cloud_vp == null:
+		return
+	_cloud_mat.set_shader_parameter("t", time)
+	_cloud_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 
 
 static var _weave: ImageTexture        # 木綿の平織り

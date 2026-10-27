@@ -94,16 +94,17 @@ func _ready() -> void:
 		add_child(b)
 
 	# 音（game/audio.gd）。--spawn=lodge でロッジの前から、--spawn=inside で食堂の中から始める（音の確かめ用）
-	var audio := Audio.new()
-	audio.name = "Audio"
-	audio.setup(self, sled, player, get_children().filter(func(c): return c.get_script() == Bot), get_node_or_null("Lodge"))
-	add_child(audio)
-	_make_volume_buses()
-	if args.has("buses"):   # 確かめ用: バスのつながりを出す
-		for i in AudioServer.bus_count:
-			print("bus %d %s -> %s" % [i, AudioServer.get_bus_name(i), AudioServer.get_bus_send(i)])
-	if player and args.has("spawn"):
-		player.global_position = audio.spawn_point(args["spawn"])
+	if not args.has("no-sound"):   # --no-sound は確かめ用: 音を入れない
+		var audio := Audio.new()
+		audio.name = "Audio"
+		audio.setup(self, sled, player, get_children().filter(func(c): return c.get_script() == Bot), get_node_or_null("Lodge"))
+		add_child(audio)
+		_make_volume_buses()
+		if args.has("buses"):   # 確かめ用: バスのつながりを出す
+			for i in AudioServer.bus_count:
+				print("bus %d %s -> %s" % [i, AudioServer.get_bus_name(i), AudioServer.get_bus_send(i)])
+	if player and args.has("spawn") and has_node("Audio"):
+		player.global_position = get_node("Audio").spawn_point(args["spawn"])
 
 	if player == null:
 		var cam := Camera3D.new()
@@ -332,7 +333,13 @@ func _place_pip_cams() -> void:
 		pip_cams[i].global_transform = Transform3D(yaw * Basis(R, U, -A), head)
 
 
+var _cloud_t := 0.0
+
 func _process(_dt: float) -> void:
+	_cloud_t += _dt
+	if _cloud_t >= 0.5:   # 雲は 0.5 秒ごとに焼き直す
+		_cloud_t = 0.0
+		Look.tick_clouds(elapsed)
 	_ft_max = maxf(_ft_max, _dt)
 	_ft_sum += _dt
 	_ft_n += 1
@@ -348,7 +355,15 @@ func _process(_dt: float) -> void:
 func _make_world() -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
-	env.sky = Look.sky()
+	env.sky = Look.sky(self)
+	if args.has("plain-sky"):   # 確かめ用: 雲の計算をしない空
+		var psm := ProceduralSkyMaterial.new()
+		psm.sky_top_color = Color(0.50, 0.66, 0.88)
+		psm.sky_horizon_color = Color(0.87, 0.91, 0.95)
+		psm.ground_horizon_color = Color(0.87, 0.91, 0.95)
+		var ps := Sky.new()
+		ps.sky_material = psm
+		env.sky = ps
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 0.7
 	env.ambient_light_energy = 0.75   # 影の側を少し落として、丘の形が読めるように
@@ -620,7 +635,7 @@ func _physics_process(dt: float) -> void:
 		_duty += 1 if sled.pushers > 0 else 0
 		_frames += 1
 		log_t += dt
-		if log_t >= 1.0:
+		if log_t >= float(args.get("log-every", "1")):
 			log_t = 0.0
 			var bots := get_children().filter(func(c): return c.get_script() == Bot)
 			var bd: float = bots[0].global_position.distance_to(s) if bots.size() > 0 else 0.0
@@ -629,7 +644,8 @@ func _physics_process(dt: float) -> void:
 			me += "　つかんでいる人=%d 回転=%.2f 横滑り=%.2f" % [sled.holders.size(), sled.angular_velocity.y, sled.linear_velocity.dot(sled.global_basis.x)]
 			if bots.size() > 0:
 				me += "　仲間=%s" % bots[0].debug
-			me += "　" + get_node("Audio").debug
+			if has_node("Audio"):
+				me += "　" + get_node("Audio").debug
 			print("fps=%d コマ 平均%.1fms 最長%.1fms " % [Engine.get_frames_per_second(), 1000.0 * _ft_sum / maxi(_ft_n, 1), 1000.0 * _ft_max], "t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
 			_duty = 0
 			_frames = 0

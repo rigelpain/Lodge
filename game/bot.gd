@@ -6,7 +6,7 @@ const Look := preload("res://look.gd")
 
 enum State { PUSH, WAIT, RIDE }
 
-const SPEED := 4.0
+const SPEED := 3.2
 const GRAVITY := 9.8
 
 var sled: RigidBody3D

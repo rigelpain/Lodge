@@ -7,9 +7,9 @@ const Look := preload("res://look.gd")
 ## どう動くかはソリの滑り木と重力が決める。離すのは F だけ。Shift でダッシュ。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
 
-const SPEED := 4.0
-const DASH := 7.0            # Shift で走る速さ
-const SPEED_TAUT := 2.6      # 紐が張っているときの歩く速さ
+const SPEED := 2.8           # 雪の中をじりじり歩く速さ
+const DASH := 4.8            # Shift で走る速さ
+const SPEED_TAUT := 2.0      # 紐が張っているときの歩く速さ
 const JUMP := 4.5
 const GRAVITY := 9.8
 const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
