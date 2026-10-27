@@ -170,7 +170,12 @@ float vnoise(vec3 x) {
 }
 float fbm(vec3 p) {
 	float v = 0.0; float a = 0.5;
-	for (int i = 0; i < 5; i++) { v += a * vnoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; }
+	for (int i = 0; i < 4; i++) { v += a * vnoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; }
+	return v;
+}
+float fbm3(vec3 p) {
+	float v = 0.0; float a = 0.5;
+	for (int i = 0; i < 3; i++) { v += a * vnoise(p); p = p * 2.03 + vec3(1.7, 9.2, 3.1); a *= 0.5; }
 	return v;
 }
 
@@ -183,7 +188,7 @@ void sky() {
 	// 羊毛の雲: 低い所ほど大きく、縁はふわっと
 	vec3 q = d * vec3(2.2, 4.0, 2.2) + vec3(TIME * 0.008, 0.0, 0.0);
 	float n = fbm(q);
-	float fluff = fbm(d * 14.0 + vec3(0.0, TIME * 0.01, 0.0)) * 0.12;
+	float fluff = fbm3(d * 14.0 + vec3(0.0, TIME * 0.01, 0.0)) * 0.12;
 	float cloud = smoothstep(0.50, 0.66, n + fluff) * smoothstep(0.02, 0.22, h);
 	vec3 shade = mix(cloud_color * 0.82, cloud_color, smoothstep(0.5, 0.75, n + fluff * 0.5));
 	col = mix(col, shade, cloud * 0.95);
@@ -192,7 +197,7 @@ void sky() {
 	if (LIGHT0_ENABLED) {
 		vec3 s = normalize(LIGHT0_DIRECTION);
 		float ang = acos(clamp(dot(d, s), -1.0, 1.0));
-		float fuzz = fbm(d * 60.0) * 0.012;
+		float fuzz = fbm3(d * 60.0) * 0.012;
 		float disk = 1.0 - smoothstep(0.040, 0.046, ang + fuzz);
 		float halo = exp(-ang * 7.0) * 0.35;
 		col = mix(col, sun_color, disk);
@@ -210,5 +215,103 @@ static func sky() -> Sky:
 	mat.shader = sh
 	var s := Sky.new()
 	s.sky_material = mat
-	s.radiance_size = Sky.RADIANCE_SIZE_128
+	s.radiance_size = Sky.RADIANCE_SIZE_64
+	s.process_mode = Sky.PROCESS_MODE_INCREMENTAL   # 周囲光の更新を数フレームに分けて、山をなくす
 	return s
+
+
+static var _weave: ImageTexture        # 木綿の平織り
+
+
+## 毛糸の編み地（セーター・マフラー）: 編み目の V と繊維。服の大きさに合わせて目を細かく
+static func knit(color: Color, scale := 8.0) -> StandardMaterial3D:
+	var m := felt(color * 1.12, 1.0)
+	m.albedo_texture = knit_texture()
+	m.uv1_scale = Vector3.ONE * scale
+	m.normal_texture = fiber_normal(false)
+	m.normal_scale = 0.8
+	return m
+
+
+## 木綿の布: 平織りの細かい格子。フェルトより少し張りがあり、縁の光は控えめ
+static func cloth(color: Color, scale := 10.0) -> StandardMaterial3D:
+	if _weave == null:
+		var s := 32
+		var img := Image.create(s, s, false, Image.FORMAT_RGB8)
+		for y in s:
+			for x in s:
+				var over := ((x / 2) + (y / 2)) % 2 == 0
+				var v := 0.93 if over else 0.82
+				v += 0.05 * sin(float(x) * 0.8) * (1.0 if over else 0.0)
+				img.set_pixel(x, y, Color(v, v, v))
+		_weave = ImageTexture.create_from_image(img)
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color * 1.08
+	m.albedo_texture = _weave
+	m.roughness = 0.9
+	m.normal_enabled = true
+	m.normal_texture = fiber_normal(true)
+	m.normal_scale = 0.3
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3.ONE * scale
+	m.rim_enabled = true
+	m.rim = 0.25
+	m.rim_tint = 0.5
+	return m
+
+
+static var _wagara := {}
+
+
+## 和柄の布（千代紙の着物の柄を、木綿に染めたもの）。kind: seigaiha 青海波 / kikko 亀甲 / ichimatsu 市松 / mizutama 水玉 / koshi 格子
+static func wagara(kind: String, base: Color, ink: Color, scale := 5.0) -> StandardMaterial3D:
+	var key := "%s %s %s" % [kind, base.to_html(), ink.to_html()]
+	if not _wagara.has(key):
+		var s := 128
+		var img := Image.create(s, s, false, Image.FORMAT_RGB8)
+		for y in s:
+			for x in s:
+				img.set_pixel(x, y, ink if _wagara_ink(kind, x, y, s) else base)
+		img.generate_mipmaps()
+		_wagara[key] = ImageTexture.create_from_image(img)
+	var m := cloth(Color.WHITE, scale)
+	m.albedo_color = Color(1, 1, 1)
+	m.albedo_texture = _wagara[key]
+	return m
+
+
+static func _wagara_ink(kind: String, x: int, y: int, s: int) -> bool:
+	match kind:
+		"seigaiha":
+			# 重なった半円の波。下の段ほど手前に描く
+			var r := s / 4.0
+			var best := -1
+			var dist := 0.0
+			for j in range(-1, 9):
+				for i in range(-1, 5):
+					var cx := i * r * 2.0 + (r if j % 2 != 0 else 0.0)
+					var cy := j * r * 0.5
+					var d := Vector2(x - cx, y - cy).length()
+					var dx := Vector2(posmod(x - int(cx) + s / 2, s) - s / 2, y - cy).length()
+					d = minf(d, dx)
+					if d < r and j >= best:
+						best = j
+						dist = d
+			return fmod(dist / r * 4.0, 1.0) < 0.28
+		"kikko":
+			# 六角の格子
+			var p := Vector2(x, y) / (s / 4.0)
+			var q := Vector2(p.x * 1.1547, p.y + p.x * 0.57735)
+			var fx := fmod(q.x, 1.0)
+			var fy := fmod(q.y, 1.0)
+			var fz := fmod(q.x + q.y, 1.0)
+			var e := minf(minf(absf(fx - 0.5), absf(fy - 0.5)), absf(fz - 0.5))
+			return absf(e) < 0.05
+		"ichimatsu":
+			return ((x / (s / 4)) + (y / (s / 4))) % 2 == 0
+		"mizutama":
+			var c := Vector2(posmod(x, s / 4) - s / 8, posmod(y + (s / 8 if (x / (s / 4)) % 2 == 0 else 0), s / 4) - s / 8)
+			return c.length() < s / 22.0
+		"koshi":
+			return posmod(x, s / 2) < 5 or posmod(y, s / 2) < 5 or posmod(x + 9, s / 4) < 2 or posmod(y + 9, s / 4) < 2
+	return false

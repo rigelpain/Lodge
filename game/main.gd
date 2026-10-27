@@ -36,6 +36,9 @@ var log_t := 0.0
 var _duty := 0
 var _frames := 0
 var _sim_sent := false
+var _ft_max := 0.0
+var _ft_sum := 0.0
+var _ft_n := 0
 var pip_label: Label
 
 
@@ -138,7 +141,7 @@ func _ready() -> void:
 
 ## 右上のライブ映像: 自分の頭の上に載せた 360° カメラの映像。
 ## 6 方向を同時に撮り、シェーダで 1 枚の全天球（正距円筒）に合成する。V でリトルプラネット
-const FACE_PX := 224
+const FACE_PX := 160
 const PIP_PHONE := Vector2(216, 384)    # スマホ向けの縦長 (9:16)。超広角の魚眼で切り出す
 const PIP_EQ := Vector2(420, 210)       # 全天球の窓 (2:1)
 const PIP_PLANET := Vector2(260, 260)   # リトルプラネットの窓
@@ -229,6 +232,8 @@ var _pip_vps: Array[SubViewport] = []
 var _pip_tick := 0
 var pip_hidden := false
 var settings: CanvasLayer
+var sun_light: DirectionalLight3D
+var env: Environment
 var snowfall: GPUParticles3D
 var _pip_layer: CanvasLayer
 var pip_frame: PanelContainer
@@ -241,7 +246,7 @@ func _make_pip() -> void:
 	for f in FACES:
 		var vp := SubViewport.new()
 		vp.size = Vector2i(FACE_PX, FACE_PX)
-		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS   # 毎フレーム小さく描く方が、コマの重さがそろう
 		add_child(vp)
 		_pip_vps.append(vp)
 		var cam := Camera3D.new()
@@ -328,19 +333,20 @@ func _place_pip_cams() -> void:
 
 
 func _process(_dt: float) -> void:
+	_ft_max = maxf(_ft_max, _dt)
+	_ft_sum += _dt
+	_ft_n += 1
 	if pip_cams.is_empty():
 		return
 	_place_pip_cams()
-	_pip_tick += 1
-	if _pip_tick % 2 == 0 and not pip_hidden:
-		for vp in _pip_vps:
-			vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+	for vp in _pip_vps:
+		vp.render_target_update_mode = SubViewport.UPDATE_DISABLED if pip_hidden else SubViewport.UPDATE_ALWAYS
 	var t := int(elapsed)
 	pip_label.text = "    360 LIVE  %02d:%02d%s" % [t / 60, t % 60, "  後ろ" if pip_mode == 0 else ""]
 
 
 func _make_world() -> void:
-	var env := Environment.new()
+	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
 	env.sky = Look.sky()
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
@@ -369,8 +375,10 @@ func _make_world() -> void:
 	sun.light_energy = 1.45
 	sun.light_angular_distance = 2.0
 	sun.shadow_enabled = true
-	sun.directional_shadow_max_distance = 90
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
+	sun.directional_shadow_max_distance = 70
 	sun.directional_shadow_blend_splits = true
+	sun_light = sun
 	add_child(sun)
 
 	# 遠景: 地平線にフェルトの山なみ
@@ -622,9 +630,12 @@ func _physics_process(dt: float) -> void:
 			if bots.size() > 0:
 				me += "　仲間=%s" % bots[0].debug
 			me += "　" + get_node("Audio").debug
-			print("fps=%d " % Engine.get_frames_per_second(), "t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
+			print("fps=%d コマ 平均%.1fms 最長%.1fms " % [Engine.get_frames_per_second(), 1000.0 * _ft_sum / maxi(_ft_n, 1), 1000.0 * _ft_max], "t=%.0f 高さ=%.2f 頂上まで=%.1f 押していた割合=%.0f%% 乗る人=%d 仲間との距離=%.1f%s" % [elapsed, s.y, top, 100.0 * _duty / _frames, sled.riders.size(), bd, me])
 			_duty = 0
 			_frames = 0
+			_ft_max = 0.0
+			_ft_sum = 0.0
+			_ft_n = 0
 
 	if args.has("shot") and elapsed > float(args.get("shot-at", "4")):
 		var img := get_viewport().get_texture().get_image()
@@ -699,6 +710,10 @@ func _apply_setting(key: String, v) -> void:
 			if player: player.mouse_sens = v
 		"scale":
 			get_viewport().scaling_3d_scale = v
+		"ssao":
+			if env: env.ssao_enabled = v
+		"shadows":
+			if sun_light: sun_light.shadow_enabled = v
 
 
 func _unhandled_input(e: InputEvent) -> void:
