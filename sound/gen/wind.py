@@ -5,28 +5,9 @@ wind_rush_loop  滑走の風。広い帯域のうなりと、耳元の低い揺�
 """
 import numpy as np
 
-from lib import SR, lp, n_of, seamless, slow_random, write
+from lib import SR, lp, moving_resonator, n_of, seamless, slow_random, write
 
 LOOP = 10.0
-
-
-def moving_resonator(x, f_curve, r):
-    """中心周波数が時間で動く 2 極の共鳴（ブロックごとに係数を更新）"""
-    out = np.zeros_like(x)
-    y1 = y2 = 0.0
-    block = 128
-    for i in range(0, len(x), block):
-        f = f_curve[i]
-        w = 2 * np.pi * f / SR
-        a1, a2 = -2 * r * np.cos(w), r * r
-        seg = x[i:i + block]
-        res = np.empty_like(seg)
-        for k, v in enumerate(seg):
-            y = (1 - r) * v - a1 * y1 - a2 * y2
-            res[k] = y
-            y2, y1 = y1, y
-        out[i:i + block] = res
-    return out
 
 
 def calm_loop(rng):

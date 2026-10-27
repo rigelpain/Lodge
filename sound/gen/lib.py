@@ -55,6 +55,21 @@ def resonator(x, f0, r):
     return signal.lfilter([1 - r], [1, -2 * r * np.cos(w), r * r], x)
 
 
+def moving_resonator(x, f_curve, r):
+    """中心周波数が時間で動く 2 極の共鳴（1 サンプルずつ。短い音か、長くても数十秒まで）"""
+    out = np.zeros_like(x)
+    y1 = y2 = 0.0
+    w = 2 * np.pi * np.asarray(f_curve, dtype=np.float64) / SR
+    a1 = -2 * r * np.cos(w)
+    a2 = r * r
+    g = 1 - r
+    for i in range(len(x)):
+        y = g * x[i] - a1[i] * y1 - a2 * y2
+        out[i] = y
+        y2, y1 = y1, y
+    return out
+
+
 def modes(n, freqs, decays, amps, rng=None, detune=0.0):
     """減衰する正弦の重ね合わせ（板・器・金属の鳴り）。decays は時定数 (s)"""
     t = np.arange(n) / SR

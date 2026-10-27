@@ -1,71 +1,64 @@
-"""足あと。雪は粉雪のきしみ（ノイズの粒の重なり）、板は乾いた木の鳴り。
+"""足あと。雪は、片栗粉を握ったときの「ギュッ」。板は乾いた木の鳴り。
 
-step_snow_01..06       歩く・走る一歩
-step_snow_push_01..04  押しながらの踏ん張り。長く重く、圧された雪のきしみが入る
+雪の音は粒の重なりではなく、狭い帯域の鳴きが短く上ずるもの。冷えた粉雪を踏むと
+粒どうしがこすれて止まり、を細かく繰り返して鳴く（片栗粉と同じ）。小さく、短く。
+
+step_snow_01..06       歩く・走る一歩。60〜95 ms の「キュッ」
+step_snow_push_01..04  押しながらの踏ん張り。長めに「ギュ…ッ」と上ずり、揺れが入る
 step_wood_01..04       ロッジの板の床
 """
 import numpy as np
 
-from lib import SR, bp, exp_decay, fade, hp, lp, modes, n_of, place, resonator, write
+from lib import SR, bp, exp_decay, fade, hp, lp, modes, moving_resonator, n_of, place, write
 
 
-def grains(rng, dur, density, f_lo, f_hi, grain_ms=(1.0, 4.0), tilt=0.0):
-    """密度 density(t) に従ってノイズの粒をまく。粒は短いノイズを 2 極の共鳴に通したもの。
-    tilt > 0 で後の粒ほど高く（つま先）"""
+def squeak(rng, dur, f0, f1, r=0.997, chatter=(90, 160), rough=0.45, curve=0.45):
+    """f0 から f1 へ上ずる狭い鳴き。chatter Hz のこすれ止まりの揺れを乗せる"""
     n = n_of(dur)
-    out = np.zeros(n)
-    t = np.arange(n) / SR
-    dens = density(t)
-    expected = dens.sum() / SR
-    count = rng.poisson(expected)
-    cdf = np.cumsum(dens)
-    cdf /= cdf[-1]
-    times = np.interp(rng.uniform(0, 1, count), cdf, t)
-    for at in times:
-        f = np.exp(rng.uniform(np.log(f_lo), np.log(f_hi))) * (1 + tilt * at / dur)
-        f = min(f, 12000)
-        gl = n_of(rng.uniform(*grain_ms) / 1000)
-        burst = rng.standard_normal(gl) * exp_decay(gl, gl / SR / 3)
-        g = resonator(np.concatenate([burst, np.zeros(gl)]), f, rng.uniform(0.95, 0.985))
-        g *= rng.uniform(0.4, 1.0)
-        place(out, g, at)
-    return out
+    t = np.linspace(0, 1, n)
+    f = f0 * (f1 / f0) ** (t ** curve)
+    white = rng.standard_normal(n)
+    x = moving_resonator(white, f, r)
+    x += moving_resonator(white, np.minimum(f * 2.0, 16000), r) * 0.25   # 倍音で少し張る
+    # こすれ止まりの揺れ（不揃い）
+    ch = rng.uniform(*chatter)
+    ph = 2 * np.pi * np.cumsum(ch * (1 + 0.25 * lp(rng.standard_normal(n), 40, 1) / 0.3)) / SR
+    x *= 1 - rough * 0.5 * (1 + np.sin(ph + rng.uniform(0, 6.28)))
+    env = np.ones(n)
+    a = n_of(0.004)
+    env[:a] = np.linspace(0, 1, a)
+    rel = n_of(dur * 0.35)
+    env[-rel:] *= np.linspace(1, 0, rel) ** 1.5
+    return x * env / (np.max(np.abs(x)) + 1e-9)
 
 
 def snow_step(rng, push=False):
     if push:
-        dur = rng.uniform(0.34, 0.46)
-        heel_tau, toe_at = 0.07, 0.68
-        total = rng.uniform(900, 1300)
+        dur = rng.uniform(0.17, 0.26)
+        f0 = rng.uniform(1300, 1800)
+        x = squeak(rng, dur, f0, f0 * rng.uniform(1.5, 1.9), r=0.996, chatter=(60, 110), rough=0.6, curve=0.7)
+        out = np.zeros(n_of(dur + 0.08))
+        place(out, x, 0.0)
+        # 踏ん張りの終わりに、短くもう一度「ッ」
+        if rng.uniform() < 0.7:
+            d2 = rng.uniform(0.03, 0.05)
+            x2 = squeak(rng, d2, f0 * 1.6, f0 * 2.1, r=0.996, rough=0.3)
+            place(out, x2 * 0.6, dur * 0.92)
+        press_gain = 0.35
     else:
-        dur = rng.uniform(0.17, 0.24)
-        heel_tau, toe_at = 0.035, 0.6
-        total = rng.uniform(380, 560)
-
-    def density(t):
-        heel = np.exp(-t / heel_tau)
-        toe = 0.45 * np.exp(-0.5 * ((t - toe_at * dur) / (0.03 if not push else 0.05)) ** 2)
-        d = heel + toe
-        return d / d.sum() * total * SR
-
-    x = grains(rng, dur, density, 1600, 7500, tilt=0.5)
-    # 踏んだ重み。低いどすん、小さく
-    nth = n_of(0.05)
-    thump = lp(rng.standard_normal(nth), 220, 2) * exp_decay(nth, 0.012)
-    place(x, thump * (0.9 if push else 0.5) * np.max(np.abs(x)) / (np.max(np.abs(thump)) + 1e-9), 0.0)
-    if push:
-        # 圧された雪のきしみ。細かいパルスの列が速まりながら共鳴を通る
-        ck = n_of(0.22)
-        rate = np.linspace(60, 170, ck)
-        phase = np.cumsum(rate) / SR
-        pulses = np.diff(np.floor(phase), prepend=0)
-        creak = resonator(pulses, rng.uniform(900, 1500), 0.99)
-        creak = creak * np.sin(np.pi * np.arange(ck) / ck) ** 1.5
-        creak = creak / (np.max(np.abs(creak)) + 1e-9) * 0.22 * np.max(np.abs(x))
-        place(x, creak, 0.08)
-    x = hp(x, 140, 2)
-    x = lp(x, 11000, 2)   # 雪が吸う。こもらない程度に
-    return fade(x, 0.001, 0.03)
+        dur = rng.uniform(0.06, 0.095)
+        f0 = rng.uniform(1700, 2500)
+        x = squeak(rng, dur, f0, f0 * rng.uniform(1.3, 1.75))
+        out = np.zeros(n_of(dur + 0.05))
+        place(out, x, 0.0)
+        press_gain = 0.22
+    # 踏んだ重み。低く小さく、鳴きの下に
+    nth = n_of(0.035)
+    press = lp(rng.standard_normal(nth), 220, 2) * exp_decay(nth, 0.009)
+    place(out, press / (np.max(np.abs(press)) + 1e-9) * press_gain, 0.0)
+    out = hp(out, 300, 2)
+    out = lp(out, 9000, 2)
+    return fade(out, 0.001, 0.02)
 
 
 def wood_step(rng):
@@ -80,8 +73,8 @@ def wood_step(rng):
 
 if __name__ == "__main__":
     for i in range(6):
-        write(f"step_snow_{i + 1:02d}.wav", snow_step(np.random.default_rng(100 + i)), -6)
+        write(f"step_snow_{i + 1:02d}.wav", snow_step(np.random.default_rng(100 + i)), -9)
     for i in range(4):
-        write(f"step_snow_push_{i + 1:02d}.wav", snow_step(np.random.default_rng(200 + i), push=True), -5)
+        write(f"step_snow_push_{i + 1:02d}.wav", snow_step(np.random.default_rng(200 + i), push=True), -8)
     for i in range(4):
         write(f"step_wood_{i + 1:02d}.wav", wood_step(np.random.default_rng(300 + i)), -8)
