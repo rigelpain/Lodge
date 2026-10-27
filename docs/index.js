@@ -19,9 +19,14 @@ fetch('data.json', { cache: 'no-cache' })
 // いま開いているページ（main の data-page）に合わせて描く
 function paint() {
   if (!data) return;
-  if ($('main').dataset.page !== 'art') return render(data);
-  if (!data.art) throw new Error('data.json に art がない');
-  renderArt(data.art); reveal();
+  const page = $('main').dataset.page;
+  if (page === 'art') {
+    if (!data.art) throw new Error('data.json に art がない');
+    renderArt(data.art); reveal();
+  } else if (page === 'sound') {
+    if (!data.sound) throw new Error('data.json に sound がない');
+    renderSound(data.sound); reveal();
+  } else render(data);
 }
 
 // タイルを順に浮かせる
@@ -117,6 +122,66 @@ function renderArt(a) {
   $('art-scene').innerHTML = a.scene.map((s) =>
     `<li class="${s.state}"><span class="mark" aria-hidden="true"></span><span><span class="sr">${s.state === 'done' ? '入っている' : 'これから'}: </span><b>${esc(s.name)}</b><span class="sn">${esc(s.note)}</span></span></li>`).join('');
   $('art-open').innerHTML = a.open.map((o) => `<div><dt>${esc(o.name)}</dt><dd>${esc(o.note)}</dd></div>`).join('');
+}
+
+// 音: 考え方と、合成した音を聞く。音の一覧は sound/manifest.json（gen/publish.py が書く）
+const player = new Audio();
+let playingBtn = null;
+player.addEventListener('ended', () => setPlaying(null));
+player.addEventListener('pause', () => { if (player.ended || player.currentTime === 0) setPlaying(null); });
+function setPlaying(btn) {
+  if (playingBtn) { playingBtn.classList.remove('on'); playingBtn.setAttribute('aria-pressed', 'false'); }
+  playingBtn = btn;
+  if (btn) { btn.classList.add('on'); btn.setAttribute('aria-pressed', 'true'); }
+}
+function show(f) {
+  const fig = $('snd-fig');
+  if (!fig) return;
+  fig.hidden = false;
+  $('snd-img').src = `sound/png/${f.file.replace(/\.wav$/, '.png')}`;
+  $('snd-img').alt = `${f.file} の波形とスペクトログラム`;
+  $('snd-cap').textContent = `${f.file}　${f.dur} 秒　ピーク ${f.peak} dB　実効値 ${f.rms} dB${f.loop ? '　ループ' : ''}`;
+}
+function renderSound(s) {
+  $('snd-goal').textContent = s.concept;
+  $('snd-pitch').textContent = s.pitch;
+  const plain = (xs) => xs.map((r, i) => `<li><span class="idx">${String(i + 1).padStart(2, '0')}</span><span>${esc(r)}</span></li>`).join('');
+  $('snd-rules').innerHTML = plain(s.rules);
+  $('snd-hear').innerHTML = plain(s.hear);
+  $('snd-silent').innerHTML = plain(s.silent);
+  $('snd-moment').innerHTML = plain(s.moment);
+  $('snd-ask').innerHTML = s.ask.map((o) => `<div><dt>${esc(o.name)}</dt><dd>${esc(o.note)}</dd></div>`).join('');
+  fetch('sound/manifest.json', { cache: 'no-cache' })
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((files) => {
+      $('snd-count').textContent = `${files.length} 本`;
+      const byName = Object.fromEntries(files.map((f) => [f.file, f]));
+      $('snd-groups').innerHTML = s.groups.map((g) => `<h3 class="snd-g">${esc(g.name)}</h3><div class="snd-items">` + g.items.map((it) => {
+        const fs = files.filter((f) => f.file.startsWith(it.prefix));
+        const btns = fs.map((f, i) => {
+          const label = fs.length === 1 ? (f.loop ? 'ループ' : '再生') : (f.file.match(/(\d\d)\.wav$/) || [, String(i + 1)])[1];
+          return `<button type="button" class="snd-btn${f.loop ? ' loop' : ''}" data-file="${esc(f.file)}" aria-pressed="false" title="${esc(f.file)}　${f.dur} 秒"><span class="tri" aria-hidden="true"></span>${esc(label)}</button>`;
+        }).join('');
+        const dur = fs.length ? (fs.length === 1 ? `${fs[0].dur} 秒` : `${fs.length} 種 · ${Math.min(...fs.map((f) => f.dur))}〜${Math.max(...fs.map((f) => f.dur))} 秒`) : 'まだない';
+        return `<div class="snd-item"><div class="snd-head"><b>${esc(it.name)}</b><span class="num snd-dur">${esc(dur)}</span></div><p class="snd-note">${esc(it.note)}</p><div class="snd-btns">${btns}</div></div>`;
+      }).join('') + '</div>').join('');
+      $('snd-groups').addEventListener('click', (e) => {
+        const b = e.target.closest('.snd-btn');
+        if (!b) return;
+        const f = byName[b.dataset.file];
+        if (playingBtn === b && !player.paused) { player.pause(); player.currentTime = 0; setPlaying(null); return; }
+        player.pause();
+        player.src = `sound/wav/${f.file}`;
+        player.loop = f.loop;
+        player.currentTime = 0;
+        player.play().catch(() => {});
+        setPlaying(b);
+        show(f);
+      });
+      const first = files.find((f) => f.file === 'music_speaker_loop.wav') || files[0];
+      if (first) show(first);
+    })
+    .catch((e) => { $('snd-groups').innerHTML = `<p class="cap" role="alert">sound/manifest.json を読めませんでした（${esc(e.message)}）。</p>`; });
 }
 
 // ページの行き来: 読み込み直さず、相手のページの main だけ取ってきて差し替える

@@ -243,3 +243,31 @@ a:focus-visible { outline: 2px solid var(--coral); outline-offset: 3px; border-r
 .swatches .chip { aspect-ratio: 1.4; border-radius: 14px; background: var(--c); box-shadow: inset 0 -6px 12px -6px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.6), 0 2px 6px rgba(30, 50, 110, 0.15); margin-bottom: 4px; }
 .swatches .cn { font-size: var(--t-xs); font-weight: 700; line-height: 1.4; }
 .swatches .hex { font-size: var(--t-xs); color: var(--ink-3); }
+
+/* ---- 音 ---- */
+.snd-hero { grid-column: span 8; }
+.snd-rules { grid-column: span 4; }
+.snd-listen { grid-column: span 12; }
+.snd-hear, .snd-silent, .snd-moment { grid-column: span 4; }
+.snd-ask { grid-column: span 12; }
+@media (max-width: 1100px) { .snd-hero { grid-column: span 12; } .snd-rules, .snd-hear, .snd-silent, .snd-moment { grid-column: span 6; } }
+@media (max-width: 680px) { [data-page="sound"] > * { grid-column: span 12; } }
+.cap.top { margin: -0.4em 0 1.2em; }
+.snd-g { font-size: var(--t-xs); font-weight: 700; color: var(--ink-3); letter-spacing: 0.1em; margin: 1.4em 0 0.6em; }
+.snd-g:first-child { margin-top: 0; }
+.snd-items { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 10px; }
+.snd-item { padding: 12px 14px 12px; border-radius: 18px; background: rgba(255, 255, 255, 0.4); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9); border: 1.5px dashed rgba(20, 28, 54, 0.18); display: flex; flex-direction: column; gap: 6px; }
+.snd-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.snd-head b { font-size: var(--t-m); font-weight: 700; }
+.snd-dur { font-size: var(--t-xs); color: var(--ink-3); white-space: nowrap; }
+.snd-note { font-size: var(--t-xs); color: var(--ink-2); line-height: 1.6; flex: 1; }
+.snd-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.snd-btn { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px 0 10px; border-radius: 999px; border: 0; font: inherit; font-family: "Manrope", "Noto Sans JP", sans-serif; font-weight: 700; font-size: var(--t-xs); color: var(--ink); background: rgba(255, 255, 255, 0.85); box-shadow: 0 1px 3px rgba(30, 50, 110, 0.15), inset 0 1px 0 #fff; cursor: pointer; transition: background 200ms var(--ease), color 200ms var(--ease), transform 200ms var(--ease); }
+.snd-btn:hover { transform: translateY(-1px); }
+.snd-btn .tri { width: 0; height: 0; border-style: solid; border-width: 5px 0 5px 8px; border-color: transparent transparent transparent currentColor; }
+.snd-btn.on { background: var(--coral); color: #fff; box-shadow: 0 0 0 4px var(--coral-soft), 0 2px 8px rgba(255, 79, 48, 0.4); }
+.snd-btn.on .tri { width: 8px; height: 10px; border: 0; border-left: 3px solid currentColor; border-right: 3px solid currentColor; }
+.snd-btn.loop { padding-right: 14px; }
+.snd-fig { margin-top: clamp(16px, 2vw, 24px); padding: 10px; border-radius: 18px; background: rgba(255, 255, 255, 0.55); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9); }
+.snd-fig img { display: block; width: 100%; height: auto; border-radius: 10px; }
+.snd-fig figcaption { font-size: var(--t-xs); color: var(--ink-2); margin-top: 8px; font-feature-settings: "tnum"; }

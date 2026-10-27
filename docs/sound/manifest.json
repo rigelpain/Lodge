@@ -1,0 +1,345 @@
+[
+ {
+  "file": "breath_01.wav",
+  "dur": 1.1,
+  "peak": -10.0,
+  "rms": -27.2,
+  "loop": false
+ },
+ {
+  "file": "breath_02.wav",
+  "dur": 1.1,
+  "peak": -10.0,
+  "rms": -27.2,
+  "loop": false
+ },
+ {
+  "file": "breath_03.wav",
+  "dur": 1.1,
+  "peak": -10.0,
+  "rms": -27.2,
+  "loop": false
+ },
+ {
+  "file": "breath_04.wav",
+  "dur": 1.1,
+  "peak": -10.0,
+  "rms": -26.5,
+  "loop": false
+ },
+ {
+  "file": "dish_01.wav",
+  "dur": 0.75,
+  "peak": -9.0,
+  "rms": -25.5,
+  "loop": false
+ },
+ {
+  "file": "dish_02.wav",
+  "dur": 0.75,
+  "peak": -9.0,
+  "rms": -26.0,
+  "loop": false
+ },
+ {
+  "file": "dish_03.wav",
+  "dur": 0.75,
+  "peak": -9.0,
+  "rms": -26.7,
+  "loop": false
+ },
+ {
+  "file": "dish_04.wav",
+  "dur": 0.75,
+  "peak": -9.0,
+  "rms": -28.0,
+  "loop": false
+ },
+ {
+  "file": "dish_05.wav",
+  "dur": 0.75,
+  "peak": -9.0,
+  "rms": -28.1,
+  "loop": false
+ },
+ {
+  "file": "dish_06.wav",
+  "dur": 0.75,
+  "peak": -9.0,
+  "rms": -28.0,
+  "loop": false
+ },
+ {
+  "file": "door_close.wav",
+  "dur": 0.8,
+  "peak": -5.0,
+  "rms": -21.8,
+  "loop": false
+ },
+ {
+  "file": "door_open.wav",
+  "dur": 1.1,
+  "peak": -8.0,
+  "rms": -25.7,
+  "loop": false
+ },
+ {
+  "file": "fire_bed_loop.wav",
+  "dur": 8.0,
+  "peak": -8.0,
+  "rms": -21.8,
+  "loop": true
+ },
+ {
+  "file": "fire_crack_01.wav",
+  "dur": 0.21,
+  "peak": -3.0,
+  "rms": -31.6,
+  "loop": false
+ },
+ {
+  "file": "fire_crack_02.wav",
+  "dur": 0.25,
+  "peak": -6.0,
+  "rms": -34.5,
+  "loop": false
+ },
+ {
+  "file": "fire_crack_03.wav",
+  "dur": 0.23,
+  "peak": -6.0,
+  "rms": -33.7,
+  "loop": false
+ },
+ {
+  "file": "fire_crack_04.wav",
+  "dur": 0.23,
+  "peak": -3.0,
+  "rms": -32.0,
+  "loop": false
+ },
+ {
+  "file": "fire_crack_05.wav",
+  "dur": 0.26,
+  "peak": -6.0,
+  "rms": -33.2,
+  "loop": false
+ },
+ {
+  "file": "fire_crack_06.wav",
+  "dur": 0.22,
+  "peak": -6.0,
+  "rms": -37.4,
+  "loop": false
+ },
+ {
+  "file": "fire_crack_07.wav",
+  "dur": 0.3,
+  "peak": -3.0,
+  "rms": -33.4,
+  "loop": false
+ },
+ {
+  "file": "fire_crack_08.wav",
+  "dur": 0.26,
+  "peak": -6.0,
+  "rms": -32.0,
+  "loop": false
+ },
+ {
+  "file": "music_loop.wav",
+  "dur": 15.0,
+  "peak": -1.0,
+  "rms": -9.0,
+  "loop": true
+ },
+ {
+  "file": "music_speaker_far.wav",
+  "dur": 30.0,
+  "peak": -6.0,
+  "rms": -17.9,
+  "loop": false
+ },
+ {
+  "file": "music_speaker_loop.wav",
+  "dur": 15.0,
+  "peak": -3.0,
+  "rms": -10.8,
+  "loop": true
+ },
+ {
+  "file": "pot_lid_01.wav",
+  "dur": 0.65,
+  "peak": -10.0,
+  "rms": -29.5,
+  "loop": false
+ },
+ {
+  "file": "pot_lid_02.wav",
+  "dur": 0.65,
+  "peak": -10.0,
+  "rms": -27.8,
+  "loop": false
+ },
+ {
+  "file": "pot_lid_03.wav",
+  "dur": 0.65,
+  "peak": -10.0,
+  "rms": -25.7,
+  "loop": false
+ },
+ {
+  "file": "pot_steam_loop.wav",
+  "dur": 6.1,
+  "peak": -12.0,
+  "rms": -26.7,
+  "loop": true
+ },
+ {
+  "file": "runner_fast_loop.wav",
+  "dur": 4.0,
+  "peak": -4.0,
+  "rms": -17.8,
+  "loop": true
+ },
+ {
+  "file": "runner_slow_loop.wav",
+  "dur": 4.0,
+  "peak": -6.0,
+  "rms": -24.2,
+  "loop": true
+ },
+ {
+  "file": "sled_creak_01.wav",
+  "dur": 0.26,
+  "peak": -12.0,
+  "rms": -29.5,
+  "loop": false
+ },
+ {
+  "file": "sled_creak_02.wav",
+  "dur": 0.31,
+  "peak": -12.0,
+  "rms": -27.7,
+  "loop": false
+ },
+ {
+  "file": "sled_creak_03.wav",
+  "dur": 0.24,
+  "peak": -12.0,
+  "rms": -29.4,
+  "loop": false
+ },
+ {
+  "file": "step_snow_01.wav",
+  "dur": 0.23,
+  "peak": -6.0,
+  "rms": -20.9,
+  "loop": false
+ },
+ {
+  "file": "step_snow_02.wav",
+  "dur": 0.24,
+  "peak": -6.0,
+  "rms": -22.4,
+  "loop": false
+ },
+ {
+  "file": "step_snow_03.wav",
+  "dur": 0.18,
+  "peak": -6.0,
+  "rms": -20.5,
+  "loop": false
+ },
+ {
+  "file": "step_snow_04.wav",
+  "dur": 0.19,
+  "peak": -6.0,
+  "rms": -21.8,
+  "loop": false
+ },
+ {
+  "file": "step_snow_05.wav",
+  "dur": 0.23,
+  "peak": -6.0,
+  "rms": -21.9,
+  "loop": false
+ },
+ {
+  "file": "step_snow_06.wav",
+  "dur": 0.21,
+  "peak": -6.0,
+  "rms": -21.4,
+  "loop": false
+ },
+ {
+  "file": "step_snow_push_01.wav",
+  "dur": 0.42,
+  "peak": -5.0,
+  "rms": -23.1,
+  "loop": false
+ },
+ {
+  "file": "step_snow_push_02.wav",
+  "dur": 0.46,
+  "peak": -5.0,
+  "rms": -24.7,
+  "loop": false
+ },
+ {
+  "file": "step_snow_push_03.wav",
+  "dur": 0.38,
+  "peak": -5.0,
+  "rms": -23.2,
+  "loop": false
+ },
+ {
+  "file": "step_snow_push_04.wav",
+  "dur": 0.43,
+  "peak": -5.0,
+  "rms": -25.3,
+  "loop": false
+ },
+ {
+  "file": "step_wood_01.wav",
+  "dur": 0.16,
+  "peak": -8.0,
+  "rms": -22.5,
+  "loop": false
+ },
+ {
+  "file": "step_wood_02.wav",
+  "dur": 0.16,
+  "peak": -8.0,
+  "rms": -21.3,
+  "loop": false
+ },
+ {
+  "file": "step_wood_03.wav",
+  "dur": 0.16,
+  "peak": -8.0,
+  "rms": -19.8,
+  "loop": false
+ },
+ {
+  "file": "step_wood_04.wav",
+  "dur": 0.16,
+  "peak": -8.0,
+  "rms": -21.2,
+  "loop": false
+ },
+ {
+  "file": "wind_loop.wav",
+  "dur": 10.0,
+  "peak": -6.0,
+  "rms": -18.8,
+  "loop": true
+ },
+ {
+  "file": "wind_rush_loop.wav",
+  "dur": 10.0,
+  "peak": -3.0,
+  "rms": -18.3,
+  "loop": true
+ }
+]

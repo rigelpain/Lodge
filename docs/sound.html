@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lodge 音の設計</title>
+<meta name="description" content="Lodge の音の考え方。雪が吸った乾いた音。ゲレンデのスピーカー、登りの足あとと息、滑り出す一瞬、ロッジの中。合成した音をここで聞ける。">
+<meta name="color-scheme" content="light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="index.css?v=5">
+</head>
+<body>
+<a class="skip" href="#main">本文へ移る</a>
+
+<nav class="tabs" aria-label="ページ">
+  <a href="./" data-page="all">全体</a>
+  <a href="art.html" data-page="art">アート</a>
+  <a href="sound.html" data-page="sound" aria-current="page">音</a>
+</nav>
+
+<!-- 音: 考え方と、合成した音 -->
+<main id="main" class="grid" data-page="sound">
+  <header class="tile hero snd-hero" aria-labelledby="snd-goal">
+    <p class="kicker">音の設計<span class="dot" aria-hidden="true"></span>design/sound-concept.md より</p>
+    <h1 id="snd-goal"></h1>
+    <p class="pitch" id="snd-pitch"></p>
+  </header>
+  <section class="tile snd-rules" aria-labelledby="srules-h">
+    <h2 id="srules-h">決まり</h2>
+    <ol class="list plain" id="snd-rules"></ol>
+  </section>
+  <section class="tile snd-listen" aria-labelledby="listen-h">
+    <h2 id="listen-h">聞く <span class="count num" id="snd-count"></span></h2>
+    <p class="cap top">押すと鳴る。ループは止めるまで続く。下の絵は選んだ音の波形とスペクトログラム（周波数は対数、白い線は 300 Hz・1 kHz・3.5 kHz）。</p>
+    <div id="snd-groups"></div>
+    <figure class="snd-fig" id="snd-fig" hidden>
+      <img id="snd-img" alt="">
+      <figcaption id="snd-cap"></figcaption>
+    </figure>
+  </section>
+  <section class="tile snd-hear" aria-labelledby="hear-h">
+    <h2 id="hear-h">鳴るもの</h2>
+    <ol class="list plain" id="snd-hear"></ol>
+  </section>
+  <section class="tile snd-silent" aria-labelledby="silent-h">
+    <h2 id="silent-h">鳴らないもの</h2>
+    <ol class="list plain" id="snd-silent"></ol>
+  </section>
+  <section class="tile snd-moment" aria-labelledby="moment-h">
+    <h2 id="moment-h">滑り出す一瞬</h2>
+    <ol class="list plain" id="snd-moment"></ol>
+  </section>
+  <section class="tile snd-ask" aria-labelledby="sask-h">
+    <h2 id="sask-h">まだ決めていない</h2>
+    <dl class="pairs" id="snd-ask"></dl>
+    <p class="cap">音は sound/gen/ の台本（Python）で合成。wav は sound/wav/、確かめの絵は sound/check/。<a href="https://github.com/rigelpain/Lodge/blob/main/design/sound-concept.md">音の設計</a></p>
+  </section>
+</main>
+
+<script src="index.js?v=5"></script>
+</body>
+</html>
