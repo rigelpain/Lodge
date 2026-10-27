@@ -128,6 +128,9 @@ ESTAIR["z_land"] = FL1 + ESTAIR["n1"] * ESTAIR["rise"]
 ESTAIR["y_land1"] = ESTAIR["y_top"] - (ESTAIR["risers"] - ESTAIR["n1"] - 1) * ESTAIR["tread"]   # 踊り場の北の縁
 ESTAIR["y_land0"] = ESTAIR["y_land1"] - ESTAIR["landing"]                                       # 踊り場の南の縁
 ESTAIR["y_foot"] = ESTAIR["y_land0"] - (ESTAIR["n1"] - 1) * ESTAIR["tread"]                     # 登り口（1 段目の蹴上げ）
+# 踊り場の西に広げたミニテラス（代表の指示）。自販機 2 台を置く。丘とソリの道を見下ろす中 2 階
+MINI = dict(x0=ESTAIR["x0"] - 4.4, x1=ESTAIR["x0"], y0=ESTAIR["y_land0"] - 1.6, y1=ESTAIR["y_land1"] + 1.6,
+            z=ESTAIR["z_land"])
 PLAZA = dict(x0=ESTAIR["x0"] - 1.6, x1=VEST["x1"] + 0.8, y0=ESTAIR["y_foot"] - 1.6, y1=Y0 - VEST["d"],
              steps=3, tread=0.35)
 

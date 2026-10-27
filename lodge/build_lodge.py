@@ -832,8 +832,38 @@ def build_rails_and_stair():
             S.box(x - 0.08, y - 0.08, 0, x + 0.08, y + 0.08, E["z_land"] - 0.12)
         S.box(x - 0.08, (yl1 + E["y_top"]) / 2 - 0.08, 0, x + 0.08, (yl1 + E["y_top"]) / 2 + 0.08,
               (E["z_land"] + FL2) / 2 - 0.3)                                  # 2 本目の中ほどの柱
-    rail_run(Rm, (xa + 0.05, yl0, E["z_land"]), (xa + 0.05, yl1, E["z_land"]), h=1.0, name="bal_landing_w")
     rail_run(Rm, (xb - 0.05, yl0, E["z_land"]), (xb - 0.05, yl1, E["z_land"]), h=1.0, name="bal_landing_e")
+    # 踊り場の西のミニテラス（踊り場と一続きの床）。手すりで囲み、自販機 2 台を西の手すりを背に置く
+    Mi = MINI
+    zt_ = Mi["z"]
+    T.box(Mi["x0"], Mi["y0"], zt_ - 0.12, Mi["x1"], Mi["y1"], zt_)
+    S.box(Mi["x0"], Mi["y0"], zt_ - 0.40, Mi["x1"], Mi["y0"] + 0.12, zt_ - 0.12)     # 縁の梁
+    S.box(Mi["x0"], Mi["y1"] - 0.12, zt_ - 0.40, Mi["x1"], Mi["y1"], zt_ - 0.12)
+    S.box(Mi["x0"], Mi["y0"], zt_ - 0.40, Mi["x0"] + 0.12, Mi["y1"], zt_ - 0.12)
+    for x in (Mi["x0"] + 0.1, (Mi["x0"] + Mi["x1"]) / 2):
+        for y in (Mi["y0"] + 0.1, Mi["y1"] - 0.1):
+            S.box(x - 0.09, y - 0.09, 0, x + 0.09, y + 0.09, zt_ - 0.40)
+    rail_run(Rm, (Mi["x0"] + 0.05, Mi["y0"] + 0.05, zt_), (Mi["x1"], Mi["y0"] + 0.05, zt_), h=1.0, name="bal_mini_s")
+    rail_run(Rm, (Mi["x0"] + 0.05, Mi["y1"] - 0.05, zt_), (Mi["x1"], Mi["y1"] - 0.05, zt_), h=1.0, name="bal_mini_n")
+    rail_run(Rm, (Mi["x0"] + 0.05, Mi["y0"] + 0.05, zt_), (Mi["x0"] + 0.05, Mi["y1"] - 0.05, zt_), h=1.0, name="bal_mini_w")
+    rail_run(Rm, (xa - 0.05, Mi["y0"] + 0.05, zt_), (xa - 0.05, yl0, zt_), h=1.0, name="bal_mini_es")   # 階段との境
+    rail_run(Rm, (xa - 0.05, yl1, zt_), (xa - 0.05, Mi["y1"] - 0.05, zt_), h=1.0, name="bal_mini_en")
+    VM = VENDING
+    ym = (Mi["y0"] + Mi["y1"]) / 2
+    for k, body in enumerate(("felt_red", "felt_blue")):
+        xa_, xb_ = Mi["x0"] + 0.20, Mi["x0"] + 0.20 + VM["d"]          # 背を西に、正面は東（階段の側）
+        y0_ = ym - VM["w"] - VM["gap"] / 2 + k * (VM["w"] + VM["gap"])
+        y1_ = y0_ + VM["w"]
+        vb = M("mini_vending_%d" % k, body, "crown")
+        vb.box(xa_, y0_, zt_, xb_, y1_, zt_ + VM["h"])
+        vb.done(bevel=0.02)
+        vf = M("mini_vending_face_%d" % k, "paper", "crown")
+        vf.box(xb_ - 0.02, y0_ + 0.08, zt_ + 0.95, xb_ + 0.01, y1_ - 0.08, zt_ + VM["h"] - 0.12)
+        vf.done(bevel=0.005)
+        vd = M("mini_vending_slot_%d" % k, "dark", "crown")
+        vd.box(xb_ - 0.02, y0_ + 0.12, zt_ + 0.15, xb_ + 0.01, y1_ - 0.12, zt_ + 0.40)
+        vd.box(xb_ - 0.02, y1_ - 0.22, zt_ + 0.65, xb_ + 0.01, y1_ - 0.12, zt_ + 0.85)
+        vd.done(bevel=0.004)
     T.done(bevel=0.012)
     S.done(bevel=0.012)
     Rm.done(bevel=0.012)
@@ -1239,6 +1269,7 @@ CAMS = {
     "in1": ((gx(2.5), Y0 + 1.0, FL1 + 1.55), (gx(9.0), Y1 - 1.0, FL1 + 1.2), 20),
     "in2": ((gx(0.5), gy(3.6), FL2 + 1.55), (gx(10.5), gy(2.4), FL2 + 0.55), 22),
     "kotatsu": ((gx(5.3), gy(1.2), FL2 + TATAMI["h"] + 1.05), (gx(3.0), Y0 - 8, FL2 + 1.6), 24),
+    "mini": ((ESTAIR["x1"] + 0.3, MINI["y0"] + 0.4, MINI["z"] + 1.6), (MINI["x0"], (MINI["y0"] + MINI["y1"]) / 2, MINI["z"] + 0.8), 26),
     "plaza": ((VEST["cx"] - 4, PLAZA["y0"] - 12, 4.5), (ESTAIR["x0"] + 1.5, ESTAIR["y_land0"] - 1, 2.0), 32),
     "entrance": ((VEST["cx"] - 9, Y0 - VEST["d"] - 13, 3.2), (VEST["cx"], Y0 - VEST["d"], 2.8), 30),
     "vest_in": ((VEST["cx"] + 2.6, Y0 - VEST["d"] + 0.8, FL1 + 1.6), (VEST["x0"] + 0.8, Y0 - 0.4, FL1 + 1.0), 22),
@@ -1365,14 +1396,26 @@ def build_collision():
         Wl.box(*b)
     # 階段は坂にする（外階段 2 本と踊り場、内階段、デッキの東の段）
     E = ESTAIR
-    ramp_y(St, E["x0"], E["x1"], E["y_foot"], FL1, E["y_land0"], E["z_land"])
+    # 坂は 1 段手前で上の床の高さに届かせ、縁まで平らにつなぐ（縁の角に足もとが引っかからないように）
+    ramp_y(St, E["x0"], E["x1"], E["y_foot"], FL1, E["y_land0"] - E["tread"], E["z_land"])
+    St.box(E["x0"], E["y_land0"] - E["tread"], E["z_land"] - 0.25, E["x1"], E["y_land0"] + 0.05, E["z_land"])
     fw_ = 0.3 * E["flare"]
     ramp_y(St, E["x0"] - fw_, E["x1"] + fw_, E["y_foot"], FL1, E["y_foot"] + E["flare"] * E["tread"],
            FL1 + E["flare"] * E["rise"])                                       # 広げた登り口
-    ramp_y(St, E["x0"], E["x1"], E["y_land1"], E["z_land"], E["y_top"], FL2)
+    ramp_y(St, E["x0"], E["x1"], E["y_land1"], E["z_land"], E["y_top"] - E["tread"], FL2)
+    St.box(E["x0"], E["y_top"] - E["tread"], FL2 - 0.25, E["x1"], Y0 + 0.3, FL2)
     St.box(E["x0"], E["y_land0"], E["z_land"] - 0.15, E["x1"], E["y_land1"], E["z_land"])
-    for x in (E["x0"], E["x1"] - 0.08):                                        # 踊り場と階段の脇の手すり
-        St.box(x, E["y_land0"], E["z_land"], x + 0.08, E["y_land1"], E["z_land"] + 1.0)
+    St.box(E["x1"] - 0.08, E["y_land0"], E["z_land"], E["x1"], E["y_land1"], E["z_land"] + 1.0)   # 踊り場の東の手すり
+    Mi = MINI                                                                  # ミニテラスの床・手すり・自販機
+    St.box(Mi["x0"], Mi["y0"], Mi["z"] - 0.15, Mi["x1"], Mi["y1"], Mi["z"])
+    for b in ((Mi["x0"], Mi["y0"], Mi["x1"], Mi["y0"] + 0.08), (Mi["x0"], Mi["y1"] - 0.08, Mi["x1"], Mi["y1"]),
+              (Mi["x0"], Mi["y0"], Mi["x0"] + 0.08, Mi["y1"]),
+              (Mi["x1"] - 0.08, Mi["y0"], Mi["x1"], E["y_land0"]), (Mi["x1"] - 0.08, E["y_land1"], Mi["x1"], Mi["y1"])):
+        St.box(b[0], b[1], Mi["z"], b[2], b[3], Mi["z"] + 1.0)
+    VM = VENDING
+    ym_ = (Mi["y0"] + Mi["y1"]) / 2
+    Fu.box(Mi["x0"] + 0.20, ym_ - VM["w"] - VM["gap"] / 2, Mi["z"], Mi["x0"] + 0.20 + VM["d"],
+           ym_ + VM["w"] + VM["gap"] / 2, Mi["z"] + VM["h"])
     ramp_y(St, I["xm"], I["x1"], I["y_bottom"] - I["tread"], FL1, I["y_land"], I["z_land"])
     St.box(I["x0"], I["y_land"], I["z_land"] - 0.15, I["x1"], I["y_top"], I["z_land"])
     ramp_y(St, I["x0"], I["xm"], I["y_land"], I["z_land"], I["hole_y0"], FL2)
