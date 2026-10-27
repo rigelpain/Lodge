@@ -896,6 +896,19 @@ def build_interior():
         e.empty_display_size = 0.4
         e.location = loc
         coll("markers").objects.link(e)
+    # 灯りの場所の目印。glTF の灯りは明るさの単位が合わないので、ゲームの側で灯りを置く
+    lights = [("light_lamp_%d" % i, (x + tw * j, y + td / 2, CEIL1 - 0.75))
+              for i, (x, y, j) in enumerate((x, y, j) for x, y in TABLES for j in (0.25, 0.75))]
+    lights += [("light_lantern_%d" % i, (x + KOTATSU_W / 2, sum(KOTATSU_Y) / 2, FL2 + TATAMI["h"] + 1.95))
+               for i, x in enumerate(KOTATSU)]
+    lights.append(("light_fire", ((CH["x0"] + CH["x1"]) / 2, CH["y0"] - 0.35, FL1 + 0.6)))
+    lights.append(("light_kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4)))
+    for name, loc in lights:
+        e = bpy.data.objects.new(name, None)
+        e.empty_display_type = "SPHERE"
+        e.empty_display_size = 0.2
+        e.location = loc
+        coll("markers").objects.link(e)
 
 
 # ---------------------------------------------------------------- 地面・光・カメラ

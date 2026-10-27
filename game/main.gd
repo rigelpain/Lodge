@@ -7,11 +7,19 @@ const Look := preload("res://look.gd")
 ##   --no-player   あなたを出さず、仲間だけで押す（速さを比べる用）
 ##   --shot=PATH   数秒後に画面を PNG で保存して終わる
 ##   --log         ソリの高さを1秒ごとに出す
+##   --cam=x,y,z,tx,ty,tz  --no-player のときのカメラの位置と見る先（ロッジを撮る用）
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
 const SIZE := 256         # 地面の一辺 (m)。Jolt の地形は 2 のべき乗 + 1 点で作る
 const START := Vector3(0, 0, 38)
+
+## ロッジ（lodge/ の Blender の台本で作った glb）。スタートの先、少し西の麓に置き、
+## 正面（ガラスの食堂とテラス、glb の +Z）を頂上へ向ける。足もとの地面はならす
+const LODGE_POS := Vector2(-22, 62)          # (x, z)
+const LODGE_YAW := 2.8006                    # atan2(22, -62): 正面を頂上の向きへ
+const LODGE_PAD := Rect2(-17, -10, 31, 23)   # ならす範囲（ロッジの座標の x, z）。下屋から外階段の踊り場まで
+const LODGE_BLEND := 8.0                     # ならした所から丘へ戻るまでの幅 (m)
 
 const Sled := preload("res://sled.gd")
 const Player := preload("res://player.gd")
@@ -27,10 +35,26 @@ var _duty := 0
 var _frames := 0
 var _sim_sent := false
 var pip_label: Label
+var fire_light: OmniLight3D
+
+
+static func hill(x: float, z: float) -> float:
+	return HILL_H * exp(-(x * x + z * z) / (2.0 * HILL_R * HILL_R))
+
+
+## ロッジの足もとで 0、離れると 1
+static func lodge_weight(x: float, z: float) -> float:
+	var d := Vector2(x, z) - LODGE_POS
+	var c := cos(LODGE_YAW)
+	var s := sin(LODGE_YAW)
+	var l := Vector2(d.x * c - d.y * s, d.x * s + d.y * c)
+	var q := Vector2(maxf(LODGE_PAD.position.x - l.x, l.x - LODGE_PAD.end.x),
+			maxf(LODGE_PAD.position.y - l.y, l.y - LODGE_PAD.end.y))
+	return smoothstep(0.0, LODGE_BLEND, Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length())
 
 
 static func height(x: float, z: float) -> float:
-	return HILL_H * exp(-(x * x + z * z) / (2.0 * HILL_R * HILL_R))
+	return lerpf(hill(LODGE_POS.x, LODGE_POS.y), hill(x, z), lodge_weight(x, z))
 
 
 func _ready() -> void:
@@ -40,6 +64,7 @@ func _ready() -> void:
 
 	_make_world()
 	_make_ground()
+	_make_lodge()
 
 	sled = Sled.new()
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
@@ -68,6 +93,10 @@ func _ready() -> void:
 		add_child(cam)
 		cam.position = Vector3(-30, 26, 40)
 		cam.look_at(Vector3(0, 8, 10))
+		if args.has("cam"):
+			var v: PackedFloat64Array = args["cam"].split_floats(",")
+			cam.position = Vector3(v[0], v[1], v[2])
+			cam.look_at(Vector3(v[3], v[4], v[5]))
 
 	if player:
 		_make_pip()
@@ -268,6 +297,8 @@ func _place_pip_cams() -> void:
 
 
 func _process(_dt: float) -> void:
+	if fire_light:   # 炉の火の揺らぎ
+		fire_light.light_energy = 1.2 + 0.3 * sin(elapsed * 13.0) + 0.2 * sin(elapsed * 7.3 + 1.0)
 	if pip_cams.is_empty():
 		return
 	_place_pip_cams()
@@ -325,6 +356,70 @@ func _make_world() -> void:
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		add_child(m)
 
+
+## ロッジを置く。素材は glb の役割の名前（log, roof, snow …）で look.gd の手芸の素材に差し替え、
+## 灯りの目印（light_*）に暖色の灯りを灯す。当たり判定は lodge_collision.glb（-colonly で見た目なし）
+func _make_lodge() -> void:
+	var root := Node3D.new()
+	root.name = "Lodge"
+	root.position = Vector3(LODGE_POS.x, hill(LODGE_POS.x, LODGE_POS.y), LODGE_POS.y)
+	root.rotation.y = LODGE_YAW
+	add_child(root)
+	var body: Node3D = (load("res://lodge/lodge.glb") as PackedScene).instantiate()
+	root.add_child(body)
+	root.add_child((load("res://lodge/lodge_collision.glb") as PackedScene).instantiate())
+
+	var lamp := Look.paper(Color(0.96, 0.84, 0.63))
+	lamp.emission_enabled = true
+	lamp.emission = Color(1.0, 0.74, 0.44)
+	lamp.emission_energy_multiplier = 1.6
+	var fire := StandardMaterial3D.new()
+	fire.albedo_color = Color(1.0, 0.54, 0.23)
+	fire.emission_enabled = true
+	fire.emission = Color(1.0, 0.5, 0.18)
+	fire.emission_energy_multiplier = 4.0
+	var mats := {
+		"log": Look.felt(Color(0.49, 0.33, 0.21), 1.2),     # 丸太は巻いたフェルト
+		"roof": Look.felt(Color(0.16, 0.20, 0.41), 1.2),    # 藍のフェルト
+		"snow": Look.snow(),
+		"stone": Look.felt(Color(0.50, 0.46, 0.42), 2.0),   # フェルトの小石
+		"post": Look.wood(Color(0.44, 0.27, 0.16)),
+		"door": Look.wood(Color(0.43, 0.29, 0.19)),
+		"board": Look.wood(Color(0.78, 0.63, 0.42)),
+		"ceiling": Look.wood(Color(0.78, 0.63, 0.42)),
+		"floor": Look.wood(Color(0.60, 0.44, 0.29)),
+		"deck": Look.wood(Color(0.73, 0.58, 0.40)),
+		"rail": Look.wood(Color(0.66, 0.50, 0.31)),
+		"frame": Look.paper(Color(0.93, 0.88, 0.79)),
+		"tatami": Look.paper(Color(0.85, 0.82, 0.66)),
+		"cushion": Look.felt(Color(0.79, 0.54, 0.40)),
+		"quilt": Look.felt(Color(0.62, 0.37, 0.32)),
+		"felt_red": Look.felt(Color(0.71, 0.35, 0.29)),
+		"felt_blue": Look.felt(Color(0.30, 0.44, 0.66)),
+		"felt_green": Look.felt(Color(0.49, 0.60, 0.36)),
+		"felt_yellow": Look.felt(Color(0.84, 0.64, 0.29)),
+		"paper": lamp,
+		"fire": fire,
+	}
+	for n in body.find_children("*", "MeshInstance3D", true, false):
+		var mi: MeshInstance3D = n
+		for i in mi.mesh.get_surface_count():
+			var src := mi.mesh.surface_get_material(i)
+			if src and mats.has(src.resource_name):
+				mi.set_surface_override_material(i, mats[src.resource_name])
+
+	for e in body.find_children("light_*", "", true, false):
+		var l := OmniLight3D.new()
+		l.light_color = Color(1.0, 0.68, 0.40)   # 電球色より少し赤み
+		l.light_energy = 1.1
+		l.omni_range = 6.5
+		if e.name == "light_fire":
+			l.light_color = Color(1.0, 0.45, 0.16)
+			l.omni_range = 7.0
+			l.shadow_enabled = true
+			l.position = Vector3(0, 0, 1.0)   # 炉の石の面から部屋の側へ離す（近いと石が白く飛ぶ）
+			fire_light = l
+		e.add_child(l)
 
 ## 舞う雪: 羊毛のふわふわが、あなたのまわりでゆっくり落ちる
 func _make_snowfall(follow: Node3D) -> void:
@@ -401,7 +496,7 @@ func _make_ground() -> void:
 		for i in cols:
 			var x := i * step - half
 			var z := j * step - half
-			var y := height(x, z) + drift.get_noise_2d(x, z) * 0.35
+			var y := height(x, z) + drift.get_noise_2d(x, z) * 0.35 * lodge_weight(x, z)
 			st.set_uv(Vector2(x, z) * 0.5)
 			st.add_vertex(Vector3(x, y, z))
 	for j in cols - 1:
@@ -434,6 +529,8 @@ func _make_ground() -> void:
 		var r := rng.randf_range(32, 90)
 		var p := Vector3(cos(a) * r, 0, sin(a) * r)
 		if p.z > 20 and abs(p.x) < 14:
+			continue
+		if lodge_weight(p.x, p.z) < 1.0:   # ロッジに重ねない
 			continue
 		var h := rng.randf_range(4, 8)
 		var base_y := height(p.x, p.z)
