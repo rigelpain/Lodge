@@ -63,10 +63,15 @@ func _ready() -> void:
 		l.light_color = Color(1.0, 0.68, 0.40)   # 電球色より少し赤み
 		l.light_energy = 1.1
 		l.omni_range = 6.5
-		if e.name == "light_fire":
+		if e.name.begins_with("light_lamp"):      # 食堂の天井: 3 つで広く照らす
+			l.omni_range = 11.0
+			l.light_energy = 1.6
+		elif e.name.begins_with("light_lantern"):  # 座敷: 2 つ
+			l.omni_range = 9.0
+			l.light_energy = 1.4
+		if e.name == "light_fire":                 # 影は付けない（スマホでも軽く）
 			l.light_color = Color(1.0, 0.45, 0.16)
 			l.omni_range = 7.0
-			l.shadow_enabled = true
 			l.position = Vector3(0, 0, 1.0)   # 炉の石の面から部屋の側へ離す（近いと石が白く飛ぶ）
 			fire_light = l
 		e.add_child(l)
