@@ -31,6 +31,16 @@ var _lean_fwd := false
 var _lean_back := false
 var hold_debug := ""
 
+# 足元の影と、滑り木の跡（ステッチ）
+const TRAIL_N := 800          # 残す針目の数（2 本 × 400 = 約 120 m）
+const TRAIL_STEP := 0.3       # 針目の間隔 (m)
+var _blob: MeshInstance3D
+var _trail: MultiMeshInstance3D
+var _trail_i := 0
+var _trail_dist := 0.0
+var _trail_last := Vector3.INF
+var _trail_flip := false
+
 
 func _ready() -> void:
 	mass = 60.0
@@ -51,6 +61,7 @@ func _ready() -> void:
 	# 見た目: フェルトの座布団を曲げ木の滑り木に載せたソリ（props/build_sled.py の glb）。寸法はこの物理に合わせてある
 	add_child(Props.make("res://props/sled_mid.glb"))
 
+	_make_shadow_and_trail()
 
 ## dir は押す向き（水平）、at は手が触れた所（世界座標）
 func push(dir: Vector3, at: Vector3) -> void:
@@ -152,6 +163,92 @@ func reset_to(pos: Vector3) -> void:
 	global_transform = Transform3D(Basis(), pos)
 
 
+## 足元の影（やわらかい楕円）と、滑り木の跡のステッチ（毛糸の雪に残る針目）
+func _make_shadow_and_trail() -> void:
+	var img := Image.create(128, 128, false, Image.FORMAT_RGBA8)
+	for y in 128:
+		for x in 128:
+			var dx := (x - 63.5) / 63.5
+			var dy := (y - 63.5) / 63.5
+			var r := sqrt(dx * dx + dy * dy)
+			var a: float = (1.0 - smoothstep(0.3, 1.0, r)) * 0.42
+			img.set_pixel(x, y, Color(0.20, 0.26, 0.46, a))
+	var tex := ImageTexture.create_from_image(img)
+	_blob = MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(2.2, 3.4)
+	q.orientation = PlaneMesh.FACE_Y
+	_blob.mesh = q
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = tex
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.render_priority = -1
+	_blob.material_override = m
+	_blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_blob.top_level = true
+	add_child(_blob)
+
+	_trail = MultiMeshInstance3D.new()
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	var sq := QuadMesh.new()
+	sq.size = Vector2(0.08, 0.26)
+	sq.orientation = PlaneMesh.FACE_Y
+	mm.mesh = sq
+	mm.instance_count = TRAIL_N
+	for i in TRAIL_N:
+		mm.set_instance_transform(i, Transform3D(Basis(), Vector3(0, -100, 0)))
+	_trail.multimesh = mm
+	var tm := StandardMaterial3D.new()
+	tm.albedo_color = Color(0.72, 0.79, 0.92)   # 押されて影になった毛糸の青
+	tm.roughness = 1.0
+	tm.cull_mode = BaseMaterial3D.CULL_DISABLED
+	_trail.material_override = tm
+	_trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_trail.top_level = true
+	add_child(_trail)
+
+
+func _ground_hit(from: Vector3) -> Dictionary:
+	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 3.0)
+	q.exclude = [get_rid()]
+	return get_world_3d().direct_space_state.intersect_ray(q)
+
+
+func _update_shadow_and_trail() -> void:
+	if _blob == null:
+		return
+	var hit := _ground_hit(global_position + Vector3.UP * 0.5)
+	if hit:
+		var n: Vector3 = hit.normal
+		var fwd: Vector3 = -global_basis.z
+		fwd = (fwd - n * fwd.dot(n)).normalized()
+		_blob.global_transform = Transform3D(Basis(n.cross(-fwd).normalized(), n, -fwd), hit.position + n * 0.03)
+	# ステッチ: 動いている間、0.3 m ごとに左右の滑り木の後ろ端に針目を置く。左右交互に少し傾けて V の列に見せる
+	var v := Vector3(linear_velocity.x, 0, linear_velocity.z)
+	if v.length() < 0.25:
+		_trail_last = Vector3.INF
+		return
+	if _trail_last == Vector3.INF:
+		_trail_last = global_position
+	_trail_dist += global_position.distance_to(_trail_last)
+	_trail_last = global_position
+	var dir := v.normalized()
+	while _trail_dist >= TRAIL_STEP:
+		_trail_dist -= TRAIL_STEP
+		_trail_flip = not _trail_flip
+		for sx in [-RUNNER_X, RUNNER_X]:
+			var h := _ground_hit(to_global(Vector3(sx, 0.3, RUNNER_Z)) + Vector3.UP * 0.5)
+			if not h:
+				continue
+			var nn: Vector3 = h.normal
+			var d := (dir - nn * dir.dot(nn)).normalized()
+			var b := Basis.looking_at(d, nn).rotated(nn, 0.35 if _trail_flip else -0.35)
+			_trail.multimesh.set_instance_transform(_trail_i, Transform3D(b, h.position + nn * 0.012))
+			_trail_i = (_trail_i + 1) % TRAIL_N
+
+
 func _ground_normal() -> Vector3:
 	var from := global_position + Vector3.UP * 0.5
 	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 2.0)
@@ -161,6 +258,7 @@ func _ground_normal() -> Vector3:
 
 
 func _physics_process(_dt: float) -> void:
+	_update_shadow_and_trail()
 	pushers = _push_count
 	_push_count = 0
 	var riding := riders.size() > 0

@@ -125,30 +125,16 @@ class Dial extends Control:
 			draw_polyline(pts, col, W, true)
 
 
-## 日時計の後ろの明るさを見て、線を白か黒に寄せる（0.5 秒ごと。画面を読み戻すのは軽くないので間を空ける）
+## 日時計の線を、昼は黒、夜は白に寄せる。
+## 以前は画面を読み戻して後ろの明るさを測っていたが、全画素だと 1 回 100 ms 級の停止になり
+## ゲーム全体がガクついたので、時刻から決める（日時計の後ろはほぼ雪か空で、明るさは昼夜で決まる）
 func _update_ink(dt: float) -> void:
 	_ink_t += dt
 	if _ink_t < 0.5:
 		return
 	_ink_t = 0.0
-	var img := get_viewport().get_texture().get_image()
-	if img == null:
-		return
-	var r := _dial.get_global_rect()
-	var sum := 0.0
-	var n := 0
-	for iy in 6:
-		for ix in 10:
-			var x := int(r.position.x + r.size.x * (ix + 0.5) / 10.0)
-			var y := int(r.position.y + r.size.y * (iy + 0.5) / 6.0)
-			if x < 0 or y < 0 or x >= img.get_width() or y >= img.get_height():
-				continue
-			sum += img.get_pixel(x, y).get_luminance()
-			n += 1
-	if n == 0:
-		return
-	var lum := sum / n
-	_ink_target = 0.0 if lum > 0.58 else (1.0 if lum < 0.48 else _ink_target)   # 境目で行き来しないよう、間を空ける
+	var daylight: float = clampf((sin((hour - 6.0) / 12.0 * PI) + 0.15) / 1.15, 0.0, 1.0)   # 6 時〜18 時が昼
+	_ink_target = 0.0 if daylight > 0.55 else (1.0 if daylight < 0.35 else _ink_target)   # 境目で行き来しないよう、間を空ける
 
 
 func _find() -> bool:

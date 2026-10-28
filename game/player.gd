@@ -57,6 +57,8 @@ func _ready() -> void:
 	_col.shape = cap
 	_col.position.y = 0.85
 	add_child(_col)
+	floor_snap_length = 0.4   # 斜面でも床に吸い付く
+	floor_max_angle = deg_to_rad(50)
 
 	cam = Camera3D.new()
 	cam.position.y = 1.55
@@ -334,6 +336,7 @@ func _walk(dt: float, with_rope: bool) -> void:
 		if Input.is_physical_key_pressed(KEY_SPACE):
 			velocity.y = JUMP
 		else:
+			velocity.y = 0.0   # 床の上で縦の速さを残すと、床に食い込んでは押し戻されて細かく揺れる
 			_step_up(dir)
 	else:
 		velocity.y -= GRAVITY * dt
