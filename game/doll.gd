@@ -80,6 +80,7 @@ var _scale := 1.0
 var _long: CPUParticles3D    # 深呼吸の長い息
 var _ball: Node3D            # 右手の雪玉
 var _shapes := {}            # 手の形のアップリケ: 形 → {1: 右手, -1: 左手}
+var _palm_goal := {}         # 側 → [形, 手形の置き所（人形の座標）]。コマで決め、腕はその手首へ伸ばす
 var _hands_frame := 0        # 手の形を変えたコマ（ぽんと出る大きさに）
 var _em_head := Vector2.ZERO # 身ぶりが頭に足す向き（x 左右、y 上下）
 var _em_roll := 0.0          # 身ぶりが頭に足す傾き（首をかしげる。正で右へ）
@@ -294,14 +295,15 @@ func _len(i: int) -> float:
 
 
 ## 二関節の腕で、手が target（骨の座標の空間）に来るように曲げる
-func _reach(side: String, target: Vector3) -> void:
+func _reach(side: String, target: Vector3, to_wrist := false) -> void:
 	var up := _id("upper_arm." + side)
 	var fo := _id("forearm." + side)
 	if up < 0 or fo < 0:
 		return
 	var s := _head_of(up)
 	var a := _len(up)
-	var b := _len(fo) + _len(_id("hand." + side)) * 0.5
+	# 手首（前腕の先）を合わせるか、手のなかほどを合わせるか
+	var b := _len(fo) + (0.0 if to_wrist else _len(_id("hand." + side)) * 0.5)
 	var to := target - s
 	var d := clampf(to.length(), absf(a - b) + 0.01, a + b - 0.001)
 	var dir := to.normalized()
@@ -544,8 +546,7 @@ func _pose() -> void:
 
 	if em[1] >= 0:
 		_emote_arms(em[0], em[1])
-	if not (em[1] >= 0 and em[0] in ARM_EMOTES):
-		_shape_arms()
+	_plan_palms(em[0], em[1])
 	if em[1] < 0 and waving and _hold[1] == null and hand_shapes[0] == "":
 		# 右手を上げて振る。4 コマで 1 往復
 		var k: float = [0.55, 0.1, -0.35, 0.1][_frame % 4]
@@ -625,7 +626,7 @@ func _hold_hands() -> void:
 		if h == null:
 			continue
 		var space: Node3D = h[0]
-		_reach("L" if k == 0 else "R", _to_skel(space.to_global(h[1])))
+		_reach("L" if k == 0 else "R", _to_skel(space.to_global(h[1])), h.size() > 2 and h[2])
 
 
 ## つかんでいる立ち位置から、ソリの縁に置く両手の所（ソリの座標）
@@ -1207,110 +1208,107 @@ static func ball_material() -> Material:
 	return _ball_mat
 
 
-## 掲げた手を、見ている向きへ。高い手のひらは顔より上へ（前を見れば遠くの人に場所を示す、見上げれば万歳）、
-## 低い手のひらは腰の前へ、手のひらを下に向けて（おさえて・ストップ）。両手のときは肩幅に、片手のときは少し外へ
-func _shape_arms() -> void:
-	if hand_shapes[0] == "" and hand_shapes[1] == "":
-		return
-	var reach := _len(_id("upper_arm.R")) + _len(_id("forearm.R"))
-	var look := Vector3(0, 0, -1)
-	if gaze != Vector3.INF:
-		var d := _to_skel(gaze) - _head_of(_id("head"))
-		if d.length() > 0.01:
-			look = d.normalized()
-	var ahead := Vector3(look.x, 0, look.z)
-	ahead = ahead.normalized() if ahead.length() > 0.05 else Vector3(0, 0, -1)
-	for k in 2:
-		var height: String = hand_shapes[k]
-		if height == "":
-			continue
-		var side := "R" if k == 0 else "L"
-		var sx := 1.0 if k == 0 else -1.0
-		if point != Vector3.INF and (point_sides.is_empty() or (sx as int) in point_sides):
-			continue   # 指さしている手は、指さしのまま
-		var sh := _head_of(_id("upper_arm." + side))
-		var dir := (look + Vector3.UP * 0.55).normalized() if height == "high" else (ahead + Vector3.DOWN * 0.75).normalized()
-		_hand_to(side, sh + dir * reach * (0.95 if height == "high" else 0.9) + Vector3(sx * reach * 0.12, 0, 0))
-
-
-## 手形のアップリケを、手の先に置く。位置は手について毎フレーム、形（向き・大きさ）はコマで決める。
-## 高い手のひらは見ている先へ立て、低い手のひらは下へ向ける。指さしの手には指さしの手形。
-## ハイタッチは合う所へ手のひらを向け、握手は手のひらを横に立てる
-func _place_shapes() -> void:
-	var em := emote_now()
-	var kind_: String = em[0]
-	var k: int = em[1]
-	var want := {1: "", -1: ""}   # 側 → [形, 高さか身ぶり]
-	var mode := {1: "", -1: ""}
+## 手形と腕。先に手形の置き所と向きを決め、腕の先（手首の関節）を手形の手首の真ん中へ伸ばす（腕の角度は手形の場所に合わせる）。
+## 高い手のひらは見ている向きの顔より上（前を見れば遠くの人に場所を示す、見上げれば万歳）、低い手のひらはみぞおちの前で下へ向けて
+## （おさえて・ストップ）。両手のときは肩幅に、片手のときは少し外へ。指さしは腕をまっすぐ指す向きへ。
+## ハイタッチは合う所、握手は重ねる所（配り役が決める）に手形を置く。引く・振り下ろすコマは、腕の先に手形を付ける
+func _plan_palms(kind_: String, k: int) -> void:
+	_palm_goal.clear()
+	var want := {}   # 側 → [形, 置き方]
 	for sd in [1, -1]:
 		var height: String = hand_shapes[0 if sd > 0 else 1]
 		if height != "":
-			want[sd] = "palm"
-			mode[sd] = height
+			want[sd] = ["palm", height]
 	if point != Vector3.INF:
 		var lp := global_basis.inverse() * (point - global_position)
 		for sd in (point_sides if not point_sides.is_empty() else [1 if lp.x >= 0.0 else -1]):
-			want[sd] = "point"
-			mode[sd] = "point"
-	var touching := k >= 0 and kind_ in ["high_five", "shake", "whiff"]
+			want[sd] = ["point", "point"]
 	var grip_at := {}
-	if touching:
-		want = {1: "", -1: ""}
+	if k >= 0 and kind_ in ["high_five", "shake", "whiff"]:
+		want = {}
 		if kind_ == "whiff":
 			if k < 3:
-				want[int(emote.get("side", 1))] = "palm"
-				mode[int(emote.get("side", 1))] = kind_
+				want[int(emote.get("side", 1))] = ["palm", "whiff"]
 		elif (kind_ == "high_five" and k < 8) or (kind_ == "shake" and k < 20):
 			for gr in emote.get("grips", []):
-				want[int(gr[0])] = "palm"
-				mode[int(gr[0])] = kind_
+				want[int(gr[0])] = ["palm", kind_]
 				grip_at[int(gr[0])] = gr[1]
 	elif k >= 0 and kind_ in ARM_EMOTES:
-		want = {1: "", -1: ""}
-	var fi := frame_index()
+		return
+	var head_w := skel.global_transform * _head_of(_id("head"))
+	var look := -global_basis.z
+	if gaze != Vector3.INF and gaze.distance_to(head_w) > 0.01:
+		look = (gaze - head_w).normalized()
+	var ahead := Vector3(look.x, 0, look.z)
+	ahead = ahead.normalized() if ahead.length() > 0.05 else -global_basis.z
+	var pop := Palm.pop(frame_index() - _hands_frame)
+	for side in want:
+		var shape: String = want[side][0]
+		var how: String = want[side][1]
+		var sname := "R" if side > 0 else "L"
+		var hi := 1 if side > 0 else 0
+		var sh_w := skel.global_transform * _head_of(_id("upper_arm." + sname))
+		var arm := (_len(_id("upper_arm." + sname)) + _len(_id("forearm." + sname))) * _scale
+		var bone_wrist := skel.global_transform * _head_of(_id("hand." + sname))   # いまの腕の先
+		var size := Palm.BIG * pop
+		var b := Basis.IDENTITY
+		var wrist := Vector3.INF   # 腕を伸ばす先（INF なら、いまの腕の先に手形を付ける）
+		var origin := Vector3.INF  # 手形の置き所（INF なら、手首から決める）
+		match how:
+			"high", "low":
+				var dir := (look + Vector3.UP * 0.55).normalized() if how == "high" else (ahead + Vector3.DOWN * 0.75).normalized()
+				wrist = sh_w + dir * arm * 0.88 + global_basis.x * float(side) * arm * 0.12
+				var face := (gaze - wrist) if gaze != Vector3.INF else -global_basis.z
+				var tilt := -0.65 if how == "low" else clampf(atan2(face.y, Vector2(face.x, face.z).length()) * 0.5, -0.4, 0.6)
+				b = _face_basis(face, tilt)
+			"point":
+				var y: Vector3 = (point - sh_w).normalized()
+				wrist = sh_w + y * arm * 0.98
+				var z := y.cross(Vector3.UP)
+				z = (z.normalized() if z.length() > 0.05 else global_basis.x) * float(side)
+				b = Palm.thumb_up(Basis(y.cross(z).normalized(), y, z), side)   # 人さし指（+y）を指す向きへ、面は横から見える向き、親指は上
+				size = Palm.BIG
+			"high_five":
+				size = Palm.BIG * (1.25 if k == 3 else 1.0)
+				if k < 3 or not grip_at.has(side):
+					b = _face_basis(-global_basis.z, 0.45 if k < 3 else 0.0)   # 引くと、手のひらが少し上を向く
+				else:
+					var g: Vector3 = grip_at[side]
+					b = _face_basis(g - sh_w, 0.0)
+					if k < 6:
+						origin = g   # 叩きつける: 手形を合う所に
+			"whiff":
+				b = _face_basis(-global_basis.z, 0.45 if k < 2 else 0.0)
+			"shake":
+				b = Palm.shake_basis(emote.get("fwd", -global_basis.z), emote.get("axis", global_basis.x), side)
+				size = Palm.BIG
+				var g: Vector3 = grip_at[side]
+				# 差し出す（2 コマ）→ 重ねる所でぴったり合わせ、二人一緒に上下に振る
+				origin = (g + Vector3.UP * Palm.shake_pump(k)) if k >= 2 else sh_w.lerp(g, 0.75)
+		var bs := b.scaled(Vector3.ONE * size)
+		if origin != Vector3.INF:
+			wrist = origin + bs * Palm.WRIST
+		if wrist != Vector3.INF:
+			_hold[hi] = [self, to_local(wrist), true]   # 腕の先を手形の手首へ（毎フレーム伸ばし直す）
+			origin = wrist - bs * Palm.WRIST
+		else:
+			origin = bone_wrist - bs * Palm.WRIST
+		_palm_goal[side] = [shape, global_transform.affine_inverse() * Transform3D(bs, origin)]
+
+
+## 手のひら（+z）を face の向き（水平）へ立て、tilt だけ上（正）か下（負）へ傾ける
+func _face_basis(face: Vector3, tilt: float) -> Basis:
+	face.y = 0
+	face = face.normalized() if face.length() > 0.01 else -global_basis.z
+	return Basis.looking_at(-face, Vector3.UP) * Basis(Vector3.RIGHT, -tilt)
+
+
+## 手形のアップリケを、コマで決めた置き所に（人形の座標で持つので、体と一緒になめらかに動く）
+func _place_shapes() -> void:
 	for sh in _shapes:
 		for side in [1, -1]:
 			var node: Node3D = _shapes[sh][side]
-			var on: bool = want[side] == sh
-			node.visible = on
-			if not on:
-				continue
-			var h := _id("hand.R" if side > 0 else "hand.L")
-			var g: Transform3D = _g[h]
-			var at := skel.global_transform * (g.origin + g.basis.y.normalized() * _len(h) * 0.5)
-			var b: Basis
-			var size := Palm.pop(fi - _hands_frame)
-			match mode[side]:
-				"point":
-					# 指さし: 人さし指（+y）を指す向きへ、手形の面は横から見える向きに
-					var y: Vector3 = (point - at).normalized()
-					var z := y.cross(Vector3.UP)
-					z = (z.normalized() if z.length() > 0.05 else global_basis.x) * float(side)
-					b = Basis(y.cross(z).normalized(), y, z)
-					size = 1.0
-				"shake":
-					# 握手: 指を相手へ、手のひらは重ねる向きへ（二人とも平行で、少し傾いた面）。合わせたら、重ねる所にぴったり置く
-					b = Palm.shake_basis(emote.get("fwd", -global_basis.z), emote.get("axis", global_basis.x), side)
-					size = 1.0
-					if k >= 2 and k < 20 and grip_at.has(side):
-						at = (grip_at[side] as Vector3) + Vector3.UP * Palm.shake_pump(k) - Vector3.UP * 0.05 * _scale
-				_:
-					var face := -global_basis.z
-					var tilt := 0.0
-					if mode[side] == "high_five" or mode[side] == "whiff":
-						size = 1.25 if k == 3 and kind_ == "high_five" else 1.0
-						if k < 3:
-							tilt = 0.45   # 引くと、手のひらが少し上を向く
-						elif grip_at.has(side):
-							face = (grip_at[side] as Vector3) - at
-					elif mode[side] == "low":
-						tilt = -0.65   # 低い手のひらは、下へ向けておさえる（倒しすぎると、前から細い線にしか見えない）
-						if gaze != Vector3.INF:
-							face = gaze - at
-					elif gaze != Vector3.INF:
-						face = gaze - at
-						tilt = clampf(atan2(face.y, Vector2(face.x, face.z).length()) * 0.5, -0.4, 0.6)   # 見上げると上を向く
-					face.y = 0
-					face = face.normalized() if face.length() > 0.01 else -global_basis.z
-					b = Basis.looking_at(-face, Vector3.UP) * Basis(Vector3.RIGHT, -tilt)   # 手のひら（+z）を face へ
-			node.global_transform = Transform3D(b.scaled(Vector3.ONE * size * Palm.BIG), at + Vector3.UP * 0.05 * _scale)
+			var goal: Array = _palm_goal.get(side, [])
+			node.visible = not goal.is_empty() and goal[0] == sh
+			if node.visible:
+				node.global_transform = global_transform * (goal[1] as Transform3D)

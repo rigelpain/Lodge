@@ -606,7 +606,7 @@ func _place_shapes_fp(em: Array) -> void:
 					var y: Vector3 = (h.basis * Vector3.FORWARD).normalized()
 					var z := Vector3.UP.cross(y) * float(side)
 					z = z.normalized() if z.length() > 0.05 else Vector3.BACK
-					b = Basis(y.cross(z).normalized(), y, z)
+					b = Palm.thumb_up(Basis(y.cross(z).normalized(), y, z), side)   # 親指は上
 					size = 1.0
 				"low":
 					b = b * Basis(Vector3.RIGHT, -0.65)   # 下へ向けて、おさえる
@@ -622,7 +622,9 @@ func _place_shapes_fp(em: Array) -> void:
 				"high_five", "whiff":
 					b = b * Basis(Vector3.RIGHT, 0.5 if k < 3 else 0.0)
 					size = 1.25 if k == 3 and kind == "high_five" else 1.0
-			node.transform = Transform3D(b.scaled(Vector3.ONE * size), h.position + Vector3(0, 0.07, -0.02))
+			# 手形の手首の真ん中を、袖の先（手の所）に合わせる
+			var bs := b.scaled(Vector3.ONE * size)
+			node.transform = Transform3D(bs, h.position - bs * Palm.WRIST)
 
 
 # ---------------------------------------------------------------- 身ぶり（emotes.gd）
@@ -839,11 +841,11 @@ func _emote_hand(s: int) -> Vector3:
 				if k < 2:
 					return Vector3(0.14 * s, -0.27, -0.45)   # 差し出す
 				if k < 20:
-					# 握って、上下に振る: 袖の先を、重ねる所（の少し手前）へ
+					# 握って、上下に振る: 袖の先を、重ねる所に置いた手形の手首へ
 					for gr in _em.grips:
 						if int(gr[0]) == s:
-							var fwd: Vector3 = _em.get("fwd", -global_basis.z)
-							return cam.to_local((gr[1] as Vector3) + Vector3.UP * Palm.shake_pump(k) - fwd * 0.06)
+							var wb := Palm.shake_basis(_em.get("fwd", -global_basis.z), _em.get("axis", global_basis.x), s).scaled(Vector3.ONE * Palm.BIG)
+							return cam.to_local((gr[1] as Vector3) + Vector3.UP * Palm.shake_pump(k) + wb * Palm.WRIST)
 				return Vector3(0.25 * s, -0.3, -0.45)
 		"whiff":
 			var ws := int(_em.get("side", 1))

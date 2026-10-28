@@ -88,8 +88,11 @@ func _emit(ev: Dictionary) -> void:
 	if ev.kind == "splat":
 		_show_splat(ev)
 	elif ev.kind == "high_five" and ev.who < ev.with:
+		# 紙吹雪は一度だけ（両手どうしでも）。合う所のまんなかに
+		var at := Vector3.ZERO
 		for g in ev.grips:
-			_burst_at(g[1], int(ev.frame) + FIVE_HIT)
+			at += g[1] as Vector3
+		_burst_at(at / ev.grips.size(), int(ev.frame) + FIVE_HIT)
 	happened.emit(ev)
 
 

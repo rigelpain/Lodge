@@ -7,6 +7,7 @@ const Look := preload("res://look.gd")
 
 const EDGE := Color(0.22, 0.16, 0.13)
 const BIG := 1.7            # 人形の手の形は、ほんとうの手より大きく（遠くからでも読める）
+const WRIST := Vector3(0, -0.075, 0)   # 手形の手首の真ん中（手形の座標）。腕の先をここに合わせる
 const SHAPES := ["palm", "point"]
 ## 掲げた手の状態（高さ_手）→ [右手, 左手] の高さ。"" は下ろしている。
 ## 高い手のひら: 遠くの人に場所を示す・万歳・ハイタッチ。低い手のひら: おさえて・ストップ・握手
@@ -170,10 +171,14 @@ static func shake_pump(k: int) -> float:
 ## 親指は上へ（右手の輪郭は親指が +x、左手は -x。下を向く手は面を裏返す。手形は表裏が同じなので、平行のまま）
 static func shake_basis(fwd: Vector3, axis: Vector3, side: int) -> Basis:
 	var y := (fwd - axis * fwd.dot(axis)).normalized()
-	var x := y.cross(axis).normalized()
-	if (x * float(side)).y < 0.0:
-		return Basis(-x, y, -axis)
-	return Basis(x, y, axis)
+	return thumb_up(Basis(y.cross(axis).normalized(), y, axis), side)
+
+
+## 親指を上へ: 右手の輪郭は親指が +x、左手は -x。親指が下を向くなら面を裏返す（手形は表裏が同じ。指の向きは変えない）
+static func thumb_up(b: Basis, side: int) -> Basis:
+	if (b.x * float(side)).y < 0.0:
+		return Basis(-b.x, b.y, -b.z)
+	return b
 
 
 ## 出てくるときの大きさ（12 コマ。ぽんと出て、少し行きすぎて戻る）
@@ -189,7 +194,7 @@ static func burst(parent: Node, point: Vector3) -> void:
 	c.one_shot = true
 	c.emitting = false
 	c.local_coords = false
-	c.amount = 44
+	c.amount = 20
 	c.lifetime = 1.4
 	c.explosiveness = 1.0
 	c.randomness = 0.5
