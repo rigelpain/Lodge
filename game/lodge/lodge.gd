@@ -27,14 +27,14 @@ func _ready() -> void:
 	fire.emission = Color(1.0, 0.5, 0.18)
 	fire.emission_energy_multiplier = 4.0
 	var mats := {
-		"log": Look.felt(Color(0.49, 0.33, 0.21), 1.2),     # 丸太は巻いたフェルト
+		"log": _log_felt(),                                  # 丸太は巻いたフェルト。色は外扉と同じ茶
 		"roof": Look.felt(Color(0.16, 0.20, 0.41), 1.2),    # 藍のフェルト
 		"snow": Look.snow(),
 		"stone": Look.felt(Color(0.50, 0.46, 0.42), 2.0),   # フェルトの小石
 		"post": Look.wood(Color(0.44, 0.27, 0.16)),
 		"door": Look.wood(Color(0.43, 0.29, 0.19)),
-		"board": Look.wood(Color(0.78, 0.63, 0.42)),
-		"ceiling": Look.wood(Color(0.78, 0.63, 0.42)),
+		"board": _planks(Color(0.78, 0.63, 0.42)),          # 2 階の天井の羽目板、カウンター
+		"ceiling": _planks(Color(0.78, 0.63, 0.42)),        # 1 階の天井の羽目板
 		"floor": Look.wood(Color(0.60, 0.44, 0.29)),
 		"deck": Look.wood(Color(0.73, 0.58, 0.40)),
 		"rail": Look.wood(Color(0.66, 0.50, 0.31)),
@@ -77,6 +77,65 @@ func _ready() -> void:
 		e.add_child(l)
 
 	_make_auto_door()
+
+
+const DOOR_BROWN := Color(0.43, 0.29, 0.19)   # 外扉の茶
+# 丸太の地の色。外扉と同じ値にすると、日なたで明るく赤く（橙に）出るので、日なたで扉の茶に見えるよう暗く、赤みを抑える
+const LOG_BROWN := Color(0.27, 0.21, 0.16)
+
+
+## 丸太: フェルトの毛羽はそのまま、色を外扉の茶に寄せる。縁の光（rim）も弱めて、橙に転ばないように
+static func _log_felt() -> StandardMaterial3D:
+	var m := Look.felt(LOG_BROWN, 1.2)
+	m.rim = 0.15
+	m.rim_tint = 0.2
+	return m
+
+
+static var _plank_tex: ImageTexture
+static var _plank_nrm: ImageTexture
+
+
+## 羽目板: 幅 15 cm の板を並べ、板ごとに少し濃さを変え、継ぎ目に溝、木目の筋を入れる。
+## 向きは物の座標で投影するので、UV の向きにかかわらず天井一面に同じ大きさで出る
+static func _planks(color: Color) -> StandardMaterial3D:
+	if _plank_tex == null:
+		var n := 256
+		var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+		var bump := Image.create(n, n, false, Image.FORMAT_RGB8)
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 7
+		var boards := 8                     # 1.2 m に 8 枚
+		var shade: Array[float] = []
+		for b in boards:
+			shade.append(rng.randf_range(0.86, 1.06))
+		var grain := FastNoiseLite.new()
+		grain.frequency = 0.02
+		grain.seed = 3
+		for y in n:
+			for x in n:
+				var u := float(x) / n * boards
+				var b := int(u) % boards
+				var f := u - floorf(u)
+				var groove := f < 0.04 or f > 0.96
+				var g := grain.get_noise_2d(x * 0.15, y * 3.0 + b * 50.0) * 0.08   # 板に沿って流れる木目
+				var v := (0.55 if groove else shade[b] + g)
+				img.set_pixel(x, y, Color(v, v, v))
+				var h := 0.0 if groove else 0.8 + g
+				bump.set_pixel(x, y, Color(h, h, h))
+		bump.bump_map_to_normal_map(6.0)
+		_plank_tex = ImageTexture.create_from_image(img)
+		_plank_nrm = ImageTexture.create_from_image(bump)
+	var m := StandardMaterial3D.new()
+	m.albedo_color = color
+	m.albedo_texture = _plank_tex
+	m.normal_enabled = true
+	m.normal_texture = _plank_nrm
+	m.normal_scale = 0.8
+	m.roughness = 0.85
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3.ONE / 1.2         # 1.2 m で一巡り
+	return m
 
 
 static func _metal() -> StandardMaterial3D:
