@@ -54,7 +54,7 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 - 原点は 1 階の外形の中心の真下、雪の地面の高さ。正面（南）が -Y（Blender）＝ +Z（Godot）を向く
 - 機械の置き場の目印（空の節点）: `slot_food_kitchen`、`slot_craft_rental`、`slot_vending_1`〜`3`。機械は代表があとで置く
 - 灯りの場所の目印（空の節点）: `light_lamp_0`〜`2`（食堂の天井）、`light_lantern_0`〜`1`（座敷）、`light_fire`（炉）、`light_vestibule`（風除室）。食堂は炉を入れて 4 つまで。ゲームはここに暖色の OmniLight3D を影なしで灯し、炉の火だけ揺らす
-- 書き出しでは面取りを外し、形を 1 つの物体（`lodge_body`、素材ごとの面）にまとめる。動かす自動ドアだけ別。三角形はロッジ全体で 10 万以下が目安（いま約 6.7 万）
+- 書き出しでは面取りを外し、形を 2 つの物体にまとめる。建物は `lodge_body`、中の家具と小物（卓・椅子・灯り・自販機など）は `lodge_props_interior`（名前の prop で 360° 映像から外せる）。動かす自動ドアだけ別。三角形はロッジ全体で 10 万以下が目安（いま約 6.7 万）
 - 自動ドアの戸は `autodoor_l` / `autodoor_r`（ガラスは `autodoor_glass_l` / `_r`）。`lodge.gd` が、人（CharacterBody3D）が戸の前後 3 m に入ると左右へ 1.4 m 引き分ける
 
 ## 画像

@@ -1448,7 +1448,7 @@ def build_collision():
 
 def lighten(objs):
     """ゲーム向けに軽くする（目安: ロッジ全体で三角形 10 万以下）。面取りは外し、形はまとめて 1 つの物体に（描く回数を素材の数まで減らす）。
-    ゲームが名前で動かす物（自動ドア）と、目印（空の節点）はそのまま残す"""
+    建物と中の小物は分けて 2 つに。ゲームが名前で動かす物（自動ドア）と、目印（空の節点）はそのまま残す"""
     meshes = [o for o in objs if o.type == "MESH"]
     marks = [o for o in objs if o.type != "MESH"]
     for o in meshes:
@@ -1464,18 +1464,26 @@ def lighten(objs):
     bpy.context.view_layer.objects.active = meshes[0]
     bpy.ops.object.convert(target="MESH")      # 面取り・配列・切り抜きを形にする
     moving = [o for o in meshes if o.name.startswith("autodoor")]
-    rest = [o for o in meshes if o not in moving]
-    bpy.ops.object.select_all(action="DESELECT")
-    for o in rest:
-        o.select_set(True)
-    bpy.context.view_layer.objects.active = rest[0]
-    bpy.ops.object.join()
-    body = bpy.context.view_layer.objects.active
-    body.name = "lodge_body"
-    tris = sum(len(p.vertices) - 2 for p in body.data.polygons)
-    print("lighten: %d objects -> 1 + %d moving, %d tris, %d materials" % (len(meshes), len(moving), tris,
-                                                                           len(body.data.materials)))
-    return [body] + moving + marks
+    # 中の家具と小物（卓・椅子・腰掛け・灯り・自販機・マット…）は別の 1 つ（lodge_props_interior）に。
+    # ゲームの 360° 映像は名前に prop を含む物を映さない
+    inner = set(o.name for o in bpy.data.collections["interior"].objects) if bpy.data.collections.get("interior") else set()
+    props = [o for o in meshes if o not in moving and (o.name in inner or o.name.startswith("mini_vending"))]
+    rest = [o for o in meshes if o not in moving and o not in props]
+    out = []
+    for group, name in ((rest, "lodge_body"), (props, "lodge_props_interior")):
+        if not group:
+            continue
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in group:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = group[0]
+        bpy.ops.object.join()
+        one = bpy.context.view_layer.objects.active
+        one.name = name
+        print("lighten: %s %d objects, %d tris, %d materials" % (name, len(group),
+              sum(len(p.vertices) - 2 for p in one.data.polygons), len(one.data.materials)))
+        out.append(one)
+    return out + moving + marks
 
 
 def export(folder):
