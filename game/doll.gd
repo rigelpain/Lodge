@@ -53,7 +53,8 @@ var lean := Vector2.ZERO     # 乗っているときの体重移動（x 右、y 
 var holding_ball := false    # 右手に雪玉を持っている
 var emote := {}              # いまの身ぶり（emotes.gd の出来事）。終わると空になる
 var crouch := false          # しゃがんでいる（持ち主が毎フレーム入れる）
-var hand_shapes := ["", ""]  # 掲げている手の形 [右手, 左手]（"palm" "fist" "thumb" "peace"、"" は下ろす）
+var hand_shapes := ["", ""]  # 掲げている手の高さ [右手, 左手]（"high" 高い手のひら、"low" 低い手のひら、"" は下ろす）
+var point_sides := []        # 指さす手（1 右、-1 左。両方なら両腕）。空なら、指す所に近い側
 
 var skel: Skeleton3D
 var _b := {}                 # 骨の名前 → 番号
@@ -460,18 +461,24 @@ func _pose() -> void:
 	_turn_axis("chest", X, -bend)
 
 	if point != Vector3.INF:
-		# 指さし: 指す所に近い側の腕をまっすぐ伸ばして指す（指は分けず、腕で指す）。
-		# ソリをつかんでいても、その手は離して指す。胸も少しそちらへ回す
+		# 指さし: 選んだ手の腕をまっすぐ伸ばして指す（両手なら両腕で「あっち！」）。手の先には指さしの手形。
+		# 選んでいなければ、指す所に近い側。ソリをつかんでいても、その手は離して指す。胸も少しそちらへ回す
 		var lp := global_basis.inverse() * (point - global_position)
-		var side := "R" if lp.x >= 0.0 else "L"
-		var ui := _id("upper_arm." + side)
-		var sh := skel.global_transform * _head_of(ui)
-		var dir := (point - sh).normalized()
-		var local_dir := global_basis.inverse() * dir
-		_turn_axis("chest", Vector3.UP, clampf(atan2(-local_dir.x, -local_dir.z), -0.8, 0.8) * 0.3)
-		sh = skel.global_transform * _head_of(ui)
-		var reach := (_len(ui) + _len(_id("forearm." + side)) + _len(_id("hand." + side)) * 0.5) * _scale * 0.98
-		_hold[1 if side == "R" else 0] = [self, to_local(sh + dir * reach)]
+		var sides: Array = point_sides if not point_sides.is_empty() else [1 if lp.x >= 0.0 else -1]
+		var turned := false
+		for sd in sides:
+			var side := "R" if sd > 0 else "L"
+			var ui := _id("upper_arm." + side)
+			var sh := skel.global_transform * _head_of(ui)
+			var dir := (point - sh).normalized()
+			if not turned:
+				var local_dir := global_basis.inverse() * dir
+				_turn_axis("chest", Vector3.UP, clampf(atan2(-local_dir.x, -local_dir.z), -0.8, 0.8) * 0.3 / sides.size())
+				turned = true
+			sh = skel.global_transform * _head_of(ui)
+			dir = (point - sh).normalized()
+			var reach := (_len(ui) + _len(_id("forearm." + side)) + _len(_id("hand." + side)) * 0.5) * _scale * 0.98
+			_hold[1 if side == "R" else 0] = [self, to_local(sh + dir * reach)]
 
 	if em[1] >= 0:
 		_emote_arms(em[0], em[1])
@@ -784,11 +791,11 @@ func _puff(size: float, speed: float) -> void:
 
 ## emotes.gd の KINDS と同じ長さ（コマ）。0 は終わりを持ち主が決める
 const EMOTE_FRAMES := {
-	"high_five": 12, "fist_bump": 12, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
+	"high_five": 12, "shake": 24, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
 	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16,
 }
 ## 腕を使う身ぶり。このあいだは手の形を出さない
-const ARM_EMOTES := ["high_five", "fist_bump", "whiff", "clap", "make_ball", "windup", "throw", "hit"]
+const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit"]
 
 
 ## いまの身ぶりと、始まってからのコマ数（このコマ）。終わっていたら消す
@@ -858,10 +865,20 @@ func _emote_body(kind_: String, k: int) -> float:
 			var s := _ease(k / 4.0) if k < 16 else (1.0 if crouch else 1.0 - _ease((k - 16) / 5.0))
 			_em_head.y = -0.35 * s
 			return _crouch_legs(s)
-		"high_five", "fist_bump", "whiff":
+		"shake":
+			# 握手: 少し前へかがみ、相手を見る
+			_em_head.y = -0.08
+			return 0.12
+		"high_five", "whiff":
 			var swing := k >= (2 if kind_ == "whiff" else 3)
-			if k < 7:
-				_turn_axis("chest", Vector3.UP, 0.3 if swing else -0.25)
+			# 胸のひねり: 振る手の側へ（両手なら、ひねらない）
+			var tw := 0.0
+			if kind_ == "whiff":
+				tw = float(emote.get("side", 1))
+			elif emote.has("grips") and emote.grips.size() == 1:
+				tw = float(emote.grips[0][0])
+			if k < 7 and tw != 0.0:
+				_turn_axis("chest", Vector3.UP, (0.3 if swing else -0.25) * tw)
 			if kind_ == "whiff" and k >= 2 and k < 8:
 				# 空振り: 振った勢いで前へよろける
 				_turn_axis("thigh.L", X, 0.35)
@@ -940,22 +957,42 @@ func _emote_arms(kind_: String, k: int) -> void:
 	var reach := _len(_id("upper_arm.R")) + _len(_id("forearm.R"))
 	var head := _head_of(_id("head")) if _id("head") >= 0 else sh + Vector3(0, 0.1, 0)
 	match kind_:
-		"high_five", "fist_bump":
-			if k < 3:
-				# ため: 肘ごと大きくうしろへ引く（3 コマ）
-				_arm("R", Vector3(0.7, 0.6, 0.6), Vector3(0.35, 1.0, 0.75))
-			elif k < 6 and emote.has("point"):
-				_hold[1] = [self, to_local(emote.point)]   # 叩きつける: 手が合う所（相手と同じ所）
-			else:
-				var f := clampf((k - 6) / 4.0, 0.0, 1.0)
-				_arm("R", Vector3(0.4, 0.6 - 0.9 * f, -0.7), Vector3(0.25, 0.3 - 1.1 * f, -0.9))
+		"high_five":
+			for gr in emote.get("grips", [[1, Vector3.INF]]):
+				var side := "R" if gr[0] > 0 else "L"
+				if k < 3:
+					# ため: 肘ごと大きくうしろへ引く（3 コマ）
+					_arm(side, Vector3(0.7, 0.6, 0.6), Vector3(0.35, 1.0, 0.75))
+				elif k < 6 and gr[1] != Vector3.INF:
+					_hold[0 if side == "L" else 1] = [self, to_local(gr[1])]   # 叩きつける: 手が合う所（相手と同じ所）
+				else:
+					var f := clampf((k - 6) / 4.0, 0.0, 1.0)
+					_arm(side, Vector3(0.4, 0.6 - 0.9 * f, -0.7), Vector3(0.25, 0.3 - 1.1 * f, -0.9))
+		"shake":
+			# 握手: 手を差し出し（2 コマ）、握って 3 回上下に振り、離して下ろす。片手を両手で包むときは、上と下から
+			var grips: Array = emote.get("grips", [])
+			for gi in grips.size():
+				var gr: Array = grips[gi]
+				var side := "R" if gr[0] > 0 else "L"
+				var at: Vector3 = gr[1]
+				var shared := grips.size() == 2 and (grips[0][1] as Vector3).distance_to(grips[1][1]) < 0.02
+				if shared:
+					at += Vector3.UP * (0.045 if gi == 0 else -0.045) * _scale
+				if k < 2:
+					_hold[0 if side == "L" else 1] = [self, to_local(global_position.lerp(at, 0.5) + Vector3.UP * (at.y - global_position.y) * 0.5)]
+				elif k < 20:
+					var pump: float = [0.0, 0.035, 0.0, -0.035][((k - 2) / 2) % 4] * _scale
+					_hold[0 if side == "L" else 1] = [self, to_local(at + Vector3.UP * pump)]
+				else:
+					_arm(side, Vector3(0.2, -1.0, -0.25), Vector3(0.1, -1.0, -0.35))
 		"whiff":
+			var side := "R" if int(emote.get("side", 1)) > 0 else "L"
 			if k < 2:
-				_arm("R", Vector3(0.45, 0.9, 0.45), Vector3(0.25, 1.0, 0.65))
+				_arm(side, Vector3(0.45, 0.9, 0.45), Vector3(0.25, 1.0, 0.65))
 			elif k < 4:
-				_arm("R", Vector3(0.1, 0.1, -1.0), Vector3(-0.15, -0.5, -1.0))   # 何もない所を振り抜く
+				_arm(side, Vector3(0.1, 0.1, -1.0), Vector3(-0.15, -0.5, -1.0))   # 何もない所を振り抜く
 			else:
-				_arm("R", Vector3(-0.05, -0.8, -0.5), Vector3(-0.1, -0.9, -0.4))
+				_arm(side, Vector3(-0.05, -0.8, -0.5), Vector3(-0.1, -0.9, -0.4))
 		"breath":
 			# 吸うと両腕が横へ開いて上がり、吐くとゆっくり下りる
 			var s := _exhale_now(k)
@@ -1113,8 +1150,8 @@ static func ball_material() -> Material:
 	return _ball_mat
 
 
-## 掲げた手の形を、見ている向きへ上げる。手のひらは高く（前を見れば「来るな」、見上げれば万歳）、ほかの形は胸の前より少し上。
-## 両手のときは肩幅に、片手のときは少し外へ
+## 掲げた手を、見ている向きへ。高い手のひらは顔より上へ（前を見れば遠くの人に場所を示す、見上げれば万歳）、
+## 低い手のひらは腰の前へ、手のひらを下に向けて（おさえて・ストップ）。両手のときは肩幅に、片手のときは少し外へ
 func _shape_arms() -> void:
 	if hand_shapes[0] == "" and hand_shapes[1] == "":
 		return
@@ -1124,54 +1161,101 @@ func _shape_arms() -> void:
 		var d := _to_skel(gaze) - _head_of(_id("head"))
 		if d.length() > 0.01:
 			look = d.normalized()
+	var ahead := Vector3(look.x, 0, look.z)
+	ahead = ahead.normalized() if ahead.length() > 0.05 else Vector3(0, 0, -1)
 	for k in 2:
-		var shape: String = hand_shapes[k]
-		if shape == "":
+		var height: String = hand_shapes[k]
+		if height == "":
 			continue
 		var side := "R" if k == 0 else "L"
 		var sx := 1.0 if k == 0 else -1.0
+		if point != Vector3.INF and (point_sides.is_empty() or (sx as int) in point_sides):
+			continue   # 指さしている手は、指さしのまま
 		var sh := _head_of(_id("upper_arm." + side))
-		var dir := (look + Vector3.UP * (0.55 if shape == "palm" else 0.3)).normalized()
-		_hand_to(side, sh + dir * reach * 0.95 + Vector3(sx * reach * 0.12, 0, 0))
+		var dir := (look + Vector3.UP * 0.55).normalized() if height == "high" else (ahead + Vector3.DOWN * 0.75).normalized()
+		_hand_to(side, sh + dir * reach * (0.95 if height == "high" else 0.9) + Vector3(sx * reach * 0.12, 0, 0))
 
 
-## 手の形のアップリケを、手の先に置く。位置は手について毎フレーム、形（向き・大きさ）はコマで決める。
-## ハイタッチ・グータッチのあいだは右手だけ、合う所へ向ける
+## 手形のアップリケを、手の先に置く。位置は手について毎フレーム、形（向き・大きさ）はコマで決める。
+## 高い手のひらは見ている先へ立て、低い手のひらは下へ向ける。指さしの手には指さしの手形。
+## ハイタッチは合う所へ手のひらを向け、握手は手のひらを横に立てる
 func _place_shapes() -> void:
 	var em := emote_now()
 	var kind_: String = em[0]
 	var k: int = em[1]
-	var want: Array = hand_shapes
-	var touching := k >= 0 and kind_ in ["high_five", "fist_bump", "whiff"]
+	var want := {1: "", -1: ""}   # 側 → [形, 高さか身ぶり]
+	var mode := {1: "", -1: ""}
+	for sd in [1, -1]:
+		var height: String = hand_shapes[0 if sd > 0 else 1]
+		if height != "":
+			want[sd] = "palm"
+			mode[sd] = height
+	if point != Vector3.INF:
+		var lp := global_basis.inverse() * (point - global_position)
+		for sd in (point_sides if not point_sides.is_empty() else [1 if lp.x >= 0.0 else -1]):
+			want[sd] = "point"
+			mode[sd] = "point"
+	var touching := k >= 0 and kind_ in ["high_five", "shake", "whiff"]
+	var grip_at := {}
 	if touching:
-		var sh := "fist" if kind_ == "fist_bump" or emote.get("shape", "") == "fist" else "palm"
-		want = [sh if k < 8 and (kind_ != "whiff" or k < 3) else "", ""]
+		want = {1: "", -1: ""}
+		if kind_ == "whiff":
+			if k < 3:
+				want[int(emote.get("side", 1))] = "palm"
+				mode[int(emote.get("side", 1))] = kind_
+		elif (kind_ == "high_five" and k < 8) or (kind_ == "shake" and k < 20):
+			for gr in emote.get("grips", []):
+				want[int(gr[0])] = "palm"
+				mode[int(gr[0])] = kind_
+				grip_at[int(gr[0])] = gr[1]
 	elif k >= 0 and kind_ in ARM_EMOTES:
-		want = ["", ""]
+		want = {1: "", -1: ""}
 	var fi := frame_index()
 	for sh in _shapes:
 		for side in [1, -1]:
 			var node: Node3D = _shapes[sh][side]
-			var on: bool = want[0 if side > 0 else 1] == sh
+			var on: bool = want[side] == sh
 			node.visible = on
 			if not on:
 				continue
 			var h := _id("hand.R" if side > 0 else "hand.L")
 			var g: Transform3D = _g[h]
 			var at := skel.global_transform * (g.origin + g.basis.y.normalized() * _len(h) * 0.5)
-			var face := -global_basis.z
-			var tilt := 0.0
+			var b: Basis
 			var size := Palm.pop(fi - _hands_frame)
-			if touching:
-				size = 1.25 if k == 3 and kind_ != "whiff" else 1.0
-				if k < 3:
-					tilt = 0.45   # 引くと、手のひらが少し上を向く
-				elif emote.has("point"):
-					face = emote.point - at
-			elif gaze != Vector3.INF:
-				face = gaze - at
-				tilt = clampf(atan2(face.y, Vector2(face.x, face.z).length()) * 0.5, -0.4, 0.6)   # 見上げると上を向く
-			face.y = 0
-			face = face.normalized() if face.length() > 0.01 else -global_basis.z
-			var b := Basis.looking_at(-face, Vector3.UP) * Basis(Vector3.RIGHT, -tilt)   # 手のひら（+z）を face へ
-			node.global_transform = Transform3D(b.scaled(Vector3.ONE * size * Palm.BIG), at + Vector3.UP * 0.07 * _scale)
+			match mode[side]:
+				"point":
+					# 指さし: 人さし指（+y）を指す向きへ、手形の面は横から見える向きに
+					var y: Vector3 = (point - at).normalized()
+					var z := y.cross(Vector3.UP)
+					z = (z.normalized() if z.length() > 0.05 else global_basis.x) * float(side)
+					b = Basis(y.cross(z).normalized(), y, z)
+					size = 1.0
+				"shake":
+					# 握手: 指を相手へ、手のひらを横（内側）へ立てる
+					var y: Vector3 = (grip_at.get(side, at) as Vector3) - global_position
+					y.y = 0
+					y = y.normalized() if y.length() > 0.01 else -global_basis.z
+					var z: Vector3 = -global_basis.x * float(side)
+					b = Basis(y.cross(z).normalized(), y, z)
+					size = 1.0
+				_:
+					var face := -global_basis.z
+					var tilt := 0.0
+					if mode[side] == "high_five" or mode[side] == "whiff":
+						size = 1.25 if k == 3 and kind_ == "high_five" else 1.0
+						if k < 3:
+							tilt = 0.45   # 引くと、手のひらが少し上を向く
+						elif grip_at.has(side):
+							face = (grip_at[side] as Vector3) - at
+					elif mode[side] == "low":
+						tilt = -0.65   # 低い手のひらは、下へ向けておさえる（倒しすぎると、前から細い線にしか見えない）
+						if gaze != Vector3.INF:
+							face = gaze - at
+					elif gaze != Vector3.INF:
+						face = gaze - at
+						tilt = clampf(atan2(face.y, Vector2(face.x, face.z).length()) * 0.5, -0.4, 0.6)   # 見上げると上を向く
+					face.y = 0
+					face = face.normalized() if face.length() > 0.01 else -global_basis.z
+					b = Basis.looking_at(-face, Vector3.UP) * Basis(Vector3.RIGHT, -tilt)   # 手のひら（+z）を face へ
+			node.global_transform = Transform3D(b.scaled(Vector3.ONE * size * Palm.BIG), at + Vector3.UP * 0.05 * _scale)

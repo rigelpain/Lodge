@@ -1,20 +1,31 @@
 extends RefCounted
-## 手の形のアップリケ。紙を切った手の形（手のひら・グー・サムズアップ・ピース）に墨色の縁を付けた、平たい板。
+## 手の形のアップリケ。紙を切った手の形（手のひら・指さし）に墨色の縁を付けた、平たい板。
 ## 遠くからでも形が読めるよう、ほんとうの手より大きく作る。人形の手（doll.gd）と、一人称の手（player.gd）に付ける。
-## ハイタッチ・グータッチが合ったときに飛び散る、千代紙の紙吹雪と紙の星もここで作る。
+## ハイタッチが合ったときに飛び散る、千代紙の紙吹雪と紙の星もここで作る。
 
 const Look := preload("res://look.gd")
 
 const EDGE := Color(0.22, 0.16, 0.13)
 const BIG := 1.7            # 人形の手の形は、ほんとうの手より大きく（遠くからでも読める）
-const SHAPES := ["palm", "fist", "thumb", "peace"]
-## 輪で選ぶ手の形 → [右手, 左手] の形。"" は手を下ろす
+const SHAPES := ["palm", "point"]
+## 掲げた手の状態（高さ_手）→ [右手, 左手] の高さ。"" は下ろしている。
+## 高い手のひら: 遠くの人に場所を示す・万歳・ハイタッチ。低い手のひら: おさえて・ストップ・握手
 const HANDS := {
-	"palm": ["palm", ""], "palms": ["palm", "palm"],
-	"fist": ["fist", ""], "fists": ["fist", "fist"],
-	"thumb": ["thumb", ""], "thumbs": ["thumb", "thumb"],
-	"peace": ["peace", ""], "": ["", ""],
+	"high_R": ["high", ""], "high_L": ["", "high"], "high_both": ["high", "high"],
+	"low_R": ["low", ""], "low_L": ["", "low"], "low_both": ["low", "low"], "": ["", ""],
 }
+
+
+## 高さ（"high" "low" ""）と手（"R" "L" "both"）から、状態の名前
+static func hands_name(height: String, hand: String) -> String:
+	return "" if height == "" else "%s_%s" % [height, hand]
+
+
+## 手（"R" "L" "both"）→ 使う側（1 右、-1 左）
+static func sides_of(hand: String) -> Array:
+	return [1, -1] if hand == "both" else ([-1] if hand == "L" else [1])
+
+
 ## 紙吹雪の色: 人の上着の差し色（赤・藍・山吹）と、生成り
 const CONFETTI := [Color(0.82, 0.25, 0.2), Color(0.22, 0.32, 0.6), Color(0.93, 0.72, 0.2), Color(0.97, 0.94, 0.86), Color(0.36, 0.6, 0.5)]
 
@@ -36,33 +47,19 @@ static func outline(shape: String, side := 1) -> PackedVector2Array:
 ## 左手の形（親指は -x）
 static func _left(shape: String) -> PackedVector2Array:
 	var poly: PackedVector2Array
-	match shape:
-		"fist":
-			# グー: 丸い塊の上に、指の節が 4 つ。親指は横に少し出る
-			poly = _round_rect(Vector2(0, -0.012), Vector2(0.11, 0.1), 0.036)
-			for x in [-0.039, -0.013, 0.013, 0.039]:
-				poly = _merge(poly, _dot(Vector2(x, 0.036), 0.017))
-			poly = _merge(poly, _capsule(Vector2(-0.045, -0.035), Vector2(-0.058, 0.0), 0.016))
-		"thumb":
-			# サムズアップ: 横を向いたこぶしから、親指がまっすぐ上へ
-			poly = _round_rect(Vector2(0.01, -0.045), Vector2(0.105, 0.1), 0.034)
-			for y in [-0.084, -0.06, -0.036, -0.012]:
-				poly = _merge(poly, _dot(Vector2(0.06, y), 0.02))
-			poly = _merge(poly, _capsule(Vector2(-0.018, -0.01), Vector2(-0.022, 0.06), 0.021))
-		"peace":
-			# ピース: 人さし指と中指を V に。薬指と小指は折って節だけ
-			poly = _round_rect(Vector2(0, -0.035), Vector2(0.098, 0.095), 0.033)
-			poly = _merge(poly, _capsule(Vector2(-0.018, 0.0), Vector2(-0.046, 0.088), 0.0125))
-			poly = _merge(poly, _capsule(Vector2(0.008, 0.0), Vector2(0.03, 0.092), 0.0125))
-			poly = _merge(poly, _dot(Vector2(0.03, 0.012), 0.014))
-			poly = _merge(poly, _dot(Vector2(0.046, 0.0), 0.013))
-			poly = _merge(poly, _capsule(Vector2(-0.035, -0.05), Vector2(-0.02, -0.01), 0.014))
-		_:
-			# 手のひら: 指 4 本（中指がいちばん長い）と、斜めに開いた親指
-			poly = _round_rect(Vector2(0, -0.035), Vector2(0.105, 0.1), 0.035)
-			for f in [[-0.039, 0.068], [-0.013, 0.083], [0.013, 0.078], [0.038, 0.062]]:
-				poly = _merge(poly, _capsule(Vector2(f[0], 0.0), Vector2(f[0] * 1.15, f[1]), 0.0125))
-			poly = _merge(poly, _capsule(Vector2(-0.04, -0.05), Vector2(-0.088, 0.0), 0.014))
+	if shape == "point":
+		# 指さし: 握ったこぶしから人さし指がまっすぐ（+y）。ほかの指は折って節だけ、親指は横に沿う
+		poly = _round_rect(Vector2(0.006, -0.04), Vector2(0.095, 0.09), 0.032)
+		poly = _merge(poly, _capsule(Vector2(-0.026, -0.005), Vector2(-0.026, 0.105), 0.0135))
+		for c in [[0.0, 0.012], [0.022, 0.007], [0.042, -0.002]]:
+			poly = _merge(poly, _dot(Vector2(c[0], c[1]), 0.0145))
+		poly = _merge(poly, _capsule(Vector2(-0.046, -0.045), Vector2(-0.044, -0.008), 0.014))
+		return poly
+	# 手のひら: 指 4 本（中指がいちばん長い）と、斜めに開いた親指
+	poly = _round_rect(Vector2(0, -0.035), Vector2(0.105, 0.1), 0.035)
+	for f in [[-0.039, 0.068], [-0.013, 0.083], [0.013, 0.078], [0.038, 0.062]]:
+		poly = _merge(poly, _capsule(Vector2(f[0], 0.0), Vector2(f[0] * 1.15, f[1]), 0.0125))
+	poly = _merge(poly, _capsule(Vector2(-0.04, -0.05), Vector2(-0.088, 0.0), 0.014))
 	return poly
 
 

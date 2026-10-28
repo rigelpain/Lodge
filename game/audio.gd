@@ -597,12 +597,15 @@ func _on_emote(ev: Dictionary) -> void:
 	var pitch: float = who.get("voice_pitch") if who and who.get("voice_pitch") != null else 1.0
 	var size: int = who.get("voice_size") if who and who.get("voice_size") != null else 1
 	match ev.kind:
-		"high_five", "fist_bump":
-			# 二人に配られるので、片方のぶんだけ鳴らす。手が合う所で（グーは低く、こつん）
+		"high_five", "shake":
+			# 二人に配られるので、片方のぶんだけ鳴らす。手が合う所で（握手は低く、そっと握る音）
 			if ev.who < ev.with:
 				var near_self: bool = who == player or hub.who_of(ev.with) == player
-				var low: float = 0.78 if ev.kind == "fist_bump" else 1.0
-				_emote_sound(ev, 3, "felt_pat", 3, -2.0 if near_self else -5.0, low * rng.randf_range(0.95, 1.05), ev.point, near_self)
+				var at: Vector3 = ev.grips[0][1]
+				if ev.kind == "high_five":
+					_emote_sound(ev, 3, "felt_pat", 3, -2.0 if near_self else -5.0, rng.randf_range(0.95, 1.05), at, near_self)
+				else:
+					_emote_sound(ev, 2, "felt_pat", 3, -9.0 if near_self else -12.0, rng.randf_range(0.72, 0.8), at, near_self)
 			return
 		"hands":
 			# 手の形を掲げる: 袖が切る小さな音（下ろすときは鳴らさない）

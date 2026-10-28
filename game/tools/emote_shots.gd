@@ -4,26 +4,31 @@ extends SceneTree
 ## fp 一人称（あなたの目。手と息が見えるか）、tp 三人称（C の視点）、front 正面から（人形の形）。
 ## あなたと仲間を向かい合わせて立たせ、仲間は動かさない（ハイタッチの相手は、配り役へ直接送る）。
 ## 撮るもの: 名前_視点.png。「hit_bot」はあなたが仲間へ雪玉を投げ、仲間がのけぞる所。「hit_me」は仲間からあなたへ。
-## 「sled」はソリへ投げて、雪が残る所。「banzai」はソリに乗って、両手のひらで見上げる。「ring」は Tab の輪。
-## --check: 撮らずに、仲間の返し（ハイタッチ・グータッチ・同じ形・声・拍手）が働くかを出来事の記録で確かめる
+## 「sled」はソリへ投げて、雪が残る所。「banzai」はソリに乗って、高い両手のひらで見上げる。「ring」は Tab の輪。
+## 「five_11」「five_12」「five_22」はハイタッチ（片手どうし・あなたの片手と仲間の両手・両手どうし）、「shake_」は握手で同じく。
+## --check: 撮らずに、仲間の返し（ハイタッチ・握手・声・拍手）が働くかを出来事の記録で確かめる
 
 const Doll := preload("res://doll.gd")
 
 ## [名前, 出す身ぶり, 撮るコマ]
 const SHOTS := [
 	["ring", "ring", 0],
-	["palm", "palm", 4],
-	["palms", "palms", 4],
-	["palms_up", "palms_up", 4],
-	["fist", "fist", 4],
-	["fists", "fists", 4],
-	["thumb", "thumb", 4],
-	["thumbs", "thumbs", 4],
-	["peace", "peace", 4],
-	["five_pull", "high_five", 1],
-	["high_five", "high_five", 3],
-	["five_burst", "high_five", 5],
-	["fist_bump", "fist_bump", 3],
+	["high_R", "high_R", 4],
+	["high_L", "high_L", 4],
+	["high_both", "high_both", 4],
+	["high_both_up", "high_both_up", 4],
+	["low_R", "low_R", 4],
+	["low_both", "low_both", 4],
+	["point_R", "point_R", 4],
+	["point_both", "point_both", 4],
+	["five_pull", "five_11", 1],
+	["five_11", "five_11", 3],
+	["five_burst", "five_11", 5],
+	["five_12", "five_12", 3],
+	["five_22", "five_22", 3],
+	["shake_11", "shake_11", 10],
+	["shake_12", "shake_12", 10],
+	["shake_22", "shake_22", 10],
 	["whiff", "whiff", 3],
 	["clap", "clap", 2],
 	["breath_in", "breath", 3],
@@ -35,7 +40,6 @@ const SHOTS := [
 	["hit_bot", "hit_bot", 1],
 	["hit_me", "hit_me", 1],
 	["sled", "sled", 6],
-	["wa", "wa", 5],
 	["un", "un", 1],
 	["nn", "nn", 2],
 	["huh", "huh", 5],
@@ -109,8 +113,9 @@ func _run() -> void:
 		await process_frame
 		await process_frame
 		var path := dir.path_join("%s_%s.png" % [shot[0], view])
+		RenderingServer.force_draw()   # 窓が隠れていると描き直しが止まり、古い絵を保存してしまうので
 		root.get_texture().get_image().save_png(path)
-		print("保存: ", path, "  人形=", p.doll.emote_now())
+		print("保存: ", path, "  人形=", p.doll.emote_now(), " 手=", p.doll.hand_shapes)
 		# 身ぶりが終わるまで（振りかぶりは離すまで続くので、ここで解く）。手の形は下ろす
 		if shot[1] == "windup":
 			p._winding = false
@@ -121,6 +126,8 @@ func _run() -> void:
 		_key(KEY_CTRL, false)
 		hub.send({"kind": "hands", "who": p.id, "hands": ""})
 		hub.send({"kind": "hands", "who": bot.id, "hands": ""})
+		p.point_at = Vector3.INF
+		p._set_hand("R")
 		while not p.doll.emote.is_empty() or p.rooted() or not bot.doll.emote.is_empty():
 			await physics_frame
 		await _wait_frames(30)
@@ -153,7 +160,7 @@ func _stage(kind: String) -> void:
 		p.rotation.y = 0.0
 		p._pitch = -0.18 if kind != "make_ball" else -0.35
 		p.velocity = Vector3.ZERO
-	var two := kind in ["high_five", "fist_bump", "whiff"]
+	var two := kind.begins_with("five_") or kind.begins_with("shake_") or kind == "whiff"
 	var bp := base + Vector3(0.0 if two else 0.9, 0, -2.6)
 	if kind == "sled" or riding:
 		bp = base + Vector3(2.0, 0, 1.5) if kind == "sled" else base + Vector3(-2.5, 0, 2.5)   # 写りを塞がないよう、うしろへ
@@ -170,33 +177,42 @@ func _act(kind: String) -> int:
 	var f := Doll.frame_index() + 1
 	match kind:
 		"ring":
-			p.ring.open("")
-			p.ring.move(Vector2(70, -70))   # 右上: 手のひら
-		"palm", "palms", "fist", "fists", "thumb", "thumbs", "peace":
-			p.set_hands(kind)
-		"palms_up":
-			p._pitch = 0.85   # 見上げて両手のひら
-			p.set_hands("palms")
-		"banzai":
-			p._pitch = 0.6
-			p.set_hands("palms")
-		"high_five", "fist_bump", "whiff":
-			# 2.6 m 離れて二人とも同じ形を掲げ、あなたが歩いて近づく → 届いた所で合う（空振りは、仲間がよそを向いている）
-			var shape := "fist" if kind == "fist_bump" else "palm"
-			hub.send({"kind": "hands", "who": bot.id, "hands": shape})
+			p.ring.open("R", "", false)
+			p.ring.move(Vector2(-70, -40))   # 左上: 指さし
+		"high_R", "high_L", "high_both", "low_R", "low_both":
+			var parts := kind.split("_")
+			p._set_hand(parts[1])
+			p.set_height(parts[0])
+		"high_both_up", "banzai":
+			p._pitch = 0.85 if kind == "high_both_up" else 0.6   # 見上げて、高い両手のひら（万歳）
+			p._set_hand("both")
+			p.set_height("high")
+		"point_R", "point_both":
+			p._set_hand(kind.split("_")[1])
+			p._pitch = -0.05
+			p.toggle_point()
+		"five_11", "five_12", "five_22", "shake_11", "shake_12", "shake_22", "whiff":
+			# 2.6 m 離れて二人とも手のひらを掲げ、あなたが歩いて近づく → 届いた所で合う（空振りは、仲間がよそを向いている）
+			var height := "low" if kind.begins_with("shake") else "high"
+			var mine := "both" if kind.ends_with("22") else "R"
+			var theirs := "both" if kind.ends_with("12") or kind.ends_with("22") else "R"
+			hub.send({"kind": "hands", "who": bot.id, "hands": "%s_%s" % [height, theirs]})
 			if kind == "whiff":
 				bot.look_at(bot.global_position + Vector3(1, 0, 0), Vector3.UP)
 			await _wait_frames(12)
-			p.set_hands(shape)
+			p._set_hand(mine)
+			p.set_height(height)
+			var want := "whiff" if kind == "whiff" else ("shake" if height == "low" else "high_five")
 			var n := _log.size()
 			for i in 200:
-				if _log.slice(n).any(func(l): return (" %s " % ("whiff" if kind == "whiff" else kind)) in l):
+				if _log.slice(n).any(func(l): return (" %s " % want) in l):
 					break
 				p.global_position += Vector3(0, 0, -0.025)
 				await physics_frame
-			f = await _until_logged(n, kind)
+			f = await _until_logged(n, want)
 		"clap":
-			p.set_hands("palms")
+			p._set_hand("both")
+			p.set_height("high")
 			await _wait_frames(8)
 			f = Doll.frame_index() + 1
 			p._left_click()
@@ -278,13 +294,13 @@ func _camera(view: String, kind: String) -> void:
 			if kind == "banzai":
 				tgt = me + Vector3(0, 0.6, 0)
 				cam.look_at_from_position(me + Vector3(2.8, 1.2, -2.2), tgt)
-			elif kind in ["palm", "palms", "palms_up", "fist", "fists", "thumb", "thumbs", "peace", "clap", "ring", "huh"]:
+			elif kind.begins_with("high_") or kind.begins_with("low_") or kind.begins_with("point_") or kind in ["clap", "ring", "huh"]:
 				# 手の形は前（見ている先の側）から: 相手から見た形
 				cam.look_at_from_position(me + Vector3(-1.3, 1.2, -2.8), me + Vector3(0, 0.85, 0))
 			elif kind == "sled":
 				var at: Vector3 = main.sled.global_position
 				cam.look_at_from_position(at + Vector3(2.6, 1.3, 1.6), at + Vector3(0, 0.6, 0))
-			elif kind in ["high_five", "fist_bump", "whiff", "hit_bot", "hit_me"]:
+			elif kind.begins_with("five_") or kind.begins_with("shake_") or kind in ["whiff", "hit_bot", "hit_me"]:
 				# 二人のあいだを、横から
 				var mid: Vector3 = (me + bot.global_position) * 0.5
 				var across: Vector3 = bot.global_position - me
@@ -296,27 +312,29 @@ func _camera(view: String, kind: String) -> void:
 			cam.current = true
 
 
-## 仲間の返しを確かめる: 手のひら → 来てハイタッチ。グー → 来てグータッチ。サムズアップ → 同じ形。声 → 同じ声。拍手 → 拍手
+## 仲間の返しを確かめる: 高い手のひら → 来てハイタッチ。低い手のひら → 来て握手（両手なら両手で）。声 → 同じ声。ウン？ → ウン。拍手 → 拍手
 func _check() -> void:
 	await _wait_frames(240)   # 仲間がソリを押しはじめるまで
-	for shape in ["palm", "fist"]:
+	for hh in [["high", "R"], ["low", "R"], ["low", "both"]]:
 		p.global_position = bot.global_position + Vector3(2.5, 0.3, 1.5)
 		p.look_at(Vector3(bot.global_position.x, p.global_position.y, bot.global_position.z), Vector3.UP)
 		await _wait_frames(10)
-		p.set_hands(shape)
+		p._set_hand(hh[1])
+		p.set_height(hh[0])
 		await _wait_frames(300)
 	p.global_position = bot.global_position + Vector3(0, 0.3, 3.0)
 	p.look_at(Vector3(bot.global_position.x, p.global_position.y, bot.global_position.z), Vector3.UP)
-	p.set_hands("thumbs")
+	p.set_height("")
+	p.emote("nn")
 	await _wait_frames(90)
-	p.set_hands("")
-	p.emote("wa")
+	p.emote("huh")
 	await _wait_frames(90)
-	p.set_hands("palms")
+	p._set_hand("both")
+	p.set_height("high")
 	await _wait_frames(6)
 	p._left_click()
 	await _wait_frames(180)
 	for line in _log:
 		print("出来事: ", line)
 	var mine := func(k: String): return _log.filter(func(l): return (" %s " % k) in l and l.ends_with("who=%d" % bot.id)).size()
-	print("ハイタッチ=%d グータッチ=%d 仲間の形=%d 仲間の声=%d 仲間の拍手=%d" % [mine.call("high_five"), mine.call("fist_bump"), mine.call("hands"), mine.call("wa"), mine.call("clap")])
+	print("ハイタッチ=%d 握手=%d 仲間の手=%d 仲間の声=%d 仲間のウン=%d 仲間の拍手=%d" % [mine.call("high_five"), mine.call("shake"), mine.call("hands"), mine.call("nn"), mine.call("un"), mine.call("clap")])

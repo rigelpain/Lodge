@@ -2,11 +2,12 @@ extends CharacterBody3D
 
 const Doll := preload("res://doll.gd")
 const Emotes := preload("res://emotes.gd")
+const Palm := preload("res://palm.gd")
 ## 押すのを手伝う仲間（通信を入れるまでの代わり）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
-## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手のひら（グー）を掲げると、ソリを離して前まで来て、
-## 同じ形を掲げてハイタッチ（グータッチ）になる。サムズアップ・ピースには同じ形を少し掲げて返す。
-## 一緒に乗っているとき、あなたが両手のひらを上げたら一緒に上げる（万歳）。声には同じ声、拍手には拍手。
+## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手のひらを掲げると、ソリを離して前まで来て、
+## 同じ高さで掲げる（高ければハイタッチ、低ければ握手）。片手か両手かもまねる。
+## 一緒に乗っているとき、あなたが高い両手のひらにしたら一緒に上げる（万歳）。声には同じ声、「ウン？」には「ウン」、拍手には拍手。
 ## 雪玉が当たると、のけぞって笑う。
 
 enum State { PUSH, WAIT, RIDE }
@@ -232,8 +233,8 @@ func _pose_doll() -> void:
 
 # ---------------------------------------------------------------- 身ぶりへの返し
 
-var _shape := ""             # 仲間がいま掲げている手の形
-var _five_shape := ""        # 合わせにいく形（"palm" か "fist"）
+var _shape := ""             # 仲間がいま掲げている手（Palm.HANDS の名前）
+var _five_shape := ""        # 合わせにいく手（"high_R" "low_both" など）
 var _lower_t := 0.0          # 返しで掲げた形を下ろすまで (s)
 
 
@@ -246,7 +247,7 @@ func _on_emote(ev: Dictionary) -> void:
 			return
 		_em = ev
 		doll.play(ev)
-		if ev.kind in ["high_five", "fist_bump", "whiff"]:
+		if ev.kind in ["high_five", "shake", "whiff"]:
 			_five_with = -1   # 合った・空振りした。持ち場へ戻る
 		if ev.kind == "hit" and randf() < 0.6:
 			_reply(randf_range(0.7, 1.0), {"kind": "wa"})   # 当たっても楽しい
@@ -257,14 +258,14 @@ func _on_emote(ev: Dictionary) -> void:
 	var near := global_position.distance_to(player.global_position)
 	match ev.kind:
 		"wa", "un", "nn":
-			if near < 15.0:
+			if near < 15.0 and not ev.get("auto", false):
 				_reply(randf_range(0.35, 0.8), {"kind": ev.kind})
 		"huh":
 			if near < 15.0:
 				_reply(randf_range(0.4, 0.8), {"kind": "un"})   # たずねられたら、ウンとうなずく
 		"clap":
 			if near < 10.0:
-				_reply(randf_range(0.15, 0.3), {"kind": "hands", "hands": "palms"})
+				_reply(randf_range(0.15, 0.3), {"kind": "hands", "hands": "high_both"})
 				_reply(randf_range(0.4, 0.6), {"kind": "clap"})
 				_lower_t = 2.2
 		"hands":
@@ -273,19 +274,18 @@ func _on_emote(ev: Dictionary) -> void:
 				if _five_with == who:
 					_five_with = -1
 				return
-			var r: String = Emotes.HANDS[h][0]
-			if (r == "palm" or r == "fist") and h != "palms" and near < 7.0 and state != State.RIDE:
-				# 手のひら・グーを差し出された: 前まで行って、同じ形を掲げる
+			var parts := h.split("_")
+			var both := parts[1] == "both"
+			if h == "high_both" and state == State.RIDE and player.get("mode") == player.Mode.RIDE:
+				_reply(randf_range(0.1, 0.25), {"kind": "hands", "hands": "high_both"})   # 一緒に乗っていれば、一緒に万歳
+				_reply(randf_range(0.35, 0.5), {"kind": "wa"})
+				_lower_t = 3.0
+			elif near < 7.0 and state != State.RIDE:
+				# 手のひらを差し出された: 前まで行って、同じ高さで掲げる（片手か両手かもまねる。片手なら右手）
 				_five_with = who
-				_five_shape = r
+				_five_shape = Palm.hands_name(parts[0], "both" if both else "R")
 				_five_until = Doll.frame_index() + 12 * 8
 				_five_sent = false
-			elif h == "palms" and state == State.RIDE and player.get("mode") == player.Mode.RIDE:
-				_reply(randf_range(0.1, 0.25), {"kind": "hands", "hands": "palms"})   # 一緒に乗っていれば、一緒に上げる
-				_lower_t = 3.0
-			elif h in ["thumb", "thumbs", "peace"] and near < 12.0:
-				_reply(randf_range(0.4, 0.7), {"kind": "hands", "hands": h})   # 同じ形で返す
-				_lower_t = 2.8
 
 
 func _reply(after: float, ev: Dictionary) -> void:
