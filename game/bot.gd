@@ -6,7 +6,7 @@ const Doll := preload("res://doll.gd")
 
 enum State { PUSH, WAIT, RIDE }
 
-const SPEED := 3.2
+const SPEED := 2.4
 const GRAVITY := 9.8
 
 var sled: RigidBody3D

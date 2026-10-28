@@ -1,11 +1,11 @@
 extends RigidBody3D
 
-const Look := preload("res://look.gd")
+const Props := preload("res://props.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
 
-const PUSH_FORCE := 340.0   # 1人が押す力 (N)。1人でも最も急な所をじりじり登れる
-const CLIMB_DAMP := 1.6     # 登るときの減速（押すのをやめるとすぐ止まる）
+const PUSH_FORCE := 300.0   # 1人が押す力 (N)。1人でも最も急な所をじりじり登れる
+const CLIMB_DAMP := 3.5     # 登るときの雪の抵抗（押すのをやめるとすぐ止まる。大きいほどじりじり）
 const RIDE_DAMP := 0.12     # 乗って滑るときの減速
 const SEATS := [Vector3(0, 0.45, -0.75), Vector3(0, 0.45, 0.15), Vector3(0, 0.45, 1.0)]
 const HALF := Vector2(0.75, 1.4)   # 台の半分の幅と長さ
@@ -48,22 +48,8 @@ func _ready() -> void:
 	col.position.y = 0.22
 	add_child(col)
 
-	var red := Look.felt(Color(0.88, 0.38, 0.23), 1.2)
-	var wood := Look.wood()
-	_box(Vector3(1.5, 0.25, 2.8), Vector3(0, 0.3, 0), red)
-	_box(Vector3(1.5, 0.6, 0.18), Vector3(0, 0.6, 1.3), red)      # 背もたれ（後ろ）
-	for x in [-0.6, 0.6]:
-		_box(Vector3(0.12, 0.12, 3.1), Vector3(x, 0.08, -0.1), wood) # 滑り木
-
-
-func _box(size: Vector3, pos: Vector3, mat: Material) -> void:
-	var m := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	m.mesh = bm
-	m.material_override = mat
-	m.position = pos
-	add_child(m)
+	# 見た目: フェルトの座布団を曲げ木の滑り木に載せたソリ（props/build_sled.py の glb）。寸法はこの物理に合わせてある
+	add_child(Props.make("res://props/sled_mid.glb"))
 
 
 ## dir は押す向き（水平）、at は手が触れた所（世界座標）

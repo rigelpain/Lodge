@@ -2,15 +2,16 @@ extends CharacterBody3D
 
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
-## あなた。一人称で、見えるのはフェルトの手袋をした両手だけ。
+const FpHands := preload("res://fp_hands.gd")
+## あなた。一人称で、見えるのは自分の人形と同じ柄の袖口と、紙の手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
 ## どう動くかはソリの滑り木と重力が決める。離すのは F だけ。Shift でダッシュ。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
 
-const SPEED := 2.8           # 雪の中をじりじり歩く速さ
-const DASH := 4.8            # Shift で走る速さ
-const SPEED_TAUT := 2.0      # 紐が張っているときの歩く速さ
+const SPEED := 2.0           # 雪の中をじりじり歩く速さ
+const DASH := 3.4            # Shift で走る速さ
+const SPEED_TAUT := 1.5      # 紐が張っているときの歩く速さ
 const JUMP := 4.5
 const GRAVITY := 9.8
 const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
@@ -43,8 +44,9 @@ var _t := 0.0
 var _snap := 0.0             # 吸い付きの途中（0→1）
 var _rope: Array[MeshInstance3D] = []
 var _hand_frame := -1        # 一人称の手を最後に置き直したコマ
-var point_at := Vector3.INF  # 右クリックを押しているあいだ、右腕で指している所（世界）。仲間はここを見る
-var force_point := false     # 確かめ用: 右クリックを押したことにする
+var point_at := Vector3.INF  # 右腕で指している所（世界）。仲間はここを見る
+var _point_on: Node3D = null # 指した物（ソリや人）。動いても指し続ける
+var _point_local := Vector3.ZERO
 
 
 func _ready() -> void:
@@ -70,28 +72,10 @@ func _ready() -> void:
 	doll.layers = 1 << 1
 	add_child(doll)
 
-	var felt := Look.felt(Color(0.85, 0.33, 0.31), 6.0)
+	# 一人称の手: 自分の人形と同じ柄の袖口から、紙の手がのぞく（層 3。一人称の画面にだけ映す）
 	for s in [-1, 1]:
-		var h := Node3D.new()
+		var h := FpHands.make(doll.kind, s, 1 << 2)
 		cam.add_child(h)
-		var m := MeshInstance3D.new()
-		var sm := SphereMesh.new()
-		sm.radius = 0.07
-		sm.height = 0.14
-		m.mesh = sm
-		m.scale = Vector3(1.0, 0.8, 1.4)
-		m.material_override = felt
-		m.layers = 1 << 2   # 手は層 3。一人称の画面にだけ映す
-		h.add_child(m)
-		var thumb := MeshInstance3D.new()
-		var tm := SphereMesh.new()
-		tm.radius = 0.03
-		tm.height = 0.06
-		thumb.mesh = tm
-		thumb.material_override = felt
-		thumb.layers = 1 << 2
-		thumb.position = Vector3(-0.06 * s, 0.03, -0.02)
-		h.add_child(thumb)
 		h.set_meta("side", s)
 		hands.append(h)
 
@@ -131,6 +115,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			base_fov = clamp(base_fov - 3.0, 50.0, 110.0)
 		elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			base_fov = clamp(base_fov + 3.0, 50.0, 110.0)
+		elif e.button_index == MOUSE_BUTTON_RIGHT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			toggle_point()
 		elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu_open:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif e is InputEventKey and e.pressed and not e.echo:
@@ -265,12 +251,12 @@ func _pose_doll() -> void:
 	doll.point = point_at
 
 
-## 右クリックを押しているあいだ、画面のまんなかが指す所を右腕で指す。
-## 指は分けず腕で指す。押したまま見回せば腕もついてくる（振れば挨拶にもなる）。人やソリを指せば、そこに当たる
-func _update_point() -> void:
-	var held := Input.is_mouse_button_pressed(MOUSE_BUTTON_RIGHT) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not menu_open
-	if not held and not force_point:
+## 右クリックで指さしを入れたり切ったりする。入れると、いま向いている先（画面のまんなかが当たる所）を指し、
+## その所を指し続ける。指したまま見回せば、顔の向きと違う所を指していられる。もう一度押すと腕を下ろす
+func toggle_point() -> void:
+	if point_at != Vector3.INF:
 		point_at = Vector3.INF
+		_point_on = null
 		return
 	var from := cam.global_position
 	var to := from - cam.global_basis.z * 60.0
@@ -278,15 +264,35 @@ func _update_point() -> void:
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	point_at = hit.position if hit else to
+	_point_on = null
+	# 動く物（ソリや人）を指したら、その物に対しての所を覚えて、動いても指し続ける
+	if hit and (hit.collider is RigidBody3D or hit.collider is CharacterBody3D):
+		_point_on = hit.collider
+		_point_local = _point_on.to_local(point_at)
+
+
+## 指した物が動いたら、指す所もついていく。物が消えたら腕を下ろす
+func _update_point() -> void:
+	if _point_on == null:
+		return
+	if not is_instance_valid(_point_on):
+		point_at = Vector3.INF
+		_point_on = null
+		return
+	point_at = _point_on.to_global(_point_local)
 
 
 ## 小さな段差（STEP_UP まで）は、歩くだけで乗り上げる。
-## 前がふさがっていて、持ち上げると前へ進め、その先に平らな床があるときだけ体を持ち上げる（壁やソリには上らない）
+## 前がふさがっていて、持ち上げると前へ進め、その先に平らな床があるときだけ体を持ち上げる（壁やソリには上らない）。
+## 前をふさいでいるのが歩ける斜面なら段差ではない（斜面を段差と見て持ち上げては落ちると、視点が震える）
 func _step_up(dir: Vector3) -> void:
 	if dir.length() < 0.1:
 		return
 	var ahead := dir * 0.3
-	if not test_move(global_transform, ahead):
+	var block := KinematicCollision3D.new()
+	if not test_move(global_transform, ahead, block):
+		return
+	if block.get_normal().y > 0.6:
 		return
 	var up := Vector3(0, STEP_UP, 0)
 	if test_move(global_transform, up):
@@ -302,6 +308,8 @@ func _step_up(dir: Vector3) -> void:
 	var rise := STEP_UP - col.get_travel().length()
 	if rise > 0.02:
 		global_position.y += rise + 0.01
+		# 体は一気に上がっても、視点はすっと追いつく（カメラを同じ高さに残し、_place_camera が戻す）
+		cam.position.y -= rise + 0.01
 
 
 func _walk(dt: float, with_rope: bool) -> void:
@@ -425,21 +433,23 @@ func _pose_hands(dt: float) -> void:
 			Mode.RIDE:
 				target = Vector3(0.28 * s, -0.32, -0.35)
 			_:
-				target = Vector3(0.3 * s, -0.3 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.45)
+				target = Vector3(0.27 * s, -0.25 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.48)
 		var pointing := s > 0 and point_at != Vector3.INF
 		if pointing:
-			# 指さし: 右の手袋を画面のまんなかへ伸ばす（自分が指しているのが見える）
-			target = Vector3(0.11, -0.12, -0.62)
-		# 手も姿勢と同じ決まり: コマが変わるときだけ置き直し、わずかに揺らす。
+			# 指さし: 右の手袋を、指している所の向きへ伸ばす（見回すと、指した向きに残る。後ろなら画面の外）
+			var d := cam.global_basis.inverse() * (point_at - cam.global_position).normalized()
+			target = Vector3(0.1, -0.1, 0.0) + d * 0.58
+		# 手も姿勢と同じ決まり: コマが変わるときだけ置き直す（一人称では揺らさない。目の前でふるえると見ていてつらい）。
 		# ソリをつかんでいる間は、ソリに対しての位置で保つ（ソリが動いても手が縁から離れない）
 		if fi != _hand_frame:
-			target += Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.004
 			var on_sled := mode == Mode.GRIP and not pointing
 			h.set_meta("hold", sled.to_local(cam.to_global(target)) if on_sled else target)
 			h.set_meta("on_sled", on_sled)
-			h.rotation = Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)) * 0.03
 		var hold: Vector3 = h.get_meta("hold", target)
 		h.position = cam.to_local(sled.to_global(hold)) if h.get_meta("on_sled", false) else hold
+		# 腕は画面の下の肩から手へ伸びる。袖をその向きに
+		var arm := h.position - Vector3(0.2 * s, -0.42, 0.12)
+		h.basis = Basis.looking_at(arm, Vector3.UP)
 	_hand_frame = fi
 
 
