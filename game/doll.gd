@@ -119,7 +119,69 @@ func _ready() -> void:
 		for n in _shapes[sh].values():
 			add_child(n)
 	_make_foot_shadow()
+	_measure_body(inst)
 	_next_breath = randi_range(4, 30)
+
+
+# ---------------------------------------------------------------- 体の形（雪玉の当たり）
+
+const BODY_BANDS := 12       # 体を高さで切る数
+static var _body_cache := {} # 人形の種類 → [各段の太さ (m), 頭のてっぺん (m), 頭の骨の高さ (m)]
+
+
+## 立った人形の形から、高さごとの太さ（体の軸からの横の広がり）を測る。笠のつば・着物の裾・頭巾の形がそのまま入る。
+## 袖や髪の先の細いはみ出しは除く（各段で 9 割の点が入る太さ）。人形の種類ごとに一度だけ測る
+func _measure_body(inst: Node3D) -> void:
+	if _body_cache.has(kind):
+		return
+	var pts := PackedVector3Array()
+	for m in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		var to_doll := global_transform.affine_inverse() * mi.global_transform
+		for si in mi.mesh.get_surface_count():
+			# 頂点だけでは、着物の裾のような大きな平たい面の途中が抜ける。面の上に 5 cm ほどおきに点を打つ
+			var arr := mi.mesh.surface_get_arrays(si)
+			var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array(range(vs.size()))
+			for t in range(0, idx.size() - 2, 3):
+				var a := to_doll * vs[idx[t]]
+				var b := to_doll * vs[idx[t + 1]]
+				var c := to_doll * vs[idx[t + 2]]
+				var n := clampi(ceili(maxf(maxf(a.distance_to(b), b.distance_to(c)), c.distance_to(a)) / 0.05), 1, 24)
+				for i in n + 1:
+					for j in n + 1 - i:
+						pts.append(a + (b - a) * (float(i) / n) + (c - a) * (float(j) / n))
+	var top := 0.0
+	for v in pts:
+		top = maxf(top, v.y)
+	var bands := []
+	for i in BODY_BANDS:
+		bands.append([])
+	for v in pts:
+		var bi := clampi(int(v.y / top * BODY_BANDS), 0, BODY_BANDS - 1)
+		bands[bi].append(Vector2(v.x, v.z).length())
+	var radii := PackedFloat32Array()
+	for b in bands:
+		b.sort()
+		radii.append(b[int(b.size() * 0.9)] if not b.is_empty() else 0.0)
+	var head_y := (global_transform.affine_inverse() * (skel.global_transform * skel.get_bone_global_rest(_id("head")).origin)).y
+	_body_cache[kind] = [radii, top, head_y]
+
+
+## 点 p（世界）が、いまの体の形の中（r だけふくらませて）に入るか。しゃがむ・座ると、頭の骨の下がった分だけ縮める
+func body_hit(p: Vector3, r: float) -> bool:
+	var c: Array = _body_cache.get(kind, [])
+	if c.is_empty():
+		return false
+	var radii: PackedFloat32Array = c[0]
+	var top: float = c[1]
+	var head_now := (skel.global_transform * _head_of(_id("head"))).y - global_position.y
+	var squash := clampf(head_now / maxf(c[2], 0.01), 0.3, 1.2)
+	var dy := (p.y - global_position.y) / squash
+	if dy < -r or dy > top + r:
+		return false
+	var bi := clampi(int(dy / top * BODY_BANDS), 0, BODY_BANDS - 1)
+	return Vector2(p.x - global_position.x, p.z - global_position.z).length() < radii[bi] + r
 
 
 static func frame_index() -> int:
@@ -969,20 +1031,15 @@ func _emote_arms(kind_: String, k: int) -> void:
 					var f := clampf((k - 6) / 4.0, 0.0, 1.0)
 					_arm(side, Vector3(0.4, 0.6 - 0.9 * f, -0.7), Vector3(0.25, 0.3 - 1.1 * f, -0.9))
 		"shake":
-			# 握手: 手を差し出し（2 コマ）、握って 3 回上下に振り、離して下ろす。片手を両手で包むときは、上と下から
-			var grips: Array = emote.get("grips", [])
-			for gi in grips.size():
-				var gr: Array = grips[gi]
+			# 握手: 手を差し出し（2 コマ）、重ねる所で手のひらを合わせ、二人一緒に 3 回上下に振り、離して下ろす。
+			# 重ねる所は配り役が決める（二人の手のひらがみな平行で、ぴったり重なる）
+			for gr in emote.get("grips", []):
 				var side := "R" if gr[0] > 0 else "L"
 				var at: Vector3 = gr[1]
-				var shared := grips.size() == 2 and (grips[0][1] as Vector3).distance_to(grips[1][1]) < 0.02
-				if shared:
-					at += Vector3.UP * (0.045 if gi == 0 else -0.045) * _scale
 				if k < 2:
 					_hold[0 if side == "L" else 1] = [self, to_local(global_position.lerp(at, 0.5) + Vector3.UP * (at.y - global_position.y) * 0.5)]
 				elif k < 20:
-					var pump: float = [0.0, 0.035, 0.0, -0.035][((k - 2) / 2) % 4] * _scale
-					_hold[0 if side == "L" else 1] = [self, to_local(at + Vector3.UP * pump)]
+					_hold[0 if side == "L" else 1] = [self, to_local(at + Vector3.UP * Palm.shake_pump(k))]
 				else:
 					_arm(side, Vector3(0.2, -1.0, -0.25), Vector3(0.1, -1.0, -0.35))
 		"whiff":
@@ -1232,13 +1289,11 @@ func _place_shapes() -> void:
 					b = Basis(y.cross(z).normalized(), y, z)
 					size = 1.0
 				"shake":
-					# 握手: 指を相手へ、手のひらを横（内側）へ立てる
-					var y: Vector3 = (grip_at.get(side, at) as Vector3) - global_position
-					y.y = 0
-					y = y.normalized() if y.length() > 0.01 else -global_basis.z
-					var z: Vector3 = -global_basis.x * float(side)
-					b = Basis(y.cross(z).normalized(), y, z)
+					# 握手: 指を相手へ、手のひらは重ねる向きへ（二人とも平行で、少し傾いた面）。合わせたら、重ねる所にぴったり置く
+					b = Palm.shake_basis(emote.get("fwd", -global_basis.z), emote.get("axis", global_basis.x), side)
 					size = 1.0
+					if k >= 2 and k < 20 and grip_at.has(side):
+						at = (grip_at[side] as Vector3) + Vector3.UP * Palm.shake_pump(k) - Vector3.UP * 0.05 * _scale
 				_:
 					var face := -global_basis.z
 					var tilt := 0.0

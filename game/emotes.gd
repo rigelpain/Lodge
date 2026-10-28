@@ -42,6 +42,7 @@ const KINDS := {
 const VOICES := ["wa", "un", "nn", "huh"]
 const HANDS := Palm.HANDS
 const TOUCH_REACH := 1.3     # 手と手が届く、体どうしの距離 (m)。人形の腕は短いが、手の形が大きい
+const SHAKE_REACH := 1.0     # 握手は手のひらをくっつけるので、もう少し近づいてから（腕の短い人形でも届く所）
 const WHIFF_REACH := 1.0     # 片方だけが向かってこの中まで寄ると、空振り
 const FIVE_HIT := 3          # high_five の何コマ目に手が合うか（その前の 3 コマが、引くため）
 const MAKE_READY := 16       # 雪玉ができて手に持つコマ（make_ball の中で）
@@ -120,7 +121,7 @@ func _physics_process(_dt: float) -> void:
 					continue
 				var ab := _flat(b.global_position - a.global_position)
 				var d := ab.length()
-				if d > TOUCH_REACH or d < 0.01:
+				if d > (TOUCH_REACH if height == "high" else SHAKE_REACH) or d < 0.01:
 					continue
 				ab /= d
 				var a_faces := _forward(a).dot(ab) > 0.35
@@ -139,35 +140,89 @@ func _physics_process(_dt: float) -> void:
 			hands.erase(id)
 
 
-## どの手とどの手が合うか: [[a の側, b の側], ...]。向かい合うと、こちらの右の前にあるのは相手の左
-## 両手と両手は両方の手で。片手と両手は、片手と、その向かいの相手の手（握手なら、両手で片手を包む）
-func _pairs(sa: Array, sb: Array, height: String) -> Array:
+## ハイタッチで、どの手とどの手が合うか: [[a の側, b の側], ...]。向かい合うと、こちらの右の前にあるのは相手の左。
+## 両手と両手は両方の手で。片手と両手は、片手と、その向かいの相手の手
+func _pairs(sa: Array, sb: Array) -> Array:
 	if sa.size() == 2 and sb.size() == 2:
 		return [[1, -1], [-1, 1]]
 	if sa.size() == 1 and sb.size() == 1:
 		return [[sa[0], sb[0]]]
-	if height == "low":
-		return [[1, sb[0]], [-1, sb[0]]] if sa.size() == 2 else [[sa[0], 1], [sa[0], -1]]
 	return [[-sb[0], sb[0]]] if sa.size() == 2 else [[sa[0], -sa[0]]]
 
 
-## 二人の手が合う。合う所は、二人の手のあいだ（ハイタッチは顔の高さ、握手は腰の高さ）。合ったコマに紙吹雪（握手は綿の粉だけ）。
-## 二人とも手を下ろす（掲げ直せば、またできる）
+## 二人の手が合う。ハイタッチは顔の高さで、手と手のあいだ（合ったコマに紙吹雪）。
+## 握手は腰の高さで、手のひらをそろえて重ねる（_shake_grips）。二人とも手を下ろす（掲げ直せば、またできる）
 func _touch(a_id: int, b_id: int, height: String, frame: int) -> void:
 	var a := who_of(a_id)
 	var b := who_of(b_id)
-	var pairs := _pairs(_sides(a_id, height), _sides(b_id, height), height)
-	var ga := []
-	var gb := []
-	for pr in pairs:
-		var p := (_hand_spot(a, pr[0], height) + _hand_spot(b, pr[1], height)) * 0.5
-		ga.append([pr[0], p])
-		gb.append([pr[1], p])
-	var kind := "high_five" if height == "high" else "shake"
+	var sa := _sides(a_id, height)
+	var sb := _sides(b_id, height)
+	var ea := {"kind": "high_five", "who": a_id, "with": b_id, "frame": frame}
+	var eb := {"kind": "high_five", "who": b_id, "with": a_id, "frame": frame}
+	if height == "high":
+		var ga := []
+		var gb := []
+		for pr in _pairs(sa, sb):
+			var p := (_hand_spot(a, pr[0], height) + _hand_spot(b, pr[1], height)) * 0.5
+			ga.append([pr[0], p])
+			gb.append([pr[1], p])
+		ea["grips"] = ga
+		eb["grips"] = gb
+	else:
+		var sg := _shake_grips(a, sa, b, sb)
+		ea.merge({"kind": "shake", "grips": sg[0], "fwd": sg[2], "axis": sg[3]}, true)
+		eb.merge({"kind": "shake", "grips": sg[1], "fwd": -sg[2], "axis": sg[3]}, true)
 	_lower(a_id, frame)
 	_lower(b_id, frame)
-	_emit({"kind": kind, "who": a_id, "with": b_id, "frame": frame, "grips": ga})
-	_emit({"kind": kind, "who": b_id, "with": a_id, "frame": frame, "grips": gb})
+	_emit(ea)
+	_emit(eb)
+
+
+const SHAKE_TILT := 0.5      # 握手の手のひらを、垂直から傾ける角 (rad)。真っすぐ立てると、面が見えない
+const SHAKE_GAP := 0.045     # 重ねた手のひらどうしの間 (m)。紙の厚みより少し離して、重なりが見えるように
+const SHAKE_SHIFT := 0.045   # 重ねた手を、それぞれ持ち主の側へずらす (m)。互い違いが見える
+
+
+## 握手で手のひらを重ねる所。二人の手のひらはみな平行で、同じ傾き。重ねる向き（axis）に沿って並べる:
+## 片手どうしは 自分・相手、片手と両手は 相手・自分・相手（両手で包む）、両手どうしは互い違いに 自分・相手・自分・相手。
+## 並びは、腕が交差しないよう、A から見た左右の順にする。返り値は [a の [側, 所]…, b の [側, 所]…, A から B への向き, 重ねる向き]
+func _shake_grips(a: Node3D, sa: Array, b: Node3D, sb: Array) -> Array:
+	var fwd := _flat(b.global_position - a.global_position).normalized()
+	var left := Vector3.UP.cross(fwd).normalized()   # A から見た左
+	var axis := (left * cos(SHAKE_TILT) + Vector3.UP * sin(SHAKE_TILT)).normalized()
+	var center := Vector3.ZERO
+	var hands := []   # [人 0 か 1, 側, A から見た左右（左が正）]
+	for sd in sa:
+		hands.append([0, sd, -float(sd)])        # A の右手は A の右
+		center += _hand_spot(a, sd, "low")
+	for sd in sb:
+		hands.append([1, sd, float(sd)])         # 向かいの B の右手は、A から見て左
+		center += _hand_spot(b, sd, "low")
+	center /= hands.size()
+	var order := []
+	if sa.size() == 1 and sb.size() == 2:
+		order = [_hand_at(hands, 1, -1.0), _hand_at(hands, 0, 0.0), _hand_at(hands, 1, 1.0)]   # B が両手で包む
+	elif sa.size() == 2 and sb.size() == 1:
+		order = [_hand_at(hands, 0, -1.0), _hand_at(hands, 1, 0.0), _hand_at(hands, 0, 1.0)]   # A が両手で包む
+	else:
+		hands.sort_custom(func(x, y): return x[2] < y[2] or (x[2] == y[2] and x[0] < y[0]))
+		order = hands   # 片手どうしは 2 枚、両手どうしは A・B・A・B の互い違い
+	var ga := []
+	var gb := []
+	for i in order.size():
+		var hd: Array = order[i]
+		var p := center + axis * (i - (order.size() - 1) * 0.5) * SHAKE_GAP   # A から見て右の手から順に
+		p -= fwd * SHAKE_SHIFT * (1.0 if hd[0] == 0 else -1.0)
+		(ga if hd[0] == 0 else gb).append([hd[1], p])
+	return [ga, gb, fwd, axis]
+
+
+## hands の中から、その人の手を一つ（lat が 0 なら、その人のただ一つの手。そうでなければ左右がその符号の手）
+func _hand_at(hands: Array, who: int, lat: float) -> Array:
+	for hd in hands:
+		if hd[0] == who and (lat == 0.0 or signf(hd[2]) == signf(lat)):
+			return hd
+	return hands[0]
 
 
 func _lower(id: int, frame: int) -> void:
@@ -185,11 +240,11 @@ func _burst_at(point: Vector3, frame: int) -> void:
 	Snowball.splat_at(self, point, Vector3.UP, true)
 
 
-## 掲げた手のあたり（世界）。高い手は顔の横の前、低い手は腰の前。side 1 右、-1 左
+## 掲げた手のあたり（世界）。高い手は顔の横の前、低い手はみぞおちの前（握手で手を合わせる高さ。一人称でも画面に入る）。side 1 右、-1 左
 func _hand_spot(who: Node3D, side: int, height: String) -> Vector3:
 	var doll: Doll = who.doll
 	var right := _flat(doll.global_basis.x).normalized()
-	var up := doll.height() * (0.78 if height == "high" else 0.48)
+	var up := doll.height() * (0.78 if height == "high" else 0.56)
 	return who.global_position + Vector3.UP * up + _forward(who) * 0.35 + right * side * 0.16
 
 

@@ -611,12 +611,14 @@ func _place_shapes_fp(em: Array) -> void:
 				"low":
 					b = b * Basis(Vector3.RIGHT, -0.65)   # 下へ向けて、おさえる
 				"shake":
-					# 握手: 指（+y）は前の相手へ、少しまんなか寄りに。手のひら（+z）は内側へ立て、少し下へ傾けて手の甲が見えるように
-					var y := Vector3(-0.2 * side, 0.45, -1.0).normalized()
-					var z := Vector3(-0.8 * side, -1.0, 0.0)
-					z = (z - y * z.dot(y)).normalized()
-					b = Basis(y.cross(z).normalized(), y, z)
-					size = 1.0
+					# 握手: 人形と同じに、重ねる所（配り役が決めた、二人で平行な少し傾いた面）へ。合わせたら二人一緒に上下に振る
+					var wb := Palm.shake_basis(_em.get("fwd", -global_basis.z), _em.get("axis", global_basis.x), side)
+					var at: Vector3 = h.global_position
+					for gr in _em.get("grips", []):
+						if int(gr[0]) == side:
+							at = (gr[1] as Vector3) + Vector3.UP * Palm.shake_pump(k) if k >= 2 else (gr[1] as Vector3).lerp(h.global_position, 0.5)
+					node.global_transform = Transform3D(wb.scaled(Vector3.ONE * Palm.BIG), at)
+					continue
 				"high_five", "whiff":
 					b = b * Basis(Vector3.RIGHT, 0.5 if k < 3 else 0.0)
 					size = 1.25 if k == 3 and kind == "high_five" else 1.0
@@ -837,9 +839,11 @@ func _emote_hand(s: int) -> Vector3:
 				if k < 2:
 					return Vector3(0.14 * s, -0.27, -0.45)   # 差し出す
 				if k < 20:
-					var pump: float = [0.0, 0.02, 0.0, -0.02][((k - 2) / 2) % 4]
-					var stack := (0.03 * s) if mine.size() == 2 and _em.grips[0][1].distance_to(_em.grips[1][1]) < 0.02 else 0.0
-					return Vector3(0.05 * s, -0.22 + pump + stack, -0.55)   # 握って、上下に振る
+					# 握って、上下に振る: 袖の先を、重ねる所（の少し手前）へ
+					for gr in _em.grips:
+						if int(gr[0]) == s:
+							var fwd: Vector3 = _em.get("fwd", -global_basis.z)
+							return cam.to_local((gr[1] as Vector3) + Vector3.UP * Palm.shake_pump(k) - fwd * 0.06)
 				return Vector3(0.25 * s, -0.3, -0.45)
 		"whiff":
 			var ws := int(_em.get("side", 1))

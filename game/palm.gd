@@ -159,6 +159,23 @@ static func make_set(color: Color, layers: int) -> Dictionary:
 	return out
 
 
+## 握手で、重ねた手を上下に振る量 (m、世界)。握る 2 コマのあと、2 コマずつ上・まんなか・下・まんなか。二人とも同じに動く
+static func shake_pump(k: int) -> float:
+	if k < 2 or k >= 20:
+		return 0.0
+	return [0.0, 0.04, 0.0, -0.04][((k - 2) / 2) % 4]
+
+
+## 握手の手形の向き: 指（+y）は相手へ、手のひら（+z）は重ねる向き。二人の手のひらがみな平行になる。
+## 親指は上へ（右手の輪郭は親指が +x、左手は -x。下を向く手は面を裏返す。手形は表裏が同じなので、平行のまま）
+static func shake_basis(fwd: Vector3, axis: Vector3, side: int) -> Basis:
+	var y := (fwd - axis * fwd.dot(axis)).normalized()
+	var x := y.cross(axis).normalized()
+	if (x * float(side)).y < 0.0:
+		return Basis(-x, y, -axis)
+	return Basis(x, y, axis)
+
+
 ## 出てくるときの大きさ（12 コマ。ぽんと出て、少し行きすぎて戻る）
 static func pop(k: int) -> float:
 	return [0.45, 1.25, 1.05, 1.0][clampi(k, 0, 3)]

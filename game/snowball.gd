@@ -3,12 +3,11 @@ extends RigidBody3D
 const Doll := preload("res://doll.gd")
 ## 雪玉。ちぎった綿を丸めた、軽いフェルトの玉。物として飛び、人・ソリ・地面・ロッジに当たると崩れる。
 ## 軽いので、当たったソリはほとんど動かない。人には痛みも押し戻しもなく、のけぞるだけ（emotes.gd の hit）。
-## 人は乗っている間や押している間は当たりの形を切っているので、人への当たりは人形の背丈の筒で見る。
+## 人への当たりは、人形ごとに測った体の形（高さごとの太さ）で見る。物理のカプセルには当たらない。
 ## 崩れると綿の粉が散り、当たった所に綿の雪が少し残って、しばらくで消える。
 
 const RADIUS := Doll.BALL_R
 const LIFE := 6.0            # どこにも当たらなかったら消える (s)
-const BODY_R := 0.32         # 人の当たりの筒の半径 (m)
 
 var hub: Node3D              # emotes.gd
 var thrower := -1            # 投げた人の番号（自分には当たらない）
@@ -33,10 +32,12 @@ func _ready() -> void:
 	m.mesh = Doll.ball_mesh()
 	m.material_override = Doll.ball_material()
 	add_child(m)
-	# 投げた人の体には当たらない
-	var me: Node3D = hub.who_of(thrower) if hub else null
-	if me is PhysicsBody3D:
-		add_collision_exception_with(me)
+	# 人の物理の当たり（どの人形も同じ大きさのカプセル）には当たらない。人への当たりは人形の形で見る（_physics_process）
+	if hub:
+		for id in hub.people:
+			var who: Node3D = hub.who_of(id)
+			if who is PhysicsBody3D:
+				add_collision_exception_with(who)
 	body_entered.connect(_on_body)
 
 
@@ -50,16 +51,14 @@ func _physics_process(dt: float) -> void:
 	var p := global_position
 	if _last == Vector3.INF:
 		_last = p
-	# 人の背丈の筒と、このコマで進んだ線分が交わるか
+	# このコマで進んだ線分が、人形の体の形（人形ごとに測った、高さごとの太さ）に入るか
 	for id in hub.people:
 		if id == thrower:
 			continue
 		var who: Node3D = hub.who_of(id)
 		if who == null or who.get("doll") == null:
 			continue
-		var feet: Vector3 = who.doll.global_position
-		var h: float = who.doll.height()
-		var hit := _segment_vs_body(_last, p, feet, h)
+		var hit := _segment_vs_body(_last, p, who.doll)
 		if hit != Vector3.INF:
 			var dir := linear_velocity.normalized()
 			_done = true
@@ -70,13 +69,12 @@ func _physics_process(dt: float) -> void:
 	_vel = linear_velocity
 
 
-## 線分 a→b が、足もと feet から高さ h の縦の筒に入る最初の所。入らなければ INF
-func _segment_vs_body(a: Vector3, b: Vector3, feet: Vector3, h: float) -> Vector3:
-	var steps := 4
+## 線分 a→b が、人形の体の形に入る最初の所。入らなければ INF（1 コマに進む 30 cm ほどを、8 つに分けて見る）
+func _segment_vs_body(a: Vector3, b: Vector3, doll: Node3D) -> Vector3:
+	var steps := 8
 	for i in steps + 1:
 		var q := a.lerp(b, float(i) / steps)
-		var d := Vector2(q.x - feet.x, q.z - feet.z).length()
-		if d < BODY_R + RADIUS and q.y > feet.y + 0.05 and q.y < feet.y + h:
+		if doll.body_hit(q, RADIUS):
 			return q
 	return Vector3.INF
 
@@ -85,13 +83,6 @@ func _on_body(body: Node) -> void:
 	if _done:
 		return
 	var dir := (_vel if _vel.length() > 0.1 else linear_velocity).normalized()
-	# 人の体に当たったら、のけぞる側（歩いている人は当たりの形を持っている）
-	for id in hub.people:
-		if hub.people[id] == body and id != thrower:
-			_done = true
-			hub.ball_hit_person(self, id, global_position, dir)
-			queue_free()
-			return
 	_done = true
 	var p := global_position
 	var n := -dir
