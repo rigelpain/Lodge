@@ -8,7 +8,7 @@
 
 形の決まり（design/art-concept.md）: 赤いフェルトの台、木の滑り木、背もたれは後ろ、前に麻ひもの紐。
 台は座る人ごとに 1 枚の座布団で、真ん中を木のボタンで綴じる。座布団の数が乗れる人数。
-縁はクリームの糸でかがり、横には麻ひもの手すりを通す（どこからでもつかめる、を見せる）。
+縁はクリームの糸でかがり、横には腕の高さに曲げ木の手すりを渡し、座る所ごとにフェルトの握りを巻く。
 
 寸法は game/sled.gd の物理に合わせる（mid）: 台 1.5 × 2.8 m、高さ 0.45 m、滑り木は x = ±0.6、
 紐の付け根は Godot の (0, 0.3, -1.45)。前は +Y（Blender）＝ -Z（Godot）。
@@ -177,41 +177,73 @@ def build(kind, ox=0.0, export=False):
     C.tube(frame, [Vector((-W / 2 + 0.06, top_y, top_z)), Vector((W / 2 - 0.06, top_y, top_z))], 0.026, sides=10)
     parts.append(frame.done(parent=root))
 
-    # ---------------------------------------------------------------- 麻ひも
+    # ---------------------------------------------------------------- 横の手すり
+    # 座った人の腕の高さに、曲げ木の手すりを左右に渡す（カーブで振られてもつかまれる）。
+    # 後ろは背もたれの横木の端から出て、前は渦のように巻き下りて板に留まる。
+    # 座る所ごとにフェルトの握りを巻いて糸でかがり、柱との継ぎ目は麻ひもで縛る。
     hemp = C.M("hemp", "hemp")
-    # 横の手すり: 台の左右に、フェルトの輪を通して張る
-    loops = C.M("loops", "felt_red_dark")
-    RAIL_Z = Z_BOARD1 + 0.04
-    n_loops = rows + 1 + (1 if rows == 1 else 0)
+    rail = C.M("rails", "wood_bent")
+    grips = C.M("grips", "felt_red_dark")
+    stand = C.M("rail_posts", "wood")
+    RAIL_H = 0.72                      # 手すりの高さ（座布団の上 0.42 から 0.3 上）
+    RAIL_R = 0.026
+    RX = W / 2 + 0.07                  # 手すりの横の位置（台の縁の少し外）
+    EDGE = W / 2 - 0.03                # 柱の根元（板の縁）
+    seat_ys = sorted({round(s[1], 3) for s in (K.get("seats") or seat_centers)})
+    posts = [(a + b) / 2 for a, b in zip(seat_ys, seat_ys[1:])] or [seat_ys[0] - 0.3]
+    Y_TURN = Y_CUSH1 - 0.22            # ここから前へ巻き下りる
+    TURN_R = 0.2
     for sx in (-1, 1):
-        x = sx * (W / 2 + 0.035)
-        ys = [Y_CUSH0 + (Y_CUSH1 - Y_CUSH0) * k / (n_loops - 1) for k in range(n_loops)]
-        pts = []
-        for k in range(len(ys) - 1):
-            for j in range(8):
-                t = j / 8
-                pts.append(Vector((x, ys[k] + (ys[k + 1] - ys[k]) * t, RAIL_Z - 0.035 * math.sin(math.pi * t))))
-        pts.append(Vector((x, ys[-1], RAIL_Z)))
-        # 端は板の下へ回して結ぶ
-        pts.insert(0, Vector((x - sx * 0.04, ys[0] - 0.05, Z_BOARD0)))
-        pts.append(Vector((x - sx * 0.04, ys[-1] + 0.05, Z_BOARD0)))
-        C.tube(hemp, pts, 0.015, sides=8, twist=0.0)
-        for yy in ys:   # 輪: 手すりを抱えて板の縁に縫い付けたフェルトの帯
-            ring = [Vector((x + sx * 0.024 * math.cos(a), yy, RAIL_Z + 0.004 + 0.024 * math.sin(a)))
-                    for a in [math.radians(-150 + 300 * i / 12) for i in range(13)]]
-            ring.append(Vector((x - sx * 0.05, yy, Z_BOARD1 - 0.006)))
-            ring.insert(0, Vector((x - sx * 0.05, yy, RAIL_Z - 0.03)))
-            C.tube(loops, ring, 0.022, sides=8, side=(0, 1, 0), ry=0.005, sq=4.0)
-    parts.append(loops.done(parent=root))
-    # 紐の結び目: 横棒に 3 巻き
-    fy, fz = FRONT[0] - 0.005, FRONT[1]
-    coil = []
-    for i in range(60):
-        t = i / 59
-        a = t * 2 * math.pi * 3
-        coil.append(Vector((-0.06 + 0.12 * t, fy + 0.045 * math.cos(a), fz + 0.045 * math.sin(a))))
-    C.tube(hemp, coil, 0.016, sides=8)
+        pts = [Vector((sx * (W / 2 - 0.06), top_y, top_z))]
+        for i in range(1, 7):          # 背もたれの横木の端から、外へ開いて手すりの高さへ
+            t = i / 6
+            e = t * t * (3 - 2 * t)
+            pts.append(Vector((sx * (W / 2 - 0.06 + (RX - W / 2 + 0.06) * e), top_y + 0.22 * t,
+                               top_z + (RAIL_H - top_z) * e)))
+        n = 12
+        for i in range(1, n + 1):
+            pts.append(Vector((sx * RX, top_y + 0.22 + (Y_TURN - top_y - 0.22) * i / n, RAIL_H)))
+        for i in range(1, 10):         # 前の巻き下り
+            a = math.radians(90 - 180 * i / 9)
+            pts.append(Vector((sx * RX, Y_TURN + TURN_R * math.cos(a), RAIL_H - TURN_R + TURN_R * math.sin(a))))
+        last = pts[-1]
+        for i in range(1, 4):          # 座布団の外をまっすぐ下り、板の下で内へ曲げて留める
+            t = i / 3
+            pts.append(Vector((sx * RX, last.y, last.z + (Z_BOARD0 + 0.03 - last.z) * t)))
+        pts.append(Vector((sx * (RX - 0.04), last.y, Z_BOARD0 - 0.005)))
+        pts.append(Vector((sx * EDGE, last.y, Z_BOARD0 - 0.012)))
+        C.tube(rail, pts, RAIL_R, sides=12)
+        for y in posts:                # 柱: 板の縁から手すりへ、少し外へ開く
+            C.tube(stand, [Vector((sx * EDGE, y, Z_BOARD0)), Vector((sx * RX, y, RAIL_H))], 0.02, sides=8)
+            coil = []
+            for i in range(41):        # 継ぎ目を麻ひもで 5 巻き
+                t = i / 40
+                a = t * 2 * math.pi * 5
+                coil.append(Vector((sx * RX + (RAIL_R + 0.008) * math.cos(a), y - 0.035 + 0.07 * t,
+                                    RAIL_H + (RAIL_R + 0.008) * math.sin(a))))
+            C.tube(hemp, coil, 0.008, sides=6)
+        for y in seat_ys:              # 握り: 座る所の少し前に、フェルトを巻いてかがる
+            g = y + 0.12
+            L2, GR = 0.17, RAIL_R + 0.018
+            rs, gp = [], []
+            for i in range(13):
+                t = i / 12
+                gp.append(Vector((sx * RX, g - L2 + 2 * L2 * t, RAIL_H)))
+                rs.append(GR * (0.75 + 0.25 * math.sin(math.pi * t) ** 0.4))
+            C.tube(grips, gp, rs, sides=12)
+            wrap = []
+            for i in range(97):        # 糸を斜めに巻いてかがる
+                t = i / 96
+                a = t * 2 * math.pi * 8
+                wrap.append(Vector((sx * RX + (GR + 0.002) * math.cos(a), g - L2 * 0.85 + 2 * L2 * 0.85 * t,
+                                    RAIL_H + (GR + 0.002) * math.sin(a))))
+            C.tube(thread, wrap, 0.0035, sides=4)
+    parts.append(rail.done(parent=root))
+    parts.append(stand.done(parent=root))
+    parts.append(grips.done(parent=root))
     parts.append(hemp.done(parent=root))
+    # 紐は横棒の両端に結ぶ（game/sled_rope.gd が描く）。ここでは横棒に結び目を作らない
+    fy, fz = FRONT[0] - 0.005, FRONT[1]
     parts.append(thread.done(parent=root))
 
     # 垂れた紐（描くときだけ。ゲームでは player.gd が紐を描く）
