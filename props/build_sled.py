@@ -270,6 +270,12 @@ def build(kind, ox=0.0, export=False):
     anc.parent = root
     C.coll("prop").objects.link(anc)
     parts.append(anc)
+    for sx, nm in ((-1, "rope_tie_l"), (1, "rope_tie_r")):   # 引き紐の両端を結ぶ所: 手すりの巻き下りのいちばん前
+        e = bpy.data.objects.new(nm, None)
+        e.location = (sx * RX, Y_TURN + TURN_R, RAIL_H - TURN_R)
+        e.parent = root
+        C.coll("prop").objects.link(e)
+        parts.append(e)
     root.location.x = ox
     return root, parts, K, xs, Y_BACK
 
