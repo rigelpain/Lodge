@@ -7,6 +7,7 @@ const Look := preload("res://look.gd")
 ##   --no-player   あなたを出さず、仲間だけで押す（速さを比べる用）
 ##   --shot=PATH   数秒後に画面を PNG で保存して終わる
 ##   --log         ソリの高さを1秒ごとに出す
+##   --no-wind     滑るときの風のエフェクトを出さない（重さを比べる用）
 ##   --cam=x,y,z,tx,ty,tz  --no-player のときのカメラの位置と見る先（ロッジを撮る用）
 
 const HILL_H := 18.0      # 丘の高さ (m)
@@ -27,6 +28,7 @@ const Player := preload("res://player.gd")
 const Bot := preload("res://bot.gd")
 const Settings := preload("res://settings.gd")
 const Audio := preload("res://audio.gd")
+const RideWind := preload("res://ride_wind.gd")
 
 var sled: RigidBody3D
 var player: CharacterBody3D
@@ -145,6 +147,10 @@ func _ready() -> void:
 		_make_pip()
 	if not args.has("no-snow"):
 		_make_snowfall(player if player else self)
+	if player and not args.has("no-wind"):   # 滑るときの風（あなたの画面だけ）
+		ride_wind = RideWind.new()
+		ride_wind.setup(player, sled)
+		add_child(ride_wind)
 
 	# 設定画面（Esc）。保存してある値を起動時に当てる
 	settings = Settings.new()
@@ -264,6 +270,7 @@ var ground_mesh: MeshInstance3D
 var sun_light: DirectionalLight3D
 var env: Environment
 var snowfall: GPUParticles3D
+var ride_wind: Node3D
 var _pip_layer: CanvasLayer
 var pip_frame: PanelContainer
 var pip_mat: ShaderMaterial
@@ -753,7 +760,7 @@ func _physics_process(dt: float) -> void:
 			return
 		if args.has("third"):
 			player.third = true
-			player.cam.cull_mask = (1 << 0) | (1 << 1) | (1 << 3)
+			player.cam.cull_mask = (1 << 0) | (1 << 1) | (1 << 3) | (1 << 4)
 		if args["sim"] == "1":
 			player.grab()
 		var ev := InputEventKey.new()
@@ -843,6 +850,9 @@ func _apply_setting(key: String, v) -> void:
 			_set_volume(["Voice"], v)
 		"bob":
 			if player: player.bob_enabled = v
+			if ride_wind: ride_wind.calm = not v   # 揺れを切った人には、風も控えめに
+		"wind":
+			if ride_wind: ride_wind.strength = v
 		"fov_kick":
 			if player: player.fov_kick_enabled = v
 		"pip":

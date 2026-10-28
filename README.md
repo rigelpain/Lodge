@@ -24,6 +24,12 @@ WASD で歩き、マウスで見回す。ソリに向かって W で押す。E �
 
 確かめ用の引数（`--` のあと）: `--bots=2`（仲間の数）、`--no-player`（仲間だけ）、`--log`（ソリの高さを1秒ごとに出す）、`--shot=絵.png`（数秒後に画面を保存）、`--quit-at=秒`、`--spawn=lodge`／`--spawn=inside`（ロッジの前／食堂の中から始める。音の確かめ用）。
 
+ソリで速く滑ると、目の横を毛糸の切れはし・綿の毛・毛玉の雪が後ろへ流れる（`game/ride_wind.gd`。乗っている本人の画面だけ）。強さは設定（Esc）の「風の流れ（滑るとき）」で変えられ、「視点の揺れ」を切ると控えめになる。`--no-wind` で出さない。頂上から滑り降りて一人称の絵を撮るには:
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path game --resolution 1280x720 -s res://tools/ride_shots.gd -- --bots=0 --no-sound --dir="$PWD/design/ride-wind"
+```
+
 ## Claude Code のスキル
 
 `.claude/skills/` に入れています（どちらも MIT）。
