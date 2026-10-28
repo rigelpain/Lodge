@@ -17,7 +17,6 @@ const GRAVITY := 9.8
 const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
 const LET_GO_SPEED := 5.0    # ソリがこれより速く滑ると手が離れる (m/s)
-const ROPE_SEGS := 14
 
 enum Mode { WALK, GRIP, RIDE, ROPE }
 
@@ -42,7 +41,6 @@ var _pitch := 0.0
 var _col: CollisionShape3D
 var _t := 0.0
 var _snap := 0.0             # 吸い付きの途中（0→1）
-var _rope: Array[MeshInstance3D] = []
 var _hand_frame := -1        # 一人称の手を最後に置き直したコマ
 var point_at := Vector3.INF  # 右腕で指している所（世界）。仲間はここを見る
 var _point_on: Node3D = null # 指した物（ソリや人）。動いても指し続ける
@@ -80,21 +78,6 @@ func _ready() -> void:
 		cam.add_child(h)
 		h.set_meta("side", s)
 		hands.append(h)
-
-	# 紐: 短い円柱をつないで描く（持っていないときはソリの前に垂れている）
-	var rope_mat := Look.felt(Color(0.82, 0.72, 0.5), 8.0)
-	for i in ROPE_SEGS:
-		var seg := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.022
-		cm.bottom_radius = 0.022
-		cm.height = 1.0
-		cm.radial_segments = 6
-		seg.mesh = cm
-		seg.material_override = rope_mat
-		seg.top_level = true
-		add_child(seg)
-		_rope.append(seg)
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -144,10 +127,11 @@ func _unhandled_input(e: InputEvent) -> void:
 					get_on()
 
 
-## 紐の先（ソリの前）に近いか
+## 雪の上の紐の先に近いか
 func _rope_end_near() -> bool:
-	var p: Vector3 = sled.to_local(global_position)
-	return p.z < -sled.HALF.y - 0.3 and abs(p.x) < 1.3 and p.length() < sled.HALF.y + GRAB_REACH
+	var d: Vector3 = sled.rope.end_point() - global_position
+	d.y = 0
+	return d.length() < 1.6
 
 
 func grab() -> void:
@@ -235,7 +219,6 @@ func _physics_process(dt: float) -> void:
 	_update_point()
 	_pose_hands(dt)
 	_pose_doll()
-	_draw_rope()
 
 
 ## 人形に、いまの動きを伝える（姿勢は人形が 12 コマで刻む）。Q を押しているあいだ手を振る（仮のキー）
@@ -389,9 +372,16 @@ func _grip(dt: float) -> void:
 	prompt = "力をかけている　F 手を離す　E 乗る" if pushing else "WASD 見ている向きを基準に力をかける　F 手を離す　E 乗る"
 
 
-## 紐を持つ手の位置（世界座標）
+## 紐を持つ手の位置（世界座標）。一人称では画面の右手、三人称では体の右前
 func _hand_world() -> Vector3:
+	if third:
+		return to_global(Vector3(0.25, 1.0, -0.45))
 	return cam.to_global(Vector3(0.2, -0.3, -0.4))
+
+
+## 紐の先を付ける所（sled_rope.gd が読む）
+func rope_hand() -> Vector3:
+	return _hand_world()
 
 
 func _place_camera(dt: float, bob: float, working: bool) -> void:
@@ -454,39 +444,3 @@ func _pose_hands(dt: float) -> void:
 		var arm := h.position - Vector3(0.2 * s, -0.42, 0.12)
 		h.basis = Basis.looking_at(arm, Vector3.UP)
 	_hand_frame = fi
-
-
-## 紐を描く。持っていれば手まで、持っていなければソリの前に垂れる
-func _draw_rope() -> void:
-	var a: Vector3 = sled.to_global(sled.ROPE_ANCHOR)
-	var b: Vector3
-	if mode == Mode.ROPE:
-		b = _hand_world()
-	else:
-		b = a + (-sled.global_basis.z) * 1.2
-		b.y = a.y - 0.28
-	var d := a.distance_to(b)
-	var slack: float = max(0.0, sled.ROPE_LEN - d) if mode == Mode.ROPE else 0.4
-	var sag: float = min(slack * 0.45, 1.2)
-	var pts: Array[Vector3] = []
-	for i in ROPE_SEGS + 1:
-		var t := float(i) / ROPE_SEGS
-		var p := a.lerp(b, t)
-		p.y -= sag * sin(PI * t)
-		pts.append(p)
-	for i in ROPE_SEGS:
-		var p0 := pts[i]
-		var p1 := pts[i + 1]
-		var seg := _rope[i]
-		var mid := (p0 + p1) * 0.5
-		var v := p1 - p0
-		var len := v.length()
-		if len < 0.001:
-			seg.visible = false
-			continue
-		seg.visible = true
-		var up := Vector3.UP if abs(v.normalized().dot(Vector3.UP)) < 0.99 else Vector3.RIGHT
-		var basis := Basis.looking_at(v.normalized(), up)
-		# CylinderMesh は y 軸が長さ。見ている向き（-z）を y に合わせる
-		basis = basis * Basis(Vector3.RIGHT, -PI / 2)
-		seg.global_transform = Transform3D(basis.scaled(Vector3(1, len, 1)), mid)
