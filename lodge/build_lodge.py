@@ -953,13 +953,13 @@ def build_interior():
     bar.done(bevel=0.012)
     st = STOOL
     sm = M("stool_src", "post", "interior")
-    sm.cyl((0, 0, 0), (0, 0, 0.02), 0.20, seg=20)                       # 台
-    sm.cyl((0, 0, 0.02), (0, 0, st["seat"] - 0.06), 0.035, seg=10)       # 柱
-    sm.cyl((0, 0, 0.30), (0, 0, 0.33), 0.17, seg=20)                     # 足掛けの輪
-    sm.cyl((0, 0, st["seat"] - 0.06), (0, 0, st["seat"] - 0.02), st["r"], seg=24)
+    sm.cyl((0, 0, 0), (0, 0, 0.02), 0.20, seg=12)                       # 台
+    sm.cyl((0, 0, 0.02), (0, 0, st["seat"] - 0.06), 0.035, seg=6)        # 柱
+    sm.cyl((0, 0, 0.30), (0, 0, 0.33), 0.17, seg=12)                     # 足掛けの輪
+    sm.cyl((0, 0, st["seat"] - 0.06), (0, 0, st["seat"] - 0.02), st["r"], seg=16)
     ssrc = sm.done(bevel=0.008, smooth=True)
     sc_ = M("stool_cushion_src", "cushion", "interior")
-    sc_.cyl((0, 0, st["seat"] - 0.02), (0, 0, st["seat"] + 0.04), st["r"] - 0.01, seg=24)
+    sc_.cyl((0, 0, st["seat"] - 0.02), (0, 0, st["seat"] + 0.04), st["r"] - 0.01, seg=16)
     scsrc = sc_.done(bevel=0.02, seg=3, smooth=True)
     n_st = int((wb["x1"] - wb["x0"] - 0.4) / st["step"])
     off = (wb["x1"] - wb["x0"] - (n_st - 1) * st["step"]) / 2
@@ -1123,12 +1123,12 @@ def build_interior():
         e.location = loc
         coll("markers").objects.link(e)
     # 灯りの場所の目印。glTF の灯りは明るさの単位が合わないので、ゲームの側で灯りを置く
-    lights = [("light_lamp_%d" % i, (x + tw * j, y + td / 2, CEIL1 - 0.75))
-              for i, (x, y, j) in enumerate((x, y, j) for x, y in TABLES for j in (0.25, 0.75))]
-    lights += [("light_lantern_%d" % i, (x + KOTATSU_W / 2, ky + KOTATSU_D / 2, FL2 + TATAMI["h"] + 1.95))
-               for i, (x, ky) in enumerate(KOTATSU)]
+    # 灯りは少なく（スマホでも動くように）: 食堂は炉と天井の 3 つの計 4 つ、座敷は 2 つ、風除室に 1 つ。影はなし
+    lights = [("light_lamp_%d" % i, (gx(x), gy(4.6), CEIL1 - 1.0)) for i, x in enumerate((5.0, 7.6, 10.2))]
+    ky = (KOTATSU[0][1] + KOTATSU[-1][1] + KOTATSU_D) / 2
+    lights += [("light_lantern_%d" % i, ((KOTATSU[a][0] + KOTATSU[a + 1][0] + KOTATSU_W) / 2, ky, FL2 + TATAMI["h"] + 1.95))
+               for i, a in enumerate((0, 2))]
     lights.append(("light_fire", ((CH["x0"] + CH["x1"]) / 2, CH["y0"] - 0.35, FL1 + 0.6)))
-    lights.append(("light_kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4)))
     lights.append(("light_vestibule", (VEST["cx"], Y0 - VEST["d"] / 2, VEST["h"] - 1.1)))
     for name, loc in lights:
         e = bpy.data.objects.new(name, None)
@@ -1446,6 +1446,38 @@ def build_collision():
     return [m.done() for m in groups.values()]
 
 
+def lighten(objs):
+    """ゲーム向けに軽くする（目安: ロッジ全体で三角形 10 万以下）。面取りは外し、形はまとめて 1 つの物体に（描く回数を素材の数まで減らす）。
+    ゲームが名前で動かす物（自動ドア）と、目印（空の節点）はそのまま残す"""
+    meshes = [o for o in objs if o.type == "MESH"]
+    marks = [o for o in objs if o.type != "MESH"]
+    for o in meshes:
+        for md in list(o.modifiers):
+            if md.type == "BEVEL":        # 面取りはゲームでは外す（三角形が箱の 3〜4 倍になる）
+                o.modifiers.remove(md)
+        if o.data.users > 1:
+            o.data = o.data.copy()
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in meshes:
+        o.hide_set(False)
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = meshes[0]
+    bpy.ops.object.convert(target="MESH")      # 面取り・配列・切り抜きを形にする
+    moving = [o for o in meshes if o.name.startswith("autodoor")]
+    rest = [o for o in meshes if o not in moving]
+    bpy.ops.object.select_all(action="DESELECT")
+    for o in rest:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = rest[0]
+    bpy.ops.object.join()
+    body = bpy.context.view_layer.objects.active
+    body.name = "lodge_body"
+    tris = sum(len(p.vertices) - 2 for p in body.data.polygons)
+    print("lighten: %d objects -> 1 + %d moving, %d tris, %d materials" % (len(meshes), len(moving), tris,
+                                                                           len(body.data.materials)))
+    return [body] + moving + marks
+
+
 def export(folder):
     """lodge.glb（見た目と置き場の目印）と lodge_collision.glb（当たり判定）"""
     os.makedirs(folder, exist_ok=True)
@@ -1462,7 +1494,8 @@ def export(folder):
                                   export_lights=False, export_cameras=False, export_yup=True)
         print("wrote", path)
 
-    write([o for c in keep if bpy.data.collections.get(c) for o in bpy.data.collections[c].objects], "lodge.glb")
+    objs = [o for c in keep if bpy.data.collections.get(c) for o in bpy.data.collections[c].objects]
+    write(lighten(objs), "lodge.glb")
     write(build_collision(), "lodge_collision.glb")
 
 
