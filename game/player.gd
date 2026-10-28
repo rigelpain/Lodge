@@ -611,7 +611,11 @@ func _place_shapes_fp(em: Array) -> void:
 				"low":
 					b = b * Basis(Vector3.RIGHT, -0.65)   # 下へ向けて、おさえる
 				"shake":
-					b = Basis(Vector3.UP, PI) * Basis(Vector3.BACK, -1.4 * float(side)) * Basis(Vector3.RIGHT, -0.3)   # 手のひらを横に立てる
+					# 握手: 指（+y）は前の相手へ、少しまんなか寄りに。手のひら（+z）は内側へ立て、少し下へ傾けて手の甲が見えるように
+					var y := Vector3(-0.2 * side, 0.45, -1.0).normalized()
+					var z := Vector3(-0.8 * side, -1.0, 0.0)
+					z = (z - y * z.dot(y)).normalized()
+					b = Basis(y.cross(z).normalized(), y, z)
 					size = 1.0
 				"high_five", "whiff":
 					b = b * Basis(Vector3.RIGHT, 0.5 if k < 3 else 0.0)
