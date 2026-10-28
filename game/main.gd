@@ -131,6 +131,8 @@ func _ready() -> void:
 		settings.set_open(true)
 		if player: player.menu_open = true
 
+	call_deferred("_split_pip_layers")   # 全部が置かれたあとで
+
 	hud = Label.new()
 	hud.position = Vector2(16, 12)
 	hud.add_theme_font_size_override("font_size", 18)
@@ -233,6 +235,7 @@ var _pip_vps: Array[SubViewport] = []
 var _pip_tick := 0
 var pip_hidden := false
 var settings: CanvasLayer
+var ground_mesh: MeshInstance3D
 var sun_light: DirectionalLight3D
 var env: Environment
 var snowfall: GPUParticles3D
@@ -240,6 +243,32 @@ var _pip_layer: CanvasLayer
 var pip_frame: PanelContainer
 var pip_mat: ShaderMaterial
 var pip_mode := 0
+
+
+## 右上の 360° 映像は場面を 6 回描くので、小物・連れの動物・スピーカーの柱・遠景は層 4 にして映さない
+## （描画回数が 7 倍になるのを防ぐ）。地面・木・ロッジの建物・ソリ・人は映す。本体のカメラは層 4 も映す
+const PIP_SKIP_WORDS := ["prop", "kitchen", "companion", "pet", "speaker", "mound", "furnish", "machine", "vending"]
+
+func _split_pip_layers() -> void:
+	for m in find_children("*", "VisualInstance3D", true, false):
+		if m == ground_mesh or m is Camera3D or m is Light3D:
+			continue
+		var top: Node = m
+		while top.get_parent() != null and top.get_parent() != self:
+			top = top.get_parent()
+		var names := [top.name.to_lower(), m.name.to_lower()]
+		var p := m.get_parent()
+		if p and p != self:
+			names.append(p.name.to_lower())
+		var skip := false
+		for w in PIP_SKIP_WORDS:
+			for nm in names:
+				if nm.contains(w):
+					skip = true
+		if top.name == "Lodge" and not m.name.to_lower().contains("lodge_body") and not m.name.to_lower().contains("door"):
+			skip = true   # ロッジは建物だけ映し、中の小物は映さない
+		if skip:
+			m.layers = 1 << 3
 
 
 func _make_pip() -> void:
@@ -254,7 +283,8 @@ func _make_pip() -> void:
 		cam.fov = 90.0
 		cam.keep_aspect = Camera3D.KEEP_WIDTH
 		cam.near = 0.08
-		cam.cull_mask = (1 << 0) | (1 << 1)   # 世界と、あなたの体。手は映さない
+		cam.cull_mask = (1 << 0) | (1 << 1)   # 地面・ソリ・人・あなたの体。手（層 3）と飾り（層 4）は映さない
+		cam.far = 120.0
 		vp.add_child(cam)
 		cam.current = true
 		pip_cams.append(cam)
@@ -436,6 +466,7 @@ func _make_world() -> void:
 		m.scale = Vector3(rng.randf_range(40, 70), rng.randf_range(14, 26), rng.randf_range(30, 50))
 		m.rotation.y = rng.randf() * TAU
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		m.name = "FarMound%d" % k
 		add_child(m)
 
 
@@ -543,6 +574,7 @@ func _make_ground() -> void:
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = st.commit()
 	mesh.material_override = Look.snow()
+	ground_mesh = mesh
 	add_child(mesh)
 
 	# 木（ソリの通り道は空ける）。フェルトの円錐を 2 段、幹は木
@@ -647,7 +679,7 @@ func _physics_process(dt: float) -> void:
 			return
 		if args.has("third"):
 			player.third = true
-			player.cam.cull_mask = (1 << 0) | (1 << 1)
+			player.cam.cull_mask = (1 << 0) | (1 << 1) | (1 << 3)
 		if args["sim"] == "1":
 			player.grab()
 		var ev := InputEventKey.new()

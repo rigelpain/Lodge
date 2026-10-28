@@ -64,7 +64,7 @@ func _ready() -> void:
 	cam.position.y = 1.55
 	cam.fov = 75
 	cam.near = 0.05
-	cam.cull_mask = (1 << 0) | (1 << 2)   # 世界と手。自分の体（層 2）は映さない
+	cam.cull_mask = (1 << 0) | (1 << 2) | (1 << 3)   # 世界と手と飾り。自分の体（層 2）は映さない
 	add_child(cam)
 	cam.make_current()
 
@@ -102,7 +102,7 @@ func _ready() -> void:
 ## 三人称では自分の体を映し、一人称の手は映さない
 func set_third(on: bool) -> void:
 	third = on
-	cam.cull_mask = (1 << 0) | (1 << 1) if third else (1 << 0) | (1 << 2)
+	cam.cull_mask = (1 << 0) | (1 << 1) | (1 << 3) if third else (1 << 0) | (1 << 2) | (1 << 3)
 
 
 func _unhandled_input(e: InputEvent) -> void:
