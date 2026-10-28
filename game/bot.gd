@@ -1,8 +1,11 @@
 extends CharacterBody3D
 
 const Doll := preload("res://doll.gd")
+const Emotes := preload("res://emotes.gd")
 ## 押すのを手伝う仲間（通信を入れるまでの代わり）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
+## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手を上げると、ソリを離して前まで来てハイタッチする。
+## 声には同じ声で、おじぎにはおじぎで、拍手には拍手で、滑りながらの万歳には万歳で返す。雪玉が当たると、のけぞって笑う。
 
 enum State { PUSH, WAIT, RIDE }
 
@@ -20,6 +23,14 @@ var debug := ""
 var _col: CollisionShape3D
 var _still := 0.0
 var _wait := 0.0
+var hub: Emotes
+var id := -1
+var voice_pitch := 1.0
+var _replies: Array = []     # [残り秒, 身ぶり]
+var _five_with := -1         # ハイタッチをしにいく相手の番号
+var _five_until := 0         # このコマまでに届かなければやめる
+var _five_sent := false      # もう手を上げた（あとは合うまで、相手の前へ寄り続ける）
+var _em := {}
 
 
 func _ready() -> void:
@@ -34,6 +45,12 @@ func _ready() -> void:
 	doll = Doll.new()
 	doll.kind = "origami" if side > 0 else "news"
 	add_child(doll)
+	voice_pitch = 0.9 if side > 0 else 1.18
+
+	hub = get_parent().get_node_or_null("Emotes")
+	if hub:
+		id = hub.join(self)
+		hub.happened.connect(_on_emote)
 
 
 func let_go() -> void:
@@ -62,8 +79,12 @@ func _uphill(p: Vector3) -> Vector3:
 
 
 func _physics_process(dt: float) -> void:
+	_update_replies(dt)
 	var s := sled.global_position
 	var to_top := Vector2(s.x, s.z).length()
+	if state != State.RIDE and (_five_with > 0 or _rooted()):
+		_go_five(dt)
+		return
 
 	if state == State.RIDE:
 		global_position = sled.to_global(seat)
@@ -202,3 +223,89 @@ func _pose_doll() -> void:
 			doll.gaze = pt
 		elif handle == Vector3.INF and global_position.distance_to(player.global_position) < 8.0:
 			doll.gaze = player.global_position + Vector3.UP * 1.25
+
+
+# ---------------------------------------------------------------- 身ぶりへの返し
+
+func _on_emote(ev: Dictionary) -> void:
+	var who: int = ev.get("who", -1)
+	if who == id:
+		_em = ev
+		doll.play(ev)
+		if ev.kind in ["high_five", "whiff"]:
+			_five_with = -1   # 合った・空振りした。持ち場へ戻る
+		if ev.kind == "hit" and randf() < 0.6:
+			_reply(randf_range(0.7, 1.0), "wa")   # 当たっても楽しい
+		return
+	# 返すのは、あなた（人）の身ぶりにだけ（仲間どうしで返し合い続けないように）
+	if player == null or hub.who_of(who) != player:
+		return
+	var near := global_position.distance_to(player.global_position)
+	match ev.kind:
+		"wa", "un", "nn":
+			if near < 15.0:
+				_reply(randf_range(0.35, 0.8), ev.kind)
+		"bow":
+			if near < 6.0 and state != State.RIDE:
+				_reply(randf_range(0.3, 0.5), "bow")
+		"clap":
+			if near < 10.0:
+				_reply(randf_range(0.2, 0.5), "clap")
+		"banzai":
+			if state == State.RIDE:
+				_reply(randf_range(0.1, 0.25), "banzai")
+		"hand_up":
+			if near < 7.0 and state != State.RIDE:
+				_five_with = who
+				_five_until = int(ev.frame) + Emotes.KINDS.hand_up.frames
+				_five_sent = false
+
+
+func _reply(after: float, kind: String) -> void:
+	_replies.append([after, kind])
+
+
+func _update_replies(dt: float) -> void:
+	for r in _replies.duplicate():
+		r[0] -= dt
+		if r[0] <= 0.0:
+			_replies.erase(r)
+			hub.send({"kind": r[1], "who": id})
+
+
+func _rooted() -> bool:
+	if _em.is_empty():
+		return false
+	var spec: Dictionary = Emotes.KINDS.get(_em.kind, {})
+	return spec.get("root", false) and Doll.frame_index() - int(_em.frame) < spec.frames
+
+
+## 手を上げた相手の前まで歩き、向き合って手を上げる（配り役が合わせる）
+func _go_five(dt: float) -> void:
+	var dir := Vector3.ZERO
+	var them := hub.who_of(_five_with)
+	if _five_with > 0 and (them == null or Doll.frame_index() > _five_until):
+		_five_with = -1
+	elif _five_with > 0:
+		let_go()
+		var fwd: Vector3 = Emotes._forward(them)
+		var spot: Vector3 = them.global_position + fwd * 0.95
+		var to := spot - global_position
+		to.y = 0
+		var face: Vector3 = them.global_position - global_position
+		face.y = 0
+		if to.length() > 0.25:
+			dir = to.normalized()
+		if face.length() > 0.1:
+			look_at(global_position + face, Vector3.UP)
+		# 相手の前まで来たら手のひらを掲げ、合うまで寄り続ける（届けば配り役が合わせる）
+		if not _five_sent and to.length() < 0.6 and Emotes._forward(self).dot(face.normalized()) > 0.6:
+			hub.send({"kind": "hand_up", "who": id})
+			_five_sent = true
+		if _five_sent and to.length() < 0.15:
+			dir = Vector3.ZERO
+	velocity.x = dir.x * SPEED
+	velocity.z = dir.z * SPEED
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
+	move_and_slide()
+	_pose_doll()

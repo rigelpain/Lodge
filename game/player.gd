@@ -3,11 +3,16 @@ extends CharacterBody3D
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
 const FpHands := preload("res://fp_hands.gd")
+const Emotes := preload("res://emotes.gd")
+const EmoteRing := preload("res://emote_ring.gd")
+const Palm := preload("res://palm.gd")
 ## あなた。一人称で、見えるのは自分の人形と同じ柄の袖口と、紙の手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
 ## どう動くかはソリの滑り木と重力が決める。離すのは F だけ。Shift でダッシュ。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
+## 身ぶり: Tab を押しているあいだ輪が出て、マウスの向きで選び、離すと出す。1・2・3 は声（ワ〜・ウン・ンーン）。
+## 雪玉を持っていれば、左クリックを押して振りかぶり、離して投げる（長く押すほど遠くへ）。
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
 const DASH := 3.4            # Shift で走る速さ
@@ -45,6 +50,17 @@ var _hand_frame := -1        # 一人称の手を最後に置き直したコマ
 var point_at := Vector3.INF  # 右腕で指している所（世界）。仲間はここを見る
 var _point_on: Node3D = null # 指した物（ソリや人）。動いても指し続ける
 var _point_local := Vector3.ZERO
+var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
+var id := -1                 # 配り役からもらった番号
+var voice_pitch := 1.0       # 声の高さ（人ごとに少し変える）
+var holding_ball := false
+var ring: EmoteRing
+var _em := {}                # いまの自分の身ぶり（出来事）
+var _winding := false
+var _wind_t := 0.0
+var _ball_fp: MeshInstance3D # 一人称の右手の雪玉
+var _palm_fp: Node3D         # 一人称の、ハイタッチの紙の手のひら
+var _cam_em := Vector3.ZERO  # 身ぶりで視点に足す（x 上下の向き、y 左右の向き、z 高さ）。なめらかに追う
 
 
 func _ready() -> void:
@@ -78,6 +94,26 @@ func _ready() -> void:
 		cam.add_child(h)
 		h.set_meta("side", s)
 		hands.append(h)
+		if s > 0:
+			_ball_fp = MeshInstance3D.new()
+			_ball_fp.mesh = Doll.ball_mesh()
+			_ball_fp.material_override = Doll.ball_material()
+			_ball_fp.layers = 1 << 2
+			_ball_fp.position = Vector3(0, 0.03, -0.1)
+			_ball_fp.visible = false
+			h.add_child(_ball_fp)
+			_palm_fp = Palm.make(Color(FpHands.STYLE.get(doll.kind, FpHands.STYLE["kasa"]).hand), 1 << 2)
+			cam.add_child(_palm_fp)
+
+	hub = get_parent().get_node_or_null("Emotes")
+	if hub:
+		id = hub.join(self)
+		hub.happened.connect(_on_emote)
+		var layer := CanvasLayer.new()
+		layer.layer = 5
+		add_child(layer)
+		ring = EmoteRing.new()
+		layer.add_child(ring)
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -89,7 +125,9 @@ func set_third(on: bool) -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
-	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+	if ring and ring.visible and e is InputEventMouseMotion:
+		ring.move(e.relative)   # 輪を出しているあいだは見回さない
+	elif e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-e.relative.x * 0.003 * mouse_sens)
 		_pitch = clamp(_pitch - e.relative.y * 0.003 * mouse_sens, -1.4, 1.3)
 	elif e is InputEventMagnifyGesture:
@@ -102,14 +140,24 @@ func _unhandled_input(e: InputEvent) -> void:
 			base_fov = clamp(base_fov + 3.0, 50.0, 110.0)
 		elif e.button_index == MOUSE_BUTTON_RIGHT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			toggle_point()
+		elif e.button_index == MOUSE_BUTTON_LEFT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and holding_ball:
+			wind_up()
 		elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu_open:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT and _winding:
+		throw_ball()
+	elif e is InputEventKey and not e.pressed and e.physical_keycode == KEY_TAB and ring and ring.visible:
+		var k := ring.close()
+		if k != "":
+			emote(k)
 	elif e is InputEventKey and e.pressed and not e.echo:
 		match e.physical_keycode:
 			KEY_C:
 				set_third(not third)
 				get_parent().settings.sync("third", third)
 			KEY_F:
+				if rooted():
+					return
 				match mode:
 					Mode.GRIP, Mode.ROPE:
 						let_go()
@@ -118,8 +166,15 @@ func _unhandled_input(e: InputEvent) -> void:
 							grab_rope()
 						else:
 							grab()
-			KEY_G:
-				doll.call_out()   # 言葉にならない声（仮のキー）
+			KEY_TAB:
+				if ring and not menu_open:
+					ring.open(mode == Mode.RIDE, available())
+			KEY_1, KEY_G:
+				emote("wa")   # 言葉にならない声。G は前の仮のキー
+			KEY_2:
+				emote("un")
+			KEY_3:
+				emote("nn")
 			KEY_E:
 				if mode == Mode.RIDE:
 					get_off()
@@ -217,6 +272,7 @@ func _physics_process(dt: float) -> void:
 		Mode.WALK:
 			_walk(dt, false)
 	_update_point()
+	_update_emote(dt)
 	_pose_hands(dt)
 	_pose_doll()
 
@@ -233,6 +289,7 @@ func _pose_doll() -> void:
 	doll.rope_hand = _hand_world() if mode == Mode.ROPE else Vector3.INF
 	doll.lean = Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_W) - _key(KEY_S)) if mode == Mode.RIDE else Vector2.ZERO
 	doll.waving = Input.is_physical_key_pressed(KEY_Q) and not menu_open
+	doll.holding_ball = holding_ball
 	doll.point = point_at
 
 
@@ -299,6 +356,8 @@ func _step_up(dir: Vector3) -> void:
 
 func _walk(dt: float, with_rope: bool) -> void:
 	var input := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
+	if rooted():
+		input = Vector2.ZERO   # しゃがむ・おじぎ・ハイタッチのあいだは、その場で
 	var dir := (global_basis * Vector3(input.x, 0, input.y)).normalized()
 	var speed := DASH if Input.is_physical_key_pressed(KEY_SHIFT) else SPEED
 	if with_rope:
@@ -392,8 +451,9 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			# 乗っているときは、座った人形の目の所（席や人形が変わっても合う）。ソリが傾けば一緒に傾く。
 			# 乗り降りは同じ lerp で、すっと立ち上がる・腰を下ろす
 			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * doll.eye_point(true))
+		eye.y += _cam_em.z
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
-		cam.rotation = Vector3(_pitch, 0, 0)
+		cam.rotation = Vector3(clampf(_pitch + _cam_em.x, -1.5, 1.4), _cam_em.y, 0)
 		return
 	# 三人称: 頭の少し上を中心に、後ろ上から見下ろす。地面に潜らない
 	var pivot := Vector3(0, 1.6, 0)
@@ -432,7 +492,10 @@ func _pose_hands(dt: float) -> void:
 				target = Vector3(0.28 * s, -0.32, -0.35)
 			_:
 				target = Vector3(0.27 * s, -0.25 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.48)
-		var pointing := s > 0 and point_at != Vector3.INF
+		var em_hand := _emote_hand(s)
+		if em_hand != Vector3.INF:
+			target = em_hand
+		var pointing := s > 0 and point_at != Vector3.INF and em_hand == Vector3.INF
 		if pointing:
 			# 指さし: 右の手袋を、指している所の向きへ伸ばす（見回すと、指した向きに残る。後ろなら画面の外）
 			var d := cam.global_basis.inverse() * (point_at - cam.global_position).normalized()
@@ -440,7 +503,7 @@ func _pose_hands(dt: float) -> void:
 		# 手も姿勢と同じ決まり: コマが変わるときだけ置き直す（一人称では揺らさない。目の前でふるえると見ていてつらい）。
 		# ソリをつかんでいる間は、ソリに対しての位置で保つ（ソリが動いても手が縁から離れない）
 		if fi != _hand_frame:
-			var on_sled := mode == Mode.GRIP and not pointing
+			var on_sled := mode == Mode.GRIP and not pointing and em_hand == Vector3.INF
 			h.set_meta("hold", sled.to_local(cam.to_global(target)) if on_sled else target)
 			h.set_meta("on_sled", on_sled)
 		var hold: Vector3 = h.get_meta("hold", target)
@@ -449,3 +512,229 @@ func _pose_hands(dt: float) -> void:
 		var arm := h.position - Vector3(0.2 * s, -0.42, 0.12)
 		h.basis = Basis.looking_at(arm, Vector3.UP)
 	_hand_frame = fi
+	# 一人称の雪玉: 作っている途中は大きくなり、できたら右手に
+	var em := doll.emote_now()
+	var grow := 0.0
+	if em[0] == "make_ball" and em[1] >= 4:
+		grow = clampf((em[1] - 4) / 12.0, 0.0, 1.0) * 0.6 + 0.4
+	elif holding_ball:
+		grow = 1.0
+	_ball_fp.visible = grow > 0.0
+	_ball_fp.scale = Vector3.ONE * maxf(grow, 0.01)
+	_place_palm_fp(em)
+
+
+## 一人称の手のひら: 右手の先に、手のひらを前へ向けて（相手に見せる向き）。形は人形と同じコマで
+func _place_palm_fp(em: Array) -> void:
+	var kind: String = em[0]
+	var k: int = em[1]
+	var on := k >= 0 and ((kind == "hand_up") or (kind == "high_five" and k < 8) or (kind == "whiff" and k < 3))
+	_palm_fp.visible = on
+	if not on:
+		return
+	var size := 1.0
+	var tilt := 0.0
+	var roll := 0.0
+	match kind:
+		"hand_up":
+			size = Palm.pop(k)
+			roll = -0.14 if (k / 6) % 2 == 0 else 0.08
+		"high_five":
+			tilt = 0.5 if k < 3 else 0.0
+			size = 1.25 if k == 3 else 1.0
+		"whiff":
+			tilt = 0.5 if k < 2 else 0.0
+	var h: Node3D = hands[1] if hands[1].get_meta("side") > 0 else hands[0]
+	var b := Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, tilt) * Basis(Vector3.BACK, roll)
+	_palm_fp.transform = Transform3D(b.scaled(Vector3.ONE * size), h.position + Vector3(0, 0.07, -0.02))
+
+
+# ---------------------------------------------------------------- 身ぶり（emotes.gd）
+
+## いまできる身ぶり（輪で薄くするものを決める）。つかんでいる・紐を持っているときは声と深呼吸だけ
+func available() -> Dictionary:
+	var out := {}
+	var busy := rooted() or _winding
+	for k in Emotes.KINDS:
+		var spec: Dictionary = Emotes.KINDS[k]
+		var ok: bool = spec.ride if mode == Mode.RIDE else spec.walk
+		if mode == Mode.GRIP or mode == Mode.ROPE:
+			ok = k in Emotes.VOICES or k == "breath"
+		if k == "make_ball" and holding_ball:
+			ok = false
+		if busy and not k in Emotes.VOICES:
+			ok = false
+		out[k] = ok
+	return out
+
+
+## 身ぶりを出す（配り役へ送る。自分の人形も、配られた出来事で動く）
+func emote(kind: String) -> void:
+	if hub == null or menu_open or not available().get(kind, false):
+		return
+	hub.send({"kind": kind, "who": id})
+
+
+## その場でする身ぶりの途中か（歩けない、つかめない）
+func rooted() -> bool:
+	if _em.is_empty():
+		return false
+	var spec: Dictionary = Emotes.KINDS.get(_em.kind, {})
+	return spec.get("root", false) and _em_k() < spec.frames
+
+
+func _em_k() -> int:
+	return Doll.frame_index() - int(_em.frame) if not _em.is_empty() else -1
+
+
+func _on_emote(ev: Dictionary) -> void:
+	if ev.get("who", -1) != id:
+		return
+	_em = ev
+	doll.play(ev)
+	match ev.kind:
+		"throw":
+			holding_ball = false
+		"hit":
+			_winding = false   # びっくりして振りかぶりが解ける（雪玉は持ったまま）
+
+
+## 左クリックを押した: 振りかぶる
+func wind_up() -> void:
+	if not holding_ball or _winding or rooted() or hub == null:
+		return
+	_winding = true
+	_wind_t = 0.0
+	hub.send({"kind": "windup", "who": id})
+
+
+## 左クリックを離した: 見ている向きへ投げる。長く振りかぶるほど速い。乗っていればソリの速さも乗る
+func throw_ball() -> void:
+	if not _winding:
+		return
+	_winding = false
+	var power := clampf(_wind_t / 0.8, 0.0, 1.0)
+	var speed := lerpf(7.0, 16.0, power)
+	var dir := (-cam.global_basis.z + Vector3.UP * 0.14).normalized()
+	var origin: Vector3
+	if third:
+		origin = global_position + Vector3.UP * doll.height() * 0.85 + doll.global_basis * Vector3(0.18, 0, -0.45)
+	else:
+		origin = cam.to_global(Vector3(0.14, -0.06, -0.45))
+	var carry: Vector3 = sled.linear_velocity if mode == Mode.RIDE else velocity
+	hub.send({"kind": "throw", "who": id, "origin": origin, "velocity": dir * speed + carry})
+
+
+func _update_emote(dt: float) -> void:
+	if _winding:
+		_wind_t += dt
+	var want := Vector3.ZERO
+	var k := _em_k()
+	if not _em.is_empty():
+		if _em.kind == "make_ball" and k >= Emotes.MAKE_READY and not _em.get("got", false):
+			_em["got"] = true
+			holding_ball = true
+		want = _emote_cam(_em.kind, k)
+	if not bob_enabled and not (not _em.is_empty() and _em.kind == "make_ball"):
+		want *= 0.3   # 視点の揺れを切っていれば控えめに（しゃがむ高さだけはそのまま）
+	_cam_em = _cam_em.lerp(want, minf(1.0, dt * 12.0))
+
+
+## 身ぶりの一人称の視点（x 上下の向き、y 左右の向き、z 高さ）。人形の頭と同じ形を、小さく
+func _emote_cam(kind: String, k: int) -> Vector3:
+	var n: int = Emotes.KINDS.get(kind, {}).get("frames", 0)
+	if k < 0 or (n > 0 and k >= n):
+		return Vector3.ZERO
+	match kind:
+		"un":
+			return Vector3([-0.06, -0.15, -0.15, -0.06, 0.0, 0.0, 0.0][k], 0, 0)
+		"nn":
+			return Vector3(-0.02, [0.07, 0.07, -0.07, -0.07, 0.07, 0.07, -0.06, -0.06, 0.04, 0.04, -0.02, -0.02, 0.0, 0.0][k], 0)
+		"bow":
+			var s := Doll._ease(k / 4.0) if k < 13 else 1.0 - Doll._ease((k - 13) / 6.0)
+			return Vector3(-0.5 * s, 0, -0.12 * s)
+		"make_ball":
+			var s := Doll._ease(k / 4.0) if k < 16 else 1.0 - Doll._ease((k - 16) / 5.0)
+			return Vector3(-0.5 * s, 0, -0.45 * s)
+		"breath":
+			return Vector3(0.14 * Doll._breath_curve(k), 0, 0.02 * Doll._breath_curve(k))
+		"hit":
+			var f: float = [0.55, 0.6, 0.5, 0.45, 0.4, 0.35, 0.3, 0.2, 0.12, 0.08, 0.05, 0.03, 0.0, 0.0, 0.0, 0.0][k]
+			var shake := (0.05 if k % 2 == 0 else -0.05) if k >= 8 and k < 14 else 0.0
+			return Vector3(0.28 * f, shake, 0)
+		"whiff":
+			return Vector3(-0.12 if k >= 2 and k < 8 else 0.0, 0.08 if k >= 2 and k < 5 else 0.0, 0)
+		"wa":
+			return Vector3(-0.04 if k < 2 else 0.08, 0, 0)
+		"banzai":
+			return Vector3(0.06 if k >= 2 and k < 30 else 0.0, 0, 0)
+	return Vector3.ZERO
+
+
+## 身ぶりの一人称の手（カメラの座標）。身ぶりでなければ INF
+func _emote_hand(s: int) -> Vector3:
+	if _winding:
+		return Vector3(0.33, 0.0, -0.36) if s > 0 else Vector3(-0.1, -0.1, -0.62)   # 右手（雪玉）を画面の右端へ引き、左手で狙う
+	var em := doll.emote_now()
+	var kind: String = em[0]
+	var k: int = em[1]
+	if k < 0:
+		return Vector3.INF
+	match kind:
+		"hand_up":
+			if s > 0:
+				return Vector3(0.22, 0.06 + (0.02 if (k / 6) % 2 == 0 else 0.0), -0.5)
+		"high_five":
+			if s > 0:
+				if k < 3:
+					return Vector3(0.36, 0.16, -0.26)   # ため: 画面の右へ引く
+				if k < 6:
+					return Vector3(0.03, 0.06, -0.58)   # 叩きつける: まんなかで手が合う
+				return Vector3(0.15, -0.3, -0.5)
+		"whiff":
+			if s > 0:
+				if k < 2:
+					return Vector3(0.32, 0.14, -0.3)
+				if k < 4:
+					return Vector3(-0.08, -0.12, -0.6)   # 振り抜く
+				return Vector3(-0.05, -0.38, -0.45)
+		"breath":
+			var b := Doll._breath_curve(k)
+			return Vector3(s * (0.27 + 0.16 * b), -0.25 + 0.1 * b, -0.48)
+		"make_ball":
+			if k >= 4 and k < 16:
+				var up := 0.035 if ((k / 2) % 2 == 0) == (s > 0) else 0.0
+				return Vector3(s * 0.08, -0.2 + up, -0.4)
+			if k >= 16 and s > 0:
+				return Vector3(0.12, -0.2, -0.42)
+		"throw":
+			if s > 0:
+				if k == 0:
+					return Vector3(0.12, 0.0, -0.66)
+				if k < 3:
+					return Vector3(-0.04, -0.34, -0.56)
+		"hit":
+			if k < 8:
+				return Vector3(s * 0.26, 0.0, -0.4)
+			if k < 14:
+				return Vector3(s * 0.15, -0.18 + (0.04 if (k % 2 == 0) == (s > 0) else 0.0), -0.36)
+		"banzai":
+			if k < 2:
+				return Vector3(s * 0.16, -0.4, -0.35)
+			if k < 30:
+				var w := (0.03 if (k / 3) % 2 == 0 else -0.03) * s
+				return Vector3(s * 0.33 + w, 0.22, -0.42)
+		"clap":
+			var gap: float = [0.32, 0.14, 0.03, 0.2][k % 4]
+			return Vector3(s * gap * 0.5, -0.17, -0.42)
+		"bow":
+			return Vector3(s * 0.05, -0.38, -0.4)
+		"wa":
+			if k < 2:
+				return Vector3(s * 0.2, -0.38, -0.4)
+			if k < 11:
+				return Vector3(s * 0.34, 0.0, -0.45)
+		"nn":
+			if s > 0 and k < 12:
+				return Vector3(0.04 + (0.06 if (k / 2) % 2 == 0 else -0.06), -0.08, -0.32)   # 顔の前で手を振る
+	return Vector3.INF

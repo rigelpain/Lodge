@@ -29,9 +29,11 @@ const Bot := preload("res://bot.gd")
 const Settings := preload("res://settings.gd")
 const Audio := preload("res://audio.gd")
 const RideWind := preload("res://ride_wind.gd")
+const Emotes := preload("res://emotes.gd")
 
 var sled: RigidBody3D
 var player: CharacterBody3D
+var emotes: Emotes          # 身ぶりと声の配り役（人より先に置く。人が登録する）
 var hud: Label
 var args := {}
 var elapsed := 0.0
@@ -102,6 +104,10 @@ func _ready() -> void:
 	add_child(sled)
 	if args.has("sled-yaw"):   # 確かめ用: 最初からソリを横や逆に向けておく
 		sled.rotation.y = deg_to_rad(float(args["sled-yaw"]))
+
+	emotes = Emotes.new()
+	emotes.name = "Emotes"
+	add_child(emotes)
 
 	if not args.has("no-player"):
 		player = Player.new()
@@ -723,6 +729,7 @@ func _physics_process(dt: float) -> void:
 		else:
 			lines.append("WASD 歩く　Shift 走る　Space ジャンプ　F ソリをつかむ（前では紐）　E 乗る　R ソリをふもとへ")
 			lines.append("マウス 見回す　ホイール／ピンチ 視野角　C 一人称／三人称　V 360映像の見せ方　P 360映像を消す　Esc 設定")
+			lines.append("Tab 身ぶりの輪　1 2 3 声　Q 手を振る　右クリック 指さす　左クリック 雪玉を投げる")
 	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）
