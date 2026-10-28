@@ -19,6 +19,10 @@ const SCENES := {
 const SCALE := {"kasa": 1.15, "origami": 1.1, "news": 1.05}
 ## 足もとの影の半径（人形の大きさのまま）
 const FOOT_SHADOW := {"kasa": 0.46, "origami": 0.44, "news": 0.38}
+## 目の所（glb の座標、人形の大きさのまま。立ったとき）。乗っているときの一人称のカメラを合わせる
+const EYE := {"kasa": Vector3(0, 1.01, -0.1), "origami": Vector3(0, 1.235, -0.1), "news": Vector3(0, 0.745, -0.12)}
+## 座ったとき、腰の骨の付け根を座面からどれだけ上に置くか（骨の座標の空間）
+const SIT_HIPS := 0.07
 ## 口の位置（頭の骨の付け根から、人形の大きさのまま）。白い息が出る
 const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.27), "news": Vector3(0, 0.13, -0.3)}
 
@@ -207,6 +211,19 @@ func _apply() -> void:
 		skel.set_bone_pose_scale(sk, Vector3(1, _squash, 1))
 
 
+## 座るときに腰を落とす量（骨の座標の空間）
+func _sit_drop() -> float:
+	return skel.get_bone_global_rest(_id("hips")).origin.y - SIT_HIPS
+
+
+## 目の所（人形の座標、m）。座っているときは腰を落とした分だけ低い（姿勢のコマや揺れには付き合わない）
+func eye_point(sitting: bool) -> Vector3:
+	var e: Vector3 = EYE.get(kind, EYE["kasa"])
+	if sitting:
+		e.y -= _sit_drop()
+	return e * _scale
+
+
 # ---------------------------------------------------------------- 裾
 
 static var _skirt_cache := {}
@@ -330,7 +347,7 @@ func _pose() -> void:
 			# 裾は縦につぶして座面に広げ、脚は前へ投げ出す（足先は座面の高さ）
 			# 裾は腰の骨の付け根へ向かってつぶれるので、その付け根を座面のすぐ上に。
 			# 脚の付け根が腰の骨よりずっと低い人形（③）は、脚が座布団に埋もれてケープに隠れる
-			_hips_drop = _head_of(_id("hips")).y - 0.07
+			_hips_drop = _sit_drop()
 			_squash = 0.12
 			_update_all()
 			for s in ["L", "R"]:

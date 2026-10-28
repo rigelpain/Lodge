@@ -387,7 +387,12 @@ func rope_hand() -> Vector3:
 func _place_camera(dt: float, bob: float, working: bool) -> void:
 	var eye_y := 1.55 + (bob * 0.02 if working else 0.0)
 	if not third:
-		cam.position = cam.position.lerp(Vector3(0, eye_y, 0), min(1.0, dt * 10.0))
+		var eye := Vector3(0, eye_y, 0)
+		if mode == Mode.RIDE:
+			# 乗っているときは、座った人形の目の所（席や人形が変わっても合う）。ソリが傾けば一緒に傾く。
+			# 乗り降りは同じ lerp で、すっと立ち上がる・腰を下ろす
+			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * doll.eye_point(true))
+		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
 		cam.rotation = Vector3(_pitch, 0, 0)
 		return
 	# 三人称: 頭の少し上を中心に、後ろ上から見下ろす。地面に潜らない
