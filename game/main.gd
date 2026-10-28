@@ -96,6 +96,7 @@ func _ready() -> void:
 
 	sled = Sled.new()
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
+	sled.snow_lift = snow_lift
 	add_child(sled)
 	if args.has("sled-yaw"):   # 確かめ用: 最初からソリを横や逆に向けておく
 		sled.rotation.y = deg_to_rad(float(args["sled-yaw"]))
