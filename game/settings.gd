@@ -12,6 +12,7 @@ const ITEMS := [
 	["fov_kick", "押すときに画角が少し広がる", "bool", true, null],
 	["pip", "右上の 360° 映像", "bool", true, null],
 	["snow", "舞う雪", "bool", true, null],
+	["wind", "風の流れ（滑るとき）", "float", 1.0, [0.0, 1.0, 0.05]],
 	["third", "三人称", "bool", false, null],
 	["fov", "視野角", "float", 75.0, [50.0, 110.0, 1.0]],
 	["sens", "マウスの感度", "float", 1.0, [0.3, 2.5, 0.05]],
@@ -120,7 +121,7 @@ func _build() -> void:
 func _fmt(key: String, v: float) -> String:
 	match key:
 		"fov": return "%d°" % v
-		"scale", "vol_music", "vol_sfx", "vol_voice": return "%d%%" % (v * 100)
+		"scale", "wind", "vol_music", "vol_sfx", "vol_voice": return "%d%%" % (v * 100)
 		_: return "%.2f" % v
 
 
