@@ -147,80 +147,24 @@
   "loop": false
  },
  {
-  "file": "idea_d_1_loop.wav",
-  "dur": 40.0,
-  "peak": -4.3,
-  "rms": -17.0,
-  "loop": true
- },
- {
-  "file": "idea_d_2_loop.wav",
-  "dur": 40.0,
-  "peak": -7.0,
-  "rms": -17.0,
-  "loop": true
- },
- {
-  "file": "idea_d_3_loop.wav",
-  "dur": 40.0,
-  "peak": -2.7,
-  "rms": -17.0,
-  "loop": true
- },
- {
-  "file": "idea_d_4.wav",
-  "dur": 30.0,
-  "peak": -4.3,
-  "rms": -17.0,
-  "loop": false
- },
- {
-  "file": "idea_e_1_loop.wav",
-  "dur": 51.2,
-  "peak": -4.1,
-  "rms": -17.0,
-  "loop": true
- },
- {
-  "file": "idea_e_2_loop.wav",
-  "dur": 51.2,
-  "peak": -5.7,
-  "rms": -17.0,
-  "loop": true
- },
- {
-  "file": "idea_e_3_loop.wav",
-  "dur": 51.2,
-  "peak": -1.4,
-  "rms": -17.0,
-  "loop": true
- },
- {
-  "file": "idea_e_4.wav",
-  "dur": 30.0,
-  "peak": -3.9,
-  "rms": -17.0,
-  "loop": false
- },
- {
   "file": "music_loop.wav",
-  "dur": 15.0,
+  "dur": 148.73,
   "peak": -1.0,
-  "rms": -9.0,
+  "rms": -14.4,
   "loop": true
  },
  {
   "file": "music_speaker_far.wav",
   "dur": 30.0,
   "peak": -6.0,
-  "rms": -17.9,
+  "rms": -19.7,
   "loop": false
  },
  {
   "file": "music_speaker_loop.wav",
-  "dur": 15.0,
+  "dur": 148.73,
   "peak": -3.0,
-  "rms": -10.8,
+  "rms": -15.1,
   "loop": true
  },
  {

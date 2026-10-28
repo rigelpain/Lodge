@@ -39,7 +39,9 @@ def far_pass(x, dist, rng, wind_hz):
 if __name__ == "__main__":
     sr, raw = wavfile.read(WAV / "music_loop.wav")
     dry = raw.astype(np.float64) / 32767
-    post = write("music_speaker_loop.wav", horn(dry), -3)
+    # フィルタはループの頭と尾をつないだままかける（3 回つないで真ん中を取る）。でないと継ぎ目に段差が出る
+    n = len(dry)
+    post = write("music_speaker_loop.wav", horn(np.tile(dry, 3))[n:2 * n], -3)
 
     rng = np.random.default_rng(1100)
     two = np.tile(post, 2)   # 30 s
