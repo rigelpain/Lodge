@@ -18,6 +18,8 @@ const PERCH := {"kasa": Vector3(0, 1.372, 0.0), "origami": Vector3(0, 1.49, 0.0)
 const HEEL := Vector3(0.75, 0.0, 0.2)
 const KIT_SCALE := 1.4       # glb の大きさ（座って 0.4 m）からの倍率
 const HEAD_YAW := 1.2        # 子狐の首が回る限り（これより横は体ごと向く）
+## ソリでの子狐の座る所（持ち主の席から、ソリの座標）。膝の少し前の座面で、一人称の目の前をふさがないよう右へ寄る
+const LAP := Vector3(0.2, -0.02, -0.34)
 
 var host: Node3D             # 持ち主（player.gd か bot.gd。doll を持つ）
 var bird_on := true
@@ -36,6 +38,8 @@ var _kit_yaw := 0.0
 var _kit_vel := Vector3.ZERO
 var _kit_phase := 0.0
 var _kit_hop := 0.0
+var _kit_on_sled := Vector3.INF   # 乗っているあいだの子狐の所（ソリの座標）。ソリと一緒に動き、傾く
+var _kit_ride_yaw := 0.0          # 乗っているあいだの、ソリに対しての向き
 var _was_pointing := false
 var _frame := -1
 var _rng := RandomNumberGenerator.new()
@@ -158,10 +162,12 @@ func _ground(p: Vector3) -> float:
 	return hit.position.y if hit else p.y
 
 
-## 子狐が見る所: 指していればそこ、でなければ持ち主の顔
+## 子狐が見る所: 指していればそこ、乗っていれば行く先、でなければ持ち主の顔
 func _kit_target() -> Vector3:
 	if _doll.point != Vector3.INF:
 		return _doll.point
+	if _riding():
+		return _kit.global_position - _doll.sled.global_basis.z * 5.0 + Vector3.UP * 0.4
 	return _doll.global_position + Vector3.UP * 1.3
 
 
@@ -172,12 +178,22 @@ func _riding() -> bool:
 func _move_kit(dt: float) -> void:
 	var pos := _kit.global_position
 	if _riding():
-		# ソリでは持ち主の膝の上に乗る
-		var lap := _doll.global_position - _doll.global_basis.z * 0.42 + Vector3.UP * 0.32
-		_kit.global_position = pos.lerp(lap, 1.0 - exp(-dt * 12.0))
-		_kit_yaw = lerp_angle(_kit_yaw, _doll.global_rotation.y, 1.0 - exp(-dt * 10.0))
+		# ソリでは持ち主の膝の前の座面に座る。所と向きはソリの座標で持つので、ソリが滑っても跳ねても傾いても離れない。
+		# 乗った直後だけ、いまの所から座る所へ跳び移る
+		var sled := _doll.sled
+		var sb := sled.global_basis.orthonormalized()
+		if _kit_on_sled == Vector3.INF:
+			_kit_on_sled = sled.to_local(pos)
+			_kit_ride_yaw = wrapf(_kit_yaw - sb.get_euler().y, -PI, PI)
+		var lap: Vector3 = sled.to_local(_doll.global_position) + LAP
+		_kit_on_sled = _kit_on_sled.lerp(lap, 1.0 - exp(-dt * 12.0))
+		_kit_ride_yaw = lerp_angle(_kit_ride_yaw, 0.0, 1.0 - exp(-dt * 10.0))
 		_kit_vel = Vector3.ZERO
+		_kit.global_transform = Transform3D((sb * Basis(Vector3.UP, _kit_ride_yaw)).scaled(Vector3.ONE * KIT_SCALE), sled.to_global(_kit_on_sled))
+		_kit_yaw = (sb * Basis(Vector3.UP, _kit_ride_yaw)).get_euler().y
+		return
 	else:
+		_kit_on_sled = Vector3.INF
 		var want := _heel()
 		var d := want - pos
 		d.y = 0
