@@ -22,8 +22,17 @@ static func make(path: String) -> Node3D:
 ## 下にある MeshInstance3D の素材を差し替える。灯りの目印（light*）には暖色の灯りをともす。
 ## 湯気の形（*steam*）は隠して、もくもく立ちのぼる煙の粒子に替える（調理の道具の煙は、調理中だけ出す）
 static func dress(root: Node) -> void:
-	for node in root.find_children("*steam*", "MeshInstance3D", true, false):
-		_smoke_from(node)
+	for node in root.find_children("*steam*", "Node3D", true, false):
+		if node is MeshInstance3D:   # 古い glb: 湯気の形
+			var mi: MeshInstance3D = node
+			var box := mi.get_aabb()
+			mi.visible = false
+			var at := mi.position + mi.basis * Vector3(box.get_center().x, box.position.y, box.get_center().z)
+			_smoke(mi.get_parent(), at, maxf(box.size.x, box.size.z), box.size.y, _cook_mark_above(mi) != null)
+		elif node.get_child_count() == 0:   # 湯気の目印: 大きさは x＝幅、y＝高さ
+			var size: Vector3 = node.scale
+			node.scale = Vector3.ONE
+			_smoke(node, Vector3.ZERO, size.x, size.y, "cook" in str(node.name) or _cook_mark_above(node) != null)
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mi: MeshInstance3D = node
 		if not mi.visible:
@@ -68,7 +77,9 @@ static func material_for(src: Material) -> Material:
 	var role := src.resource_name.get_slice(".", 0)
 	var base := src as BaseMaterial3D
 	var baked := base != null and base.albedo_texture != null
-	var key := src.resource_name if baked else role
+	# 焼いた素材は名前（felt.001 など）が小物どうしで重なるので、色の画像で見分ける
+	var key: String = (base.albedo_texture.resource_path if base.albedo_texture.resource_path != "" \
+			else str(base.albedo_texture.get_instance_id())) if baked else role
 	if _mats.has(key):
 		return _mats[key]
 	var col := base.albedo_color if base else Color.WHITE
@@ -97,11 +108,13 @@ static func material_for(src: Material) -> Material:
 	m.rim_tint = 0.5
 	if role == "felt_heat" or role == "fire" or role.begins_with("felt_flame"):   # 熱をもったフェルト・炎
 		m.emission_enabled = true
-		m.emission = col
+		m.emission = Color.WHITE if baked else col
+		m.emission_texture = base.albedo_texture if baked else null   # 焼いた色のまま光る
 		m.emission_energy_multiplier = 0.5 if role == "felt_heat" else 4.0   # 熱は橙のまま（強いと白く飛ぶ）
 	elif role == "paper":                       # 紙の灯り
 		m.emission_enabled = true
 		m.emission = Color(1.0, 0.74, 0.44)
+		m.emission_texture = base.albedo_texture if baked else null
 		m.emission_energy_multiplier = 1.6
 	elif role == "glass":                       # 透明なフィルム
 		m.detail_enabled = false
@@ -127,20 +140,19 @@ static func set_cooking(item: Node, on: bool) -> void:
 		(p as GPUParticles3D).emitting = on
 
 
-## 場面の調理の道具を、順にずらして「調理中」と「休み」をくり返させる（調理の仕組みができるまでの見せ方）
+## 場面の調理の道具の煙を、順にずらして「調理中」と「休み」をくり返させる（調理の仕組みができるまでの見せ方）
 static func cook_cycle(set_root: Node, on_s := 9.0, off_s := 6.0) -> void:
 	var k := 0
-	for item in set_root.get_children():
-		if item.find_children("Smoke", "GPUParticles3D", true, false).is_empty() or _cook_mark(item) == null:
+	for p in set_root.find_children("Smoke", "GPUParticles3D", true, false):
+		if not p.get_meta("cook", false):
 			continue
 		var t := Timer.new()
 		t.one_shot = true
-		item.add_child(t)
-		var on := [false]
+		p.add_child(t)
+		var smoke: GPUParticles3D = p
 		t.timeout.connect(func() -> void:
-			on[0] = not on[0]
-			set_cooking(item, on[0])
-			t.start(on_s if on[0] else off_s))
+			smoke.emitting = not smoke.emitting
+			t.start(on_s if smoke.emitting else off_s))
 		t.start(0.5 + 3.0 * k)
 		k += 1
 
@@ -152,15 +164,12 @@ static func _cook_mark(item: Node) -> Node:
 	return null
 
 
-## 湯気の形を隠し、その根元に煙の粒子を置く。大きさは形の幅と高さから
-static func _smoke_from(mi: MeshInstance3D) -> void:
-	var box := mi.get_aabb()
-	mi.visible = false
-	var w := maxf(box.size.x, box.size.z)
-	var h := box.size.y
+## 煙の粒子を parent の at に置く。w は湯気の幅、h は高さ。cooking なら調理中だけ出す（set_cooking・cook_cycle）
+static func _smoke(parent: Node, at: Vector3, w: float, h: float, cooking: bool) -> void:
 	var p := GPUParticles3D.new()
 	p.name = "Smoke"
-	p.position = mi.position + mi.basis * Vector3(box.get_center().x, box.position.y, box.get_center().z)
+	p.position = at
+	p.set_meta("cook", cooking)
 	p.amount = 28
 	p.lifetime = 3.2
 	p.preprocess = 3.0
@@ -208,8 +217,8 @@ static func _smoke_from(mi: MeshInstance3D) -> void:
 	q.size = Vector2.ONE * w * 1.4
 	q.material = _smoke_material()
 	p.draw_pass_1 = q
-	p.emitting = _cook_mark_above(mi) == null   # 調理の道具は、調理中だけ（set_cooking）
-	mi.get_parent().add_child(p)
+	p.emitting = not cooking
+	parent.add_child(p)
 
 
 static func _cook_mark_above(n: Node) -> Node:
