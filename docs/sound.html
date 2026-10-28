@@ -9,7 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="index.css?v=5">
+<link rel="stylesheet" href="index.css?v=6">
 </head>
 <body>
 <a class="skip" href="#main">本文へ移る</a>
@@ -34,6 +34,11 @@
   <section class="tile snd-listen" aria-labelledby="listen-h">
     <h2 id="listen-h">聞く <span class="count num" id="snd-count"></span></h2>
     <p class="cap top">押すと鳴る。ループは止めるまで続く。下の絵は選んだ音の波形とスペクトログラム（周波数は対数、白い線は 300 Hz・1 kHz・3.5 kHz）。</p>
+    <div class="snd-vol">
+      <label for="snd-vol">音量</label>
+      <input type="range" id="snd-vol" min="-60" max="0" step="1" value="-24">
+      <output for="snd-vol" class="num" id="snd-vol-out">−24 dB</output>
+    </div>
     <div id="snd-groups"></div>
     <figure class="snd-fig" id="snd-fig" hidden>
       <img id="snd-img" alt="">
@@ -59,6 +64,6 @@
   </section>
 </main>
 
-<script src="index.js?v=6"></script>
+<script src="index.js?v=7"></script>
 </body>
 </html>

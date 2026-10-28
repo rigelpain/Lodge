@@ -134,6 +134,19 @@ function setPlaying(btn) {
   playingBtn = btn;
   if (btn) { btn.classList.add('on'); btn.setAttribute('aria-pressed', 'true'); }
 }
+// 音量のつまみ。dB で動かし、いちばん左は消音。決めた値はこのブラウザに覚えておく
+function setupVolume() {
+  const vol = $('snd-vol');
+  if (!vol) return;
+  try { const v = localStorage.getItem('lodge-snd-vol'); if (v !== null) vol.value = v; } catch (e) {}
+  const apply = () => {
+    const db = Number(vol.value);
+    player.volume = db <= -60 ? 0 : 10 ** (db / 20);
+    $('snd-vol-out').textContent = db <= -60 ? '消音' : `${db < 0 ? '−' : ''}${Math.abs(db)} dB`;
+  };
+  vol.addEventListener('input', () => { apply(); try { localStorage.setItem('lodge-snd-vol', vol.value); } catch (e) {} });
+  apply();
+}
 function show(f) {
   const fig = $('snd-fig');
   if (!fig) return;
@@ -151,6 +164,7 @@ function renderSound(s) {
   $('snd-silent').innerHTML = plain(s.silent);
   $('snd-moment').innerHTML = plain(s.moment);
   $('snd-ask').innerHTML = s.ask.map((o) => `<div><dt>${esc(o.name)}</dt><dd>${esc(o.note)}</dd></div>`).join('');
+  setupVolume();
   fetch('sound/manifest.json', { cache: 'no-cache' })
     .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
     .then((files) => {
