@@ -324,7 +324,8 @@ func _go_five(dt: float) -> void:
 	elif _five_with > 0:
 		let_go()
 		var fwd: Vector3 = Emotes._forward(them)
-		var spot: Vector3 = them.global_position + fwd * 0.95
+		# 握手は手のひらをくっつけるので、ハイタッチより近くまで行く
+		var spot: Vector3 = them.global_position + fwd * (0.7 if _five_shape.begins_with("low") else 0.95)
 		var to := spot - global_position
 		to.y = 0
 		var face: Vector3 = them.global_position - global_position
