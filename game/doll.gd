@@ -17,6 +17,8 @@ const SCENES := {
 }
 ## ゲームでの大きさ。news がいちばん小さく、目の高さが origami のお尻あたり
 const SCALE := {"kasa": 1.15, "origami": 1.1, "news": 1.05}
+## 足もとの影の半径（人形の大きさのまま）
+const FOOT_SHADOW := {"kasa": 0.46, "origami": 0.44, "news": 0.38}
 ## 口の位置（頭の骨の付け根から、人形の大きさのまま）。白い息が出る
 const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.27), "news": Vector3(0, 0.13, -0.3)}
 
@@ -32,7 +34,7 @@ var gaze := Vector3.INF      # 見ている所（世界）
 var effort := false
 var airborne := false
 var waving := false
-var point := Vector3.INF     # 右腕を伸ばして指す所（世界）。指しているあいだは、そこを見る
+var point := Vector3.INF     # 腕を伸ばして指す所（世界）。gaze が決まっていなければ、そこを見る
 var sled: Node3D = null
 var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標）
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
@@ -68,6 +70,7 @@ func _ready() -> void:
 	inst.scale = Vector3.ONE * _scale
 	add_child(inst)
 	skel = inst.find_children("*", "Skeleton3D", true, false)[0]
+	_add_skirt(inst)
 	for m in inst.find_children("*", "MeshInstance3D", true, false):
 		(m as MeshInstance3D).layers = layers
 	for i in skel.get_bone_count():
@@ -87,6 +90,7 @@ func _ready() -> void:
 		_order.append(i)
 	_order.sort_custom(func(a, b): return depth.call(a) < depth.call(b))
 	_make_breath()
+	_make_foot_shadow()
 	_next_breath = randi_range(4, 30)
 
 
@@ -110,10 +114,12 @@ func _reset() -> void:
 	for i in _order:
 		_rot[i] = _rest_rot[i]
 	_hips_drop = 0.0
+	_squash = 1.0
 	_update_all()
 
 
 var _hips_drop := 0.0
+var _squash := 1.0           # 腰より下の裾の縦の長さ（座ると、つぶれて座面に広がる）
 
 
 func _update_all() -> void:
@@ -196,6 +202,71 @@ func _apply() -> void:
 	for i in _order:
 		skel.set_bone_pose_rotation(i, _rot[i])
 		skel.set_bone_pose_position(i, _rest_pos[i] + (Vector3(0, -_hips_drop, 0) if skel.get_bone_parent(i) < 0 else Vector3.ZERO))
+	var sk := _id("skirt")
+	if sk >= 0:
+		skel.set_bone_pose_scale(sk, Vector3(1, _squash, 1))
+
+
+# ---------------------------------------------------------------- 裾
+
+static var _skirt_cache := {}
+
+
+## 腰の骨に「裾」の骨を子として足し、腰より下の、腰の骨で動く所（着物・ローブ・ケープの裾）をそちらへ移す。
+## ふだんは腰と同じに動き、座ったときだけ縦につぶす（裾が座面を突き抜けない）。
+## 裾の骨は子を持たないので、縦だけつぶしても脚や胸はゆがまない
+func _add_skirt(inst: Node3D) -> void:
+	var hips := skel.find_bone("hips")
+	if hips < 0:
+		return
+	var sk := skel.add_bone("skirt")
+	skel.set_bone_parent(sk, hips)
+	skel.set_bone_rest(sk, Transform3D.IDENTITY)
+	skel.reset_bone_pose(sk)
+	for m in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		if mi.skin == null:
+			continue
+		if not _skirt_cache.has(kind):
+			_skirt_cache[kind] = _skirt_mesh(mi)
+		var c: Array = _skirt_cache[kind]
+		if c.is_empty():
+			continue
+		mi.mesh = c[0]
+		mi.skin = c[1]
+
+
+func _skirt_mesh(mi: MeshInstance3D) -> Array:
+	var skin := mi.skin.duplicate() as Skin
+	var hb := -1
+	for i in skin.get_bind_count():
+		var n := skin.get_bind_name(i)
+		if n == "hips" or (n == "" and skin.get_bind_bone(i) == skel.find_bone("hips")):
+			hb = i
+	if hb < 0:
+		return []
+	var nb := skin.get_bind_count()
+	if skin.get_bind_name(hb) != "":
+		skin.add_named_bind("skirt", skin.get_bind_pose(hb))
+	else:
+		skin.add_bind(skel.find_bone("skirt"), skin.get_bind_pose(hb))
+	var to_hips := skin.get_bind_pose(hb)
+	var src := mi.mesh
+	var out := ArrayMesh.new()
+	for si in src.get_surface_count():
+		var a := src.surface_get_arrays(si)
+		var verts: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+		var bones: PackedInt32Array = a[Mesh.ARRAY_BONES]
+		var per := bones.size() / verts.size()
+		for v in verts.size():
+			if (to_hips * verts[v]).y < 0.0:
+				for k in per:
+					if bones[v * per + k] == hb:
+						bones[v * per + k] = nb
+		a[Mesh.ARRAY_BONES] = bones
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a, [], {}, Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS if per == 8 else 0)
+		out.surface_set_material(si, src.surface_get_material(si))
+	return [out, skin]
 
 
 # ---------------------------------------------------------------- 動き
@@ -255,13 +326,16 @@ func _pose() -> void:
 
 	match act:
 		Act.RIDE:
-			# ソリに座る。腰を落とし、脚は前へ、膝を立てる。両手はソリの縁
-			var hip_y := _head_of(_id("thigh.R")).y
-			_hips_drop = hip_y - 0.04
+			# ソリに座る。腰を落とし、脚は前へ。両手はソリの縁
+			# 裾は縦につぶして座面に広げ、脚は前へ投げ出す（足先は座面の高さ）
+			# 裾は腰の骨の付け根へ向かってつぶれるので、その付け根を座面のすぐ上に。
+			# 脚の付け根が腰の骨よりずっと低い人形（③）は、脚が座布団に埋もれてケープに隠れる
+			_hips_drop = _head_of(_id("hips")).y - 0.07
+			_squash = 0.12
 			_update_all()
 			for s in ["L", "R"]:
-				_turn_axis("thigh." + s, X, 1.45)
-				_turn_axis("shin." + s, X, -1.2)
+				_turn_axis("thigh." + s, X, 1.5)
+				_turn_axis("shin." + s, X, -0.25)
 			bend = -lean.y * 0.3
 			_turn_axis("chest", Z, -lean.x * 0.3)
 			if sled:
@@ -335,9 +409,8 @@ func _pose() -> void:
 	var hi := _id("head")
 	if hi >= 0:
 		var hp := skel.global_transform * _head_of(hi)
-		var look := gaze if gaze != Vector3.INF else hp + global_basis * Vector3(0, -0.05, -1)
-		if point != Vector3.INF:
-			look = point
+		# 見ている所が決まっていなければ、指している所を見る（あなたは顔と指さしを別々に向けられる）
+		var look := gaze if gaze != Vector3.INF else (point if point != Vector3.INF else hp + global_basis * Vector3(0, -0.05, -1))
 		# 顔の向きは相互行為の手がかり。首と頭で大きく回し、届かない分は胸も少し回す
 		var ld := (skel.global_transform.basis.inverse() * (look - hp)).normalized()
 		var yaw_all := atan2(-ld.x, -ld.z)
@@ -345,8 +418,7 @@ func _pose() -> void:
 		var pitch := clampf(atan2(ld.y, Vector2(ld.x, ld.z).length()), -0.9, 0.75) + bend * 0.7
 		if _voice > 0:
 			pitch = minf(pitch + 0.3, 0.85)
-		if point == Vector3.INF:
-			_turn_axis("chest", Vector3.UP, clampf(yaw_all, -1.6, 1.6) * 0.15)
+		_turn_axis("chest", Vector3.UP, clampf(yaw_all, -1.6, 1.6) * 0.15)
 		_turn_axis("neck", Vector3.UP, yaw * 0.4)
 		_turn_axis("head", Vector3.UP, yaw * 0.6)
 		# うなずく向きは、首を回したあとの頭の横の軸で（横を向いたまま上下を見ても頭が傾かない）
@@ -415,6 +487,31 @@ func _grip_points() -> Array:
 			p.y = 0.48
 		pts.append(p)
 	return pts
+
+
+# ---------------------------------------------------------------- 足もとの影
+
+## 足もとに、やわらかい丸い影を落とす（雪の上に立っている感じ。乗っているときはソリの台に落ちる）。
+## 雪が明るく空の光も強いので、太陽の影だけでは足もとが浮いて見える。影は雪の影と同じ青み
+func _make_foot_shadow() -> void:
+	var r: float = FOOT_SHADOW[kind] * _scale
+	var g := Gradient.new()
+	g.offsets = PackedFloat32Array([0.0, 0.62, 0.85, 1.0])
+	g.colors = PackedColorArray([Color(0.08, 0.1, 0.2, 0.85), Color(0.08, 0.1, 0.2, 0.75), Color(0.08, 0.1, 0.2, 0.3), Color(0.08, 0.1, 0.2, 0.0)])
+	var tex := GradientTexture2D.new()
+	tex.gradient = g
+	tex.fill = GradientTexture2D.FILL_RADIAL
+	tex.fill_from = Vector2(0.5, 0.5)
+	tex.fill_to = Vector2(1.0, 0.5)
+	tex.width = 64
+	tex.height = 64
+	var d := Decal.new()
+	d.size = Vector3(r * 2.0, 0.36, r * 2.0)   # 薄い箱: 足の甲より上には届かない
+	d.texture_albedo = tex
+	d.upper_fade = 0.3
+	d.lower_fade = 0.3
+	d.position = Vector3(0, 0.02, 0)
+	add_child(d)
 
 
 # ---------------------------------------------------------------- 白い息
