@@ -17,7 +17,8 @@ const SLIP_RESIST := 18.0          # 滑り木の横滑りのしにくさ（前�
 const RUNNER_Z := 1.1              # 滑り木の前後の接地点（中心からの距離）
 const RUNNER_X := 0.6              # 左右の滑り木の位置
 const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N per m/s)
-const LEAN_DIG := 14.0             # 体重をかけた側の滑り木が食い込んで増える抵抗
+const LEAN_DIG := 17.5             # 体重をかけた側の滑り木が食い込んで増える抵抗（2026-10-28 に 14 から上げた）
+const SCOOP_FORCE := 120.0         # 乗ったまま前傾して手で雪をかく力 (N)。坂を登る向きには効かない
 const BRAKE_DRAG := 14.0           # 後ろに体重をかけたときの制動（両側）
 const HOLD_FRICTION := 0.45        # 遅いときに働く静止摩擦（重さに対する割合）。丘のどこでも留まり、1人が押せば動き出す
 
@@ -267,7 +268,9 @@ func _physics_process(_dt: float) -> void:
 	pushers = _push_count
 	_push_count = 0
 	var riding := riders.size() > 0
-	linear_damp = (RIDE_DAMP * (0.4 if _lean_fwd else 1.0)) if riding else CLIMB_DAMP
+	# 押されて坂を登っている間は、乗っている人がいても登りの雪の抵抗。乗るだけで登りが速くならないように
+	var pushed_up := pushers > 0 and linear_velocity.y > 0.05
+	linear_damp = (RIDE_DAMP * (0.4 if _lean_fwd else 1.0)) if riding and not pushed_up else CLIMB_DAMP
 	var side := global_basis.x
 	var fwd := -global_basis.z
 	# 滑り木: 前後にはよく滑り、横には滑らない。前後 2 点で横滑りを止めるので、
@@ -293,9 +296,10 @@ func _physics_process(_dt: float) -> void:
 			if _lean_back:
 				c += BRAKE_DRAG
 		apply_force(-fwd * v_long * c, r)
-	# 遅いソリは静止摩擦で坂に留まる（乗っている人がいないとき）。押せばその分だけ動く
+	# 遅いソリは静止摩擦で坂に留まる（乗っている人がいないか、だれかが押しているとき）。押せばその分だけ動く。
+	# 乗っている人がいても押されていれば効くので、乗る＋一人が押すは、一人で押すのと同じ速さで登る
 	var speed := linear_velocity.length()
-	if speed < 0.8 and not riding:
+	if speed < 0.8 and (not riding or pushers > 0):
 		var n := _ground_normal()
 		var g := Vector3(0, -9.8, 0)
 		var g_t := g - n * g.dot(n)
@@ -309,9 +313,16 @@ func _physics_process(_dt: float) -> void:
 		hold_debug = "n.y=%.2f 力=%.0f" % [n.y, hold.length()]
 	else:
 		hold_debug = "なし(速さ%.2f 押%d/%d 乗%d)" % [speed, _push_count, pushers, riders.size()]
-	# 頂上などで、乗ったまま前傾すると手で雪をかいて動き出す
+	# 頂上などで、乗ったまま前傾すると手で雪をかいて動き出す。
+	# 雪をかく力は坂を登る向きには効かない（平らな所と下りでだけ進む）。乗って W で登ると、降りて押すより速くなるため
 	if riding and _lean_fwd and speed < 1.5:
-		apply_central_force(Vector3(fwd.x, 0, fwd.z).normalized() * 120.0)
+		var n := _ground_normal()
+		var f := (fwd - n * fwd.dot(n)).normalized()            # 地面に沿った前
+		var down := Vector3.DOWN - n * Vector3.DOWN.dot(n)      # 地面に沿った下り
+		if down.length() > 0.01:
+			down = down.normalized()
+			f -= down * minf(0.0, f.dot(down))                   # 上りの成分を消す
+		apply_central_force(f * SCOOP_FORCE)
 	_steer = 0.0
 	_lean_fwd = false
 	_lean_back = false
