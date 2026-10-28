@@ -364,45 +364,71 @@ func _make_world() -> void:
 		var ps := Sky.new()
 		ps.sky_material = psm
 		env.sky = ps
+	# 光（2026-10-28 代表「のっぺりして安っぽい。素材感が掴める光に。マイクラの影 MOD っぽく」）:
+	# 強い暖色の陽と、空の青を映した暗めの影で、日なたと日かげの差をはっきりさせる。
+	# 白い雪が飛ばないよう白の上限を高くし（ACES）、明るい所は光がにじみ、遠くは青く霞む。
+	# 環境光の強さは daycycle.gd が時刻で決め直す
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_sky_contribution = 0.7
-	env.ambient_light_energy = 0.75   # 影の側を少し落として、丘の形が読めるように
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
-	env.tonemap_white = 1.4
+	env.ambient_light_sky_contribution = 1.0
+	env.ambient_light_energy = 0.5
+	env.tonemap_mode = Environment.TONE_MAPPER_ACES
+	env.tonemap_exposure = 0.7
+	env.tonemap_white = 6.0
 	env.ssao_enabled = not args.has("no-ssao")          # くぼみに影が落ちる
-	env.ssao_radius = 2.5
-	env.ssao_intensity = 3.0
-	env.ssao_light_affect = 0.3
-	env.fog_enabled = true
-	env.fog_light_color = Color(0.86, 0.9, 0.94)
-	env.fog_density = 0.004
-	env.fog_sky_affect = 0.2
+	env.ssao_radius = 1.6
+	env.ssao_intensity = 2.5
+	env.ssao_power = 1.6
+	env.ssao_detail = 0.8
+	env.ssao_light_affect = 0.1                         # 日なたは陽の色のまま、かげの側で効かせる
+	env.ssil_enabled = not args.has("no-ssao")          # 色の照り返し（フェルトの色が近くの雪に移る）
+	env.ssil_radius = 4.0
+	env.ssil_intensity = 1.2
+	env.glow_enabled = true                              # 明るい所が光ってにじむ
+	env.glow_intensity = 0.35
+	env.glow_strength = 1.0
+	env.glow_bloom = 0.0
+	env.glow_hdr_threshold = 1.3
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
+	env.fog_enabled = true                               # 遠くは空の色に青く霞む。陽の側は明るく
+	env.fog_light_color = Color(0.74, 0.82, 0.95)
+	env.fog_density = 0.0025
+	env.fog_aerial_perspective = 0.4
+	env.fog_sun_scatter = 0.08
+	env.fog_sky_affect = 0.15
+	env.volumetric_fog_enabled = args.has("vfog")   # 空気の厚みと光の筋（重いので確かめ用）
+	env.volumetric_fog_density = 0.0015
+	env.volumetric_fog_albedo = Color(0.92, 0.95, 1.0)
+	env.volumetric_fog_anisotropy = 0.7
+	env.volumetric_fog_length = 80.0
+	env.volumetric_fog_ambient_inject = 0.0
 	env.adjustment_enabled = true
-	env.adjustment_saturation = 1.05
+	env.adjustment_saturation = 1.18
+	env.adjustment_contrast = 1.06
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
 
-	# 太陽: 少し低めの午後の光。影の縁をやわらかく
+	# 太陽: 低めの暖かい光。影は濃く、長く、遠くまで落とす。高さ・色・強さは daycycle.gd が時刻で決める
 	var sun := DirectionalLight3D.new()
-	sun.rotation_degrees = Vector3(-32, -40, 0)
-	sun.light_color = Color(1.0, 0.95, 0.86)
-	sun.light_energy = 1.45
-	sun.light_angular_distance = 2.0
+	sun.rotation_degrees = Vector3(-28, -40, 0)
+	sun.light_color = Color(1.0, 0.86, 0.70)
+	sun.light_energy = 3.2
+	sun.light_angular_distance = 1.2
 	sun.shadow_enabled = true
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
-	sun.directional_shadow_max_distance = 70
+	sun.directional_shadow_max_distance = 110
 	sun.directional_shadow_blend_splits = true
 	sun_light = sun
 	add_child(sun)
 
-	# 遠景: 地平線にフェルトの山なみ
+	# 遠景: 地平線にフェルトの山なみ。地面の端（±128 m）を隠すよう、すき間なく輪にする。
+	# スピーカーの柱（audio.gd の POST_R = 95 m）より外
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	var far_mat := Look.felt(Color(0.72, 0.79, 0.90), 0.3)
-	for k in 14:
-		var a := k * TAU / 14.0 + rng.randf_range(-0.1, 0.1)
-		var r := rng.randf_range(118, 140)
+	for k in 20:
+		var a := k * TAU / 20.0 + rng.randf_range(-0.06, 0.06)
+		var r := rng.randf_range(124, 140)
 		var m := MeshInstance3D.new()
 		m.mesh = SphereMesh.new()
 		m.material_override = far_mat
@@ -727,7 +753,9 @@ func _apply_setting(key: String, v) -> void:
 		"scale":
 			get_viewport().scaling_3d_scale = v
 		"ssao":
-			if env: env.ssao_enabled = v
+			if env:
+				env.ssao_enabled = v
+				env.ssil_enabled = v   # 照り返しも同じく重いので一緒に
 		"shadows":
 			if sun_light: sun_light.shadow_enabled = v
 

@@ -7,7 +7,11 @@ extends Node
 
 const DAY_SECONDS := 1200.0       # 20 分で一日
 const START_HOUR := 10.0          # 始まりは朝の 10 時
-const SUN_MAX := 42.0             # 正午の太陽の高さ（度）
+const SUN_MAX := 34.0             # 正午の太陽の高さ（度）。低めにして、一日じゅう影が長く落ちる
+const SUN_ENERGY := 3.2           # 昼の陽の強さ。main.gd の ACES の白の上限（6）と合わせる
+const DAY_SUN := Color(1.0, 0.86, 0.70)    # 昼の陽の色（暖かめ）
+const AMB_DAY := 0.5              # 昼の環境光（空の青）。低いほど日なたと日かげの差がはっきりする
+const AMB_NIGHT := 0.3
 const SKY_EVERY := 0.5            # 空と霧の色を変える間隔（秒）。空の映り込みの計算を毎フレームしないように
 
 var hour := START_HOUR            # いまの時刻（0〜24）
@@ -21,9 +25,9 @@ var _ink_t := 0.0
 var _ink_target := 1.0
 
 # 空の色: 昼・夕・夜（上・地平・地面・雲）
-const DAY_TOP := Color(0.50, 0.66, 0.88)
-const DAY_HOR := Color(0.87, 0.91, 0.95)
-const DAY_GND := Color(0.80, 0.85, 0.90)
+const DAY_TOP := Color(0.30, 0.52, 0.88)    # 澄んだ濃い青。影の側にこの青が映る
+const DAY_HOR := Color(0.74, 0.84, 0.95)
+const DAY_GND := Color(0.70, 0.78, 0.88)
 const DAY_CLOUD := Color(0.99, 0.98, 0.96)
 const DUSK_TOP := Color(0.36, 0.40, 0.64)
 const DUSK_HOR := Color(0.98, 0.66, 0.46)
@@ -173,13 +177,13 @@ func _apply(sky_too: bool) -> void:
 	if el > -1.0:   # 太陽
 		_sun.rotation_degrees = Vector3(-maxf(el, 1.0), yaw, 0)
 		var warm := 1.0 - smoothstep(0.0, 25.0, el)
-		_sun.light_color = Color(1.0, 0.95, 0.86).lerp(Color(1.0, 0.60, 0.36), warm)
-		_sun.light_energy = 1.45 * smoothstep(-1.0, 14.0, el)
+		_sun.light_color = DAY_SUN.lerp(Color(1.0, 0.56, 0.30), warm)
+		_sun.light_energy = SUN_ENERGY * smoothstep(-1.0, 14.0, el)
 	else:           # 月: 太陽の反対の空から、青く淡く
 		_sun.rotation_degrees = Vector3(-maxf(-el, 1.0), yaw + 180.0, 0)
 		_sun.light_color = Color(0.62, 0.72, 1.0)
-		_sun.light_energy = 0.22 * smoothstep(1.0, 12.0, -el)
-	_env.ambient_light_energy = lerpf(0.40, 0.75, day)
+		_sun.light_energy = 0.45 * smoothstep(1.0, 12.0, -el)
+	_env.ambient_light_energy = lerpf(AMB_NIGHT, AMB_DAY, day)
 	if not sky_too:
 		return
 	_sky_t = 0.0
@@ -194,4 +198,4 @@ func _apply(sky_too: bool) -> void:
 		_sky_mat.set_shader_parameter("ground_color", gnd)
 		_sky_mat.set_shader_parameter("cloud_color", cloud)
 		_sky_mat.set_shader_parameter("sun_color", disc)
-	_env.fog_light_color = Color(0.86, 0.90, 0.94).lerp(hor, (1.0 - day) * 0.8 + dusk * 0.15)   # 霧は夜と夕に地平の色へ寄せる
+	_env.fog_light_color = Color(0.74, 0.82, 0.95).lerp(hor, (1.0 - day) * 0.8 + dusk * 0.15)   # 霧は夜と夕に地平の色へ寄せる

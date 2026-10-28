@@ -13,7 +13,8 @@ const Look := preload("res://look.gd")
 
 const C_SOUND := 340.0          # 音の速さ (m/s)。柱ごとの遅れに使う
 const SPEAKER_RATE := 16000     # 柱の曲の生成ストリームのレート。曲は 4 kHz までしかないので足りる
-const POST_R := 44.0            # 柱を立てる半径 (m)。麓の外側、頂上には置かない
+const POST_R := 95.0            # 柱を立てる半径 (m)。麓のずっと外、ロッジや木より外。頂上には置かない（2026-10-28 代表）
+const POST_A0 := 75.0           # 1 本目の柱の角度 (度)。60° おきに 6 本。ロッジ（約 110°）に重ならない向き
 const POST_H := 4.2
 const LODGE_HALF := Vector2(21.8, 12.7)   # ロッジ 1 階の半分の幅と奥行き（glb の座標）
 const VEST := Vector3(-13.4, 0.0, 15.2)   # 風除室の中心（glb の座標。南＝+Z が正面）
@@ -194,7 +195,7 @@ func _make_posts() -> void:
 	var pole_mat := Look.wood(Color(0.32, 0.24, 0.17))
 	var horn_mat := Look.felt(Color(0.55, 0.56, 0.58), 1.5)
 	for k in 6:
-		var a := deg_to_rad(90.0 + 60.0 * k)
+		var a := deg_to_rad(POST_A0 + 60.0 * k)
 		var x := cos(a) * POST_R
 		var z := sin(a) * POST_R
 		var node := Node3D.new()

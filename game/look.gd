@@ -106,7 +106,7 @@ static func felt(color: Color, scale := 1.0) -> StandardMaterial3D:
 	return m
 
 
-## 羊毛の雪: 編み目と繊維、強めのリム
+## 羊毛の雪: 編み目と繊維。リムはなし（地面は浅い角度で見るので、リムがあると一面が白く飛んで形が消える）
 static func snow() -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.97, 0.975, 0.99)
@@ -118,7 +118,7 @@ static func snow() -> StandardMaterial3D:
 	m.uv1_triplanar = true
 	m.uv1_scale = Vector3.ONE * 0.8   # 1.25 m に 1 回くり返す
 	m.rim_enabled = true
-	m.rim = 0.35
+	m.rim = 0.0
 	m.rim_tint = 0.6
 	return m
 
