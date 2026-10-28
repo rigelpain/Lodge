@@ -1,35 +1,44 @@
 extends SceneTree
-## 身ぶり（エモート）を一つずつ出して、いちばん大きく動くコマで撮る（確かめ用）。
+## 手の形と身ぶり（エモート）を一つずつ出して、いちばん大きく動くコマで撮る（確かめ用）。
 ##   Godot --path game --resolution 960x540 -s res://tools/emote_shots.gd -- --dir=/path/to/dir [--view=fp|tp|front] [--only=wa,bow]
 ## fp 一人称（あなたの目。手と息が見えるか）、tp 三人称（C の視点）、front 正面から（人形の形）。
 ## あなたと仲間を向かい合わせて立たせ、仲間は動かさない（ハイタッチの相手は、配り役へ直接送る）。
 ## 撮るもの: 名前_視点.png。「hit_bot」はあなたが仲間へ雪玉を投げ、仲間がのけぞる所。「hit_me」は仲間からあなたへ。
-## 「sled」はソリへ投げて、雪が残る所。「banzai」「ride_clap」はソリに乗って撮る。
-## --check: 撮らずに、仲間の返し（ハイタッチ・声）が働くかを出来事の記録で確かめる
+## 「sled」はソリへ投げて、雪が残る所。「banzai」はソリに乗って、両手のひらで見上げる。「ring」は Tab の輪。
+## --check: 撮らずに、仲間の返し（ハイタッチ・グータッチ・同じ形・声・拍手）が働くかを出来事の記録で確かめる
 
 const Doll := preload("res://doll.gd")
 
 ## [名前, 出す身ぶり, 撮るコマ]
 const SHOTS := [
-	["hand_up", "hand_up", 8],
+	["ring", "ring", 0],
+	["palm", "palm", 4],
+	["palms", "palms", 4],
+	["palms_up", "palms_up", 4],
+	["fist", "fist", 4],
+	["fists", "fists", 4],
+	["thumb", "thumb", 4],
+	["thumbs", "thumbs", 4],
+	["peace", "peace", 4],
 	["five_pull", "high_five", 1],
 	["high_five", "high_five", 3],
 	["five_burst", "high_five", 5],
+	["fist_bump", "fist_bump", 3],
 	["whiff", "whiff", 3],
-	["breath_in", "breath", 14],
-	["breath_out", "breath", 40],
+	["clap", "clap", 2],
+	["breath_in", "breath", 3],
+	["breath_out", "breath", 30],
+	["crouch", "crouch", 6],
 	["make_ball", "make_ball", 10],
 	["windup", "windup", 4],
 	["throw", "throw", 1],
 	["hit_bot", "hit_bot", 1],
 	["hit_me", "hit_me", 1],
 	["sled", "sled", 6],
-	["clap", "clap", 2],
-	["bow", "bow", 8],
 	["wa", "wa", 5],
 	["un", "un", 1],
 	["nn", "nn", 2],
-	["banzai", "banzai", 8],
+	["banzai", "banzai", 4],
 ]
 
 var args := {}
@@ -101,10 +110,16 @@ func _run() -> void:
 		var path := dir.path_join("%s_%s.png" % [shot[0], view])
 		root.get_texture().get_image().save_png(path)
 		print("保存: ", path, "  人形=", p.doll.emote_now())
-		# 身ぶりが終わるまで（振りかぶりは離すまで続くので、ここで解く）
+		# 身ぶりが終わるまで（振りかぶりは離すまで続くので、ここで解く）。手の形は下ろす
 		if shot[1] == "windup":
 			p._winding = false
 			p.doll.emote = {}
+		if p.ring.visible:
+			p.ring.close()
+		_key(KEY_B, false)
+		_key(KEY_CTRL, false)
+		hub.send({"kind": "hands", "who": p.id, "hands": ""})
+		hub.send({"kind": "hands", "who": bot.id, "hands": ""})
 		while not p.doll.emote.is_empty() or p.rooted() or not bot.doll.emote.is_empty():
 			await physics_frame
 		await _wait_frames(30)
@@ -137,10 +152,10 @@ func _stage(kind: String) -> void:
 		p.rotation.y = 0.0
 		p._pitch = -0.18 if kind != "make_ball" else -0.35
 		p.velocity = Vector3.ZERO
-	var d := 1.25 if kind in ["whiff", "hand_up"] else 2.6
-	var bp := base + Vector3(0.0 if d < 2.0 else 0.9, 0, -d)
-	if kind == "sled":
-		bp = base + Vector3(2.0, 0, 1.5)   # ソリの写りを塞がないよう、うしろへ
+	var two := kind in ["high_five", "fist_bump", "whiff"]
+	var bp := base + Vector3(0.0 if two else 0.9, 0, -2.6)
+	if kind == "sled" or riding:
+		bp = base + Vector3(2.0, 0, 1.5) if kind == "sled" else base + Vector3(-2.5, 0, 2.5)   # 写りを塞がないよう、うしろへ
 	bp.y = main.height(bp.x, bp.z)
 	bot.global_position = bp
 	bot.look_at(Vector3(p.global_position.x, bp.y, p.global_position.z), Vector3.UP)
@@ -153,26 +168,50 @@ func _stage(kind: String) -> void:
 func _act(kind: String) -> int:
 	var f := Doll.frame_index() + 1
 	match kind:
-		"high_five":
-			# 2.6 m 離れて二人とも手のひらを掲げ、あなたが歩いて近づく → 届いた所で合う
-			hub.send({"kind": "hand_up", "who": bot.id})
+		"ring":
+			p.ring.open("")
+			p.ring.move(Vector2(70, -70))   # 右上: 手のひら
+		"palm", "palms", "fist", "fists", "thumb", "thumbs", "peace":
+			p.set_hands(kind)
+		"palms_up":
+			p._pitch = 0.85   # 見上げて両手のひら
+			p.set_hands("palms")
+		"banzai":
+			p._pitch = 0.6
+			p.set_hands("palms")
+		"high_five", "fist_bump", "whiff":
+			# 2.6 m 離れて二人とも同じ形を掲げ、あなたが歩いて近づく → 届いた所で合う（空振りは、仲間がよそを向いている）
+			var shape := "fist" if kind == "fist_bump" else "palm"
+			hub.send({"kind": "hands", "who": bot.id, "hands": shape})
+			if kind == "whiff":
+				bot.look_at(bot.global_position + Vector3(1, 0, 0), Vector3.UP)
 			await _wait_frames(12)
-			p.emote("hand_up")
+			p.set_hands(shape)
 			var n := _log.size()
 			for i in 200:
-				if _log.slice(n).any(func(l): return " high_five " in l):
+				if _log.slice(n).any(func(l): return (" %s " % ("whiff" if kind == "whiff" else kind)) in l):
 					break
 				p.global_position += Vector3(0, 0, -0.025)
 				await physics_frame
-			f = await _until_logged(n, "high_five")
-		"whiff":
-			hub.send({"kind": "hand_up", "who": bot.id})
+			f = await _until_logged(n, kind)
+		"clap":
+			p.set_hands("palms")
+			await _wait_frames(8)
+			f = Doll.frame_index() + 1
+			p._left_click()
+		"crouch":
+			_key(KEY_CTRL, true)
+		"make_ball":
+			# しゃがんで雪面を見て F
+			_key(KEY_CTRL, true)
+			p._pitch = -0.7
 			await _wait_frames(10)
-			bot.look_at(bot.global_position + Vector3(1, 0, 0), Vector3.UP)   # 仲間がよそを向いている → 合わない
-			await _wait_frames(10)
-			var n := _log.size()
-			p.emote("hand_up")
-			f = await _until_logged(n, "whiff")   # 待ちが切れて空振り
+			print("雪面が見える: ", p._snow_ahead())
+			f = Doll.frame_index() + 1
+			_key(KEY_F, true)
+			_key(KEY_F, false)
+		"breath":
+			_key(KEY_B, true)   # 押しているあいだ吐く
 		"windup", "throw":
 			p.holding_ball = true
 			p.wind_up()
@@ -204,6 +243,15 @@ func _act(kind: String) -> int:
 	return f
 
 
+## キーを押す・離す（遊ぶ人が押したのと同じ道を通す）
+func _key(k: Key, down: bool) -> void:
+	var ev := InputEventKey.new()
+	ev.physical_keycode = k
+	ev.keycode = k
+	ev.pressed = down
+	Input.parse_input_event(ev)
+
+
 ## 記録の n 番目から先に kind が出るまで待ち、そのコマを返す
 func _until_logged(n: int, kind: String) -> int:
 	for i in 600:
@@ -229,10 +277,13 @@ func _camera(view: String, kind: String) -> void:
 			if kind == "banzai":
 				tgt = me + Vector3(0, 0.6, 0)
 				cam.look_at_from_position(me + Vector3(2.8, 1.2, -2.2), tgt)
+			elif kind in ["palm", "palms", "palms_up", "fist", "fists", "thumb", "thumbs", "peace", "clap", "ring"]:
+				# 手の形は前（見ている先の側）から: 相手から見た形
+				cam.look_at_from_position(me + Vector3(-1.3, 1.2, -2.8), me + Vector3(0, 0.85, 0))
 			elif kind == "sled":
 				var at: Vector3 = main.sled.global_position
 				cam.look_at_from_position(at + Vector3(2.6, 1.3, 1.6), at + Vector3(0, 0.6, 0))
-			elif kind in ["high_five", "whiff", "hand_up", "hit_bot", "hit_me"]:
+			elif kind in ["high_five", "fist_bump", "whiff", "hit_bot", "hit_me"]:
 				# 二人のあいだを、横から
 				var mid: Vector3 = (me + bot.global_position) * 0.5
 				var across: Vector3 = bot.global_position - me
@@ -244,27 +295,27 @@ func _camera(view: String, kind: String) -> void:
 			cam.current = true
 
 
-## 仲間の返しを確かめる: 近くで手を上げる → 仲間が来てハイタッチ。声 → 同じ声。おじぎ → おじぎ
+## 仲間の返しを確かめる: 手のひら → 来てハイタッチ。グー → 来てグータッチ。サムズアップ → 同じ形。声 → 同じ声。拍手 → 拍手
 func _check() -> void:
-	var sled: RigidBody3D = main.sled
 	await _wait_frames(240)   # 仲間がソリを押しはじめるまで
-	p.global_position = bot.global_position + Vector3(2.5, 0.3, 1.5)
+	for shape in ["palm", "fist"]:
+		p.global_position = bot.global_position + Vector3(2.5, 0.3, 1.5)
+		p.look_at(Vector3(bot.global_position.x, p.global_position.y, bot.global_position.z), Vector3.UP)
+		await _wait_frames(10)
+		p.set_hands(shape)
+		await _wait_frames(300)
+	p.global_position = bot.global_position + Vector3(0, 0.3, 3.0)
 	p.look_at(Vector3(bot.global_position.x, p.global_position.y, bot.global_position.z), Vector3.UP)
-	await _wait_frames(10)
-	p.emote("hand_up")
-	await _wait_frames(240)
+	p.set_hands("thumbs")
+	await _wait_frames(90)
+	p.set_hands("")
 	p.emote("wa")
-	await _wait_frames(120)
-	p.emote("nn")
-	await _wait_frames(120)
-	p.global_position = bot.global_position + Vector3(0, 0.3, 2.0)
-	p.look_at(Vector3(bot.global_position.x, p.global_position.y, bot.global_position.z), Vector3.UP)
-	await _wait_frames(4)
-	p.emote("bow")
+	await _wait_frames(90)
+	p.set_hands("palms")
+	await _wait_frames(6)
+	p._left_click()
 	await _wait_frames(180)
 	for line in _log:
 		print("出来事: ", line)
-	var five := _log.filter(func(l): return " high_five " in l).size()
-	print("ハイタッチ=%d 仲間の声=%d おじぎ返し=%d 仲間の状態=%s" % [five,
-			_log.filter(func(l): return (" wa " in l or " nn " in l) and l.ends_with("who=%d" % bot.id)).size(),
-			_log.filter(func(l): return " bow " in l and l.ends_with("who=%d" % bot.id)).size(), bot.state])
+	var mine := func(k: String): return _log.filter(func(l): return (" %s " % k) in l and l.ends_with("who=%d" % bot.id)).size()
+	print("ハイタッチ=%d グータッチ=%d 仲間の形=%d 仲間の声=%d 仲間の拍手=%d" % [mine.call("high_five"), mine.call("fist_bump"), mine.call("hands"), mine.call("wa"), mine.call("clap")])

@@ -7,41 +7,46 @@ const Palm := preload("res://palm.gd")
 ## 出来事は辞書 {kind, who, frame, ...}。中身は数・文字・Vector3 だけにして、そのまま通信に乗せられるようにする。
 ## who は人の番号（join で配る）。人の節点そのものは出来事に入れない。
 ##
+## 手の形（Tab の輪で選ぶ）は、挨拶のボタンではなく、手の材料。選んだ形は下ろすまで掲げたまま、腕は見ている向きへ上がる。
+## 意味は遊ぶ人が作る（両手のひらは、前を見れば「来るな」、見上げれば万歳）。ここで決めるのは手と手が出会ったときだけ:
+## 手のひら同士が届く所で向き合えばハイタッチ、グー同士ならグータッチ。片方だけが向かって寄れば、空振り。
+##
 ## いまは一人の画面の中だけ: send() がすぐ frame を付けて _apply() し、みんな（持ち主・音・ほかの人）に配る。
 ## 通信を入れたら: send() はホストへ送るだけにし、ホストが frame を付けて全員に配る。
-## ハイタッチの組み合わせ・雪玉の当たり・空振りの判定はホストの _apply() の中でだけ決め、結果を出来事として配る。
+## ハイタッチ・グータッチの組み合わせ・空振り・雪玉の当たりはホストだけが決め、結果を出来事として配る。
 ##
 ## 姿勢は人形が 12 コマで刻む（doll.gd の play）。出来事は次のコマから始まり、全員の画面で同じコマに動く。
 
 signal happened(ev: Dictionary)
 
-## 身ぶりの長さ（コマ。12 コマで 1 秒）と、出せるとき。walk 歩いているとき、ride 乗っているとき、
-## root その間は歩けない（その場でする身ぶり）
+## 身ぶりの長さ（コマ。12 コマで 1 秒）。root その間は歩けない（その場でする身ぶり）
 const KINDS := {
-	"hand_up": {"frames": 72, "walk": true, "ride": false, "root": false},   # 手のひらを掲げて待つ（近づけば合う）
-	"high_five": {"frames": 12, "walk": true, "ride": false, "root": true},  # 合った
-	"whiff": {"frames": 12, "walk": true, "ride": false, "root": true},      # 空振り
-	"breath": {"frames": 54, "walk": true, "ride": true, "root": true},      # 深呼吸
-	"make_ball": {"frames": 22, "walk": true, "ride": false, "root": true},  # しゃがんで雪玉を作る
-	"windup": {"frames": 0, "walk": true, "ride": true, "root": false},      # 雪玉を振りかぶる（離すまで）
-	"throw": {"frames": 7, "walk": true, "ride": true, "root": false},
-	"hit": {"frames": 16, "walk": true, "ride": true, "root": false},        # 雪玉が当たってのけぞる
-	"banzai": {"frames": 34, "walk": false, "ride": true, "root": false},    # 滑りながら万歳
-	"clap": {"frames": 16, "walk": true, "ride": true, "root": false},       # 拍手（フェルトの手袋で、ぽふぽふ）
-	"bow": {"frames": 20, "walk": true, "ride": false, "root": true},        # おじぎ
-	"wa": {"frames": 14, "walk": true, "ride": true, "root": false},         # 声「ワ〜」うれしい
-	"un": {"frames": 7, "walk": true, "ride": true, "root": false},          # 声「ウン」うなずく
-	"nn": {"frames": 14, "walk": true, "ride": true, "root": false},         # 声「ンーン」いやいや
+	"hands": {"frames": 0, "root": false},        # 手の形を変える（ev.hands。下ろすまで続く）
+	"high_five": {"frames": 12, "root": true},    # 手のひら同士が合った
+	"fist_bump": {"frames": 12, "root": true},    # グー同士が合った
+	"whiff": {"frames": 12, "root": true},        # 空振り
+	"clap": {"frames": 16, "root": false},        # 両手のひらで拍手（フェルトの手袋で、ぽふぽふ）
+	"breath": {"frames": 0, "root": false},       # 白い息を長く吐く（B を押しているあいだ。breath_end で止まる）
+	"breath_end": {"frames": 0, "root": false},
+	"make_ball": {"frames": 22, "root": true},    # しゃがんで雪玉を作る
+	"windup": {"frames": 0, "root": false},       # 雪玉を振りかぶる（離すまで）
+	"throw": {"frames": 7, "root": false},
+	"hit": {"frames": 16, "root": false},         # 雪玉が当たってのけぞる
+	"wa": {"frames": 14, "root": false},          # 声「ワ〜」うれしい
+	"un": {"frames": 7, "root": false},           # 声「ウン」うなずく
+	"nn": {"frames": 14, "root": false},          # 声「ンーン」いやいや
 }
 const VOICES := ["wa", "un", "nn"]
-const FIVE_REACH := 1.3      # ハイタッチの手が届く、体どうしの距離 (m)。人形の腕は短いが、手のひらが大きい
-const FIVE_NEAR := 3.5       # 手を上げたとき、この中で待っている人と組む候補にする
-const FIVE_HIT := 3           # high_five の何コマ目に手が合うか（その前の 3 コマが、引くため）
+const HANDS := Palm.HANDS
+const TOUCH_REACH := 1.3     # 手と手が届く、体どうしの距離 (m)。人形の腕は短いが、手の形が大きい
+const WHIFF_REACH := 1.0     # 片方だけが向かってこの中まで寄ると、空振り
+const FIVE_HIT := 3          # high_five・fist_bump の何コマ目に手が合うか（その前の 3 コマが、引くため）
 const MAKE_READY := 16       # 雪玉ができて手に持つコマ（make_ball の中で）
+const EXHALE_MAX := 5.0      # 息が続く長さ (s)
 
 var people := {}             # 番号 → 人（player.gd・bot.gd）
+var hands := {}              # 番号 → いま掲げている手の形（HANDS の名前）
 var _next_id := 1
-var _waiting := {}           # 手を上げて待っている人の番号 → 待ちが切れるコマ
 
 
 ## 人を登録して番号をもらう
@@ -63,39 +68,77 @@ func send(ev: Dictionary) -> void:
 	_apply(ev)
 
 
-## ホストの判定。ハイタッチの組み合わせはここで決めてから配る
+## ホストの判定
 func _apply(ev: Dictionary) -> void:
-	var kind: String = ev.kind
-	if kind == "hand_up":
-		var a := who_of(ev.who)
-		var b_id := _waiting_near(ev.who)
-		if b_id > 0 and a and _can_five(a, who_of(b_id)):
-			_five(ev.who, b_id, ev.frame)
-			return
-		# 待つ。手のひらを掲げたまま近づけば、そこで合う（_physics_process）。合わないまま切れたら空振り
-		_waiting[ev.who] = ev.frame + KINDS.hand_up.frames
-	elif kind != "hand_up" and _waiting.has(ev.get("who", -1)):
-		_waiting.erase(ev.who)   # ほかの身ぶりをしたら、待つのをやめる
+	if ev.kind == "hands":
+		if ev.hands == "":
+			hands.erase(ev.who)
+		else:
+			hands[ev.who] = ev.hands
 	_emit(ev)
-	if kind == "throw":
+	if ev.kind == "throw":
 		_spawn_ball(ev)
-
-
-## 二人のハイタッチ。手は、あいだの顔の高さで合う。合ったコマに紙吹雪
-func _five(a_id: int, b_id: int, frame: int) -> void:
-	_waiting.erase(a_id)
-	_waiting.erase(b_id)
-	var contact := (_hand_spot(who_of(a_id)) + _hand_spot(who_of(b_id))) * 0.5
-	_emit({"kind": "high_five", "who": a_id, "with": b_id, "frame": frame, "point": contact})
-	_emit({"kind": "high_five", "who": b_id, "with": a_id, "frame": frame, "point": contact})
 
 
 func _emit(ev: Dictionary) -> void:
 	if ev.kind == "splat":
 		_show_splat(ev)
-	elif ev.kind == "high_five" and ev.who < ev.with:
+	elif ev.kind in ["high_five", "fist_bump"] and ev.who < ev.with:
 		_burst_at(ev.point, int(ev.frame) + FIVE_HIT)
 	happened.emit(ev)
+
+
+## 右手の形（"palm" "fist" など。下ろしていれば ""）
+func right_hand(id: int) -> String:
+	return HANDS.get(hands.get(id, ""), ["", ""])[0]
+
+
+## 手の形を掲げた人どうしが出会ったら、合わせる（手のひらとグーだけ）。合ったら二人とも手を下ろす
+func _physics_process(_dt: float) -> void:
+	var now := Doll.frame_index()
+	var ids := hands.keys()
+	for i in ids.size():
+		for j in range(i + 1, ids.size()):
+			var a_id: int = ids[i]
+			var b_id: int = ids[j]
+			var a := who_of(a_id)
+			var b := who_of(b_id)
+			if a == null or b == null or not hands.has(a_id) or not hands.has(b_id):
+				continue
+			var shape := right_hand(a_id)
+			if not shape in ["palm", "fist"] or right_hand(b_id) != shape:
+				continue
+			var ab := _flat(b.global_position - a.global_position)
+			var d := ab.length()
+			if d > TOUCH_REACH or d < 0.01:
+				continue
+			ab /= d
+			var a_faces := _forward(a).dot(ab) > 0.35
+			var b_faces := _forward(b).dot(-ab) > 0.35
+			if a_faces and b_faces:
+				_touch(a_id, b_id, "high_five" if shape == "palm" else "fist_bump", now + 1)
+			elif d < WHIFF_REACH and (a_faces or b_faces):
+				# 片方だけが向かって寄った: 向かった人が空振りして、手を下ろす
+				var who: int = a_id if a_faces else b_id
+				_lower(who, now + 1)
+				_emit({"kind": "whiff", "who": who, "frame": now + 1, "shape": shape})
+	for id in hands.keys():
+		if who_of(id) == null:
+			hands.erase(id)
+
+
+## 二人の手が、あいだの顔の高さで合う。合ったコマに紙吹雪。二人とも手を下ろす（同じ形を掲げ直せば、またできる）
+func _touch(a_id: int, b_id: int, kind: String, frame: int) -> void:
+	var contact := (_hand_spot(who_of(a_id)) + _hand_spot(who_of(b_id))) * 0.5
+	_lower(a_id, frame)
+	_lower(b_id, frame)
+	_emit({"kind": kind, "who": a_id, "with": b_id, "frame": frame, "point": contact})
+	_emit({"kind": kind, "who": b_id, "with": a_id, "frame": frame, "point": contact})
+
+
+func _lower(id: int, frame: int) -> void:
+	hands.erase(id)
+	_emit({"kind": "hands", "who": id, "hands": "", "frame": frame, "auto": true})
 
 
 ## 手が合うコマに、紙吹雪と紙の星と綿の粉（どの画面でも、出来事から作る）
@@ -108,50 +151,7 @@ func _burst_at(point: Vector3, frame: int) -> void:
 	Snowball.splat_at(self, point, Vector3.UP, true)
 
 
-## 手のひらを掲げた二人が届く所で向き合ったら、合わせる。待ちが切れた人は、上げた手を下ろしながら空振りする
-func _physics_process(_dt: float) -> void:
-	var now := Doll.frame_index()
-	var ids := _waiting.keys()
-	for i in ids.size():
-		for j in range(i + 1, ids.size()):
-			var a := who_of(ids[i])
-			var b := who_of(ids[j])
-			if a and b and _waiting.has(ids[i]) and _waiting.has(ids[j]) and _can_five(a, b):
-				_five(ids[i], ids[j], now + 1)
-	for id in _waiting.keys():
-		if now >= _waiting[id] or who_of(id) == null:
-			_waiting.erase(id)
-			if who_of(id):
-				_emit({"kind": "whiff", "who": id, "frame": now + 1})
-
-
-## 手を上げて待っている人のうち、近い人
-func _waiting_near(id: int) -> int:
-	var a := who_of(id)
-	if a == null:
-		return -1
-	var best := -1
-	var best_d := FIVE_NEAR
-	for other in _waiting:
-		if other == id or who_of(other) == null:
-			continue
-		var d := _flat(who_of(other).global_position - a.global_position).length()
-		if d < best_d:
-			best_d = d
-			best = other
-	return best
-
-
-## 届いて、二人とも相手のほうを向いているか（横を向いた相手とは合わない）
-func _can_five(a: Node3D, b: Node3D) -> bool:
-	var ab := _flat(b.global_position - a.global_position)
-	if ab.length() > FIVE_REACH:
-		return false
-	ab = ab.normalized()
-	return _forward(a).dot(ab) > 0.35 and _forward(b).dot(-ab) > 0.35
-
-
-## 上げた右手のあたり（世界）。顔の横の前。笠の人形は真上へ上げると手がつばに隠れる
+## 掲げた右手のあたり（世界）。顔の横の前
 func _hand_spot(who: Node3D) -> Vector3:
 	var doll: Doll = who.doll
 	return who.global_position + Vector3.UP * doll.height() * 0.78 + _forward(who) * 0.35

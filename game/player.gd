@@ -11,12 +11,16 @@ const Palm := preload("res://palm.gd")
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
 ## どう動くかはソリの滑り木と重力が決める。離すのは F だけ。Shift でダッシュ。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
-## 身ぶり: Tab を押しているあいだ輪が出て、マウスの向きで選び、離すと出す。1・2・3 は声（ワ〜・ウン・ンーン）。
-## 雪玉を持っていれば、左クリックを押して振りかぶり、離して投げる（長く押すほど遠くへ）。
+## 手の形: Tab を押しているあいだ輪が出て、マウスの向きで形を選び、離すとその形を掲げる（下ろすまで）。腕は見ている向きへ上がる。
+## 1・2・3 は声（ワ〜・ウン・ンーン）。B を押しているあいだ、白い息を長く吐く（押した瞬間に短く吸う）。
+## 左 Ctrl を押しているあいだしゃがむ。しゃがんで雪面を見て F で、雪玉を丸める。
+## 左クリック: 雪玉を持っていれば押してためて（振りかぶり）、離して投げる（長く押すほど遠くへ）。両手のひらなら拍手。
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
 const DASH := 3.4            # Shift で走る速さ
 const SPEED_TAUT := 1.5      # 紐が張っているときの歩く速さ
+const SPEED_CROUCH := 0.8    # しゃがんで歩く速さ
+const CROUCH_EYE := 0.5      # しゃがむと目がこれだけ下がる (m)
 const JUMP := 4.5
 const GRAVITY := 9.8
 const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
@@ -59,7 +63,11 @@ var _em := {}                # いまの自分の身ぶり（出来事）
 var _winding := false
 var _wind_t := 0.0
 var _ball_fp: MeshInstance3D # 一人称の右手の雪玉
-var _palm_fp: Node3D         # 一人称の、ハイタッチの紙の手のひら
+var _shapes_fp := {}         # 一人称の手の形のアップリケ: 形 → {1: 右手, -1: 左手}
+var hands_name := ""         # いま掲げている手の形（Palm.HANDS の名前。"" は下ろしている）
+var crouching := false       # 左 Ctrl を押しているあいだしゃがむ
+var _exhaling := false      # B を押しているあいだ、息を吐いている
+var _exhale_t := 0.0
 var _cam_em := Vector3.ZERO  # 身ぶりで視点に足す（x 上下の向き、y 左右の向き、z 高さ）。なめらかに追う
 
 
@@ -102,8 +110,11 @@ func _ready() -> void:
 			_ball_fp.position = Vector3(0, 0.03, -0.1)
 			_ball_fp.visible = false
 			h.add_child(_ball_fp)
-			_palm_fp = Palm.make(Color(FpHands.STYLE.get(doll.kind, FpHands.STYLE["kasa"]).hand), 1 << 2)
-			cam.add_child(_palm_fp)
+
+	_shapes_fp = Palm.make_set(Color(FpHands.STYLE.get(doll.kind, FpHands.STYLE["kasa"]).hand), 1 << 2)
+	for sh in _shapes_fp:
+		for n in _shapes_fp[sh].values():
+			cam.add_child(n)
 
 	hub = get_parent().get_node_or_null("Emotes")
 	if hub:
@@ -140,16 +151,18 @@ func _unhandled_input(e: InputEvent) -> void:
 			base_fov = clamp(base_fov + 3.0, 50.0, 110.0)
 		elif e.button_index == MOUSE_BUTTON_RIGHT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			toggle_point()
-		elif e.button_index == MOUSE_BUTTON_LEFT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and holding_ball:
-			wind_up()
+		elif e.button_index == MOUSE_BUTTON_LEFT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
+			_left_click()
 		elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu_open:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT and _winding:
 		throw_ball()
+	elif e is InputEventKey and not e.pressed and e.physical_keycode == KEY_B:
+		_stop_exhale()
 	elif e is InputEventKey and not e.pressed and e.physical_keycode == KEY_TAB and ring and ring.visible:
 		var k := ring.close()
-		if k != "":
-			emote(k)
+		if k != EmoteRing.NONE:
+			set_hands("" if k == hands_name else k)   # 同じ形をもう一度選ぶと下ろす
 	elif e is InputEventKey and e.pressed and not e.echo:
 		match e.physical_keycode:
 			KEY_C:
@@ -157,6 +170,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				get_parent().settings.sync("third", third)
 			KEY_F:
 				if rooted():
+					return
+				if crouching and mode == Mode.WALK and _snow_ahead():
+					emote("make_ball")   # しゃがんで雪面に手を伸ばす: 雪玉を丸める
 					return
 				match mode:
 					Mode.GRIP, Mode.ROPE:
@@ -168,13 +184,18 @@ func _unhandled_input(e: InputEvent) -> void:
 							grab()
 			KEY_TAB:
 				if ring and not menu_open:
-					ring.open(mode == Mode.RIDE, available())
+					ring.open(hands_name)
 			KEY_1, KEY_G:
 				emote("wa")   # 言葉にならない声。G は前の仮のキー
 			KEY_2:
 				emote("un")
 			KEY_3:
 				emote("nn")
+			KEY_B:
+				if not _exhaling and available().get("breath", false):
+					_exhaling = true
+					_exhale_t = 0.0
+					emote("breath")
 			KEY_E:
 				if mode == Mode.RIDE:
 					get_off()
@@ -190,6 +211,7 @@ func _rope_end_near() -> bool:
 
 
 func grab() -> void:
+	set_hands("")   # ソリをつかむ手は、形を下ろす
 	var gp: Array = sled.grip_point_near(global_position)
 	var stand: Vector3 = gp[0]
 	if global_position.distance_to(sled.to_global(stand)) > GRAB_REACH:
@@ -207,6 +229,7 @@ func grab() -> void:
 
 
 func grab_rope() -> void:
+	set_hands("")
 	if not sled.take_rope(self):
 		return
 	mode = Mode.ROPE
@@ -290,6 +313,7 @@ func _pose_doll() -> void:
 	doll.lean = Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_W) - _key(KEY_S)) if mode == Mode.RIDE else Vector2.ZERO
 	doll.waving = Input.is_physical_key_pressed(KEY_Q) and not menu_open
 	doll.holding_ball = holding_ball
+	doll.crouch = crouching
 	doll.point = point_at
 
 
@@ -357,9 +381,11 @@ func _step_up(dir: Vector3) -> void:
 func _walk(dt: float, with_rope: bool) -> void:
 	var input := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
 	if rooted():
-		input = Vector2.ZERO   # しゃがむ・おじぎ・ハイタッチのあいだは、その場で
+		input = Vector2.ZERO   # 雪玉を丸める・ハイタッチのあいだは、その場で
 	var dir := (global_basis * Vector3(input.x, 0, input.y)).normalized()
 	var speed := DASH if Input.is_physical_key_pressed(KEY_SHIFT) else SPEED
+	if crouching:
+		speed = SPEED_CROUCH
 	if with_rope:
 		# 紐が張っていれば、手の位置から引く。引いている間は歩みが重くなる
 		var over: float = sled.pull_rope(_hand_world())
@@ -521,51 +547,63 @@ func _pose_hands(dt: float) -> void:
 		grow = 1.0
 	_ball_fp.visible = grow > 0.0
 	_ball_fp.scale = Vector3.ONE * maxf(grow, 0.01)
-	_place_palm_fp(em)
+	_place_shapes_fp(em)
 
 
-## 一人称の手のひら: 右手の先に、手のひらを前へ向けて（相手に見せる向き）。形は人形と同じコマで
-func _place_palm_fp(em: Array) -> void:
+## 一人称の手の形: 手の先に、手のひらを前（相手）へ向けて置く（自分からは手の甲が見える）。形は人形と同じコマで
+func _place_shapes_fp(em: Array) -> void:
 	var kind: String = em[0]
 	var k: int = em[1]
-	var on := k >= 0 and ((kind == "hand_up") or (kind == "high_five" and k < 8) or (kind == "whiff" and k < 3))
-	_palm_fp.visible = on
-	if not on:
-		return
-	var size := 1.0
-	var tilt := 0.0
-	var roll := 0.0
-	match kind:
-		"hand_up":
-			size = Palm.pop(k)
-			roll = -0.14 if (k / 6) % 2 == 0 else 0.08
-		"high_five":
-			tilt = 0.5 if k < 3 else 0.0
-			size = 1.25 if k == 3 else 1.0
-		"whiff":
-			tilt = 0.5 if k < 2 else 0.0
-	var h: Node3D = hands[1] if hands[1].get_meta("side") > 0 else hands[0]
-	var b := Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, tilt) * Basis(Vector3.BACK, roll)
-	_palm_fp.transform = Transform3D(b.scaled(Vector3.ONE * size), h.position + Vector3(0, 0.07, -0.02))
+	var want: Array = doll.hand_shapes
+	var touching := k >= 0 and kind in ["high_five", "fist_bump", "whiff"]
+	if touching:
+		var sh := "fist" if kind == "fist_bump" or _em.get("shape", "") == "fist" else "palm"
+		want = [sh if k < 8 and (kind != "whiff" or k < 3) else "", ""]
+	elif (k >= 0 and kind in Doll.ARM_EMOTES) or _winding:
+		want = ["", ""]
+	for sh in _shapes_fp:
+		for side in [1, -1]:
+			var node: Node3D = _shapes_fp[sh][side]
+			var on: bool = want[0 if side > 0 else 1] == sh
+			node.visible = on
+			if not on:
+				continue
+			var size := Palm.pop(Doll.frame_index() - doll._hands_frame)
+			var tilt := 0.0
+			if touching:
+				tilt = 0.5 if k < 3 else 0.0
+				size = 1.25 if k == 3 and kind != "whiff" else 1.0
+			var h: Node3D = hands[0] if hands[0].get_meta("side") == side else hands[1]
+			var b := Basis(Vector3.UP, PI) * Basis(Vector3.RIGHT, tilt)
+			node.transform = Transform3D(b.scaled(Vector3.ONE * size), h.position + Vector3(0, 0.07, -0.02))
 
 
 # ---------------------------------------------------------------- 身ぶり（emotes.gd）
 
-## いまできる身ぶり（輪で薄くするものを決める）。つかんでいる・紐を持っているときは声と深呼吸だけ
+## いまできる身ぶり。声はいつでも。吐く息・拍手はその場でする身ぶりの途中でなければ。雪玉づくりはしゃがんでいるときだけ
 func available() -> Dictionary:
-	var out := {}
 	var busy := rooted() or _winding
-	for k in Emotes.KINDS:
-		var spec: Dictionary = Emotes.KINDS[k]
-		var ok: bool = spec.ride if mode == Mode.RIDE else spec.walk
-		if mode == Mode.GRIP or mode == Mode.ROPE:
-			ok = k in Emotes.VOICES or k == "breath"
-		if k == "make_ball" and holding_ball:
-			ok = false
-		if busy and not k in Emotes.VOICES:
-			ok = false
-		out[k] = ok
-	return out
+	return {
+		"wa": true, "un": true, "nn": true,
+		"breath": not busy,
+		"clap": not busy and hands_name == "palms",
+		"make_ball": not busy and mode == Mode.WALK and not holding_ball and crouching,
+	}
+
+
+## 手の形を変える（配り役へ送る。"" は下ろす）
+func set_hands(name_: String) -> void:
+	if hub == null or name_ == hands_name:
+		return
+	hub.send({"kind": "hands", "who": id, "hands": name_})
+
+
+## 左クリック: 雪玉を持っていれば振りかぶる（離すと投げる）。両手のひらなら拍手
+func _left_click() -> void:
+	if holding_ball:
+		wind_up()
+	elif hands_name == "palms":
+		emote("clap")
 
 
 ## 身ぶりを出す（配り役へ送る。自分の人形も、配られた出来事で動く）
@@ -589,6 +627,10 @@ func _em_k() -> int:
 
 func _on_emote(ev: Dictionary) -> void:
 	if ev.get("who", -1) != id:
+		return
+	if ev.kind == "hands":
+		hands_name = ev.hands
+		doll.play(ev)
 		return
 	_em = ev
 	doll.play(ev)
@@ -615,7 +657,9 @@ func throw_ball() -> void:
 	_winding = false
 	var power := clampf(_wind_t / 0.8, 0.0, 1.0)
 	var speed := lerpf(7.0, 16.0, power)
-	var dir := (-cam.global_basis.z + Vector3.UP * 0.14).normalized()
+	# 向きは体の向きと見上げる角度から（三人称のカメラは後ろ上から見下ろすので、カメラの向きでは足もとへ飛ぶ）
+	var aim := global_basis * (Basis(Vector3.RIGHT, _pitch) * Vector3.FORWARD)
+	var dir := (aim + Vector3.UP * 0.14).normalized()
 	var origin: Vector3
 	if third:
 		origin = global_position + Vector3.UP * doll.height() * 0.85 + doll.global_basis * Vector3(0.18, 0, -0.45)
@@ -628,6 +672,11 @@ func throw_ball() -> void:
 func _update_emote(dt: float) -> void:
 	if _winding:
 		_wind_t += dt
+	crouching = mode == Mode.WALK and Input.is_physical_key_pressed(KEY_CTRL) and not menu_open
+	if _exhaling:
+		_exhale_t += dt
+		if _exhale_t > Emotes.EXHALE_MAX:
+			_stop_exhale()   # 息が続くのは 5 秒まで
 	var want := Vector3.ZERO
 	var k := _em_k()
 	if not _em.is_empty():
@@ -637,6 +686,8 @@ func _update_emote(dt: float) -> void:
 		want = _emote_cam(_em.kind, k)
 	if not bob_enabled and not (not _em.is_empty() and _em.kind == "make_ball"):
 		want *= 0.3   # 視点の揺れを切っていれば控えめに（しゃがむ高さだけはそのまま）
+	if crouching:
+		want.z = minf(want.z, -CROUCH_EYE)   # しゃがむと目が下がる
 	_cam_em = _cam_em.lerp(want, minf(1.0, dt * 12.0))
 
 
@@ -650,14 +701,12 @@ func _emote_cam(kind: String, k: int) -> Vector3:
 			return Vector3([-0.06, -0.15, -0.15, -0.06, 0.0, 0.0, 0.0][k], 0, 0)
 		"nn":
 			return Vector3(-0.02, [0.07, 0.07, -0.07, -0.07, 0.07, 0.07, -0.06, -0.06, 0.04, 0.04, -0.02, -0.02, 0.0, 0.0][k], 0)
-		"bow":
-			var s := Doll._ease(k / 4.0) if k < 13 else 1.0 - Doll._ease((k - 13) / 6.0)
-			return Vector3(-0.5 * s, 0, -0.12 * s)
 		"make_ball":
-			var s := Doll._ease(k / 4.0) if k < 16 else 1.0 - Doll._ease((k - 16) / 5.0)
-			return Vector3(-0.5 * s, 0, -0.45 * s)
+			var s := 1.0 if k < 16 or crouching else 1.0 - Doll._ease((k - 16) / 5.0)
+			return Vector3(-0.5 * s, 0, -CROUCH_EYE * s)
 		"breath":
-			return Vector3(0.14 * Doll._breath_curve(k), 0, 0.02 * Doll._breath_curve(k))
+			var b := Doll.exhale_curve(k, _em.has("until"), int(_em.get("until", 0)) - int(_em.frame))
+			return Vector3(0.14 * b, 0, 0.02 * b)
 		"hit":
 			var f: float = [0.55, 0.6, 0.5, 0.45, 0.4, 0.35, 0.3, 0.2, 0.12, 0.08, 0.05, 0.03, 0.0, 0.0, 0.0, 0.0][k]
 			var shake := (0.05 if k % 2 == 0 else -0.05) if k >= 8 and k < 14 else 0.0
@@ -666,8 +715,6 @@ func _emote_cam(kind: String, k: int) -> Vector3:
 			return Vector3(-0.12 if k >= 2 and k < 8 else 0.0, 0.08 if k >= 2 and k < 5 else 0.0, 0)
 		"wa":
 			return Vector3(-0.04 if k < 2 else 0.08, 0, 0)
-		"banzai":
-			return Vector3(0.06 if k >= 2 and k < 30 else 0.0, 0, 0)
 	return Vector3.ZERO
 
 
@@ -678,13 +725,14 @@ func _emote_hand(s: int) -> Vector3:
 	var em := doll.emote_now()
 	var kind: String = em[0]
 	var k: int = em[1]
+	# 掲げた手の形: 手のひらは高く、ほかは胸の前より少し上（腕を使う身ぶりのあいだは出さない）
+	var shape: String = doll.hand_shapes[0 if s > 0 else 1]
+	if shape != "" and not (k >= 0 and kind in Doll.ARM_EMOTES):
+		return Vector3(0.2 * s, 0.04, -0.5) if shape == "palm" else Vector3(0.17 * s, -0.1, -0.45)
 	if k < 0:
 		return Vector3.INF
 	match kind:
-		"hand_up":
-			if s > 0:
-				return Vector3(0.22, 0.06 + (0.02 if (k / 6) % 2 == 0 else 0.0), -0.5)
-		"high_five":
+		"high_five", "fist_bump":
 			if s > 0:
 				if k < 3:
 					return Vector3(0.36, 0.16, -0.26)   # ため: 画面の右へ引く
@@ -699,7 +747,7 @@ func _emote_hand(s: int) -> Vector3:
 					return Vector3(-0.08, -0.12, -0.6)   # 振り抜く
 				return Vector3(-0.05, -0.38, -0.45)
 		"breath":
-			var b := Doll._breath_curve(k)
+			var b := Doll.exhale_curve(k, _em.has("until"), int(_em.get("until", 0)) - int(_em.frame))
 			return Vector3(s * (0.27 + 0.16 * b), -0.25 + 0.1 * b, -0.48)
 		"make_ball":
 			if k >= 4 and k < 16:
@@ -718,17 +766,9 @@ func _emote_hand(s: int) -> Vector3:
 				return Vector3(s * 0.26, 0.0, -0.4)
 			if k < 14:
 				return Vector3(s * 0.15, -0.18 + (0.04 if (k % 2 == 0) == (s > 0) else 0.0), -0.36)
-		"banzai":
-			if k < 2:
-				return Vector3(s * 0.16, -0.4, -0.35)
-			if k < 30:
-				var w := (0.03 if (k / 3) % 2 == 0 else -0.03) * s
-				return Vector3(s * 0.33 + w, 0.22, -0.42)
 		"clap":
 			var gap: float = [0.32, 0.14, 0.03, 0.2][k % 4]
 			return Vector3(s * gap * 0.5, -0.17, -0.42)
-		"bow":
-			return Vector3(s * 0.05, -0.38, -0.4)
 		"wa":
 			if k < 2:
 				return Vector3(s * 0.2, -0.38, -0.4)
@@ -738,3 +778,26 @@ func _emote_hand(s: int) -> Vector3:
 			if s > 0 and k < 12:
 				return Vector3(0.04 + (0.06 if (k / 2) % 2 == 0 else -0.06), -0.08, -0.32)   # 顔の前で手を振る
 	return Vector3.INF
+
+
+## B を離した（または息が切れた）: 吐くのをやめる
+func _stop_exhale() -> void:
+	if not _exhaling:
+		return
+	_exhaling = false
+	if hub:
+		hub.send({"kind": "breath_end", "who": id})
+
+
+## 見ている先の近くに雪面があるか（しゃがんで手が届く所。地面の当たりは高さの地図）
+func _snow_ahead() -> bool:
+	var from := cam.global_position
+	var q := PhysicsRayQueryParameters3D.create(from, from - cam.global_basis.z * 2.2)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or hit.normal.y < 0.5:
+		return false
+	for c in (hit.collider as Node).get_children():
+		if c is CollisionShape3D and (c as CollisionShape3D).shape is HeightMapShape3D:
+			return true
+	return false

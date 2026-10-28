@@ -1,34 +1,77 @@
 extends RefCounted
-## ハイタッチの手のひら。紙を切った、5 本指のはっきりした手の形（遠くからでも「手を上げている」と読める）。
-## ほんとうの手より大きく作り、墨色の縁を付ける。人形の右手（doll.gd）と、一人称の右手（player.gd）に付ける。
-## 合ったときに飛び散る、千代紙の紙吹雪と紙の星もここで作る。
+## 手の形のアップリケ。紙を切った手の形（手のひら・グー・サムズアップ・ピース）に墨色の縁を付けた、平たい板。
+## 遠くからでも形が読めるよう、ほんとうの手より大きく作る。人形の手（doll.gd）と、一人称の手（player.gd）に付ける。
+## ハイタッチ・グータッチが合ったときに飛び散る、千代紙の紙吹雪と紙の星もここで作る。
 
 const Look := preload("res://look.gd")
 
 const EDGE := Color(0.22, 0.16, 0.13)
-const BIG := 1.7            # 人形の手のひらは、ほんとうの手より大きく（遠くからでも読める）
+const BIG := 1.7            # 人形の手の形は、ほんとうの手より大きく（遠くからでも読める）
+const SHAPES := ["palm", "fist", "thumb", "peace"]
+## 輪で選ぶ手の形 → [右手, 左手] の形。"" は手を下ろす
+const HANDS := {
+	"palm": ["palm", ""], "palms": ["palm", "palm"],
+	"fist": ["fist", ""], "fists": ["fist", "fist"],
+	"thumb": ["thumb", ""], "thumbs": ["thumb", "thumb"],
+	"peace": ["peace", ""], "": ["", ""],
+}
 ## 紙吹雪の色: 人の上着の差し色（赤・藍・山吹）と、生成り
 const CONFETTI := [Color(0.82, 0.25, 0.2), Color(0.22, 0.32, 0.6), Color(0.93, 0.72, 0.2), Color(0.97, 0.94, 0.86), Color(0.36, 0.6, 0.5)]
 
-static var _mesh: ArrayMesh
-static var _edge_mesh: ArrayMesh
+static var _meshes := {}     # "形_側" → [板, 縁]
 
 
-## 右手の輪郭（m、指は +y、手のひらは +z を向く。親指は +x）
-static func outline() -> PackedVector2Array:
-	var poly := _round_rect(Vector2(0, -0.035), Vector2(0.105, 0.1), 0.035)
-	# 指 4 本（中指がいちばん長い）と、斜めに開いた親指
-	var fingers := [[-0.039, 0.068], [-0.013, 0.083], [0.013, 0.078], [0.038, 0.062]]
-	for f in fingers:
-		var fp := _capsule(Vector2(f[0], 0.0), Vector2(f[0] * 1.15, f[1]), 0.0125)
-		poly = Geometry2D.merge_polygons(poly, fp)[0]
-	var thumb := _capsule(Vector2(-0.04, -0.05), Vector2(-0.088, 0.0), 0.014)
-	poly = Geometry2D.merge_polygons(poly, thumb)[0]
-	# 右手にする: 手のひらを前（相手）へ向けたとき、うしろ（自分）から見て親指が内側に来るように、左右を返す
-	var right := PackedVector2Array()
+## 手の形の輪郭（m、指は +y、手のひらは +z を向く）。side 1 右手、-1 左手。
+## 手のひら（甲でなく）を前（相手）へ向けたとき、うしろ（自分）から見て親指が内側に来る向き
+static func outline(shape: String, side := 1) -> PackedVector2Array:
+	var poly := _left(shape)
+	if side < 0:
+		return poly
+	var right := PackedVector2Array()   # 右手: 左右を返す（向きをそろえるため点の順も逆に）
 	for i in range(poly.size() - 1, -1, -1):
 		right.append(Vector2(-poly[i].x, poly[i].y))
 	return right
+
+
+## 左手の形（親指は -x）
+static func _left(shape: String) -> PackedVector2Array:
+	var poly: PackedVector2Array
+	match shape:
+		"fist":
+			# グー: 丸い塊の上に、指の節が 4 つ。親指は横に少し出る
+			poly = _round_rect(Vector2(0, -0.012), Vector2(0.11, 0.1), 0.036)
+			for x in [-0.039, -0.013, 0.013, 0.039]:
+				poly = _merge(poly, _dot(Vector2(x, 0.036), 0.017))
+			poly = _merge(poly, _capsule(Vector2(-0.045, -0.035), Vector2(-0.058, 0.0), 0.016))
+		"thumb":
+			# サムズアップ: 横を向いたこぶしから、親指がまっすぐ上へ
+			poly = _round_rect(Vector2(0.01, -0.045), Vector2(0.105, 0.1), 0.034)
+			for y in [-0.084, -0.06, -0.036, -0.012]:
+				poly = _merge(poly, _dot(Vector2(0.06, y), 0.02))
+			poly = _merge(poly, _capsule(Vector2(-0.018, -0.01), Vector2(-0.022, 0.06), 0.021))
+		"peace":
+			# ピース: 人さし指と中指を V に。薬指と小指は折って節だけ
+			poly = _round_rect(Vector2(0, -0.035), Vector2(0.098, 0.095), 0.033)
+			poly = _merge(poly, _capsule(Vector2(-0.018, 0.0), Vector2(-0.046, 0.088), 0.0125))
+			poly = _merge(poly, _capsule(Vector2(0.008, 0.0), Vector2(0.03, 0.092), 0.0125))
+			poly = _merge(poly, _dot(Vector2(0.03, 0.012), 0.014))
+			poly = _merge(poly, _dot(Vector2(0.046, 0.0), 0.013))
+			poly = _merge(poly, _capsule(Vector2(-0.035, -0.05), Vector2(-0.02, -0.01), 0.014))
+		_:
+			# 手のひら: 指 4 本（中指がいちばん長い）と、斜めに開いた親指
+			poly = _round_rect(Vector2(0, -0.035), Vector2(0.105, 0.1), 0.035)
+			for f in [[-0.039, 0.068], [-0.013, 0.083], [0.013, 0.078], [0.038, 0.062]]:
+				poly = _merge(poly, _capsule(Vector2(f[0], 0.0), Vector2(f[0] * 1.15, f[1]), 0.0125))
+			poly = _merge(poly, _capsule(Vector2(-0.04, -0.05), Vector2(-0.088, 0.0), 0.014))
+	return poly
+
+
+static func _merge(a: PackedVector2Array, b: PackedVector2Array) -> PackedVector2Array:
+	return Geometry2D.merge_polygons(a, b)[0]
+
+
+static func _dot(c: Vector2, r: float) -> PackedVector2Array:
+	return _capsule(c, c + Vector2(0, 0.001), r)
 
 
 static func _round_rect(c: Vector2, size: Vector2, r: float) -> PackedVector2Array:
@@ -81,24 +124,24 @@ static func _slab(poly: PackedVector2Array, z0: float, z1: float) -> ArrayMesh:
 	return st.commit()
 
 
-## 手のひらの節点を作る。color は手（紙）の色。layers は映す層
-static func make(color: Color, layers: int) -> Node3D:
-	if _mesh == null:
-		var poly := outline()
-		_mesh = _slab(poly, -0.003, 0.003)
-		_edge_mesh = _slab(Geometry2D.offset_polygon(poly, 0.007)[0], -0.002, 0.002)
+## 手の形の節点を作る。color は手（紙）の色。layers は映す層
+static func make(shape: String, side: int, color: Color, layers: int) -> Node3D:
+	var key := "%s_%d" % [shape, side]
+	if not _meshes.has(key):
+		var poly := outline(shape, side)
+		_meshes[key] = [_slab(poly, -0.003, 0.003), _slab(Geometry2D.offset_polygon(poly, 0.007)[0], -0.002, 0.002)]
 	var root := Node3D.new()
 	var paper := Look.paper(color)
 	paper.cull_mode = BaseMaterial3D.CULL_DISABLED
 	var face := MeshInstance3D.new()
-	face.mesh = _mesh
+	face.mesh = _meshes[key][0]
 	face.material_override = paper
 	face.layers = layers
 	face.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(face)
 	# 墨色の縁: 少し大きな板を、紙の厚みの中に挟む（表からも裏からも、縁だけが見える）
 	var edge := MeshInstance3D.new()
-	edge.mesh = _edge_mesh
+	edge.mesh = _meshes[key][1]
 	var em := StandardMaterial3D.new()
 	em.albedo_color = EDGE
 	em.roughness = 1.0
@@ -109,6 +152,14 @@ static func make(color: Color, layers: int) -> Node3D:
 	root.add_child(edge)
 	root.visible = false
 	return root
+
+
+## 人や一人称の手に付ける、形ごと・左右ごとの板の組。shapes[形][側] で引く（側は 1 右、-1 左）
+static func make_set(color: Color, layers: int) -> Dictionary:
+	var out := {}
+	for sh in SHAPES:
+		out[sh] = {1: make(sh, 1, color, layers), -1: make(sh, -1, color, layers)}
+	return out
 
 
 ## 出てくるときの大きさ（12 コマ。ぽんと出て、少し行きすぎて戻る）

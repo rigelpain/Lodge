@@ -1,6 +1,6 @@
-# 身ぶり（エモート）の絵
+# 手の形と身ぶり（エモート）の絵
 
-`game/tools/emote_shots.gd` で撮った確かめの絵（2026-10-28）。決まりは [アートコンセプト](../art-concept.md) の「身ぶり」。
+`game/tools/emote_shots.gd` で撮った確かめの絵（2026-10-28）。決まりは [アートコンセプト](../art-concept.md) の「手の形と身ぶり」。
 
 名前は `身ぶり_視点.jpg`（撮る道具は png で書き出すので、入れるときに JPEG にした）。視点は 3 つ。
 
@@ -10,19 +10,20 @@
 
 | 名前 | 何のコマか |
 |---|---|
-| `hand_up` | 手のひらを掲げて待つ（8 コマ目） |
-| `five_pull` | 届いて、引く（ため、1 コマ目） |
-| `high_five` | 叩きつけて、手が合う（3 コマ目。紙の星と紙吹雪が出る） |
-| `five_burst` | 紙吹雪が散る（5 コマ目） |
-| `whiff` | 6 秒待っても合わず、空振り |
-| `breath_in` / `breath_out` | 深呼吸の吸う所と、長く吐く所 |
-| `make_ball` | しゃがんで雪玉を丸める |
-| `windup` / `throw` | 振りかぶる、投げる |
+| `ring` | Tab の輪（右上の手のひらを選んでいる） |
+| `palm` `palms` `fist` `fists` `thumb` `thumbs` `peace` | 手の形を掲げた所（前を見て） |
+| `palms_up` | 両手のひらで見上げる（万歳になる） |
+| `five_pull` / `high_five` / `five_burst` | 手のひら同士で近づいて、引く → 叩きつける（紙の星）→ 紙吹雪が散る |
+| `fist_bump` | グー同士で近づいて、こつん |
+| `whiff` | 仲間がよそを向いたまま寄って、空振り |
+| `clap` | 両手のひらで左クリック |
+| `breath_in` / `breath_out` | B を押した瞬間に吸う所と、押したまま長く吐く所 |
+| `crouch` / `make_ball` | 左 Ctrl でしゃがむ、雪面を見て F で雪玉を丸める |
+| `windup` / `throw` | 左クリックを押してためる、離して投げる |
 | `hit_bot` / `hit_me` | 雪玉が仲間に当たる／あなたに当たる（のけぞる） |
 | `sled` | ソリに当たって、綿の雪が残る |
-| `clap` / `bow` | 拍手、おじぎ |
 | `wa` / `un` / `nn` | 声「ワ〜」「ウン」「ンーン」の身ぶり |
-| `banzai` | ソリの上で万歳 |
+| `banzai` | ソリの上で両手のひらを掲げて見上げる |
 
 撮り直すには（`--only=hand_up,high_five` で一部だけ）:
 
@@ -30,7 +31,7 @@
 /Applications/Godot.app/Contents/MacOS/Godot --path game --resolution 960x540 -s res://tools/emote_shots.gd -- --bots=1 --no-sound --no-pip --no-snow --view=fp --dir="$PWD/design/emotes"
 ```
 
-仲間の返し（ハイタッチに来る・声を返す・おじぎを返す）は `--check` で、撮らずに出来事の記録で確かめる。
+仲間の返し（ハイタッチ・グータッチに来る・同じ形で返す・声を返す・拍手を返す）は `--check` で、撮らずに出来事の記録で確かめる。
 
 ## 声
 

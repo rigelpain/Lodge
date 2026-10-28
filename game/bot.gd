@@ -4,8 +4,10 @@ const Doll := preload("res://doll.gd")
 const Emotes := preload("res://emotes.gd")
 ## 押すのを手伝う仲間（通信を入れるまでの代わり）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
-## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手を上げると、ソリを離して前まで来てハイタッチする。
-## 声には同じ声で、おじぎにはおじぎで、拍手には拍手で、滑りながらの万歳には万歳で返す。雪玉が当たると、のけぞって笑う。
+## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手のひら（グー）を掲げると、ソリを離して前まで来て、
+## 同じ形を掲げてハイタッチ（グータッチ）になる。サムズアップ・ピースには同じ形を少し掲げて返す。
+## 一緒に乗っているとき、あなたが両手のひらを上げたら一緒に上げる（万歳）。声には同じ声、拍手には拍手。
+## 雪玉が当たると、のけぞって笑う。
 
 enum State { PUSH, WAIT, RIDE }
 
@@ -227,15 +229,24 @@ func _pose_doll() -> void:
 
 # ---------------------------------------------------------------- 身ぶりへの返し
 
+var _shape := ""             # 仲間がいま掲げている手の形
+var _five_shape := ""        # 合わせにいく形（"palm" か "fist"）
+var _lower_t := 0.0          # 返しで掲げた形を下ろすまで (s)
+
+
 func _on_emote(ev: Dictionary) -> void:
 	var who: int = ev.get("who", -1)
 	if who == id:
+		if ev.kind == "hands":
+			_shape = ev.hands
+			doll.play(ev)
+			return
 		_em = ev
 		doll.play(ev)
-		if ev.kind in ["high_five", "whiff"]:
+		if ev.kind in ["high_five", "fist_bump", "whiff"]:
 			_five_with = -1   # 合った・空振りした。持ち場へ戻る
 		if ev.kind == "hit" and randf() < 0.6:
-			_reply(randf_range(0.7, 1.0), "wa")   # 当たっても楽しい
+			_reply(randf_range(0.7, 1.0), {"kind": "wa"})   # 当たっても楽しい
 		return
 	# 返すのは、あなた（人）の身ぶりにだけ（仲間どうしで返し合い続けないように）
 	if player == null or hub.who_of(who) != player:
@@ -244,25 +255,35 @@ func _on_emote(ev: Dictionary) -> void:
 	match ev.kind:
 		"wa", "un", "nn":
 			if near < 15.0:
-				_reply(randf_range(0.35, 0.8), ev.kind)
-		"bow":
-			if near < 6.0 and state != State.RIDE:
-				_reply(randf_range(0.3, 0.5), "bow")
+				_reply(randf_range(0.35, 0.8), {"kind": ev.kind})
 		"clap":
 			if near < 10.0:
-				_reply(randf_range(0.2, 0.5), "clap")
-		"banzai":
-			if state == State.RIDE:
-				_reply(randf_range(0.1, 0.25), "banzai")
-		"hand_up":
-			if near < 7.0 and state != State.RIDE:
+				_reply(randf_range(0.15, 0.3), {"kind": "hands", "hands": "palms"})
+				_reply(randf_range(0.4, 0.6), {"kind": "clap"})
+				_lower_t = 2.2
+		"hands":
+			var h: String = ev.hands
+			if h == "":
+				if _five_with == who:
+					_five_with = -1
+				return
+			var r: String = Emotes.HANDS[h][0]
+			if (r == "palm" or r == "fist") and h != "palms" and near < 7.0 and state != State.RIDE:
+				# 手のひら・グーを差し出された: 前まで行って、同じ形を掲げる
 				_five_with = who
-				_five_until = int(ev.frame) + Emotes.KINDS.hand_up.frames
+				_five_shape = r
+				_five_until = Doll.frame_index() + 12 * 8
 				_five_sent = false
+			elif h == "palms" and state == State.RIDE and player.get("mode") == player.Mode.RIDE:
+				_reply(randf_range(0.1, 0.25), {"kind": "hands", "hands": "palms"})   # 一緒に乗っていれば、一緒に上げる
+				_lower_t = 3.0
+			elif h in ["thumb", "thumbs", "peace"] and near < 12.0:
+				_reply(randf_range(0.4, 0.7), {"kind": "hands", "hands": h})   # 同じ形で返す
+				_lower_t = 2.8
 
 
-func _reply(after: float, kind: String) -> void:
-	_replies.append([after, kind])
+func _reply(after: float, ev: Dictionary) -> void:
+	_replies.append([after, ev])
 
 
 func _update_replies(dt: float) -> void:
@@ -270,7 +291,13 @@ func _update_replies(dt: float) -> void:
 		r[0] -= dt
 		if r[0] <= 0.0:
 			_replies.erase(r)
-			hub.send({"kind": r[1], "who": id})
+			var ev: Dictionary = r[1].duplicate()
+			ev["who"] = id
+			hub.send(ev)
+	if _lower_t > 0.0:
+		_lower_t -= dt
+		if _lower_t <= 0.0 and _shape != "" and _five_with < 0:
+			hub.send({"kind": "hands", "who": id, "hands": ""})
 
 
 func _rooted() -> bool:
@@ -280,12 +307,14 @@ func _rooted() -> bool:
 	return spec.get("root", false) and Doll.frame_index() - int(_em.frame) < spec.frames
 
 
-## 手を上げた相手の前まで歩き、向き合って手を上げる（配り役が合わせる）
+## 手のひら（グー）を掲げた相手の前まで歩き、向き合って同じ形を掲げる（届けば配り役が合わせる）
 func _go_five(dt: float) -> void:
 	var dir := Vector3.ZERO
 	var them := hub.who_of(_five_with)
 	if _five_with > 0 and (them == null or Doll.frame_index() > _five_until):
 		_five_with = -1
+		if _shape != "":
+			hub.send({"kind": "hands", "who": id, "hands": ""})
 	elif _five_with > 0:
 		let_go()
 		var fwd: Vector3 = Emotes._forward(them)
@@ -294,16 +323,13 @@ func _go_five(dt: float) -> void:
 		to.y = 0
 		var face: Vector3 = them.global_position - global_position
 		face.y = 0
-		if to.length() > 0.25:
+		if to.length() > 0.15:
 			dir = to.normalized()
 		if face.length() > 0.1:
 			look_at(global_position + face, Vector3.UP)
-		# 相手の前まで来たら手のひらを掲げ、合うまで寄り続ける（届けば配り役が合わせる）
 		if not _five_sent and to.length() < 0.6 and Emotes._forward(self).dot(face.normalized()) > 0.6:
-			hub.send({"kind": "hand_up", "who": id})
+			hub.send({"kind": "hands", "who": id, "hands": _five_shape})
 			_five_sent = true
-		if _five_sent and to.length() < 0.15:
-			dir = Vector3.ZERO
 	velocity.x = dir.x * SPEED
 	velocity.z = dir.z * SPEED
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt

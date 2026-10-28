@@ -584,7 +584,7 @@ const EMOTE_SOUNDS := {
 	"throw": [[0, "swish", 2, -8.0, 1.15]],
 	"clap": [[2, "felt_pat", 3, -12.0, 1.3], [6, "felt_pat", 3, -12.0, 1.25], [10, "felt_pat", 3, -12.0, 1.3], [14, "felt_pat", 3, -12.0, 1.2]],
 	"make_ball": [[4, "step_snow", 6, -16.0, 1.7], [6, "step_snow", 6, -17.0, 1.8], [8, "step_snow", 6, -16.0, 1.7], [10, "step_snow", 6, -17.0, 1.8], [12, "step_snow", 6, -16.0, 1.75], [14, "step_snow", 6, -18.0, 1.9]],
-	"breath": [[1, "breath", 4, -20.0, 0.7], [22, "breath", 4, -14.0, 0.62]],
+	"breath": [[0, "breath", 4, -22.0, 1.1], [5, "breath", 4, -14.0, 0.6]],
 }
 
 
@@ -594,11 +594,18 @@ func _on_emote(ev: Dictionary) -> void:
 	var is_self: bool = who != null and who == player
 	var pitch: float = who.get("voice_pitch") if who and who.get("voice_pitch") != null else 1.0
 	match ev.kind:
-		"high_five":
-			# 二人に配られるので、片方のぶんだけ鳴らす。手が合う所で
+		"high_five", "fist_bump":
+			# 二人に配られるので、片方のぶんだけ鳴らす。手が合う所で（グーは低く、こつん）
 			if ev.who < ev.with:
 				var near_self: bool = who == player or hub.who_of(ev.with) == player
-				_emote_sound(ev, 3, "felt_pat", 3, -2.0 if near_self else -5.0, rng.randf_range(0.95, 1.05), ev.point, near_self)
+				var low: float = 0.78 if ev.kind == "fist_bump" else 1.0
+				_emote_sound(ev, 3, "felt_pat", 3, -2.0 if near_self else -5.0, low * rng.randf_range(0.95, 1.05), ev.point, near_self)
+			return
+		"hands":
+			# 手の形を掲げる: 袖が切る小さな音（下ろすときは鳴らさない）
+			if ev.hands == "" or who == null:
+				return
+			_emote_sound(ev, 0, "swish", 2, -16.0, rng.randf_range(1.3, 1.5), who.global_position + Vector3.UP * 1.0, is_self)
 			return
 		"splat":
 			_emote_sound(ev, 0, "snow_splat", 3, -6.0, rng.randf_range(0.9, 1.1), ev.point, false)
