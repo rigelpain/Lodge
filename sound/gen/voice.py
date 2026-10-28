@@ -81,8 +81,15 @@ def tract(src, path, form=1.0):
     return out
 
 
+# 声の素材を替える口（voice_material.py が使う）。None なら人の声（声帯と口の形）。
+# 入れると、同じ抑揚（高さの点・強さの点・長さ）のまま、その素材で鳴らす
+MATERIAL = None
+
+
 def voice(f0_pts, path, dur, rng, breath=0.22, env_pts=None, form=1.0):
     """高さの点 [(秒, Hz)] と口の形の点で、声を 1 つ作る"""
+    if MATERIAL is not None:
+        return MATERIAL(f0_pts, path, dur, rng, env_pts, form)
     n = n_of(dur)
     t = np.arange(n) / SR
     f0 = np.interp(t, [p[0] for p in f0_pts], [p[1] for p in f0_pts])

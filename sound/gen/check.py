@@ -124,6 +124,16 @@ if __name__ == "__main__":
                 "audio{width:420px;vertical-align:middle}small{color:#666}p.use{margin:0 0 6px}p.unused{margin:0 0 6px;color:#999}</style>",
                 "<h1>Lodge の音 — 聞いて確かめる</h1><p><small>合成の台本は gen/、音は wav/。表の数字は summary.md と同じ。"
                 "「使う所」は design/sound-concept.md の「音の一覧」から。</small></p>"]
+        # 聞き比べ: 同じ声（同じ抑揚）を、人の声と素材の声で横に並べる（voice_material.py の候補があるとき）
+        mats = [("人の声", "voice_{}_01.wav"), ("紙", "voice_paper_{}_01.wav"), ("フェルト", "voice_felt_{}_01.wav"), ("紙の櫛笛", "voice_kazoo_{}_01.wav")]
+        if (WAV / "voice_paper_wa_01.wav").exists():
+            html.append("<section><h2>聞き比べ: 素材で喋る声 <small>同じ抑揚を、人の声・紙・フェルト・紙の櫛笛で</small></h2>"
+                        "<table style='border-collapse:collapse'><tr><th></th>" + "".join(f"<th style='padding:4px 8px'>{m}</th>" for m, _ in mats) + "</tr>")
+            for key, label in [("wa", "ワ〜"), ("un", "ウン"), ("nn", "ンーン"), ("unq", "ウン？"), ("surprise", "びっくり")]:
+                cells = "".join(f"<td style='padding:4px 8px'><audio controls preload=none style='width:180px' src='../wav/{f.format(key)}'></audio></td>"
+                                for _, f in mats if (WAV / f.format(key)).exists())
+                html.append(f"<tr><th style='padding:4px 8px;text-align:left'>{label}</th>{cells}</tr>")
+            html.append("</table></section>")
         for name, i in rows:
             u = used.get(name)
             html.append(f"<section><h2>{name} <small>{i['dur']:.2f} s · peak {i['peak']:.1f} dB · rms {i['rms']:.1f} dB</small></h2>"
