@@ -22,6 +22,7 @@ const LODGE_PAD := Rect2(-32, -16, 57, 37)   # ならす範囲（ロッジの座
 const LODGE_BLEND := 10.0                    # ならした所から丘へ戻るまでの幅 (m)
 
 const Sled := preload("res://sled.gd")
+const Props := preload("res://props.gd")
 const Player := preload("res://player.gd")
 const Bot := preload("res://bot.gd")
 const Settings := preload("res://settings.gd")
@@ -70,6 +71,7 @@ func _ready() -> void:
 	_make_ground()
 	if not args.has("no-lodge"):
 		_make_lodge()
+		_furnish_lodge()
 
 	sled = Sled.new()
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
@@ -99,6 +101,7 @@ func _ready() -> void:
 		audio.name = "Audio"
 		audio.setup(self, sled, player, get_children().filter(func(c): return c.get_script() == Bot), get_node_or_null("Lodge"))
 		add_child(audio)
+		_dress_speakers()
 		_make_volume_buses()
 		if args.has("buses"):   # 確かめ用: バスのつながりを出す
 			for i in AudioServer.bus_count:
@@ -481,6 +484,33 @@ func _make_lodge() -> void:
 	lodge.rotation = Vector3(0, LODGE_YAW, 0)
 
 
+## ロッジの機械の置き場の目印（slot_*。lodge/ の glb にある）に、props/ の機械を置く。
+## どれも正面を南（ロッジの食堂の側、目印の +Z）へ向ける。目印のない古い glb なら何もしない
+func _furnish_lodge() -> void:
+	var lodge: Node3D = get_node_or_null("Lodge")
+	if lodge == null:
+		return
+	var put := func(slot_name: String, path: String, offset: Vector3, yaw := PI) -> void:
+		var slot := lodge.find_child(slot_name, true, false) as Node3D
+		if slot == null:
+			return
+		var n := Props.make(path)
+		n.position = offset
+		n.rotation.y = yaw
+		slot.add_child(n)
+	# 機械は 2 倍（ミシンは貸出に収まるよう 1.5 倍）の大きさで書き出してある
+	put.call("slot_vending_1", "res://props/misc/vending_red.glb", Vector3.ZERO)
+	put.call("slot_vending_2", "res://props/misc/vending_blue.glb", Vector3.ZERO)
+	put.call("slot_vending_3", "res://props/misc/vending_red.glb", Vector3.ZERO)
+	put.call("slot_craft_rental", "res://props/craft_machine.glb", Vector3.ZERO)
+	# 厨房: 巨大なアイロン台・プレス機・乾燥機と、卓上の道具（props/build_scenes.py の kitchen）
+	var kitchen := lodge.find_child("slot_food_kitchen", true, false) as Node3D
+	if kitchen:
+		var set_node := (load("res://props/sets/kitchen.tscn") as PackedScene).instantiate()
+		kitchen.add_child(set_node)
+		Props.cook_cycle(set_node)   # 調理の仕組みができるまで: 装置が順に調理して煙を出す
+
+
 ## 舞う雪: 羊毛のふわふわが、あなたのまわりでゆっくり落ちる
 func _make_snowfall(follow: Node3D) -> void:
 	var p := GPUParticles3D.new()
@@ -577,15 +607,11 @@ func _make_ground() -> void:
 	ground_mesh = mesh
 	add_child(mesh)
 
-	# 木（ソリの通り道は空ける）。フェルトの円錐を 2 段、幹は木
+	# 木（ソリの通り道は空ける）。フェルトの円錐を 2 段重ねたミニチュアの木（props/build_tree.py の glb）
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
-	var greens := [Color(0.30, 0.52, 0.36), Color(0.26, 0.47, 0.40), Color(0.36, 0.56, 0.34)]
-	var tree_mats: Array[StandardMaterial3D] = []
-	for g in greens:
-		tree_mats.append(Look.felt(g, 1.5))
-	var trunk_mat := Look.wood(Color(0.42, 0.29, 0.2))
-	var snow_cap := Look.felt(Color(0.97, 0.97, 0.99), 1.5)
+	const TREES := ["res://props/tree_tall.glb", "res://props/tree_zigzag.glb", "res://props/tree_round.glb",
+		"res://props/tree_little.glb"]
 	for k in 70:
 		var a := rng.randf() * TAU
 		var r := rng.randf_range(32, 90)
@@ -595,38 +621,68 @@ func _make_ground() -> void:
 		if lodge_weight(p.x, p.z) < 1.0:   # ロッジに重ねない
 			continue
 		var h := rng.randf_range(4, 8)
-		var base_y := height(p.x, p.z)
-		var tm: StandardMaterial3D = tree_mats[k % tree_mats.size()]
-		for tier in 2:
-			var cone := CylinderMesh.new()
-			cone.top_radius = 0
-			cone.bottom_radius = h * (0.34 if tier == 0 else 0.26)
-			cone.height = h * (0.7 if tier == 0 else 0.6)
-			cone.radial_segments = 9
-			var t := MeshInstance3D.new()
-			t.mesh = cone
-			t.material_override = tm
-			t.position = p + Vector3(0, base_y + h * (0.45 if tier == 0 else 0.78), 0)
-			t.rotation.y = rng.randf() * TAU
-			add_child(t)
-		# てっぺんの雪
-		var cap := MeshInstance3D.new()
-		var cm := SphereMesh.new()
-		cm.radius = h * 0.07
-		cm.height = h * 0.1
-		cap.mesh = cm
-		cap.material_override = snow_cap
-		cap.position = p + Vector3(0, base_y + h * 1.06, 0)
-		add_child(cap)
-		var trunk := MeshInstance3D.new()
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = h * 0.04
-		cyl.bottom_radius = h * 0.05
-		cyl.height = h * 0.2
-		trunk.mesh = cyl
-		trunk.material_override = trunk_mat
-		trunk.position = p + Vector3(0, base_y + h * 0.1, 0)
-		add_child(trunk)
+		var tree := Props.make(TREES[k % TREES.size()])
+		tree.scale = Vector3.ONE * h / 6.0
+		tree.position = p + Vector3(0, height(p.x, p.z) - 0.05, 0)
+		tree.rotation.y = rng.randf() * TAU
+		add_child(tree)
+	_make_slope_props()
+
+
+## 斜面の小物（props/build_slope.py・build_snow.py の glb）。当たり判定はまだない（見た目だけ）
+func _make_slope_props() -> void:
+	# コースの旗: 登り道の両脇に、赤と藍を交互に
+	var i := 0
+	for z in [34.0, 27.0, 20.0, 13.0]:
+		for x in [-9.0, 9.0]:
+			_put_prop("res://props/flag_%s.glb" % ("red" if i % 2 == 0 else "navy"), x, z, 0.4 if x < 0 else PI - 0.4)
+			i += 1
+	# 案内板: スタートにロッジへの矢印、ロッジの前に丘への矢印（文字なし）
+	_put_prop("res://props/sign_lodge.glb", 5.0, 41.0, PI)
+	var to_lodge := Vector2(-13, 14)
+	_put_prop("res://props/sign_slope.glb", -14.0, 62.0, atan2(-to_lodge.x, -to_lodge.y))
+	# 毛糸の安全ネット: 登り道の右の外れに 4 区間と、終わりの杭
+	for k in 5:
+		var net := _put_prop("res://props/net_span.glb", 13.0, 30.0 - 2.5 * k, PI / 2)
+		if k == 4:
+			for n in net.find_children("*", "MeshInstance3D", true, false):
+				if "_yarn" in n.name or "_knots" in n.name:
+					n.visible = false
+	# 岩と雪のかたまり: 丘のまわりに散らす（登り道とロッジは空ける）
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 11
+	const LUMPS := ["res://props/rock_a.glb", "res://props/rock_b.glb", "res://props/rock_c.glb",
+		"res://props/snow_pile_a.glb", "res://props/snow_pile_b.glb", "res://props/snow_drift.glb"]
+	for k in 24:
+		var a := rng.randf() * TAU
+		var r := rng.randf_range(22, 85)
+		var x := cos(a) * r
+		var z := sin(a) * r
+		if z > 8 and abs(x) < 16:
+			continue
+		if lodge_weight(x, z) < 1.0:
+			continue
+		_put_prop(LUMPS[k % LUMPS.size()], x, z, rng.randf() * TAU)
+
+
+func _put_prop(path: String, x: float, z: float, yaw: float) -> Node3D:
+	var n := Props.make(path)
+	n.position = Vector3(x, height(x, z) - 0.05, z)
+	n.rotation.y = yaw
+	add_child(n)
+	return n
+
+
+## 音（audio.gd）が立てた柱の仮の見た目を隠し、フェルトのスピーカーの柱に着せ替える。ラッパは丘を向く
+func _dress_speakers() -> void:
+	for post in find_children("SpeakerPost*", "Node3D", true, false):
+		for n in post.find_children("*", "MeshInstance3D", true, false):
+			n.visible = false
+		var look := Props.make("res://props/speaker_pole.glb")
+		look.scale = Vector3.ONE * Audio.POST_H / 5.0
+		var d := -Vector2(post.position.x, post.position.z)
+		look.rotation.y = atan2(-d.x, -d.y)
+		post.add_child(look)
 
 
 func _physics_process(dt: float) -> void:
