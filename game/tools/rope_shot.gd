@@ -2,7 +2,7 @@ extends SceneTree
 ## ソリの引き紐を、4 つの場面で撮る（紐の見た目の確かめ用）。
 ##   Godot --path game --resolution 1280x720 -s res://tools/rope_shot.gd -- --bots=0 --no-sound --no-snow --out=/path/rope
 ## <out>_flat.png   平らな所に置いたソリ。紐は持たれずに垂れている
-## <out>_close.png  同じ所を、結び目の近く（50 cm）から。撚りの筋の確かめ
+## <out>_close.png  同じ所を、右の手すりの結び先の近く（70 cm）から。結び目と撚りの筋の確かめ
 ## <out>_slope.png  坂の途中で、頂上へ向けたソリ（前が上がる）
 ## <out>_tilt.png   横に 20° 傾けたソリ
 ## <out>_pull.png   あなたが紐を持って、斜め前へ引いている（三人称の後ろ上から）
@@ -127,8 +127,9 @@ func _process(dt: float) -> bool:
 			p.cam.current = true
 			cam.current = false
 		"close":
-			var mid: Vector3 = sled.to_global(Vector3(0.45, 0.2, -1.6))
-			cam.global_position = mid - right * 0.35 + fwd * 0.45 + Vector3.UP * 0.3
+			# 右の手すりの前の端（紐の結び先）を、前の斜め上から
+			var mid: Vector3 = sled.to_global(Vector3(0.72, 0.42, -1.3))
+			cam.global_position = mid + right * 0.35 + fwd * 0.6 + Vector3.UP * 0.25
 			cam.look_at(mid, Vector3.UP)
 		_:
 			# 前の斜め上から、手すりと紐が見えるように

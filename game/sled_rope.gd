@@ -1,5 +1,5 @@
 extends Node3D
-## ソリの引き紐。手すり（前の横棒）の両端を、長くたわんだ一本の紐（ブライドル）で結び、
+## ソリの引き紐。左右の手すりの前の端（渦の一番前）を、長くたわんだ一本の紐（ブライドル）で結び、
 ## そのまんなかの結び目から引っ張り紐が前へ出る。紐は点を棒でつないだだけの簡単な計算（Verlet）で、
 ## 重力でたわみ、雪の上に寝る。持つ人がいれば先が手に付き、張ると結び目が引かれる向きへ寄って、
 ## 手すりの両端と三角形になる。
@@ -7,8 +7,11 @@ extends Node3D
 ## 管の形は GPU が作る（点と向きだけを渡し、頂点シェーダーが曲線と丸い断面にする）。CPU は点の計算だけ
 ## （前は短い円柱を世界の上下で伸び縮みさせていたため、紐が斜めになると円柱が平たい板になって重なり、縞に見えた）
 
-const TIE := Vector3(0.63, 0.32, -1.465)   # 手すりの右の端（ソリの座標）。左は x を逆に。props/build_sled.py の横棒
-const BRIDLE_LEN := 1.8      # 両端を結ぶ紐の長さ。手すりの幅 1.26 m より長く、たわむ
+## 右の手すりの前の端（ソリの座標）。左は x を逆に。glb に印 rope_tie_l・rope_tie_r があればそちらを使う
+## （props/build_sled.py の手すりの巻き下りの一番前）
+const TIE := Vector3(0.82, 0.52, -1.13)
+const RAIL_R := 0.026        # 手すりの太さ（半径）。巻きはこの外に
+const BRIDLE_LEN := 2.4      # 両端を結ぶ紐の長さ。左右の手すりのあいだ 1.64 m より長く、たわむ
 const BRIDLE_SEG := 12       # 偶数。まんなかが結び目
 const PULL_SEG := 14
 const RADIUS := 0.017
@@ -79,12 +82,15 @@ var _calm := 0               # 動きがほとんどないコマが続いた数�
 var _bridle: MeshInstance3D
 var _pull: MeshInstance3D
 var _knots: Array[MeshInstance3D] = []   # 結び目と、先のこぶ
+var _ties: Array[Vector3] = [Vector3(-TIE.x, TIE.y, TIE.z), TIE]   # 左右の結び先（ソリの座標）
+var _tie_axis: Array[Vector3] = [Vector3.UP, Vector3.UP]            # そこでの手すりの向き。巻きの軸
 
 static var _mat: StandardMaterial3D
 static var _shader: Shader
 
 
 func _ready() -> void:
+	_read_ties()
 	# 点: 0..BRIDLE_SEG がブライドル（0 が左の端、まんなかが結び目）、そのあとが引っ張り紐
 	var n := BRIDLE_SEG + 1 + PULL_SEG
 	_pos.resize(n)
@@ -92,9 +98,10 @@ func _ready() -> void:
 	var bl := BRIDLE_LEN / BRIDLE_SEG
 	for i in BRIDLE_SEG:
 		_link(i, i + 1, bl)
-	# 引っ張り紐: 張ったときに結び目から手まで、sled.gd の紐の長さになるように
-	var apex := sqrt(pow(BRIDLE_LEN * 0.5, 2) - TIE.x * TIE.x)
-	var pl: float = (sled.ROPE_LEN - apex) / PULL_SEG
+	# 引っ張り紐: 張ってまっすぐ前へ引いたとき、sled.gd の紐の付け根から手までが、その紐の長さになるように
+	var half := _ties[0].distance_to(_ties[1]) * 0.5
+	var apex := (_ties[0] + _ties[1]) * 0.5 + Vector3.FORWARD * sqrt(BRIDLE_LEN * BRIDLE_LEN * 0.25 - half * half)
+	var pl: float = (sled.ROPE_LEN - sled.ROPE_ANCHOR.distance_to(apex)) / PULL_SEG
 	var prev_i := _mid
 	for k in PULL_SEG:
 		var i := BRIDLE_SEG + 1 + k
@@ -115,12 +122,23 @@ func _ready() -> void:
 		k.top_level = true
 		add_child(k)
 		_knots.append(k)
-	# 手すりの両端の巻き: 反りの先ごと 3 巻きして結ぶ。ソリと一緒に動くだけなので一度だけ作る
+	# 手すりの前の端の巻き: 3 巻きして結ぶ。ソリと一緒に動くだけなので一度だけ作る
 	var coils := MeshInstance3D.new()
 	coils.mesh = _coil_mesh()
 	coils.material_override = material()
 	add_child(coils)
 	_lay_out()
+
+
+## glb の印から結び先を読む。印の上（Blender の Z）を手すりの向きとする
+func _read_ties() -> void:
+	for k in 2:
+		var found := sled.find_children("rope_tie_%s*" % ["l", "r"][k], "Node3D", true, false)
+		if found.is_empty():
+			continue
+		var mark: Node3D = found[0]
+		_ties[k] = sled.to_local(mark.global_position)
+		_tie_axis[k] = (sled.global_basis.inverse() * mark.global_basis.y).normalized()
 
 
 func _link(i: int, j: int, len: float) -> void:
@@ -186,14 +204,14 @@ func end_point() -> Vector3:
 
 ## 雪の上に、ソリの前へ伸ばして置き直す（始めと、ソリが遠くへ移されたとき）
 func _lay_out() -> void:
-	var l := sled.to_global(Vector3(-TIE.x, TIE.y, TIE.z))
-	var r := sled.to_global(TIE)
+	var l := sled.to_global(_ties[0])
+	var r := sled.to_global(_ties[1])
 	var fwd := -sled.global_basis.z
 	fwd.y = 0
 	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
 	for i in BRIDLE_SEG + 1:
 		var t := float(i) / BRIDLE_SEG
-		_pos[i] = l.lerp(r, t) + fwd * sin(PI * t) * 0.55
+		_pos[i] = l.lerp(r, t) + fwd * sin(PI * t) * 0.8
 	for k in PULL_SEG:
 		_pos[BRIDLE_SEG + 1 + k] = _pos[_mid] + fwd * _rest[BRIDLE_SEG + k] * (k + 1)
 	for i in _pos.size():
@@ -211,8 +229,8 @@ func _ground(p: Vector3) -> float:
 
 
 func _physics_process(dt: float) -> void:
-	var l := sled.to_global(Vector3(-TIE.x, TIE.y, TIE.z))
-	var r := sled.to_global(TIE)
+	var l := sled.to_global(_ties[0])
+	var r := sled.to_global(_ties[1])
 	if r.distance_to(_last_tie) > 2.0:   # ふもとへ戻したときなど
 		_lay_out()
 	_last_tie = r
@@ -282,6 +300,14 @@ func _physics_process(dt: float) -> void:
 ## ソリの台の中（手すりより後ろ）に入った点を、近い方の縁（前か左右）へ出す
 func _out_of_sled(p: Vector3, inv: Transform3D) -> Vector3:
 	var q := inv * p
+	# 滑り木の前の反り（x = ±0.6、中心 y 0.32・z -1.2、外の半径 0.32）には上から載る
+	if abs(abs(q.x) - 0.6) < 0.05 and q.z < -1.2 and q.y > 0.32:
+		var c := Vector2(q.y - 0.32, q.z + 1.2)
+		if c.length() < 0.32 + RADIUS:
+			c = c.normalized() * (0.32 + RADIUS)
+			q.y = 0.32 + c.x
+			q.z = -1.2 + c.y
+			return sled.global_transform * q
 	const HX := 0.8
 	const Z0 := -1.42
 	const Z1 := 1.5
@@ -340,12 +366,16 @@ func _coil_mesh() -> ArrayMesh:
 	var tg := PackedFloat32Array()
 	var uv := PackedVector2Array()
 	var idx := PackedInt32Array()
-	for sx in [-1.0, 1.0]:
+	for k in 2:
+		var ax := _tie_axis[k]
+		var e1 := ax.cross(Vector3.RIGHT if abs(ax.x) < 0.9 else Vector3.FORWARD).normalized()
+		var e2 := ax.cross(e1)
+		var rr := RAIL_R + RADIUS * 0.75
 		var coil := PackedVector3Array()
 		for i in 37:
 			var t := i / 36.0
 			var a := t * TAU * 3.0
-			coil.append(Vector3(sx * (0.585 + 0.075 * t), TIE.y + 0.04 * sin(a), TIE.z + 0.04 * cos(a)))
+			coil.append(_ties[k] + ax * (t - 0.5) * 0.08 + (e1 * cos(a) + e2 * sin(a)) * rr)
 		_tube(coil, RADIUS * 0.75, v, nm, tg, uv, idx)
 	var arrays := []
 	arrays.resize(Mesh.ARRAY_MAX)
