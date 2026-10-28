@@ -38,6 +38,7 @@ const SHOTS := [
 	["wa", "wa", 5],
 	["un", "un", 1],
 	["nn", "nn", 2],
+	["huh", "huh", 5],
 	["banzai", "banzai", 4],
 ]
 
@@ -277,7 +278,7 @@ func _camera(view: String, kind: String) -> void:
 			if kind == "banzai":
 				tgt = me + Vector3(0, 0.6, 0)
 				cam.look_at_from_position(me + Vector3(2.8, 1.2, -2.2), tgt)
-			elif kind in ["palm", "palms", "palms_up", "fist", "fists", "thumb", "thumbs", "peace", "clap", "ring"]:
+			elif kind in ["palm", "palms", "palms_up", "fist", "fists", "thumb", "thumbs", "peace", "clap", "ring", "huh"]:
 				# 手の形は前（見ている先の側）から: 相手から見た形
 				cam.look_at_from_position(me + Vector3(-1.3, 1.2, -2.8), me + Vector3(0, 0.85, 0))
 			elif kind == "sled":

@@ -729,7 +729,7 @@ func _physics_process(dt: float) -> void:
 		else:
 			lines.append("WASD 歩く　Shift 走る　Space ジャンプ　F ソリをつかむ（前では紐）　E 乗る　R ソリをふもとへ")
 			lines.append("マウス 見回す　ホイール／ピンチ 視野角　C 一人称／三人称　V 360映像の見せ方　P 360映像を消す　Esc 設定")
-			lines.append("Tab 手の形の輪　1 2 3 声　B 息を吐く　左Ctrl しゃがむ（雪面を見て F で雪玉）　左クリック ためて投げる／両手のひらで拍手　Q 手を振る　右クリック 指さす")
+			lines.append("Tab 手の形の輪　1 2 3 4 声　B 息を吐く　左Ctrl しゃがむ（雪面を見て F で雪玉）　左クリック ためて投げる／両手のひらで拍手　Q 手を振る　右クリック 指さす")
 	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）

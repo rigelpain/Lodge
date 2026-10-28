@@ -12,7 +12,7 @@ const Palm := preload("res://palm.gd")
 ## どう動くかはソリの滑り木と重力が決める。離すのは F だけ。Shift でダッシュ。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
 ## 手の形: Tab を押しているあいだ輪が出て、マウスの向きで形を選び、離すとその形を掲げる（下ろすまで）。腕は見ている向きへ上がる。
-## 1・2・3 は声（ワ〜・ウン・ンーン）。B を押しているあいだ、白い息を長く吐く（押した瞬間に短く吸う）。
+## 1・2・3・4 は声（ワ〜・ウン・ンーン・ウン？）。4 は首をかしげる。B を押しているあいだ、白い息を長く吐く（押した瞬間に短く吸う）。
 ## 左 Ctrl を押しているあいだしゃがむ。しゃがんで雪面を見て F で、雪玉を丸める。
 ## 左クリック: 雪玉を持っていれば押してためて（振りかぶり）、離して投げる（長く押すほど遠くへ）。両手のひらなら拍手。
 
@@ -57,6 +57,7 @@ var _point_local := Vector3.ZERO
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
 var voice_pitch := 1.0       # 声の高さ（人ごとに少し変える）
+var voice_size := 1          # 声の大きさ（sound/wav/voice_*_01 ふつう・02 高い・03 低い）
 var holding_ball := false
 var ring: EmoteRing
 var _em := {}                # いまの自分の身ぶり（出来事）
@@ -68,6 +69,7 @@ var hands_name := ""         # いま掲げている手の形（Palm.HANDS の�
 var crouching := false       # 左 Ctrl を押しているあいだしゃがむ
 var _exhaling := false      # B を押しているあいだ、息を吐いている
 var _exhale_t := 0.0
+var _cam_roll := 0.0         # 首をかしげると視点も少し傾く
 var _cam_em := Vector3.ZERO  # 身ぶりで視点に足す（x 上下の向き、y 左右の向き、z 高さ）。なめらかに追う
 
 
@@ -191,6 +193,8 @@ func _unhandled_input(e: InputEvent) -> void:
 				emote("un")
 			KEY_3:
 				emote("nn")
+			KEY_4:
+				emote("huh")   # ウン？と首をかしげる
 			KEY_B:
 				if not _exhaling and available().get("breath", false):
 					_exhaling = true
@@ -479,7 +483,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * doll.eye_point(true))
 		eye.y += _cam_em.z
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
-		cam.rotation = Vector3(clampf(_pitch + _cam_em.x, -1.5, 1.4), _cam_em.y, 0)
+		cam.rotation = Vector3(clampf(_pitch + _cam_em.x, -1.5, 1.4), _cam_em.y, _cam_roll)
 		return
 	# 三人称: 頭の少し上を中心に、後ろ上から見下ろす。地面に潜らない
 	var pivot := Vector3(0, 1.6, 0)
@@ -584,7 +588,7 @@ func _place_shapes_fp(em: Array) -> void:
 func available() -> Dictionary:
 	var busy := rooted() or _winding
 	return {
-		"wa": true, "un": true, "nn": true,
+		"wa": true, "un": true, "nn": true, "huh": true,
 		"breath": not busy,
 		"clap": not busy and hands_name == "palms",
 		"make_ball": not busy and mode == Mode.WALK and not holding_ball and crouching,
@@ -689,6 +693,10 @@ func _update_emote(dt: float) -> void:
 	if crouching:
 		want.z = minf(want.z, -CROUCH_EYE)   # しゃがむと目が下がる
 	_cam_em = _cam_em.lerp(want, minf(1.0, dt * 12.0))
+	var roll := 0.0
+	if not _em.is_empty() and _em.kind == "huh" and k >= 2 and k < 14:
+		roll = -0.12 * (1.0 if k < 10 else (14 - k) / 4.0) * (1.0 if bob_enabled else 0.4)
+	_cam_roll = lerpf(_cam_roll, roll, minf(1.0, dt * 10.0))
 
 
 ## 身ぶりの一人称の視点（x 上下の向き、y 左右の向き、z 高さ）。人形の頭と同じ形を、小さく
@@ -774,6 +782,9 @@ func _emote_hand(s: int) -> Vector3:
 				return Vector3(s * 0.2, -0.38, -0.4)
 			if k < 11:
 				return Vector3(s * 0.34, 0.0, -0.45)
+		"huh":
+			if k >= 2 and k < 12:
+				return Vector3(s * 0.3, -0.3, -0.42)   # さあ？と両手を少し外へ
 		"nn":
 			if s > 0 and k < 12:
 				return Vector3(0.04 + (0.06 if (k / 2) % 2 == 0 else -0.06), -0.08, -0.32)   # 顔の前で手を振る

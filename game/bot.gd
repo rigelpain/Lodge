@@ -28,6 +28,7 @@ var _wait := 0.0
 var hub: Emotes
 var id := -1
 var voice_pitch := 1.0
+var voice_size := 1
 var _replies: Array = []     # [残り秒, 身ぶり]
 var _five_with := -1         # ハイタッチをしにいく相手の番号
 var _five_until := 0         # このコマまでに届かなければやめる
@@ -47,7 +48,9 @@ func _ready() -> void:
 	doll = Doll.new()
 	doll.kind = "origami" if side > 0 else "news"
 	add_child(doll)
-	voice_pitch = 0.9 if side > 0 else 1.18
+	# 声: 背の高い折り紙は低い声（03）、いちばん小さい新聞紙は高い声（02）。そこから少しだけずらす
+	voice_size = 3 if side > 0 else 2
+	voice_pitch = 0.97 if side > 0 else 1.04
 
 	hub = get_parent().get_node_or_null("Emotes")
 	if hub:
@@ -256,6 +259,9 @@ func _on_emote(ev: Dictionary) -> void:
 		"wa", "un", "nn":
 			if near < 15.0:
 				_reply(randf_range(0.35, 0.8), {"kind": ev.kind})
+		"huh":
+			if near < 15.0:
+				_reply(randf_range(0.4, 0.8), {"kind": "un"})   # たずねられたら、ウンとうなずく
 		"clap":
 			if near < 10.0:
 				_reply(randf_range(0.15, 0.3), {"kind": "hands", "hands": "palms"})

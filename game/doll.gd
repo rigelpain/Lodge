@@ -81,6 +81,7 @@ var _ball: Node3D            # 右手の雪玉
 var _shapes := {}            # 手の形のアップリケ: 形 → {1: 右手, -1: 左手}
 var _hands_frame := 0        # 手の形を変えたコマ（ぽんと出る大きさに）
 var _em_head := Vector2.ZERO # 身ぶりが頭に足す向き（x 左右、y 上下）
+var _em_roll := 0.0          # 身ぶりが頭に足す傾き（首をかしげる。正で右へ）
 
 
 func _ready() -> void:
@@ -503,6 +504,10 @@ func _pose() -> void:
 		# うなずく向きは、首を回したあとの頭の横の軸で（横を向いたまま上下を見ても頭が傾かない）
 		var right: Vector3 = (_g[hi] as Transform3D).basis.x.normalized()
 		_turn(hi, Quaternion(right, pitch))
+		if absf(_em_roll) > 1e-4:
+			# 首をかしげる: 顔の向きの軸のまわりに傾ける
+			var face: Vector3 = (_g[hi] as Transform3D).basis.z.normalized()
+			_turn(hi, Quaternion(face, -_em_roll))
 
 	# クレイアニメの揺れ: 骨ごとに、コマごとにわずかに
 	_rng.seed = hash(Vector2i(_frame, get_instance_id()))
@@ -780,7 +785,7 @@ func _puff(size: float, speed: float) -> void:
 ## emotes.gd の KINDS と同じ長さ（コマ）。0 は終わりを持ち主が決める
 const EMOTE_FRAMES := {
 	"high_five": 12, "fist_bump": 12, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
-	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14,
+	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16,
 }
 ## 腕を使う身ぶり。このあいだは手の形を出さない
 const ARM_EMOTES := ["high_five", "fist_bump", "whiff", "clap", "make_ball", "windup", "throw", "hit"]
@@ -789,6 +794,7 @@ const ARM_EMOTES := ["high_five", "fist_bump", "whiff", "clap", "make_ball", "wi
 ## いまの身ぶりと、始まってからのコマ数（このコマ）。終わっていたら消す
 func _emote_k() -> Array:
 	_em_head = Vector2.ZERO
+	_em_roll = 0.0
 	if emote.is_empty():
 		return ["", -1]
 	var k := _frame - int(emote.frame)
@@ -903,6 +909,11 @@ func _emote_body(kind_: String, k: int) -> float:
 		"nn":
 			_em_head.x = [0.35, 0.35, -0.35, -0.35, 0.35, 0.35, -0.3, -0.3, 0.2, 0.2, -0.1, -0.1, 0.0, 0.0][k]
 			_em_head.y = -0.08
+		"huh":
+			# 首をかしげる: 小さく引いて（ため）、ことんと横へ傾けて止め、ゆっくり戻す。肩も少しすくめる
+			_em_roll = [-0.08, -0.08, 0.38, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.42, 0.38, 0.3, 0.2, 0.12, 0.05, 0.0][k]
+			_em_head.y = 0.06 if k >= 2 else 0.0
+			_turn_axis("chest", Vector3.BACK, -_em_roll * 0.15)
 		"clap":
 			_em_head.y = 0.05
 			return 0.05
@@ -989,6 +1000,11 @@ func _emote_arms(kind_: String, k: int) -> void:
 			elif k < 11:
 				for side in ["L", "R"]:
 					_arm(side, Vector3(0.75, 0.3, -0.35), Vector3(0.55, 0.85, -0.3))   # 両手を開いて上へ
+		"huh":
+			if k >= 2 and k < 12:
+				# 肩をすくめて、両の前腕を少し外へ開く（さあ？の手）
+				for side in ["L", "R"]:
+					_arm(side, Vector3(0.45, -0.85, -0.1), Vector3(0.75, 0.15, -0.55))
 		"nn":
 			if k < 12:
 				# 顔の前で手を横に振る（いやいや、ちがうの手）
@@ -1010,6 +1026,10 @@ func _emote_breath(kind_: String, k: int) -> void:
 				_next_breath = _frame + 30
 		"un":
 			if k == 0:
+				_puff(1.15, 0.6)
+				_next_breath = _frame + 24
+		"huh":
+			if k == 2:
 				_puff(1.15, 0.6)
 				_next_breath = _frame + 24
 		"nn":

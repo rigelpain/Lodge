@@ -580,6 +580,8 @@ const EMOTE_SOUNDS := {
 	"wa": [[2, "voice_wa", 3, -4.0, 1.0]],
 	"un": [[0, "voice_un", 3, -5.0, 1.0]],
 	"nn": [[0, "voice_nn", 3, -5.0, 1.0]],
+	"huh": [[2, "voice_unq", 3, -5.0, 1.0]],
+	"hit": [[0, "voice_surprise", 3, -4.0, 1.0]],   # 雪玉が当たって、わっ
 	"whiff": [[2, "swish", 2, -10.0, 1.0]],
 	"throw": [[0, "swish", 2, -8.0, 1.15]],
 	"clap": [[2, "felt_pat", 3, -12.0, 1.3], [6, "felt_pat", 3, -12.0, 1.25], [10, "felt_pat", 3, -12.0, 1.3], [14, "felt_pat", 3, -12.0, 1.2]],
@@ -593,6 +595,7 @@ func _on_emote(ev: Dictionary) -> void:
 	var who: Node3D = hub.who_of(ev.get("who", -1)) if ev.has("who") else null
 	var is_self: bool = who != null and who == player
 	var pitch: float = who.get("voice_pitch") if who and who.get("voice_pitch") != null else 1.0
+	var size: int = who.get("voice_size") if who and who.get("voice_size") != null else 1
 	match ev.kind:
 		"high_five", "fist_bump":
 			# 二人に配られるので、片方のぶんだけ鳴らす。手が合う所で（グーは低く、こつん）
@@ -612,18 +615,20 @@ func _on_emote(ev: Dictionary) -> void:
 			return
 	if who == null or not EMOTE_SOUNDS.has(ev.kind):
 		return
-	var voice: bool = ev.kind in ["wa", "un", "nn", "breath"]
+	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "hit", "breath"]
 	for s in EMOTE_SOUNDS[ev.kind]:
 		var p: float = s[4] * (pitch * rng.randf_range(0.98, 1.02) if voice else rng.randf_range(0.95, 1.05))
-		_emote_sound(ev, s[0], s[1], s[2], s[3], p, who.global_position + Vector3.UP * 1.0, is_self, "Voice" if voice else "")
+		# 声（voice_*）は人ごとに決まった大きさの 1 つ（01 ふつう・02 高い・03 低い）。ほかの音は毎回選ぶ
+		var fixed: int = size if (s[1] as String).begins_with("voice_") else 0
+		_emote_sound(ev, s[0], s[1], s[2], s[3], p, who.global_position + Vector3.UP * 1.0, is_self, "Voice" if voice else "", fixed)
 
 
 ## 出来事のコマ + k に、音を 1 つ鳴らす。自分の音は耳元（Self／Voice）、人の音はその場所から
-func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "") -> void:
+func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "", fixed := 0) -> void:
 	var tps := Engine.physics_ticks_per_second
 	var tick := (int(ev.frame) + k) * tps / Doll.FPS
 	var wait := maxf(0.0, float(tick - Engine.get_physics_frames()) / tps)
-	var s := _pick(name_, count)
+	var s := _wav("%s_%02d" % [name_, fixed]) if fixed > 0 else _pick(name_, count)
 	if s == null:
 		return
 	if wait > 0.0:

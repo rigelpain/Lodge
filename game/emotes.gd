@@ -35,8 +35,9 @@ const KINDS := {
 	"wa": {"frames": 14, "root": false},          # 声「ワ〜」うれしい
 	"un": {"frames": 7, "root": false},           # 声「ウン」うなずく
 	"nn": {"frames": 14, "root": false},          # 声「ンーン」いやいや
+	"huh": {"frames": 16, "root": false},         # 声「ウン？」首をかしげる
 }
-const VOICES := ["wa", "un", "nn"]
+const VOICES := ["wa", "un", "nn", "huh"]
 const HANDS := Palm.HANDS
 const TOUCH_REACH := 1.3     # 手と手が届く、体どうしの距離 (m)。人形の腕は短いが、手の形が大きい
 const WHIFF_REACH := 1.0     # 片方だけが向かってこの中まで寄ると、空振り
