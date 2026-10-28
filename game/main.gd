@@ -732,7 +732,7 @@ func _physics_process(dt: float) -> void:
 			lines.append("WASD 歩く　Shift 走る　Space ジャンプ　F ソリをつかむ（前では紐）　E 乗る　R ソリをふもとへ")
 			lines.append("マウス 見回す　ホイール／ピンチ 視野角　C 一人称／三人称　V 360映像の見せ方　P 360映像を消す　Esc 設定")
 			if sewing and sewing.phase != sewing.Phase.WAIT:   # ミシンの前（原型の操作の案内。ゲームの文字ではない）
-				lines.append("ミシン: T 縫う　Y なめらか／コマ撮り（いま %s）　H 仲間を足踏みに" % ("コマ撮り" if sewing.stepped else "なめらか"))
+				lines.append("ミシン: T 縫う　Y コマ撮り／なめらか（いま %s）　H 仲間を足踏みに" % ("コマ撮り" if sewing.stepped else "なめらか"))
 	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）

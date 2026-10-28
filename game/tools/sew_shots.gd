@@ -1,7 +1,7 @@
 extends SceneTree
 ## ロッジの中の大きなミシン（sewing_machine.gd）の 7 つの場面を撮る（動きの確かめ用）。
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/sew_shots.gd -- \
-##       --bots=0 --no-snow --dir=/path/shots [--tag=smooth] [--sew-stepped] [--sew-helper] [--movie] [--view=front|close|spools]
+##       --bots=0 --no-snow --dir=/path/shots [--tag=名前] [--sew-smooth] [--sew-helper] [--movie] [--view=front|close|spools]
 ## あなたはミシンから離れて立ち（待つ）→ 立つ所へ来て（呼ぶ）→ T と同じく use() で縫い始める。
 ## 場面ごとに決めた時刻で <dir>/<tag>_<番号>_<場面>_<秒>.png を書く。--movie なら全部のコマも <dir>/<tag>_movie/ に書く
 ## （--fixed-fps 30 で 1 コマ 1/30 秒に固定するので、なめらか版とコマ撮り版を同じ時間で比べられる）。
@@ -50,7 +50,7 @@ func _dir() -> String:
 
 
 func _tag() -> String:
-	return args.get("tag", "stepped" if args.has("sew-stepped") else "smooth")
+	return args.get("tag", "smooth" if args.has("sew-smooth") else "stepped")
 
 
 func _process(dt: float) -> bool:
@@ -73,8 +73,8 @@ func _process(dt: float) -> bool:
 		m.add_child(cam)
 		# 前の少し上から全体（front）、針のまわりを近く（close）、糸巻き（spools）。ミシンの座標（前は -Z、針は x = -1.2）
 		var view: String = args.get("view", "front")
-		var eye := Vector3(0.4, 3.0, -3.7)
-		var look := Vector3(-0.4, 1.95, 0.0)
+		var eye := Vector3(0.4, 3.1, -3.9)
+		var look := Vector3(-0.5, 1.45, -0.4)
 		if view == "close":
 			eye = Vector3(-2.15, 2.3, -1.75)
 			look = Vector3(-1.05, 1.75, -0.35)
@@ -87,7 +87,7 @@ func _process(dt: float) -> bool:
 			eye = Vector3(e[0], e[1], e[2])
 			look = Vector3(l[0], l[1], l[2])
 		cam.look_at_from_position(m.to_global(eye), m.to_global(look), Vector3.UP if absf(eye.x - look.x) + absf(eye.z - look.z) > 0.01 else Vector3.FORWARD)
-		cam.fov = 55 if view == "front" else 42
+		cam.fov = 62 if view == "front" else 42
 		cam.current = true
 		sew.phase_changed.connect(_on_phase)
 		# 待つ: ミシンから離れて立つ

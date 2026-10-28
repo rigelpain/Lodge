@@ -177,45 +177,47 @@ def craft_machine(name="craft_machine"):
             a = 2 * math.pi * k / 5
             pbox(gold, None, (x + 0.035 * math.cos(a), 0.13, TZ + 1.08 + 0.035 * math.sin(a) + 0.07),
                  (0.022, 0.006, 0.012), n=2.5, seam=False, rot=(a, "Y"))
-    # 針棒と押さえ、針（木）
+    # 針棒と押さえ、針（木）。動く所は遠くからも見えるよう太く大きくする（2026-10-28。針棒の太さ 2.2 倍、押さえ 2 倍）
     nx, ny = -0.8, 0.08
     needle = mv("needle", (nx, ny, TZ + 0.6))
-    dowel(needle.m("wood"), (nx, ny, TZ + 0.6), (nx, ny, TZ + 0.38), 0.025)
-    C.tube(needle.m("wood"), [Vector((nx, ny, TZ + 0.38)), Vector((nx, ny, TZ + 0.29))], [0.012, 0.003], sides=8)
-    needle.mark("eye", (nx, ny + 0.02, TZ + 0.33))   # 針の糸の通る所
+    dowel(needle.m("wood"), (nx, ny, TZ + 0.6), (nx, ny, TZ + 0.4), 0.055)
+    C.tube(needle.m("wood"), [Vector((nx, ny, TZ + 0.4)), Vector((nx, ny, TZ + 0.29))], [0.03, 0.005], sides=10)
+    needle.mark("eye", (nx, ny + 0.03, TZ + 0.34))   # 針の糸の通る所
     presser = mv("presser", (nx, ny, TZ + 0.6))
     bmesh.ops.create_cube(presser.m("wood").bm, size=1.0,
-                          matrix=Matrix.Translation((nx, ny + 0.04, TZ + 0.275)) @ Matrix.Diagonal((0.12, 0.16, 0.02, 1)))
-    dowel(presser.m("wood"), (nx - 0.05, ny - 0.02, TZ + 0.6), (nx - 0.05, ny + 0.02, TZ + 0.3), 0.012)
+                          matrix=Matrix.Translation((nx, ny + 0.04, TZ + 0.278)) @ Matrix.Diagonal((0.24, 0.3, 0.035, 1)))
+    dowel(presser.m("wood"), (nx - 0.09, ny - 0.02, TZ + 0.6), (nx - 0.09, ny + 0.02, TZ + 0.3), 0.025)
     # 布送りの歯: 押さえの前に、台から少しのぞく金の歯（動きを見せるため 2026-10-28 に足した）
-    feed = mv("feed", (nx, ny + 0.17, TZ + 0.262))
+    feed = mv("feed", (nx, ny + 0.225, TZ + 0.262))
     bmesh.ops.create_cube(feed.m("felt_gold").bm, size=1.0,
-                          matrix=Matrix.Translation((nx, ny + 0.17, TZ + 0.262)) @ Matrix.Diagonal((0.11, 0.05, 0.008, 1)))
+                          matrix=Matrix.Translation((nx, ny + 0.225, TZ + 0.262)) @ Matrix.Diagonal((0.2, 0.06, 0.01, 1)))
     for k in range(3):
         bmesh.ops.create_cube(feed.m("felt_gold").bm, size=1.0,
-                              matrix=Matrix.Translation((nx, ny + 0.152 + 0.018 * k, TZ + 0.27)) @ Matrix.Diagonal((0.1, 0.008, 0.01, 1)))
-    # はずみ車（右）
-    wheel = mv("balance", (1.1, -0.12, TZ + 0.95))
-    disc(wheel.m("wood"), (1.1, -0.12, TZ + 0.95), 0.27, 0.07, "X", 40)
-    disc(wheel.m("wood"), (1.16, -0.12, TZ + 0.95), 0.07, 0.08, "X", 16)
-    dowel(wheel.m("wood"), (1.16, -0.12 + 0.18, TZ + 0.95 + 0.0), (1.24, -0.12 + 0.18, TZ + 0.95), 0.025)   # 取っ手
-    # 糸巻き: 腕の上に立てた赤い糸と、寝かせたクリームの糸
-    spools = [mv("spool_red", (0.35, -0.12, TZ + 1.25)), mv("spool_cream", (-0.25, -0.12, TZ + 1.37))]
+                              matrix=Matrix.Translation((nx, ny + 0.205 + 0.019 * k, TZ + 0.272)) @ Matrix.Diagonal((0.18, 0.011, 0.016, 1)))
+    # はずみ車（右）。半径 0.27 → 0.36
+    wheel = mv("balance", (1.13, -0.12, TZ + 0.95))
+    disc(wheel.m("wood"), (1.13, -0.12, TZ + 0.95), 0.36, 0.09, "X", 48)
+    disc(wheel.m("wood"), (1.19, -0.12, TZ + 0.95), 0.09, 0.1, "X", 16)
+    dowel(wheel.m("wood"), (1.19, -0.12 + 0.25, TZ + 0.95), (1.3, -0.12 + 0.25, TZ + 0.95), 0.032)   # 取っ手
+    # 糸巻き: 腕の上に立てた赤い糸と、寝かせたクリームの糸（1.45 倍）
+    SK = 1.45
+    spools = [mv("spool_red", (0.35, -0.12, TZ + 1.25)), mv("spool_cream", (-0.25, -0.12, TZ + 1.25 + 0.12 * SK))]
     for sp, (sx, role, lying) in zip(spools, ((0.35, "yarn_red", False), (-0.25, "yarn_cream", True))):
         sw, col = sp.m("wood"), sp.m(role)
         n0 = len(sw.bm.verts)
-        C.lathe(sw, [(0.03, 0.0), (0.13, 0.0), (0.13, 0.025), (0.06, 0.03), (0.06, 0.21), (0.13, 0.215), (0.13, 0.24),
-                     (0.03, 0.24)], 24)
+        C.lathe(sw, [(r * SK, z * SK) for r, z in ((0.03, 0.0), (0.13, 0.0), (0.13, 0.025), (0.06, 0.03), (0.06, 0.21), (0.13, 0.215),
+                                                    (0.13, 0.24), (0.03, 0.24))], 24)
         n1 = len(col.bm.verts)
-        C.lathe(col, [(0.06, 0.03), (0.105, 0.035), (0.11, 0.12), (0.105, 0.205), (0.06, 0.21)], 24, closed=False)
-        mt = Matrix.Translation((sx, -0.12, TZ + 1.25)) @ (Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Translation((-0.12, 0, -0.12))
+        C.lathe(col, [(r * SK, z * SK) for r, z in ((0.06, 0.03), (0.105, 0.035), (0.11, 0.12), (0.105, 0.205), (0.06, 0.21))], 24,
+                closed=False)
+        mt = Matrix.Translation((sx, -0.12, TZ + 1.25)) @ (Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Translation((-0.12 * SK, 0, -0.12 * SK))
                                                           if lying else Matrix())
         C.place(sw, n0, mt)
         C.place(col, n1, mt)
-    dowel(wood, (0.35, -0.12, TZ + 1.22), (0.35, -0.12, TZ + 1.55), 0.015)
+    dowel(wood, (0.35, -0.12, TZ + 1.22), (0.35, -0.12, TZ + 1.25 + 0.24 * SK + 0.04), 0.018)
     # 糸の道: 糸巻きから頭の上を通って針へ。通る点を目印 thread_0..4 に残す（最後は針の eye）
-    tp = [Vector((0.35, -0.02, TZ + 1.4)), Vector((0.0, 0.04, TZ + 1.3)), Vector((-0.6, 0.12, TZ + 1.26)),
-          Vector((-0.78, 0.17, TZ + 1.1)), Vector((-0.8, 0.13, TZ + 0.8)), Vector((nx, ny + 0.02, TZ + 0.33))]
+    tp = [Vector((0.35, -0.12 + 0.11 * SK, TZ + 1.25 + 0.12 * SK)), Vector((0.0, 0.04, TZ + 1.3)), Vector((-0.6, 0.12, TZ + 1.26)),
+          Vector((-0.78, 0.17, TZ + 1.1)), Vector((-0.8, 0.14, TZ + 0.8)), Vector((nx, ny + 0.03, TZ + 0.34))]
     thread = mv("thread", (0, 0, 0))
     C.tube(thread.m("yarn_red"), tp, 0.008, sides=5)
     # 頭の下の小さな紙の灯り
@@ -227,7 +229,7 @@ def craft_machine(name="craft_machine"):
         marker("thread_%d" % k, p, root, parts)
     marker("lamp", (-0.62, 0.0, TZ + 0.56), root, parts)   # 紙の灯りの中（ゆらぐ灯りを置く）
     marker("work", (nx, ny, TZ + 0.28), root, parts)       # 縫う物が通る所（針の下）
-    marker("out", (nx, 0.45, TZ), root, parts)             # できた物が滑り出て止まる所（天板の前）
+    marker("out", (nx, 1.23, 0.0), root, parts)            # できた物が台から床へ滑り下りて止まる所（作業台の前の床）
     marker("stand", (0.0, 1.1, 0.0), root, parts)          # 人が立つ所
     marker("pedal", (0.9, 0.95, 0.0), root, parts)         # もう一人が立って足踏みを踏む所
     made.append((root, parts))

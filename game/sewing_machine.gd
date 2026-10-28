@@ -6,13 +6,15 @@ extends Node3D
 ##   ため   針の上下がだんだん速くなる（1〜3 秒）。布が奥へ送られ、縫い目が増え、はずみ車と糸巻きが回る
 ##   解放   糸切りの「パチン」、ごく短い止め（ミシンだけ。ほかの人の時間は止めない）。止めのあいだミシンがむぎゅっと縮み、
 ##          明けるとばねのように戻って、綿くずがふわっと舞う
-##   見せる 布が小さなソリになって前へ滑り出し、台から天板へぽんと下りて止まる
+##   見せる 布が長さ 1 m のソリになって前へ押し出され、台から床へ滑り下りて止まる
 ##   余韻   針がゆっくり止まり、上で止まってから元の高さへ戻る
-## 協力: もう一人が足踏み（目印 pedal）に立つと、足踏みが揺れ、針の速さの上限と上がり方が倍近くになる。
+## 協力: もう一人が足踏み（目印 pedal）に立つと、足踏みが揺れ、針の速さの上限が 1.6 倍、上がり方が倍になる。
 ## そばに立つだけでも少し速くなる。一人でも縫える。
-## コマ撮り: stepped にすると、動きは同じまま、形に当てるのを 12 コマ／秒に刻む（人形と同じ。コマの間は止める）。
-## 操作: 立つ所のそばで T で縫う。Y でなめらか／コマ撮り。H で仲間（ボット）を足踏みに呼ぶ／帰す。
-## 起動引数: --sew-stepped（コマ撮りで始める）、--sew-helper（仲間を足踏みに立たせて始める）、--spawn=sew（ミシンの前から始める）
+## コマ撮り（既定）: 動きは同じまま、形に当てるのを 12 コマ／秒に刻む（人形と同じ。コマの間は止める）。
+## 12 コマでは 1 秒に 6 回より速い上下は正しく見えない（遅く見えたり逆に回って見えたりする）ので、針の速さの上限は
+## 5.5 回／秒、はずみ車は針 1 往復で半回転にしてある。
+## 操作: 立つ所のそばで T で縫う。Y でコマ撮り／なめらか。H で仲間（ボット）を足踏みに呼ぶ／帰す。
+## 起動引数: --sew-smooth（なめらかで始める）、--sew-helper（仲間を足踏みに立たせて始める）、--spawn=sew（ミシンの前から始める）
 
 const Doll := preload("res://doll.gd")
 const Bot := preload("res://bot.gd")
@@ -25,27 +27,28 @@ const PHASE_NAMES := ["wait", "call", "feed", "charge", "release", "show", "afte
 const NEAR := 2.4            # 立つ所からこの距離に人が来ると気づく (m)
 const PEDAL_R := 0.9         # 足踏みに立っているとみなす距離 (m)
 const HELP_R := 3.5          # そばにいるとみなす距離（ミシンの中心から）
-const STITCHES := 11         # ためで縫う目の数。これを縫い終えたら解放
-const RATE_START := 1.2      # 針の上下（回／秒）の出だし
-const RATE_SOLO := 5.0       # 一人のときの上限
-const RATE_PEDAL := 9.0      # 足踏みにもう一人いるときの上限
-const RATE_NEAR := 1.2       # そばにいる人ひとりごとに上限へ足す
+const STITCHES := 8          # ためで縫う目の数。これを縫い終えたら解放
+const RATE_START := 1.5      # 針の上下（回／秒）の出だし
+const RATE_SOLO := 3.5       # 一人のときの上限
+const RATE_PEDAL := 5.5      # 足踏みにもう一人いるときの上限（12 コマで読める速さの上限 6 の手前）
+const RATE_NEAR := 0.6       # そばにいる人ひとりごとに上限へ足す（足しても RATE_PEDAL まで）
 const RAMP_SOLO := 2.0       # 出だしから上限までの時間 (s)。足踏みがいると半分
 const HITSTOP := 0.12        # 解放の止め (s)
 const FEED_LEN := 0.85       # 入れる (s)
 const SHOW_LEN := 1.35       # 見せる (s)
-const NEEDLE_LIFT := 0.10    # 呼ぶ: 針を持ち上げる高さ (m)
-const NEEDLE_MID := 0.025    # 縫うときの針の上下の中心と幅（針先が台に沈むまで）
-const NEEDLE_AMP := 0.075
-const PRESSER_LIFT := 0.05
-const SEW_DIST := 0.16       # ためのあいだに布が奥へ送られる長さ (m)
-const PRODUCT_LEN := 0.36    # できたソリの長さ (m)
+const NEEDLE_LIFT := 0.15    # 呼ぶ: 針を持ち上げる高さ (m)
+const NEEDLE_MID := 0.04     # 縫うときの針の上下の中心と幅（針先が台に沈むまで）
+const NEEDLE_AMP := 0.11
+const PRESSER_LIFT := 0.08
+const SEW_DIST := 0.24       # ためのあいだに布が奥へ送られる長さ (m)
+const PRODUCT_LEN := 1.0     # できたソリの長さ (m)。1 人乗りのソリ（1.67 m）の 6 割
+const WHEEL_TURN := 0.5      # 針 1 往復ではずみ車が回る回数
 const STOP_LEN := 1.6        # 余韻: 針が止まるまで (s)
 
 signal phase_changed(name: String)
 
 var world: Node              # main.gd（あなたと仲間を探す、起動引数）
-var stepped := false
+var stepped := true
 var phase := Phase.WAIT
 var phase_t := 0.0
 var last_charge := 0.0       # 直前のためにかかった時間 (s)。確かめ用
@@ -99,6 +102,7 @@ var _cloth_pos := Vector3.ZERO   # 布とできた物の置き場も、形に当
 var _cloth_scl := Vector3.ONE
 var _prod_pos := Vector3.ZERO
 var _prod_scl := Vector3.ONE
+var _prod_pitch := 0.0
 var _product: Node3D
 var _product_from := 0.0
 var _lint: CPUParticles3D
@@ -141,13 +145,13 @@ func _ready() -> void:
 	_body = _mv["needle"].get_parent()
 	_mv["thread"].visible = false   # 張り具合を描く糸に替える
 	if world and "args" in world:
-		stepped = world.args.has("sew-stepped")
+		stepped = not world.args.has("sew-smooth")
 	_make_thread()
 	_make_spool_tails()
 	_make_lamp()
 	_make_lint()
 	_dash_mesh = BoxMesh.new()
-	_dash_mesh.size = Vector3(0.014, 0.008, 0.026)
+	_dash_mesh.size = Vector3(0.02, 0.01, 0.04)
 	_dash_mat = Look.felt(Color("B8402E"), 4.0)
 
 
@@ -347,7 +351,7 @@ func _simulate(dt: float) -> void:
 				_rate = _stop["d"] / STOP_LEN * ((3.0 * u * u - 4.0 * u + 1.0) * m0 + (-6.0 * u * u + 6.0 * u))
 				_stitch_sound_check(before)
 				_needle_h = NEEDLE_MID + NEEDLE_AMP * cos(TAU * _phi)
-				_wheel_a = -TAU * _phi
+				_wheel_a = -TAU * WHEEL_TURN * _phi
 				_spool_a[0] += _rate * dt * 0.9
 				_spool_a[1] += _rate * dt * 0.25
 				_feed_off = _feed_cycle(fposmod(_phi + 0.25, 1.0))
@@ -390,7 +394,7 @@ func _simulate(dt: float) -> void:
 func _run_needle(dt: float, charge: bool, decay := 0.0) -> void:
 	var before := _phi
 	if charge:
-		var top := RATE_SOLO + (RATE_PEDAL - RATE_SOLO) * float(_helpers.x > 0) + RATE_NEAR * _helpers.y
+		var top := minf(RATE_PEDAL, RATE_SOLO + (RATE_PEDAL - RATE_SOLO) * float(_helpers.x > 0) + RATE_NEAR * _helpers.y)
 		var ramp := RAMP_SOLO / (2.0 if _helpers.x > 0 else 1.0) / (1.0 + 0.15 * _helpers.y)
 		_rate = minf(top, _rate + (top - RATE_START) / ramp * dt)
 		_pedal_amt = move_toward(_pedal_amt, 1.0 if _helpers.x > 0 else 0.0, dt * 3.0)
@@ -400,7 +404,7 @@ func _run_needle(dt: float, charge: bool, decay := 0.0) -> void:
 		_rate = maxf(1.6, _rate * exp(-dt * decay))
 	_phi += _rate * dt
 	_needle_h = NEEDLE_MID + NEEDLE_AMP * cos(TAU * _phi)
-	_wheel_a = -TAU * _phi
+	_wheel_a = -TAU * WHEEL_TURN * _phi
 	_spool_a[0] += _rate * dt * 0.9   # 糸が出るぶん、赤い糸巻きが回る
 	_spool_a[1] += _rate * dt * 0.25
 	_feed_off = _feed_cycle(fposmod(_phi + 0.25, 1.0))
@@ -421,7 +425,7 @@ func _stitch_sound_check(before: float) -> void:
 ## 布送りの歯: 上がりながら奥へ送り、台の下へ沈んで前へ戻る（u は 0〜1 の 1 往復。0 で元の所）
 func _feed_cycle(u: float) -> Vector3:
 	var a := TAU * u
-	return Vector3(0, maxf(-0.003, 0.008 * sin(a)), 0.014 * (0.5 - 0.5 * cos(a)))
+	return Vector3(0, maxf(-0.005, 0.013 * sin(a)), 0.022 * (0.5 - 0.5 * cos(a)))
 
 
 func _count_helpers() -> void:
@@ -465,13 +469,13 @@ func _start_cloth() -> void:
 	_cloth.name = "Cloth"
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()
-	bm.size = Vector3(0.42, 0.012, 0.34)
+	bm.size = Vector3(0.6, 0.016, 0.48)
 	mi.mesh = bm
 	mi.material_override = Look.felt(Color(0.93, 0.89, 0.8), 3.0)   # クリームの布に、赤い糸の縫い目が並ぶ
 	_cloth.add_child(mi)
 	machine.add_child(_cloth)
 	_cloth_z0 = _mark["work"].z
-	_cloth_pos = _bed_point(-0.32)
+	_cloth_pos = _bed_point(-0.4)
 	_cloth_scl = Vector3.ONE * 0.01
 	_cloth.position = _cloth_pos
 	_cloth.scale = _cloth_scl
@@ -488,7 +492,7 @@ func _feed_cloth(_dt: float) -> void:
 	# 0〜0.18 s: 前にふわっと現れる。0.25〜0.6 s: 針の下へ吸い込まれる（だんだん速く）。押さえが下り、糸が張る
 	_cloth_scl = Vector3.ONE * _ease_back(clampf(t / 0.18, 0.0, 1.0))
 	var u := clampf((t - 0.25) / 0.35, 0.0, 1.0)
-	_cloth_pos = _bed_point(-0.32 * (1.0 - u * u * u))
+	_cloth_pos = _bed_point(-0.4 * (1.0 - u * u * u))
 	_cloth_pos.y += 0.03 * (1.0 - clampf(t / 0.25, 0.0, 1.0))
 	if t < 0.6:
 		_presser_h = PRESSER_LIFT
@@ -533,43 +537,53 @@ func _start_product() -> void:
 	sled.position = Vector3(-box.get_center().x * k, -box.position.y * k, -box.get_center().z * k)
 	_product.add_child(sled)
 	machine.add_child(_product)
-	_prod_pos = _bed_point(0.0)
-	_prod_pos.y = _mark["work"].y - 0.02
+	_prod_pos = _product_start()
 	_prod_scl = Vector3.ONE * 0.01
+	_prod_pitch = 0.0
 	_product.position = _prod_pos
 	_product.scale = _prod_scl
 	_fx2("sew_pop", -8.0)
 
 
-## 見せる: 針の下でふくらみ → 台の上を前へ滑る → 台の縁から天板へぽんと下りる → 少し滑って止まる
+## 生まれる所: 台の上、押さえのすぐ前（後ろの端が押さえの前の縁に来る）
+func _product_start() -> Vector3:
+	var w: Vector3 = _mark["work"]
+	return Vector3(w.x, w.y - 0.02, w.z - 0.28 - PRODUCT_LEN * 0.5)
+
+
+## 見せる: 押さえの前でふくらむ → 前へ押し出され、鼻先が下がる → 台から床へ滑り下りる → 床を滑って止まる
 func _move_product(_dt: float) -> void:
 	var t := phase_t
-	var w: Vector3 = _mark["work"]
+	var s0 := _product_start()
 	var o: Vector3 = _mark["out"]
-	var bed_y := w.y - 0.02
-	var edge_z := w.z - 0.36   # 台（ベッド）の前の縁
-	var p := Vector3(w.x, bed_y, w.z)
+	var p := s0
+	var pitch := 0.0
 	var sq := 1.0
-	_prod_scl = Vector3.ONE * _ease_back(clampf(t / 0.22, 0.0, 1.0))
+	var tip_z := s0.z - 0.3
+	var land_z := o.z + 0.35
+	_prod_scl = Vector3.ONE * _ease_back(clampf(t / 0.25, 0.0, 1.0))
 	if t < 0.25:
 		pass
-	elif t < 0.6:
-		var u := (t - 0.25) / 0.35
-		p.z = lerpf(w.z, edge_z, u * u)
-	elif t < 0.86:
-		var u := (t - 0.6) / 0.26
-		p.z = lerpf(edge_z, edge_z - 0.12, u)
-		p.y = lerpf(bed_y, o.y, u) + 0.12 * 4.0 * u * (1.0 - u)
+	elif t < 0.55:
+		var u := (t - 0.25) / 0.3
+		p.z = lerpf(s0.z, tip_z, u * u)
+		pitch = -0.4 * u * u
+	elif t < 0.85:
+		var u := (t - 0.55) / 0.3
+		p.z = lerpf(tip_z, land_z, 1.0 - (1.0 - u) * (1.0 - u))
+		p.y = lerpf(s0.y, o.y, u * u)
+		pitch = lerpf(-0.4, 0.0, u)
 	else:
 		if not _landed:
 			_landed = true
-			_fx2("sew_pop", -6.0, 0.7)
-		var u := clampf((t - 0.86) / 0.4, 0.0, 1.0)
+			_fx2("sew_pop", -4.0, 0.6)
+		var u := clampf((t - 0.85) / 0.45, 0.0, 1.0)
 		p.y = o.y
-		p.z = lerpf(edge_z - 0.12, o.z, 1.0 - (1.0 - u) * (1.0 - u))
-		sq = 1.0 - 0.18 * exp(-(t - 0.86) * 9.0) * cos((t - 0.86) * 30.0)
+		p.z = lerpf(land_z, o.z, 1.0 - (1.0 - u) * (1.0 - u))
+		sq = 1.0 - 0.2 * exp(-(t - 0.85) * 8.0) * cos((t - 0.85) * 26.0)
 	_prod_pos = p
-	if t > 0.22:
+	_prod_pitch = pitch
+	if t > 0.25:
 		_prod_scl = Vector3(1.0 / sqrt(sq), sq, 1.0 / sqrt(sq))
 
 
@@ -608,8 +622,7 @@ func _apply() -> void:
 		_cloth.position = _cloth_pos
 		_cloth.scale = _cloth_scl
 	if _product:
-		_product.position = _prod_pos
-		_product.scale = _prod_scl
+		_product.transform = Transform3D(Basis(Vector3.RIGHT, _prod_pitch).scaled(_prod_scl), _prod_pos)
 	_body.scale = Vector3(1.0 + _squash * 0.5, 1.0 - _squash, 1.0 + _squash * 0.5)
 	_lamp.light_energy = 0.4 * _lamp_k
 	if _lamp_mat:
@@ -648,7 +661,7 @@ func _draw_thread() -> void:
 		path.append(Vector3(eye.x, cloth_y, eye.z))
 	elif _snap > 0.0:   # 切った端が針へはね上がる
 		path.append(Vector3(eye.x + 0.02 * _snap, lerpf(eye.y, cloth_y, _snap * _snap), eye.z - 0.03 * _snap))
-	_thread_mi.mesh = _tube(path, 0.009, _thread_mat)
+	_thread_mi.mesh = _tube(path, 0.013, _thread_mat)
 
 
 func _tube(path: PackedVector3Array, r: float, mat: Material) -> ArrayMesh:
@@ -687,6 +700,7 @@ func _tube(path: PackedVector3Array, r: float, mat: Material) -> ArrayMesh:
 
 ## 糸巻きの糸の端: 半回転が見えるよう、巻いた糸から短い端を垂らす（ゲームの側で足した形）
 func _make_spool_tails() -> void:
+	var k := 1.45   # 糸巻きは模型で 1.45 倍にした
 	var specs := [["spool_red", Color("B8402E"),
 			[Vector3(0.16, 0.30, 0.0), Vector3(0.2, 0.285, 0.0), Vector3(0.215, 0.23, 0.015), Vector3(0.208, 0.17, 0.03)]],
 			["spool_cream", Color("EFE6D2"),
@@ -697,7 +711,10 @@ func _make_spool_tails() -> void:
 		var m := StandardMaterial3D.new()
 		m.albedo_color = s[1]
 		m.roughness = 0.95
-		mi.mesh = _tube(PackedVector3Array(s[2]), 0.01, m)
+		var pts := PackedVector3Array()
+		for q in s[2]:
+			pts.append(q * k)
+		mi.mesh = _tube(pts, 0.014, m)
 		_mv[s[0]].add_child(mi)
 
 
@@ -726,18 +743,18 @@ func _make_lint() -> void:
 	p.name = "Lint"
 	p.emitting = false
 	p.one_shot = true
-	p.amount = 40
+	p.amount = 50
 	p.lifetime = 2.4
 	p.explosiveness = 0.92
 	p.randomness = 0.5
 	p.local_coords = false
 	p.position = _mark["work"] + Vector3(0, 0.05, 0)
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE
-	p.emission_sphere_radius = 0.06
+	p.emission_sphere_radius = 0.1
 	p.direction = Vector3.UP
 	p.spread = 75.0
-	p.initial_velocity_min = 0.35
-	p.initial_velocity_max = 0.9
+	p.initial_velocity_min = 0.5
+	p.initial_velocity_max = 1.3
 	p.gravity = Vector3(0, -0.22, 0)
 	p.damping_min = 0.6
 	p.damping_max = 1.2
@@ -758,7 +775,7 @@ func _make_lint() -> void:
 	fade.add_point(0.7, Color(1, 1, 1, 0.85))
 	p.color_ramp = fade
 	var q := QuadMesh.new()
-	q.size = Vector2.ONE * 0.07
+	q.size = Vector2.ONE * 0.08
 	q.material = Props._smoke_material()
 	p.mesh = q
 	machine.add_child(p)
