@@ -1,7 +1,6 @@
 extends RigidBody3D
 
 const Props := preload("res://props.gd")
-const SledRope := preload("res://sled_rope.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
 
@@ -26,7 +25,7 @@ var pushers := 0            # 前のコマで押していた人数（表示用�
 var riders: Array[Node3D] = []
 var holders := {}           # つかんでいる人 → つかんだ所（ソリの座標）
 var rope_holder: Node3D = null
-var rope: SledRope          # 引き紐（見た目と、拾える先の位置）
+var rope: Node3D            # 引き紐（見た目と、拾える先の位置）
 var _push_count := 0
 var _steer := 0.0           # 乗っている人の左右の体重移動の合計（このコマ）
 var _lean_fwd := false
@@ -63,7 +62,7 @@ func _ready() -> void:
 	# 見た目: フェルトの座布団を曲げ木の滑り木に載せたソリ（props/build_sled.py の glb）。寸法はこの物理に合わせてある
 	add_child(Props.make("res://props/sled_mid.glb"))
 	# 引き紐: 手すりの両端を結ぶたわんだ紐と、そのまんなかから出る引っ張り紐（sled_rope.gd）
-	rope = SledRope.new()
+	rope = preload("res://sled_rope.gd").new()
 	rope.sled = self
 	add_child(rope)
 
