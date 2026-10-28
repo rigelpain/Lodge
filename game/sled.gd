@@ -1,6 +1,7 @@
 extends RigidBody3D
 
 const Props := preload("res://props.gd")
+const Look := preload("res://look.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
 
@@ -34,12 +35,17 @@ var hold_debug := ""
 # 足元の影と、滑り木の跡（ステッチ）
 const TRAIL_N := 800          # 残す針目の数（2 本 × 400 = 約 120 m）
 const TRAIL_STEP := 0.3       # 針目の間隔 (m)
+const TRAIL_ZIG := 0.045      # ジグザグの振れ幅（縫い目の中心から針穴まで, m）
+const TRAIL_JITTER := 0.012   # 針穴の位置のばらつき (m)。手で縫ったような揺れ
 var _blob: MeshInstance3D
 var _trail: MultiMeshInstance3D
 var _trail_i := 0
 var _trail_dist := 0.0
 var _trail_last := Vector3.INF
 var _trail_flip := false
+var _trail_holes := [Vector3.INF, Vector3.INF]   # 左右それぞれ、前の針穴
+var _trail_rng := RandomNumberGenerator.new()
+var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定からずれる量。main が渡す
 
 
 func _ready() -> void:
@@ -192,19 +198,13 @@ func _make_shadow_and_trail() -> void:
 	_trail = MultiMeshInstance3D.new()
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
-	var sq := QuadMesh.new()
-	sq.size = Vector2(0.08, 0.26)
-	sq.orientation = PlaneMesh.FACE_Y
-	mm.mesh = sq
+	mm.use_custom_data = true
+	mm.mesh = Look.stitch_mesh(Color(0.66, 0.75, 0.93))   # 雪より濃い毛糸の青
 	mm.instance_count = TRAIL_N
 	for i in TRAIL_N:
 		mm.set_instance_transform(i, Transform3D(Basis(), Vector3(0, -100, 0)))
+		mm.set_instance_custom_data(i, Color(0.3, 0, 1, 0))
 	_trail.multimesh = mm
-	var tm := StandardMaterial3D.new()
-	tm.albedo_color = Color(0.72, 0.79, 0.92)   # 押されて影になった毛糸の青
-	tm.roughness = 1.0
-	tm.cull_mode = BaseMaterial3D.CULL_DISABLED
-	_trail.material_override = tm
 	_trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	_trail.top_level = true
 	add_child(_trail)
@@ -225,10 +225,12 @@ func _update_shadow_and_trail() -> void:
 		var fwd: Vector3 = -global_basis.z
 		fwd = (fwd - n * fwd.dot(n)).normalized()
 		_blob.global_transform = Transform3D(Basis(n.cross(-fwd).normalized(), n, -fwd), hit.position + n * 0.03)
-	# ステッチ: 動いている間、0.3 m ごとに左右の滑り木の後ろ端に針目を置く。左右交互に少し傾けて V の列に見せる
+	# ステッチ: 動いている間、0.3 m ごとに左右の滑り木の後ろ端に針穴をあけ、前の針穴から糸を渡す。
+	# 針穴は縫い目の中心から左右交互にずらすので、太い糸のジグザグ縫いになる
 	var v := Vector3(linear_velocity.x, 0, linear_velocity.z)
 	if v.length() < 0.25:
 		_trail_last = Vector3.INF
+		_trail_holes = [Vector3.INF, Vector3.INF]
 		return
 	if _trail_last == Vector3.INF:
 		_trail_last = global_position
@@ -238,14 +240,33 @@ func _update_shadow_and_trail() -> void:
 	while _trail_dist >= TRAIL_STEP:
 		_trail_dist -= TRAIL_STEP
 		_trail_flip = not _trail_flip
-		for sx in [-RUNNER_X, RUNNER_X]:
+		for k in 2:
+			var sx := -RUNNER_X if k == 0 else RUNNER_X
 			var h := _ground_hit(to_global(Vector3(sx, 0.3, RUNNER_Z)) + Vector3.UP * 0.5)
 			if not h:
+				_trail_holes[k] = Vector3.INF
 				continue
 			var nn: Vector3 = h.normal
 			var d := (dir - nn * dir.dot(nn)).normalized()
-			var b := Basis.looking_at(d, nn).rotated(nn, 0.35 if _trail_flip else -0.35)
-			_trail.multimesh.set_instance_transform(_trail_i, Transform3D(b, h.position + nn * 0.012))
+			var side := d.cross(nn)
+			var hole: Vector3 = h.position + side * ((TRAIL_ZIG if _trail_flip else -TRAIL_ZIG) + _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER)) \
+					+ d * _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER)
+			if snow_lift.is_valid():
+				hole.y += snow_lift.call(hole.x, hole.z)
+			var prev: Vector3 = _trail_holes[k]
+			_trail_holes[k] = hole
+			if prev == Vector3.INF:
+				continue
+			var span := hole - prev
+			var len := span.length()
+			if len < 0.1 or len > 0.6:
+				continue
+			# 前の針穴（原点）から -z の向きへ len だけ伸びる目
+			var z := -span / len
+			var y := (nn - z * nn.dot(z)).normalized()
+			var b := Basis(y.cross(z), y, z)
+			_trail.multimesh.set_instance_transform(_trail_i, Transform3D(b, prev + nn * 0.012))
+			_trail.multimesh.set_instance_custom_data(_trail_i, Color(len, _trail_rng.randf(), _trail_rng.randf_range(0.9, 1.06), 0))
 			_trail_i = (_trail_i + 1) % TRAIL_N
 
 

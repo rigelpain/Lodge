@@ -61,6 +61,27 @@ static func height(x: float, z: float) -> float:
 	return lerpf(hill(LODGE_POS.x, LODGE_POS.y), hill(x, z), lodge_weight(x, z))
 
 
+static var _drift: FastNoiseLite
+
+## 見た目の雪面だけにある吹きだまりのうねり（当たり判定にはない）。地面の 1 m 刻みの点の値
+static func drift(x: float, z: float) -> float:
+	if _drift == null:
+		_drift = FastNoiseLite.new()
+		_drift.seed = 5
+		_drift.frequency = 0.06
+		_drift.fractal_octaves = 3
+	return _drift.get_noise_2d(x, z) * 0.35 * lodge_weight(x, z)
+
+
+## 見た目の雪面が当たり判定の地面からずれている量。1 m 刻みの点のあいだは直線でつなぐ（滑りあとを雪面に載せる用）
+static func snow_lift(x: float, z: float) -> float:
+	var x0 := floorf(x)
+	var z0 := floorf(z)
+	var fx := x - x0
+	var fz := z - z0
+	return lerpf(lerpf(drift(x0, z0), drift(x0 + 1, z0), fx), lerpf(drift(x0, z0 + 1), drift(x0 + 1, z0 + 1), fx), fz)
+
+
 func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
@@ -73,6 +94,7 @@ func _ready() -> void:
 
 	sled = Sled.new()
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
+	sled.snow_lift = snow_lift
 	add_child(sled)
 	if args.has("sled-yaw"):   # 確かめ用: 最初からソリを横や逆に向けておく
 		sled.rotation.y = deg_to_rad(float(args["sled-yaw"]))
@@ -547,17 +569,13 @@ func _make_ground() -> void:
 	# 見た目: 1 m 刻み、頂点を共有してなめらかな法線に。わずかなうねりで雪の吹きだまりを出す
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var drift := FastNoiseLite.new()
-	drift.seed = 5
-	drift.frequency = 0.06
-	drift.fractal_octaves = 3
 	var step := 1
 	var cols := SIZE / step + 1
 	for j in cols:
 		for i in cols:
 			var x := i * step - half
 			var z := j * step - half
-			var y := height(x, z) + drift.get_noise_2d(x, z) * 0.35 * lodge_weight(x, z)
+			var y := height(x, z) + drift(x, z)
 			st.set_uv(Vector2(x, z) * 0.5)
 			st.add_vertex(Vector3(x, y, z))
 	for j in cols - 1:

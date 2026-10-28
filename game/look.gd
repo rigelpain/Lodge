@@ -376,3 +376,157 @@ static func _wagara_ink(kind: String, x: int, y: int, s: int) -> bool:
 		"koshi":
 			return posmod(x, s / 2) < 5 or posmod(y, s / 2) < 5 or posmod(x + 9, s / 4) < 2 or posmod(y + 9, s / 4) < 2
 	return false
+
+
+## 滑りあとのステッチ（太い 2 本撚りの糸）。1 目ぶんの形を MultiMesh で並べる。
+## 目の形は頂点シェーダーで作るので、各目の長さ・撚りの位相・色のゆらぎを INSTANCE_CUSTOM (長さ m, 位相, 明るさ, -) で渡す。
+## 目は原点（入る針穴）から -z へ長さぶん伸び、もう一方の針穴へ沈む。面 0 が糸、面 1 が針穴のくぼみと糸の下の影（乗算）
+static func stitch_mesh(color: Color) -> ArrayMesh:
+	var mesh := ArrayMesh.new()
+	# 面 0: 糸の管。u（縫い目に沿って 0〜1、両端の沈む所を細かく）× a（まわり 0〜1）の格子
+	var nu := 14
+	var na := 8
+	var verts := PackedVector3Array()
+	var norms := PackedVector3Array()
+	var uvs := PackedVector2Array()
+	var idx := PackedInt32Array()
+	for i in nu + 1:
+		var u := 0.5 - 0.5 * cos(PI * i / nu)
+		for j in na + 1:
+			var a := TAU * j / na
+			verts.append(Vector3(cos(a) * 0.03, 0.02 + sin(a) * 0.03, -u * 0.3))
+			norms.append(Vector3(cos(a), sin(a), 0))
+			uvs.append(Vector2(u, float(j) / na))
+	for i in nu:
+		for j in na:
+			var k := i * (na + 1) + j
+			idx.append_array([k, k + 1, k + na + 1, k + 1, k + na + 2, k + na + 1])
+	var arr := []
+	arr.resize(Mesh.ARRAY_MAX)
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = norms
+	arr[Mesh.ARRAY_TEX_UV] = uvs
+	arr[Mesh.ARRAY_INDEX] = idx
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	var sh := Shader.new()
+	sh.code = THREAD_SHADER
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	mat.set_shader_parameter("color", color)
+	mesh.surface_set_material(0, mat)
+
+	# 面 1: 目の下に敷く 1 枚の四角。針穴と影はシェーダーで描く
+	var q := []
+	q.resize(Mesh.ARRAY_MAX)
+	q[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-0.08, 0, 0.08), Vector3(0.08, 0, 0.08), Vector3(-0.08, 0, -0.38), Vector3(0.08, 0, -0.38)])
+	q[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
+	q[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(0, 0), Vector2(0, 0), Vector2(1, 0), Vector2(1, 0)])
+	q[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 2, 1, 1, 2, 3])
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, q)
+	var sh2 := Shader.new()
+	sh2.code = STITCH_HOLE_SHADER
+	var mat2 := ShaderMaterial.new()
+	mat2.shader = sh2
+	mat2.set_shader_parameter("shade", Color(0.50, 0.56, 0.74))
+	mat2.render_priority = -1
+	mesh.surface_set_material(1, mat2)
+	mesh.custom_aabb = AABB(Vector3(-0.1, -0.06, -0.8), Vector3(0.2, 0.16, 0.9))
+	return mesh
+
+
+const THREAD_SHADER := """
+shader_type spatial;
+render_mode cull_back;
+
+uniform vec3 color : source_color;
+uniform float radius = 0.026;   // 糸の太さ（半径 m）
+uniform float twist = 12.0;     // 撚りの回数（1 m あたり）
+uniform float dive = 0.06;      // 針穴へ沈んでいく長さ (m)
+
+varying float v_len;
+varying float v_ph;
+varying float v_tint;
+varying float v_rise;
+
+// 目のふくらみ: 中ほどが少し太く、両端は細って布の下へ潜る。張られて少し平たい
+vec3 thread_at(float u, float a, float len) {
+	float e = clamp(min(u, 1.0 - u) * len / dive, 0.0, 1.0);
+	float s = sin(e * 1.5708);
+	float r = radius * mix(0.68, 1.0, s) * (1.0 + 0.08 * sin(3.14159 * u));
+	float yc = mix(-1.3 * radius, 0.88 * radius, s);
+	return vec3(cos(a) * r, yc + sin(a) * r * 0.82, -u * len);
+}
+
+void vertex() {
+	v_len = max(INSTANCE_CUSTOM.x, 0.05);
+	v_ph = INSTANCE_CUSTOM.y;
+	v_tint = INSTANCE_CUSTOM.z;
+	float u = UV.x;
+	float a = UV.y * 6.28318;
+	vec3 tu = thread_at(min(u + 0.01, 1.0), a, v_len) - thread_at(max(u - 0.01, 0.0), a, v_len);
+	vec3 ta = thread_at(u, a + 0.05, v_len) - thread_at(u, a - 0.05, v_len);
+	vec3 n = normalize(cross(ta, tu));
+	if (dot(n, vec3(cos(a), sin(a), 0.0)) < 0.0) {
+		n = -n;
+	}
+	VERTEX = thread_at(u, a, v_len);
+	NORMAL = n;
+	TANGENT = normalize(tu);
+	BINORMAL = normalize(ta);
+	v_rise = clamp(min(u, 1.0 - u) * v_len / dive, 0.0, 1.0);
+}
+
+void fragment() {
+	float a = UV.y * 6.28318;
+	float sm = UV.x * v_len;   // 縫い目に沿った長さ (m)
+	// 2 本撚り: まわり 1 周に山が 2 つ。山は縫い目に沿って斜めにずれていく
+	float tw = 2.0 * (a + (sm * twist + v_ph) * 6.28318);
+	float c = cos(tw);
+	float groove = smoothstep(0.35, 1.0, -c);   // 2 本の撚り糸が合わさる細い谷
+	// 撚りの山と谷で面を傾ける（斜めの筋が光を受ける）
+	NORMAL = normalize(NORMAL + (TANGENT * 0.9 + BINORMAL * 0.35) * sin(tw) * 0.45);
+	// 撚りと逆向きの細い繊維。遠くではちらつくので消す
+	float fp = a * 7.0 - sm * 230.0 + v_ph * 40.0;
+	float fiber = sin(fp) * (1.0 - smoothstep(0.8, 2.5, fwidth(fp)));
+	float sink = mix(0.62, 1.0, smoothstep(0.0, 1.0, v_rise));   // 針穴へ潜る所は暗い
+	ALBEDO = color * v_tint * (1.0 - 0.32 * groove) * sink * (0.94 + 0.06 * fiber);
+	ROUGHNESS = mix(0.6, 0.85, groove); // 山の頂に糸のつや
+	SPECULAR = 0.3;
+	RIM = 0.35;                         // 輪郭の毛羽
+	RIM_TINT = 0.55;
+}
+"""
+
+
+const STITCH_HOLE_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_mul, depth_draw_never, cull_disabled, fog_disabled;
+
+uniform vec3 shade : source_color;
+
+varying vec2 v_p;
+varying float v_len;
+
+void vertex() {
+	v_len = max(INSTANCE_CUSTOM.x, 0.05);
+	VERTEX = vec3(VERTEX.x, 0.0, mix(0.08, -v_len - 0.08, UV.x));
+	v_p = VERTEX.xz;
+}
+
+void fragment() {
+	vec2 p = v_p;
+	// 糸の下の影（糸の両脇ににじむ）
+	float d_line = length(vec2(p.x, p.y - clamp(p.y, -v_len, 0.0)));
+	float under = (1.0 - smoothstep(0.012, 0.05, d_line)) * 0.42;
+	// 針穴: 小さく暗い芯と、まわりのくぼみ。布が穴へ引かれて放射状のしわが寄る
+	vec2 h0 = p;
+	vec2 h1 = p - vec2(0.0, -v_len);
+	vec2 hv = length(h0) < length(h1) ? h0 : h1;
+	float dh = length(hv);
+	float core = 1.0 - smoothstep(0.004, 0.022, dh);
+	float dimple = 1.0 - smoothstep(0.015, 0.07, dh);
+	float pull = pow(0.5 + 0.5 * cos(atan(hv.y, hv.x) * 7.0), 4.0) * dimple * (1.0 - core);
+	float k = clamp(under + core * 0.45 + dimple * 0.22 + pull * 0.08, 0.0, 0.7);
+	ALBEDO = mix(vec3(1.0), shade, k);
+}
+"""
