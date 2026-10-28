@@ -29,6 +29,7 @@ const Bot := preload("res://bot.gd")
 const Settings := preload("res://settings.gd")
 const Audio := preload("res://audio.gd")
 const RideWind := preload("res://ride_wind.gd")
+const SewingMachine := preload("res://sewing_machine.gd")
 
 var sled: RigidBody3D
 var player: CharacterBody3D
@@ -43,6 +44,7 @@ var _ft_max := 0.0
 var _ft_sum := 0.0
 var _ft_n := 0
 var pip_label: Label
+var sewing: Node3D            # 大きなミシンの動き（sewing_machine.gd）
 
 
 static func hill(x: float, z: float) -> float:
@@ -519,19 +521,25 @@ func _furnish_lodge() -> void:
 	var lodge: Node3D = get_node_or_null("Lodge")
 	if lodge == null:
 		return
-	var put := func(slot_name: String, path: String, offset: Vector3, yaw := PI) -> void:
+	var put := func(slot_name: String, path: String, offset: Vector3, yaw := PI) -> Node3D:
 		var slot := lodge.find_child(slot_name, true, false) as Node3D
 		if slot == null:
-			return
+			return null
 		var n := Props.make(path)
 		n.position = offset
 		n.rotation.y = yaw
 		slot.add_child(n)
+		return n
 	# 機械は 2 倍（ミシンは貸出に収まるよう 1.5 倍）の大きさで書き出してある
 	put.call("slot_vending_1", "res://props/misc/vending_red.glb", Vector3.ZERO)
 	put.call("slot_vending_2", "res://props/misc/vending_blue.glb", Vector3.ZERO)
 	put.call("slot_vending_3", "res://props/misc/vending_red.glb", Vector3.ZERO)
-	put.call("slot_craft_rental", "res://props/craft_machine.glb", Vector3.ZERO)
+	var craft: Node3D = put.call("slot_craft_rental", "res://props/craft_machine.glb", Vector3.ZERO)
+	if craft:   # ミシンの動き（そばで T で縫う。Y でコマ撮り、H で仲間を足踏みに）
+		sewing = SewingMachine.new()
+		sewing.name = "Sewing"
+		sewing.world = self
+		craft.add_child(sewing)
 	# 厨房: 巨大なアイロン台・プレス機・乾燥機と、卓上の道具（props/build_scenes.py の kitchen）
 	var kitchen := lodge.find_child("slot_food_kitchen", true, false) as Node3D
 	if kitchen:
@@ -723,6 +731,8 @@ func _physics_process(dt: float) -> void:
 		else:
 			lines.append("WASD 歩く　Shift 走る　Space ジャンプ　F ソリをつかむ（前では紐）　E 乗る　R ソリをふもとへ")
 			lines.append("マウス 見回す　ホイール／ピンチ 視野角　C 一人称／三人称　V 360映像の見せ方　P 360映像を消す　Esc 設定")
+			if sewing and sewing.phase != sewing.Phase.WAIT:   # ミシンの前（原型の操作の案内。ゲームの文字ではない）
+				lines.append("ミシン: T 縫う　Y なめらか／コマ撮り（いま %s）　H 仲間を足踏みに" % ("コマ撮り" if sewing.stepped else "なめらか"))
 	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）

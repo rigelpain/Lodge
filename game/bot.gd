@@ -17,6 +17,8 @@ var seat := Vector3.INF
 var handle := Vector3.INF   # つかんでいる所（ソリの座標）
 var doll: Doll               # 見た目の人形（右側の仲間は折り紙、左側は新聞紙）
 var debug := ""
+var post: Node3D = null      # 持ち場（ミシンの足踏みなど）。あればソリを押さず、そこに立って post_look を向く
+var post_look := Vector3.INF
 var _col: CollisionShape3D
 var _still := 0.0
 var _wait := 0.0
@@ -62,6 +64,9 @@ func _uphill(p: Vector3) -> Vector3:
 
 
 func _physics_process(dt: float) -> void:
+	if post != null:
+		_stand_at_post(dt)
+		return
 	var s := sled.global_position
 	var to_top := Vector2(s.x, s.z).length()
 
@@ -169,6 +174,29 @@ func _physics_process(dt: float) -> void:
 	if dir.length() > 0.1:
 		look_at(global_position + dir, Vector3.UP)
 	_pose_doll()
+
+
+## 持ち場へ歩いて行って立ち、見る先を向く（ミシンの足踏み。sewing_machine.gd が呼ぶ）
+func _stand_at_post(dt: float) -> void:
+	var to := post.global_position - global_position
+	to.y = 0
+	var dir := to.normalized() if to.length() > 0.15 else Vector3.ZERO
+	velocity.x = dir.x * SPEED
+	velocity.z = dir.z * SPEED
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
+	move_and_slide()
+	var face := dir
+	if dir == Vector3.ZERO and post_look != Vector3.INF:
+		face = post_look - global_position
+		face.y = 0
+	if face.length() > 0.1:
+		look_at(global_position + face, Vector3.UP)
+	doll.act = Doll.Act.WALK
+	doll.sled = sled
+	doll.grip = Vector3.INF
+	doll.effort = false
+	doll.airborne = false
+	doll.gaze = post_look
 
 
 ## その側の後ろの持ち場を、他の仲間がすでにつかんでいるか

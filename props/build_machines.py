@@ -107,8 +107,42 @@ def done_all(root, parts, ms, fuzz=None):
             C.fuzz(o, fuzz, layers=2, hexcol=C.HEX.get(m.role), sheen=0.4)
 
 
+# ---------------------------------------------------------------- 動かす部品
+class Mover:
+    """ゲームで動かす部品（針・押さえ・はずみ車など）。根元の空 mv_<key> を回す・動かす中心（pivot）に置き、
+    形は pivot からの座標で持つ。書き出しでは本体と別に焼き、本体の根元の子にする（export_with_movers）"""
+
+    def __init__(self, base, key, pivot, parent, tris=400):
+        self.key, self.pivot = key, Vector(pivot)
+        self.root = new_root("mv_" + key, tris=tris)
+        self.root.location = self.pivot
+        self.root.parent = parent
+        self.base = base
+        self.ms = {}
+        self.parts = []
+
+    def m(self, role):
+        if role not in self.ms:
+            self.ms[role] = C.M("%s_%s_%s" % (self.base, self.key, role), role)
+        return self.ms[role]
+
+    def mark(self, name, loc):
+        marker(name, Vector(loc) - self.pivot, self.root, self.parts)
+
+    def finish(self, parts, fuzz=None):
+        for m in self.ms.values():
+            bmesh.ops.translate(m.bm, verts=m.bm.verts, vec=-self.pivot)
+        done_all(self.root, self.parts, list(self.ms.values()), fuzz=fuzz)
+        parts.extend(self.parts)
+
+
 # ---------------------------------------------------------------- 制作機（大きなミシン）
 def craft_machine(name="craft_machine"):
+    """動く部品は別の根元に分ける（game/sewing_machine.gd が動かす）:
+    mv_needle（針棒と針。上下）、mv_presser（押さえ。上下）、mv_balance（はずみ車。X 軸で回る。名前の末尾に wheel を付けると Godot が車輪の節点にしてしまう）、
+    mv_spool_red（立てた赤い糸巻き。Z 軸）、mv_spool_cream（寝かせたクリームの糸巻き。X 軸）、
+    mv_pedal（足踏み。X 軸で揺れる）、mv_feed（布送りの歯）、mv_thread（糸の道。ゲームでは隠して張り具合を描く）。
+    mv_table（作業台）は動かさないが、別に焼く"""
     root = new_root(name, slot="slot_craft_rental")
     parts = []
     wood = C.M(name + "_wood", "wood")
@@ -116,19 +150,22 @@ def craft_machine(name="craft_machine"):
     gold = C.M(name + "_gold", "felt_gold")
     red = C.M(name + "_red", "felt_red")
     th = C.M(name + "_stitch", "thread")
-    yarn = C.M(name + "_yarn", "yarn_red")
-    cream = C.M(name + "_cream", "yarn_cream")
     lamp = C.M(name + "_lamp", "paper")
-    # 作業台: 天板と、ロクロの脚、足踏みの板
+    mv = lambda key, pivot, tris=400: Mover(name, key, pivot, root, tris)   # noqa: E731
+    # 作業台: 天板と、ロクロの脚、足踏みの板。台は動かないが、本体と分けて焼く
+    # （フェルトの胴と同じ組で減らすと、木の三角の取り分が少なすぎて天板や足踏みが消えていた）
     TZ = 0.85
-    bmesh.ops.create_cube(wood.bm, size=1.0, matrix=Matrix.Translation((0, 0, TZ - 0.03)) @ Matrix.Diagonal((2.8, 1.2, 0.06, 1)))
+    table = mv("table", (0, 0, 0), tris=900)
+    tw = table.m("wood")
+    bmesh.ops.create_cube(tw.bm, size=1.0, matrix=Matrix.Translation((0, 0, TZ - 0.03)) @ Matrix.Diagonal((2.8, 1.2, 0.06, 1)))
     for x in (-1.3, 1.3):
         for y in (-0.5, 0.5):
-            C.lathe(wood, [(0.035, 0.0), (0.05, 0.05), (0.04, 0.2), (0.055, 0.4), (0.04, 0.6), (0.05, TZ - 0.06)], 12)
-            C.place(wood, len(wood.bm.verts) - 12 * 6 - 2, Matrix.Translation((x, y, 0)))
-    bmesh.ops.create_cube(wood.bm, size=1.0, matrix=Matrix.Translation((0, 0.05, 0.12)) @ Matrix.Rotation(-0.2, 4, "X")
+            C.lathe(tw, [(0.035, 0.0), (0.05, 0.05), (0.04, 0.2), (0.055, 0.4), (0.04, 0.6), (0.05, TZ - 0.06)], 12)
+            C.place(tw, len(tw.bm.verts) - 12 * 6 - 2, Matrix.Translation((x, y, 0)))
+    pedal = mv("pedal", (0, 0.05, 0.12))
+    bmesh.ops.create_cube(pedal.m("wood").bm, size=1.0, matrix=Matrix.Translation((0, 0.05, 0.12)) @ Matrix.Rotation(-0.2, 4, "X")
                           @ Matrix.Diagonal((1.2, 0.5, 0.04, 1)))   # 足踏み
-    dowel(wood, (-1.3, 0.0, 0.25), (1.3, 0.0, 0.25), 0.03)   # 脚をつなぐ貫
+    dowel(tw, (-1.3, 0.0, 0.25), (1.3, 0.0, 0.25), 0.03)   # 脚をつなぐ貫
     # ミシンの胴: 台（ベッド）、右の柱、上の腕、左の頭
     pbox(body, th, (0, -0.05, TZ + 0.13), (1.15, 0.38, 0.13), n=10.0)
     pbox(body, th, (0.82, -0.12, TZ + 0.62), (0.24, 0.27, 0.42), n=8.0)
@@ -142,35 +179,57 @@ def craft_machine(name="craft_machine"):
                  (0.022, 0.006, 0.012), n=2.5, seam=False, rot=(a, "Y"))
     # 針棒と押さえ、針（木）
     nx, ny = -0.8, 0.08
-    dowel(wood, (nx, ny, TZ + 0.6), (nx, ny, TZ + 0.38), 0.025)
-    C.tube(wood, [Vector((nx, ny, TZ + 0.38)), Vector((nx, ny, TZ + 0.29))], [0.012, 0.003], sides=8)
-    bmesh.ops.create_cube(wood.bm, size=1.0, matrix=Matrix.Translation((nx, ny + 0.04, TZ + 0.275)) @ Matrix.Diagonal((0.12, 0.16, 0.02, 1)))
-    dowel(wood, (nx - 0.05, ny - 0.02, TZ + 0.6), (nx - 0.05, ny + 0.02, TZ + 0.3), 0.012)
+    needle = mv("needle", (nx, ny, TZ + 0.6))
+    dowel(needle.m("wood"), (nx, ny, TZ + 0.6), (nx, ny, TZ + 0.38), 0.025)
+    C.tube(needle.m("wood"), [Vector((nx, ny, TZ + 0.38)), Vector((nx, ny, TZ + 0.29))], [0.012, 0.003], sides=8)
+    needle.mark("eye", (nx, ny + 0.02, TZ + 0.33))   # 針の糸の通る所
+    presser = mv("presser", (nx, ny, TZ + 0.6))
+    bmesh.ops.create_cube(presser.m("wood").bm, size=1.0,
+                          matrix=Matrix.Translation((nx, ny + 0.04, TZ + 0.275)) @ Matrix.Diagonal((0.12, 0.16, 0.02, 1)))
+    dowel(presser.m("wood"), (nx - 0.05, ny - 0.02, TZ + 0.6), (nx - 0.05, ny + 0.02, TZ + 0.3), 0.012)
+    # 布送りの歯: 押さえの前に、台から少しのぞく金の歯（動きを見せるため 2026-10-28 に足した）
+    feed = mv("feed", (nx, ny + 0.17, TZ + 0.262))
+    bmesh.ops.create_cube(feed.m("felt_gold").bm, size=1.0,
+                          matrix=Matrix.Translation((nx, ny + 0.17, TZ + 0.262)) @ Matrix.Diagonal((0.11, 0.05, 0.008, 1)))
+    for k in range(3):
+        bmesh.ops.create_cube(feed.m("felt_gold").bm, size=1.0,
+                              matrix=Matrix.Translation((nx, ny + 0.152 + 0.018 * k, TZ + 0.27)) @ Matrix.Diagonal((0.1, 0.008, 0.01, 1)))
     # はずみ車（右）
-    disc(wood, (1.1, -0.12, TZ + 0.95), 0.27, 0.07, "X", 40)
-    disc(wood, (1.16, -0.12, TZ + 0.95), 0.07, 0.08, "X", 16)
-    dowel(wood, (1.16, -0.12 + 0.18, TZ + 0.95 + 0.0), (1.24, -0.12 + 0.18, TZ + 0.95), 0.025)   # 取っ手
+    wheel = mv("balance", (1.1, -0.12, TZ + 0.95))
+    disc(wheel.m("wood"), (1.1, -0.12, TZ + 0.95), 0.27, 0.07, "X", 40)
+    disc(wheel.m("wood"), (1.16, -0.12, TZ + 0.95), 0.07, 0.08, "X", 16)
+    dowel(wheel.m("wood"), (1.16, -0.12 + 0.18, TZ + 0.95 + 0.0), (1.24, -0.12 + 0.18, TZ + 0.95), 0.025)   # 取っ手
     # 糸巻き: 腕の上に立てた赤い糸と、寝かせたクリームの糸
-    for (sx, col, lying) in ((0.35, yarn, False), (-0.25, cream, True)):
-        n0 = len(wood.bm.verts)
-        C.lathe(wood, [(0.03, 0.0), (0.13, 0.0), (0.13, 0.025), (0.06, 0.03), (0.06, 0.21), (0.13, 0.215), (0.13, 0.24),
-                       (0.03, 0.24)], 24)
+    spools = [mv("spool_red", (0.35, -0.12, TZ + 1.25)), mv("spool_cream", (-0.25, -0.12, TZ + 1.37))]
+    for sp, (sx, role, lying) in zip(spools, ((0.35, "yarn_red", False), (-0.25, "yarn_cream", True))):
+        sw, col = sp.m("wood"), sp.m(role)
+        n0 = len(sw.bm.verts)
+        C.lathe(sw, [(0.03, 0.0), (0.13, 0.0), (0.13, 0.025), (0.06, 0.03), (0.06, 0.21), (0.13, 0.215), (0.13, 0.24),
+                     (0.03, 0.24)], 24)
         n1 = len(col.bm.verts)
         C.lathe(col, [(0.06, 0.03), (0.105, 0.035), (0.11, 0.12), (0.105, 0.205), (0.06, 0.21)], 24, closed=False)
         mt = Matrix.Translation((sx, -0.12, TZ + 1.25)) @ (Matrix.Rotation(math.pi / 2, 4, "Y") @ Matrix.Translation((-0.12, 0, -0.12))
                                                           if lying else Matrix())
-        C.place(wood, n0, mt)
+        C.place(sw, n0, mt)
         C.place(col, n1, mt)
     dowel(wood, (0.35, -0.12, TZ + 1.22), (0.35, -0.12, TZ + 1.55), 0.015)
-    # 糸の道: 糸巻きから頭の上を通って針へ
+    # 糸の道: 糸巻きから頭の上を通って針へ。通る点を目印 thread_0..4 に残す（最後は針の eye）
     tp = [Vector((0.35, -0.02, TZ + 1.4)), Vector((0.0, 0.04, TZ + 1.3)), Vector((-0.6, 0.12, TZ + 1.26)),
           Vector((-0.78, 0.17, TZ + 1.1)), Vector((-0.8, 0.13, TZ + 0.8)), Vector((nx, ny + 0.02, TZ + 0.33))]
-    C.tube(yarn, tp, 0.008, sides=5)
+    thread = mv("thread", (0, 0, 0))
+    C.tube(thread.m("yarn_red"), tp, 0.008, sides=5)
     # 頭の下の小さな紙の灯り
     C.superellipsoid(lamp, (-0.62, 0.0, TZ + 0.56), (0.07, 0.07, 0.05), n_xy=2.0, n_z=2.0, cuts=4)
-    done_all(root, parts, [wood, body, gold, red, th, yarn, cream, lamp], fuzz=0.004)
+    done_all(root, parts, [wood, body, gold, red, th, lamp], fuzz=0.004)
+    for m in (table, pedal, needle, presser, feed, wheel, *spools, thread):
+        m.finish(parts, fuzz=0.004)
+    for k, p in enumerate(tp[:-1]):
+        marker("thread_%d" % k, p, root, parts)
+    marker("lamp", (-0.62, 0.0, TZ + 0.56), root, parts)   # 紙の灯りの中（ゆらぐ灯りを置く）
     marker("work", (nx, ny, TZ + 0.28), root, parts)       # 縫う物が通る所（針の下）
+    marker("out", (nx, 0.45, TZ), root, parts)             # できた物が滑り出て止まる所（天板の前）
     marker("stand", (0.0, 1.1, 0.0), root, parts)          # 人が立つ所
+    marker("pedal", (0.9, 0.95, 0.0), root, parts)         # もう一人が立って足踏みを踏む所
     made.append((root, parts))
 
 
@@ -489,8 +548,28 @@ if not A.export:
         loc, tgt, lens = cams[v]
         C.render(loc, tgt, lens, os.path.abspath("%s-%s.png" % (A.prefix, v)))
 else:
+    def export_with_movers(root, path, k, tris):
+        """動かす部品（mv_*）を本体から外して別に焼き、本体を焼いてから子に戻して 1 つの glb に"""
+        movers = [o for o in root.children if o.name.startswith("mv_")]
+        K.S["scale"] = k
+        for o in movers:
+            o.parent = None
+            o.location = o.location * k
+            K.prepare(o)
+        root["tris"] = tris
+        K.prepare(root)
+        for o in movers:
+            o.parent = root
+        objs = [root] + K.descendants(root)
+        print("triangles", root.name, C.tri_count(objs))
+        C.export(objs, path, root)
+
     for root, parts in made:
         print("triangles", root.name, C.tri_count(parts))
-        K.export_root(root, os.path.join(A.export, "%s.glb" % root.name),
-                      1.5 if root.name in ("craft_machine", "cup", "food_pellets") else 2.0,
-                      tris=1200 if root.name in ("cup", "food_pellets") else 4000)   # ミシンは貸出に収まるよう、手に持つ物は食べ物と同じ 1.5 倍
+        k = 1.5 if root.name in ("craft_machine", "cup", "food_pellets") else 2.0   # ミシンは貸出に収まるよう、手に持つ物は食べ物と同じ 1.5 倍
+        tris = 1200 if root.name in ("cup", "food_pellets") else 4000
+        path = os.path.join(A.export, "%s.glb" % root.name)
+        if any(o.name.startswith("mv_") for o in root.children):
+            export_with_movers(root, path, k, tris)
+        else:
+            K.export_root(root, path, k, tris=tris)
