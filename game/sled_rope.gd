@@ -11,7 +11,7 @@ extends Node3D
 ## （props/build_sled.py の手すりの巻き下りの一番前）
 const TIE := Vector3(0.82, 0.52, -1.13)
 const RAIL_R := 0.026        # 手すりの太さ（半径）。巻きはこの外に
-const BRIDLE_LEN := 2.4      # 両端を結ぶ紐の長さ。左右の手すりのあいだ 1.64 m より長く、たわむ
+const BRIDLE_SPARE := 0.76   # 両端を結ぶ紐を、左右の結び先のあいだよりこれだけ長くする（mid は 1.64 + 0.76 = 2.4 m）。たわむ
 const BRIDLE_SEG := 12       # 偶数。まんなかが結び目
 const PULL_SEG := 14
 const RADIUS := 0.017
@@ -95,12 +95,14 @@ func _ready() -> void:
 	var n := BRIDLE_SEG + 1 + PULL_SEG
 	_pos.resize(n)
 	_prev.resize(n)
-	var bl := BRIDLE_LEN / BRIDLE_SEG
+	# 紐の長さは結び先のあいだから決める（small・large の glb の手すりにもそのまま合う）
+	var span := _ties[0].distance_to(_ties[1])
+	var bridle_len := span + BRIDLE_SPARE
+	var bl := bridle_len / BRIDLE_SEG
 	for i in BRIDLE_SEG:
 		_link(i, i + 1, bl)
 	# 引っ張り紐: 張ってまっすぐ前へ引いたとき、sled.gd の紐の付け根から手までが、その紐の長さになるように
-	var half := _ties[0].distance_to(_ties[1]) * 0.5
-	var apex := (_ties[0] + _ties[1]) * 0.5 + Vector3.FORWARD * sqrt(BRIDLE_LEN * BRIDLE_LEN * 0.25 - half * half)
+	var apex := (_ties[0] + _ties[1]) * 0.5 + Vector3.FORWARD * sqrt(bridle_len * bridle_len - span * span) * 0.5
 	var pl: float = (sled.ROPE_LEN - sled.ROPE_ANCHOR.distance_to(apex)) / PULL_SEG
 	var prev_i := _mid
 	for k in PULL_SEG:
