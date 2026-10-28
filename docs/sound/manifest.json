@@ -28,6 +28,90 @@
   "loop": false
  },
  {
+  "file": "chill_a_1_loop.wav",
+  "dur": 48.0,
+  "peak": -4.7,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_a_2_loop.wav",
+  "dur": 48.0,
+  "peak": -8.4,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_a_3_loop.wav",
+  "dur": 48.0,
+  "peak": -4.2,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_a_4.wav",
+  "dur": 30.0,
+  "peak": -4.7,
+  "rms": -17.0,
+  "loop": false
+ },
+ {
+  "file": "chill_b_1_loop.wav",
+  "dur": 40.0,
+  "peak": -6.6,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_b_2_loop.wav",
+  "dur": 40.0,
+  "peak": -9.9,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_b_3_loop.wav",
+  "dur": 40.0,
+  "peak": -5.8,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_b_4.wav",
+  "dur": 30.0,
+  "peak": -6.4,
+  "rms": -17.0,
+  "loop": false
+ },
+ {
+  "file": "chill_c_1_loop.wav",
+  "dur": 32.0,
+  "peak": -4.3,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_c_2_loop.wav",
+  "dur": 32.0,
+  "peak": -8.6,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_c_3_loop.wav",
+  "dur": 32.0,
+  "peak": -4.4,
+  "rms": -17.0,
+  "loop": true
+ },
+ {
+  "file": "chill_c_4.wav",
+  "dur": 30.0,
+  "peak": -5.5,
+  "rms": -17.0,
+  "loop": false
+ },
+ {
   "file": "dish_01.wav",
   "dur": 0.12,
   "peak": -9.0,

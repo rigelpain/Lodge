@@ -159,7 +159,7 @@ function renderSound(s) {
       $('snd-groups').innerHTML = s.groups.map((g) => `<h3 class="snd-g">${esc(g.name)}</h3><div class="snd-items">` + g.items.map((it) => {
         const fs = files.filter((f) => f.file.startsWith(it.prefix));
         const btns = fs.map((f, i) => {
-          const label = fs.length === 1 ? (f.loop ? 'ループ' : '再生') : (f.file.match(/(\d\d)\.wav$/) || [, String(i + 1)])[1];
+          const label = it.labels ? it.labels[i] : fs.length === 1 ? (f.loop ? 'ループ' : '再生') : (f.file.match(/(\d\d)\.wav$/) || [, String(i + 1)])[1];
           return `<button type="button" class="snd-btn${f.loop ? ' loop' : ''}" data-file="${esc(f.file)}" aria-pressed="false" title="${esc(f.file)}　${f.dur} 秒"><span class="tri" aria-hidden="true"></span>${esc(label)}</button>`;
         }).join('');
         const dur = fs.length ? (fs.length === 1 ? `${fs[0].dur} 秒` : `${fs.length} 種 · ${Math.min(...fs.map((f) => f.dur))}〜${Math.max(...fs.map((f) => f.dur))} 秒`) : 'まだない';
