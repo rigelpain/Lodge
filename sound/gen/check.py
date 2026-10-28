@@ -3,7 +3,9 @@
 
 使い方: .venv/bin/python gen/check.py [名前の一部...]
 """
+import html as htmlesc
 import pathlib
+import re
 import sys
 
 import matplotlib
@@ -15,6 +17,46 @@ from scipy.io import wavfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 WAV, CHECK = ROOT / "wav", ROOT / "check"
+CONCEPT = ROOT.parent / "design" / "sound-concept.md"
+
+
+def uses():
+    """design/sound-concept.md の「音の一覧」の表から、ファイル名 → [(音, 鳴る条件, 何で変わるか, 添え書き)] を作る。
+    使う所は表だけに書き、ここでは読むだけにする（二重に書かない）"""
+    out = {}
+    if not CONCEPT.exists():
+        return out
+    text = CONCEPT.read_text()
+    m = re.search(r"^## 音の一覧\n(.*?)(?=^## )", text, re.S | re.M)
+    if not m:
+        return out
+    for line in m.group(1).splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) < 4 or cells[0] in ("音", "") or set(cells[0]) <= set("-"):
+            continue
+        what, files, when, varies = cells[:4]
+        note = re.sub(r"`[^`]*`", "", files).strip()   # （録音） のような添え書き
+        for tok in re.findall(r"`([^`]+)`", files):
+            r = re.match(r"(.+_)(\d+)\.\.(\d+)\.wav$", tok)
+            names = [f"{r.group(1)}{i:0{len(r.group(2))}d}.wav" for i in range(int(r.group(2)), int(r.group(3)) + 1)] if r else [tok]
+            for n in names:
+                out.setdefault(n, []).append((what, when, varies, note))
+    return out
+
+
+def use_text(entries):
+    """使う所を一行に（同じ音を二か所で使えば「／」でつなぐ）"""
+    if not entries:
+        return "（音の一覧にない。ゲームでは使っていない）"
+    parts = []
+    for what, when, varies, note in entries:
+        t = f"{what}: {when}"
+        if varies and varies != "—":
+            t += f"（{varies}）"
+        if note:
+            t += f" {note}"
+        parts.append(t)
+    return " ／ ".join(parts)
 
 
 def analyze(path):
@@ -67,20 +109,25 @@ if __name__ == "__main__":
         plot(path, x, sr, info)
         rows.append((path.name, info))
     if not pats:
-        lines = ["# 確かめ", "", "各 wav の波形とスペクトログラム（対数の周波数軸、白い線は 300 Hz・1 kHz・3.5 kHz）。`gen/check.py` が出す。", "",
-                 "| ファイル | 長さ (s) | ピーク (dB) | 実効値 (dB) | 重心 (Hz) | 90% まで (Hz) | 継ぎ目の段差 |", "|---|---|---|---|---|---|---|"]
+        used = uses()
+        lines = ["# 確かめ", "", "各 wav の波形とスペクトログラム（対数の周波数軸、白い線は 300 Hz・1 kHz・3.5 kHz）。`gen/check.py` が出す。",
+                 "使う所は [音の設計](../../design/sound-concept.md) の「音の一覧」から読んでいる。", "",
+                 "| ファイル | 使う所 | 長さ (s) | ピーク (dB) | 実効値 (dB) | 重心 (Hz) | 90% まで (Hz) | 継ぎ目の段差 |", "|---|---|---|---|---|---|---|---|"]
         for name, i in rows:
             seam = f"{i['seam']:.3f}" if name.endswith("_loop.wav") else "—"
-            lines.append(f"| [{name}]({name[:-4]}.png) | {i['dur']:.2f} | {i['peak']:.1f} | {i['rms']:.1f} | {i['centroid']:.0f} | {i['f90']:.0f} | {seam} |")
+            lines.append(f"| [{name}]({name[:-4]}.png) | {use_text(used.get(name)).replace('|', '／')} | {i['dur']:.2f} | {i['peak']:.1f} | {i['rms']:.1f} | {i['centroid']:.0f} | {i['f90']:.0f} | {seam} |")
         (CHECK / "summary.md").write_text("\n".join(lines) + "\n")
         # 聞くためのページ。Finder から開けば再生できる（wav は ../wav/ を参照）
         html = ["<!doctype html><meta charset=utf-8><title>Lodge の音</title>",
                 "<style>body{font:14px/1.5 -apple-system,sans-serif;margin:24px;max-width:1100px}h1{font-size:18px}"
                 "section{margin:28px 0}h2{font-size:15px;margin:0 0 6px}img{width:100%;max-width:1000px;display:block}"
-                "audio{width:420px;vertical-align:middle}small{color:#666}</style>",
-                "<h1>Lodge の音 — 聞いて確かめる</h1><p><small>合成の台本は gen/、音は wav/。表の数字は summary.md と同じ。</small></p>"]
+                "audio{width:420px;vertical-align:middle}small{color:#666}p.use{margin:0 0 6px}p.unused{margin:0 0 6px;color:#999}</style>",
+                "<h1>Lodge の音 — 聞いて確かめる</h1><p><small>合成の台本は gen/、音は wav/。表の数字は summary.md と同じ。"
+                "「使う所」は design/sound-concept.md の「音の一覧」から。</small></p>"]
         for name, i in rows:
+            u = used.get(name)
             html.append(f"<section><h2>{name} <small>{i['dur']:.2f} s · peak {i['peak']:.1f} dB · rms {i['rms']:.1f} dB</small></h2>"
+                        f"<p class={'use' if u else 'unused'}>使う所: {htmlesc.escape(use_text(u))}</p>"
                         f"<audio controls preload=none src='../wav/{name}'{' loop' if name.endswith('_loop.wav') else ''}></audio>"
                         f"<img src='{name[:-4]}.png' loading=lazy></section>")
         (CHECK / "listen.html").write_text("\n".join(html) + "\n")
