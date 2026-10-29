@@ -6,6 +6,8 @@ extends SceneTree
 ##                 あとは何もしない。滑り出してから 5 m/s までの時間、最高速度、止まった所
 ##   --case=turn   丘から離れた平らな所で、速さを 5 m/s に保ったまま（確かめのため、毎コマ前向きの速さを 5 にそろえる）、
 ##                 乗る人が体重移動を 1 秒。曲がる角速度と半径。体重移動は 全員 D・一人だけ D・そろわない（D と A が交互）
+##   --case=budge  丘から離れた平らな所の、止まったソリを一人で押す（大きさごとの「止まっているときの動かしやすさ」）。
+##                 後ろの角を横へ押して向きが 90° 変わるまでの時間と、長い辺のまんなかを横へ押して 1 m ずれるまでの時間
 ##   --case=follow （--no-player なしで --bots=2 --sled=large など）あなたと仲間が乗り、5 m/s で あなただけ D を 1 秒。
 ##                 仲間が合わせる（--bot-lean=follow）か、合わせない（--bot-lean=off）かで角速度を比べる
 
@@ -73,6 +75,8 @@ func _physics_process(dt: float) -> bool:
 			_turn_case(dt)
 		"follow":
 			_follow_case(dt)
+		"budge":
+			_budge_case(dt)
 	if t > float(args.get("secs", "900")):
 		print("時間切れ")
 		quit()
@@ -233,3 +237,46 @@ func _follow_case(dt: float) -> void:
 		print("結果: %s に あなた＋仲間 %d 人（仲間 %s）、あなただけ D 1 秒で %.1f °/s（半径 %.0f m）" % [sled.kind, sled.riders.size() - 1,
 				args.get("bot-lean", "follow"), deg, SPEED / deg_to_rad(maxf(deg, 0.01))])
 		quit()
+
+
+# ---------------------------------------------------------------- 止まったソリを一人で押す
+
+func _budge_case(dt: float) -> void:
+	if not _started:
+		if t < 0.5:
+			return
+		_started = true
+		_queue = ["turn", "side"]
+	if _run.is_empty():
+		if _queue.is_empty():
+			print("\n".join(_rows))
+			quit()
+			return
+		var what: String = _queue.pop_front()
+		sled.reset_to(Vector3(90, main.height(90, 0) + 0.3, 0))
+		_run = {"what": what, "t": 0.0, "go": -1.0, "yaw0": 0.0, "p0": Vector3.ZERO, "who": Node3D.new()}
+		return
+	var r := _run
+	r.t += dt
+	if r.go < 0.0:
+		if r.t > 1.0:   # 雪に落ち着くのを待つ
+			r.go = r.t
+			r.yaw0 = sled.rotation.y
+			r.p0 = sled.global_position
+		return
+	var el: float = r.t - r.go
+	var side := sled.global_basis.x
+	var done := false
+	if r.what == "turn":
+		# 後ろの右の角を、ソリの左へ押す（向きが変わる。押す向きは毎コマ、ソリに合わせる）
+		sled.push(-side, sled.to_global(Vector3(sled.HALF.x, 0.2, sled.HALF.y)), r.who)
+		done = absf(wrapf(sled.rotation.y - r.yaw0, -PI, PI)) >= PI / 2
+	else:
+		# 長い辺のまんなかを、ソリの左へ押す（横にずれる）
+		sled.push(-side, sled.to_global(Vector3(sled.HALF.x, 0.2, 0)), r.who)
+		done = absf((sled.global_position - r.p0).dot(side)) >= 1.0
+	if done or el > 60.0:
+		var label := "90° 向きを変える（後ろの角を押す）" if r.what == "turn" else "横に 1 m ずらす（長い辺のまんなかを押す）"
+		_rows.append("| %s | %s | %s |" % [sled.kind, label, ("%.1f 秒" % el) if done else "60 秒で届かない"])
+		r.who.free()
+		_run = {}

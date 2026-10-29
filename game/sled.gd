@@ -28,18 +28,21 @@ const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N 
 ##   push  雪を押しのける・風を受ける抵抗 (N per (m/s)²)。速くなるほど急に増える。重さ（ソリ＋乗る人）に比べて小さいほど最高速度が速い
 ##   sink  滑り出しで雪に沈む抵抗（重さに対する割合）。plane (m/s) まで速くなると浮いて消える。滑り木のソリだけ。大きいほど出足が重い
 ##   turn  乗っている人一人の体重移動の効きの倍率。曲がりにくさは、ソリの長さと重さ（回りにくさ）から物理で出る
+## 止まっているときの動かしやすさ（2026-10-29 代表「ソリの静止状態での移動自由度も、小さければ小さいほど高くしてほしい」）
+##   stand_slip   止まっているときの横すべりのしにくさ（SLIP_RESIST に掛ける割合）。小さいほど、その場で回しやすく横にずらしやすい
+##   stand_speed  この速さ (m/s) までは「止まっている」として stand_slip を使う。米袋は底が平らなので、ゆっくりなら横へも引きずれる
 const KINDS := {
 	"sack": {"mass": 1.0, "box": Vector3(0.6, 0.15, 1.1), "runner_x": 0.2, "runner_z": 0.4, "color": Color("B8402E"), "stitch": "running",
-			"drag": 1.0, "push": 3.3, "sink": 0.0, "plane": 1.0, "turn": 1.0,
+			"drag": 1.0, "push": 3.3, "sink": 0.0, "plane": 1.0, "turn": 1.0, "stand_slip": 0.03, "stand_speed": 3.0,
 			"seats": [Vector3(0, 0.15, 0.1)]},
 	"small": {"mass": 15.0, "box": Vector3(0.75, 0.45, 1.6), "runner_x": 0.28, "runner_z": 0.6, "color": Color("D2553A"), "stitch": "running",
-			"drag": 1.5, "push": 3.6, "sink": 0.0, "plane": 1.0, "turn": 1.0,
+			"drag": 1.5, "push": 3.6, "sink": 0.0, "plane": 1.0, "turn": 1.0, "stand_slip": 0.1, "stand_speed": 1.5,
 			"seats": [Vector3(0, 0.06, -0.3), Vector3(0, 0.06, 0.4)]},
 	"mid": {"mass": 60.0, "box": Vector3(1.5, 0.45, 2.8), "runner_x": 0.6, "runner_z": 1.1, "color": Color("D2553A"), "stitch": "chain",
-			"drag": 8.0, "push": 2.5, "sink": 0.02, "plane": 3.0, "turn": 1.0,
+			"drag": 8.0, "push": 2.5, "sink": 0.02, "plane": 3.0, "turn": 1.0, "stand_slip": 0.3, "stand_speed": 0.6,
 			"seats": [Vector3(0, 0.45, -0.75), Vector3(0, 0.45, 0.15), Vector3(0, 0.45, 1.0)]},
 	"large": {"mass": 220.0, "box": Vector3(2.2, 0.45, 4.8), "runner_x": 0.95, "runner_z": 1.9, "color": Color("D2553A"), "stitch": "saddle",
-			"drag": 12.0, "push": 3.5, "sink": 0.06, "plane": 5.0, "turn": 1.0,
+			"drag": 12.0, "push": 3.5, "sink": 0.06, "plane": 5.0, "turn": 1.0, "stand_slip": 0.6, "stand_speed": 0.5,
 			"seats": [Vector3(-0.5, 0.55, -1.65), Vector3(0.5, 0.55, -1.65), Vector3(-0.5, 0.55, -0.55), Vector3(0.5, 0.55, -0.55),
 					Vector3(-0.5, 0.55, 0.55), Vector3(0.5, 0.55, 0.55), Vector3(-0.5, 0.55, 1.65), Vector3(0.5, 0.55, 1.65)]},
 }
@@ -801,8 +804,10 @@ func _physics_process(dt: float) -> void:
 	var fwd := -global_basis.z
 	# 滑り木: 前後にはよく滑り、横には滑らない。前後 2 点で横滑りを止めるので、
 	# 縁に偏った力をかけると、横にずれるのでなく向きが変わる
-	# 止まっているときは横滑りの抵抗を弱め、人が押してソリの向きを変えられるようにする
-	var slip_k: float = SLIP_RESIST * (0.3 if linear_velocity.length() < 0.6 else 1.0)
+	# 止まっているときは横滑りの抵抗を弱め、人が押してソリの向きを変えられるようにする。
+	# どれだけ弱めるかは大きさごと（小さいほどその場で回しやすく、横にずらしやすい。大は滑り木が雪に食い込む）
+	var K: Dictionary = KINDS[kind]
+	var slip_k: float = SLIP_RESIST * (K.stand_slip if linear_velocity.length() < K.stand_speed else 1.0)
 	for z in [-RUNNER_Z, RUNNER_Z]:
 		var r := global_basis * Vector3(0, 0, z)
 		var v_point := linear_velocity + angular_velocity.cross(r)
