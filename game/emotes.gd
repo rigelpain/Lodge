@@ -240,8 +240,13 @@ func _burst_at(point: Vector3, frame: int) -> void:
 	var wait := float(frame * tps / Doll.FPS - Engine.get_physics_frames()) / tps
 	if wait > 0.0:
 		await get_tree().create_timer(wait, true, true).timeout
+	var before := get_child_count()
 	Palm.burst(self, point)
 	Snowball.splat_at(self, point, Vector3.UP, true)
+	for i in range(before, get_child_count()):   # 右下の自分の小窓（self_cam.gd の層 6）にも映す
+		for g in get_child(i).find_children("*", "GeometryInstance3D", true, false) + [get_child(i)]:
+			if g is GeometryInstance3D:
+				(g as GeometryInstance3D).layers |= 1 << 5
 
 
 ## 掲げた手のあたり（世界）。高い手は顔の横の前、低い手はみぞおちの前（握手で手を合わせる高さ。一人称でも画面に入る）。side 1 右、-1 左
