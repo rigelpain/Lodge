@@ -36,10 +36,11 @@ const Emotes := preload("res://emotes.gd")
 const Hud := preload("res://hud.gd")
 const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
+const CraftUi := preload("res://craft_ui.gd")
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がロッジの中の側）と向き
-const SHOP_AT := Vector3(1.5, 0, 1.8)
-const SHOP_YAW := PI - 0.35
+const SHOP_AT := Vector3(2.0, 0, 1.0)
+const SHOP_YAW := PI - 0.5
 
 var sled: RigidBody3D
 var player: CharacterBody3D
@@ -58,6 +59,7 @@ var pip_label: Label
 var sewing: Node3D            # 大きなミシンの動き（sewing_machine.gd）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
+var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 
 
 static func hill(x: float, z: float) -> float:
@@ -193,6 +195,18 @@ func _ready() -> void:
 	hud.debug_on = args.has("hud-debug") or settings.values.get("hud_debug", false)
 	hud.hints_on = settings.values.get("hints", true)
 	add_child(hud)
+
+	if player:
+		craft_ui = CraftUi.new()
+		craft_ui.main = self
+		craft_ui.craft = craft
+		craft_ui.player = player
+		add_child(craft_ui)
+		if args.get("spawn", "") == "shop" and shopkeeper:   # --spawn=shop: 売り子のおじさんの前から始める
+			var at := shopkeeper.to_global(Vector3(0, 0.1, -1.6))
+			player.global_position = at
+			var to := shopkeeper.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 
 
 ## 右上のライブ映像: 自分の頭の上に載せた 360° カメラの映像。

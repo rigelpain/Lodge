@@ -75,18 +75,22 @@ func _input(e: InputEvent) -> void:
 	if not (e is InputEventKey and e.pressed and not e.echo):
 		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_RIGHT:
 			learn("gesture")
+		elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT and main.player \
+				and main.player.held().get("kind") == "folded":
+			learn("unfold")
 		return
 	match e.physical_keycode:
 		KEY_R: learn("return")
-		KEY_T: learn("sew")
+		KEY_T: learn("sew"); learn("set")
+		KEY_G: learn("fold")
 		KEY_Q, KEY_G, KEY_TAB, KEY_1, KEY_2, KEY_3, KEY_4, KEY_B: learn("gesture")
 
 
 func _process(dt: float) -> void:
 	if main == null or main.sled == null:
 		return
-	var sled: RigidBody3D = main.sled
 	var p: CharacterBody3D = main.player
+	var sled: RigidBody3D = p.sled if p and is_instance_valid(p.sled) else main.sled   # あなたのそばのソリ（縫ったソリも）
 	_update_people(dt, sled, p)
 	var want_tag := 1.0
 	if p:
@@ -241,10 +245,23 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			if at_side and sled.riders.size() < sled.SEATS.size():
 				var seat: Vector3 = sled.to_global(sled.SEATS[sled.riders.size()])
 				_hint("ride", ["E"], "ride", seat + Vector3.UP * 0.75)
-	# ミシンの前（PR #12 の sewing_machine.gd。人が近づくと「呼ぶ」= 1 になる）
+	# ミシンの前（PR #12 の sewing_machine.gd。人が近づくと「呼ぶ」= 1 になる）。
+	# 工房があるときは、型紙か布を手に持っていればセットの案内（T と型紙と布の絵）
 	var sew = main.get("sewing")
 	if sew and is_instance_valid(sew) and int(sew.get("phase")) == 1:
-		_hint("sew", ["T"], "needle", sew.global_position + Vector3.UP * 2.2)
+		if main.get("craft") == null:
+			_hint("sew", ["T"], "needle", sew.global_position + Vector3.UP * 2.2)
+		elif sew.accepts(p.held()):
+			_hint("set", ["T"], "set", sew.global_position + Vector3.UP * 2.2)
+	# 売り子のおじさん: F で売り台
+	if p.shop_near() and not p.shopping:
+		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
+	# 縫ったソリのそば: G で畳む。畳んだソリを持っていれば、左クリックで広げる
+	var fold_s: RigidBody3D = p.foldable_near()
+	if fold_s:
+		_hint("fold", ["G"], "fold", fold_s.global_position + Vector3.UP * 1.2)
+	elif p.held().get("kind") == "folded" and p.unfold_spot() != Vector3.INF:
+		_hint("unfold", ["mouse_l"], "unfold")
 	# ほかの人のそば: 手を振る・指さす・声
 	var someone := false
 	var far := true
@@ -435,6 +452,8 @@ class View extends Control:
 			rows += [[["Q"], "wave"], [["G"], "voice"]]
 		if hud.main.get("sewing") != null:
 			rows.append([["T"], "needle"])
+		if hud.main.get("craft") != null:   # 工房: 売り子に F、ミシンに T でセット、G で畳む、左クリックで広げる、ホイールで持ち替え
+			rows += [[["F"], "shop"], [["T"], "set"], [["G"], "fold"], [["mouse_l"], "unfold"], [["mouse_wheel"], "hand"]]
 		var bs := 46.0 * u                # 一つの段のワッペンの高さ
 		var row_h := bs * 1.08
 		var col_w := 0.0

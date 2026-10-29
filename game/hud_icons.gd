@@ -213,6 +213,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"pip_off": _pip(ci, a, true)
 		"settings": _button(ci, a)
 		"mouse_r": mouse(ci, Vector2.ZERO, a, "right")
+		"mouse_l": mouse(ci, Vector2.ZERO, a, "left")
 		"mouse_move": _mouse_move(ci, a)
 		"mouse_wheel": _mouse_wheel(ci, a)
 		"back": _back(ci, a)
@@ -430,6 +431,8 @@ static func mouse(ci: CanvasItem, c: Vector2, a := 1.0, button := "none") -> voi
 	thread(ci, PackedVector2Array([c + Vector2(0, -15.5), c + Vector2(0, -3)]), THREAD.lightened(0.4), 1.0, 0.7 * a)
 	if button == "right":
 		patch(ci, PackedVector2Array([c + Vector2(1.5, -14.5), c + Vector2(6, -13), c + Vector2(9, -9), c + Vector2(9.5, -4.5), c + Vector2(1.5, -4.5)]), RED, a, false)
+	elif button == "left":
+		patch(ci, PackedVector2Array([c + Vector2(-1.5, -14.5), c + Vector2(-6, -13), c + Vector2(-9, -9), c + Vector2(-9.5, -4.5), c + Vector2(-1.5, -4.5)]), RED, a, false)
 	elif button == "wheel":
 		patch(ci, xf(rr(-2.2, -13, 4.4, 8, 2.2), 0.0, c), RED, a, false)
 

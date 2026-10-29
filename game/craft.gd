@@ -13,7 +13,7 @@ extends Node
 ##   load   {slot, item}       手に持った型紙か布をミシンにセットする（ミシンが読む）
 ##   sewn   {sled, fabric, at, yaw, id}  ミシンが縫い上げた。広げた実寸のソリが at に出る
 ##   fold   {id, item}         置いてあるソリを畳んで、持ち物に入れる（畳む動きは origami.gd）
-##   unfold {slot, item, at, yaw, id}    畳んだソリを手から前の床に広げて置く
+##   unfold {slot, item, at, yaw, up, id}  畳んだソリを手から前の床に広げて置く（up は床の傾き）
 
 signal happened(ev: Dictionary)
 
@@ -106,13 +106,17 @@ func _apply(ev: Dictionary) -> bool:
 			ev["at"] = s.global_position
 			ev["yaw"] = s.rotation.y
 			sleds.erase(int(ev.id))
+			_origami(ev, false, s.global_transform)
+			s.queue_free()
 			bags[who].append(ev.item)
 			hands[who] = bags[who].size() - 1
 			ev["slot"] = hands[who]
 		"unfold":
 			if not _take(who, int(ev.slot), ev.item):
 				return false
-			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES)
+			var up: Vector3 = ev.get("up", Vector3.UP)
+			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up)
+			_origami(ev, true, Transform3D(_basis(ev.yaw, up), ev.at))
 	happened.emit(ev)
 	return true
 
@@ -127,13 +131,27 @@ func _take(who: int, slot: int, item: Dictionary) -> bool:
 	return true
 
 
+## 畳む・広げる動き（origami.gd）を、ソリの所に置く
+func _origami(ev: Dictionary, unfolding: bool, at: Transform3D) -> void:
+	var o: Node3D = load("res://origami.gd").new()
+	o.kind = ev.item.sled
+	o.fabric = ev.item.fabric
+	o.unfolding = unfolding
+	o.start = int(ev.frame)
+	var hub: Node = world.get_node_or_null("Emotes") if world else null
+	o.who = hub.who_of(int(ev.who)) if hub else null
+	o.name = "Origami"
+	o.transform = Transform3D(at.basis.orthonormalized(), at.origin)   # 置く先（main）は原点にある
+	(world if world else get_parent()).add_child(o)
+
+
 ## 誰も乗っていない・つかんでいない・紐を持っていないソリだけ畳める
 func _free(s: Node3D) -> bool:
 	return s.riders.is_empty() and s.holders.is_empty() and s.rope_holder == null
 
 
 ## 実寸のソリを置く。wait コマのあいだは止めておく（広げる動きのあいだ）
-func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int) -> int:
+func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP) -> int:
 	var id := _next_sled
 	_next_sled += 1
 	var s := Sled.new()
@@ -141,8 +159,7 @@ func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int) ->
 	s.fabric = fabric
 	s.crafted = true
 	s.name = "MadeSled%d" % id
-	s.position = at
-	s.rotation.y = yaw
+	s.transform = Transform3D(_basis(yaw, up), at + up * 0.08)   # 床に少し浮かせて置く（めり込むと床の下へ押し出される）
 	if world and world.has_method("snow_lift"):
 		s.snow_lift = Callable(world, "snow_lift")
 	(world if world else get_parent()).add_child(s)
@@ -150,7 +167,29 @@ func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int) ->
 	if wait > 0:
 		s.hold_still(wait)
 	sleds[id] = s
+	_make_room(s)
 	return id
+
+
+## ソリの出る所に立っている人を、ソリの横へよける（重なったまま出すと、ソリが薄い床の下へ押し出される）
+func _make_room(s: RigidBody3D) -> void:
+	var k: Dictionary = Sled.KINDS.get(s.kind, Sled.KINDS["mid"])
+	var half := Vector2(k.box.x, k.box.z) * 0.5 + Vector2(0.45, 0.45)
+	for c in s.get_parent().get_children():
+		if not (c is CharacterBody3D):
+			continue
+		var lp := s.to_local((c as Node3D).global_position)
+		if absf(lp.x) < half.x and absf(lp.z) < half.y and absf(lp.y) < 2.0:
+			lp.x = half.x * (1.0 if lp.x >= 0.0 else -1.0)
+			(c as Node3D).global_position = s.to_global(lp) + Vector3.UP * 0.05
+
+
+## 向き yaw で、上を up（床の傾き）に合わせた向き
+static func _basis(yaw: float, up: Vector3) -> Basis:
+	var b := Basis(Vector3.UP, yaw)
+	if up.dot(Vector3.UP) < 0.999:
+		b = Basis(Quaternion(Vector3.UP, up.normalized())) * b
+	return b
 
 
 ## ソリの番号（畳めるソリでなければ -1）
