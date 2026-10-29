@@ -13,6 +13,7 @@ extends SceneTree
 ##   held    買った布を手に持つ
 ##   lodge   ロッジの中
 ## --pets: 連れの動物（companions.gd）も出す
+## --compare: 小窓の絵（_raw）と、本体の環境で同じ位置から映した絵（_main）を出す（明るさを比べる）。時刻は --time=17.5 など
 ## --fps=秒: 撮らずに、その秒数だけ画面を描き、平均の fps とコマの長さを出す（--scene と一緒に。小窓を切って比べるのは --no-selfcam）
 
 var args := {}
@@ -23,6 +24,8 @@ var _frames := 0
 var _ft := 0.0
 var _ft_max := 0.0
 var _turned := false
+var _cmp: Camera3D
+var _cmp_t := 0.0
 var _gpu := {}
 var _gpu_sum := {}
 
@@ -123,6 +126,9 @@ func _process(dt: float) -> bool:
 				p._pitch = -0.05
 	if not _set:
 		return false
+	if main.settings.is_open:   # 確かめの途中で開いても閉じる（絵に写さない）
+		main.settings.set_open(false)
+		p.menu_open = false
 	var em_at := float(args.get("at", "4")) - 1.2
 	match scene:
 		"walk":
@@ -178,6 +184,30 @@ func _process(dt: float) -> bool:
 			for k in _gpu:
 				g += " %s=%.2fms" % [k, _gpu_sum[k] / _frames]
 			print("fps 場面=%s 平均=%.1f コマ平均=%.1fms 最長=%.1fms 小窓=%s  GPU（1 コマあたり）:%s" % [scene, _frames / _ft, 1000.0 * _ft / _frames, 1000.0 * _ft_max, "なし" if main.self_cam == null else "あり", g])
+			return true
+		return false
+	if args.has("compare") and t > float(args.get("at", "4")) and _cmp == null:
+		# 本体の環境で、小窓と同じ位置・画角から映した絵（明るさを比べる）。HUD は隠す
+		var sc = main.self_cam
+		sc.vp.get_texture().get_image().save_png(args.get("out", "/tmp/self_cam.png").get_basename() + "_raw.png")
+		_cmp = Camera3D.new()
+		_cmp.fov = sc.cam.fov
+		_cmp.cull_mask = sc.cam.cull_mask | 1   # 世界も映す
+		root.add_child(_cmp)
+		_cmp.global_transform = sc.cam.global_transform
+		_cmp.current = true
+		main.hud.visible = false
+		sc.visible = false
+		_cmp_t = t
+		return false
+	if _cmp:
+		if t - _cmp_t > 0.15:
+			var img := root.get_texture().get_image()
+			var h := img.get_height()
+			img = img.get_region(Rect2i((img.get_width() - h) / 2, 0, h, h))
+			img.resize(224, 224)
+			img.save_png(args.get("out", "/tmp/self_cam.png").get_basename() + "_main.png")
+			print("比べる絵: ", args.get("out", ""))
 			return true
 		return false
 	if t > float(args.get("at", "4")):

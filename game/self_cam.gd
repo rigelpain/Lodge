@@ -25,6 +25,12 @@ const TURN := 2.5             # 向きの追いつき（1/s）。小さいほど
 const AIM_K := 8.0            # 見る所（頭の少し下）の追いつき（1/s）。12 コマの姿勢の段を均す
 const LAYER := 1 << 5         # 小窓だけに映す層（層 6）。本体の画面・右上の 360° 映像・三人称には映らない
 const SHADOW_R := 0.42        # 足もとの丸い影の半径（人形の大きさのまま, m）
+const CLOTH_AMB := 1.2        # 布の地が環境光（空）から受ける割合（雪のように明るい布）
+const CLOTH_MAX := 1.4        # 布の地の明るさの上限。日なたでも白く飛ばず、生成りに見える
+const SHADE_FILL := 1.8       # 陰・屋内で、人形への環境光を何倍にするか（本体の照り返しの代わり）
+const SHADE_GLOW := 0.5       # 陰・屋内で、布の地に足す明るさ（ランプや壁の照り返しの代わり）
+const CLOTH_K := 0.85         # 布の地の照り返しの強さ（日なたの雪より少し落とし、白く飛ばさない）
+const ENV_EVERY := 0.5        # 本体の環境を写す間隔 (s)
 
 var main: Node3D
 var player: CharacterBody3D
@@ -38,6 +44,9 @@ var _yaw := INF               # INF のあいだは、まだ向きを決めて�
 var _rot := Quaternion.IDENTITY   # 均した人形の向き
 var _aim := Vector3.INF
 var _fit := DIST              # 全身が収まる距離 (m)
+var _env_t := ENV_EVERY
+var _bg_energy := 1.0
+var _light_t := 0
 var _low := 0.0               # 押す・引くときに下げている分 (m)
 var _shadow: MeshInstance3D   # 足もとの丸い影（地面を描かないので、浮いて見えないように）
 var _tick := 0
@@ -83,19 +92,77 @@ func _ready() -> void:
 	_frame.view = view
 
 
-## 小窓のカメラだけの環境: 背景は麻布の色。その色のままの所は縫わずに布の地として見せる（刺繍枠に、自分だけが縫ってある絵になる）。
-## 空・SSAO・照り返し・にじみも描かないので軽い
+## 小窓のカメラだけの環境: 本体の環境（main.gd の _make_world、時刻で daycycle.gd が変える）の写しで、トーンマップ・露出・
+## 環境光は本体と同じ。背景だけ麻布の色にし、その明るさは本体の光の当たり方（日なた・日かげ・夜・屋内）に合わせる（_sync_env）。
+## 背景の色のままの所は縫わずに布の地として見せる。空・SSAO・照り返し・にじみ・霧は描かないので軽い
 func _fabric_env() -> Environment:
-	var e := Environment.new()
+	var e: Environment = main.env.duplicate() if main and main.env else Environment.new()   # 空の資源は共有（環境光が時刻で変わる）
 	e.background_mode = Environment.BG_COLOR
 	e.background_color = LINEN
-	e.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	e.ambient_light_color = Color(0.95, 0.93, 0.90)   # 逆光でも顔と着物の色が読めるよう、環境光を強めに
-	e.ambient_light_energy = 0.8
-	e.tonemap_mode = Environment.TONE_MAPPER_ACES   # 本体の画面と同じ色の出方に
-	e.tonemap_exposure = 0.85
-	e.tonemap_white = 6.0
+	e.ssao_enabled = false
+	e.ssil_enabled = false
+	e.glow_enabled = false
+	e.fog_enabled = false
+	e.volumetric_fog_enabled = false
+	e.sdfgi_enabled = false
 	return e
+
+
+## 本体の時刻の変化を写し、布の地の明るさを決める。布は上を向いた紙のように、日なたなら陽と環境光、陰なら環境光だけで照らす
+func _sync_env() -> void:
+	var src: Environment = main.env
+	var e := cam.environment
+	if src == null or e == null:
+		return
+	e.tonemap_exposure = src.tonemap_exposure
+	var sun: DirectionalLight3D = main.sun_light
+	var shaded := sun == null or _in_shade(sun.global_basis.z)
+	# 本体では、まわりの床・壁・雪の照り返し（SSIL）が人形の陰の側を明るくする。小窓には周りがないので、陰の中では環境光を足して補う
+	e.ambient_light_energy = src.ambient_light_energy * (SHADE_FILL if shaded else 1.0)
+	var lit := src.ambient_light_energy * CLOTH_AMB + (SHADE_GLOW if shaded else 0.0)
+	if sun and sun.visible and not shaded:
+		lit += sun.light_energy * maxf(sun.global_basis.z.dot(Vector3.UP), 0.0)   # 陽が上から当たる度合い
+	lit = minf(lit * CLOTH_K, CLOTH_MAX)
+	e.background_energy_multiplier = lit
+	_bg_energy = lit
+	if _shadow:
+		(_shadow.material_override as ShaderMaterial).set_shader_parameter("bg_energy", lit)
+
+
+## 灯り（太陽・月・ロッジのランプ）も描画の層に属し、カメラは自分の映す層の灯りしか当てない。
+## 小窓は世界の層（層 1）を映さないので、灯りに小窓の層を足す（本体の画面の見え方は変わらない）。後から置かれる灯りのために、ときどき見直す
+func _share_lights() -> void:
+	for l in main.find_children("*", "Light3D", true, false):
+		(l as Light3D).layers |= LAYER
+
+
+## 頭から陽の方へ、建物や木があるか（ロッジの屋根・木の陰）。丘の雪面は見ない（低い夕日だと遠くの斜面に当たってしまう）
+func _in_shade(to_sun: Vector3) -> bool:
+	var from: Vector3 = player.global_position + Vector3.UP * player.doll.height()
+	var q := PhysicsRayQueryParameters3D.create(from, from + to_sun * 20.0)
+	var ex: Array[RID] = [player.get_rid()]
+	for _i in 4:
+		q.exclude = ex
+		var hit := player.get_world_3d().direct_space_state.intersect_ray(q)
+		if hit.is_empty():
+			return false
+		if hit.collider is StaticBody3D and not _is_ground(hit.collider):
+			return true
+		ex.append(hit.rid)
+	return false
+
+
+var _ground_cache := {}
+
+## 丘の雪面（高さの地図の当たり）か
+func _is_ground(body: Object) -> bool:
+	if not _ground_cache.has(body):
+		var yes := false
+		for c in (body as Node).get_children():
+			if c is CollisionShape3D and c.shape is HeightMapShape3D:
+				yes = true
+		_ground_cache[body] = yes
+	return _ground_cache[body]
 
 
 ## 足もとの丸い影。地面を描かないので、浮いて見えないように置く（小窓だけの層）。刺繍では濃い糸の楕円に縫われる
@@ -107,11 +174,12 @@ shader_type spatial;
 render_mode unshaded, cull_disabled;
 // 半透明はこの小窓で描かれないので、不透明にして縁を背景の布の色へ混ぜる（背景は無地なので透けて見える）
 uniform vec3 bg : source_color;
+uniform float bg_energy = 1.0;   // 背景の明るさ（_sync_env）
 void fragment() {
 	float r = length(UV - 0.5) * 2.0;
-	float a = 0.7 * (1.0 - smoothstep(0.45, 1.0, r));
+	float a = 0.6 * (1.0 - smoothstep(0.45, 1.0, r));
 	if (a < 0.03) discard;
-	ALBEDO = mix(bg, vec3(0.12, 0.13, 0.25), a);
+	ALBEDO = mix(bg, bg * vec3(0.3, 0.33, 0.5), a) * bg_energy;
 }
 """
 	m.set_shader_parameter("bg", LINEN)
@@ -137,7 +205,6 @@ const MASK_SHADER := """
 shader_type canvas_item;
 uniform float px = 236.0;        // 窓の直径（画面の px）
 uniform float pitch = 2.4;       // 糸 1 本の幅（画面の px）
-uniform vec3 linen = vec3(0.95, 0.92, 0.85);
 const vec2 SHEEN_DIR = vec2(-0.55, -0.83);   // 左上からの光（艶の向き）
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -149,9 +216,8 @@ vec3 soft(sampler2D t, vec2 uv, float e) {   // 毛羽のむらを均して読�
 }
 
 vec3 thread_color(vec3 c) {
-	c = pow(c, vec3(0.8)) * 1.12;                                 // 明るく持ち上げ
-	c = clamp(mix(vec3(dot(c, vec3(0.3, 0.55, 0.15))), c, 1.45), 0.0, 1.0);   // 刺繍糸らしく鮮やかに
-	return floor(c * 6.0 + 0.5) / 6.0;
+	c = clamp(mix(vec3(dot(c, vec3(0.3, 0.55, 0.15))), c, 1.3), 0.0, 1.0);   // 刺繍糸らしく少し鮮やかに（明るさは本体のまま）
+	return floor(c * 7.0 + 0.5) / 7.0;
 }
 
 bool is_cloth(vec3 c, vec3 ground) {
@@ -165,7 +231,7 @@ void fragment() {
 	vec3 ground = texture(TEXTURE, vec2(0.02, 0.02)).rgb;       // 背景の色（窓の外の隅には何も映らない）
 	vec3 c = soft(TEXTURE, UV, e);
 	vec3 q = thread_color(c);
-	vec3 col = linen * (0.97 + 0.03 * sin(p.x * 2.6) * sin(p.y * 2.6));   // 麻布の織り目
+	vec3 col = ground * (0.97 + 0.03 * sin(p.x * 2.6) * sin(p.y * 2.6));   // 麻布の織り目（明るさは本体の光で照らした背景のまま）
 	if (!is_cloth(c, ground)) {
 		// 糸の向き: 色の塊ごとに決め、場所でゆるく曲げる
 		float ang = hash(q.rg * 7.0 + q.b * 3.0) * 3.14159 + 0.35 * sin(p.x * 0.045 + p.y * 0.03 + q.r * 5.0);
@@ -178,10 +244,10 @@ void fragment() {
 		float s = fract(along);
 		float bulge = sin(t * 3.14159);                          // 糸の丸み
 		float dip = smoothstep(0.0, 0.08, s) * smoothstep(1.0, 0.92, s);   // 刺し目の端は布にもぐる
-		float body = mix(0.74, 1.04, bulge) * mix(0.85, 1.0, dip);
+		float body = mix(0.78, 1.06, bulge) * mix(0.85, 1.0, dip);
 		// 艶: 糸が光の向きに沿うほど、糸の背が明るく光る
 		float sheen = pow(abs(dot(dir, SHEEN_DIR)), 3.0) * pow(bulge, 5.0) * dip;
-		vec3 th = q * body + vec3(1.0, 0.98, 0.94) * sheen * 0.38;
+		vec3 th = q * body + ground * sheen * 0.3;   // 艶の明るさも、まわりの光に合わせる
 		// 色の境の縁取り（濃い糸）
 		vec3 qx = thread_color(soft(TEXTURE, UV + vec2(1.6 * e, 0.0), e));
 		vec3 qy = thread_color(soft(TEXTURE, UV + vec2(0.0, 1.6 * e), e));
@@ -189,7 +255,7 @@ void fragment() {
 		th = mix(th, q * 0.5 * mix(0.8, 1.1, bulge), edge * 0.5);
 		col = th;
 	}
-	col = mix(col, linen, smoothstep(0.9, 1.0, r) * 0.25);
+	col = mix(col, ground, smoothstep(0.9, 1.0, r) * 0.25);
 	COLOR = vec4(col, 1.0 - smoothstep(0.985, 1.0, r));
 }
 """
@@ -218,6 +284,14 @@ func _process(dt: float) -> void:
 		dc.dial_right = 16.0 + width()
 	if hidden or player == null:
 		return
+	_env_t += dt
+	if _env_t >= ENV_EVERY:
+		_env_t = 0.0
+		_sync_env()
+		_light_t -= 1
+		if _light_t <= 0:
+			_light_t = 10
+			_share_lights()
 	_tick += 1
 	if _tick % EVERY == 0:
 		vp.render_target_update_mode = SubViewport.UPDATE_ONCE
