@@ -217,7 +217,7 @@ func _apply(ev: Dictionary) -> bool:
 		"tag_design":
 			var d: Dictionary = {}
 			for part in preload("res://sled_tags.gd").PARTS:
-				d[part] = posmod(int(ev.design.get(part, 0)), preload("res://sled_tags.gd").part_count(part))
+				d[part] = posmod(int(ev.design.get(part, preload("res://sled_tags.gd").PART_DEFAULT.get(part, 0))), preload("res://sled_tags.gd").part_count(part))
 			ev["design"] = d
 			tag_designs[who] = d
 			for s in get_tree().get_nodes_in_group("sleds"):   # その人のソリの名札を付け替える

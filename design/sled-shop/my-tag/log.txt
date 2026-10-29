@@ -1,5 +1,5 @@
-自分の名札 { "shape": 1, "paper": 6, "edge": 3, "string": 4, "motif": 3 }
-自分の名札の付いたソリ: 3 台（名札 { "shape": 1, "paper": 6, "edge": 3, "string": 4, "motif": 3 }）
+自分の名札 { "shape": 1, "paper": 6, "edge": 3, "string": 4, "motif": 3, "cushion": 1 }
+自分の名札の付いたソリ: 3 台（名札 { "shape": 1, "paper": 6, "edge": 3, "string": 4, "motif": 3, "cushion": 1 }）
 立ち位置 1: 向き 0° 距離 15, 22, 34 m
 立ち位置 2: 向き 90° 距離 15, 22, 34 m
 立ち位置 3: 向き 180° 距離 15, 22, 34 m
@@ -7,5 +7,5 @@
 立ち位置 5: 向き -46° 距離 28, 12, 16 m
 立ち位置 6: 向き 149° 距離 27, 24, 5 m
 米袋に乗った true
-名札を替えた { "shape": 4, "paper": 9, "edge": 2, "string": 4, "motif": 2 }
+名札を替えた { "shape": 4, "paper": 9, "edge": 2, "string": 4, "motif": 2, "cushion": 1 }
 ソリの名札も替わった true

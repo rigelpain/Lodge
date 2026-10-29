@@ -685,6 +685,15 @@ class View extends Control:
 							var t := k / 11.0
 							loop.append(c + Vector2(-11.0 + 22.0 * t, 6.0 - sin(t * PI) * 14.0) * u)
 						Icons.thread(self, loop, Tags.THREADS[i], 2.6 * u, 1.0)
+					"cushion":   # 方位磁針のピンクッションの色（0 は名札の地の色。破線で印）
+						var cc: Color = Tags.cushion_color(mine.merged({"cushion": i}, true))
+						Icons.patch(self, Icons.rr(c.x - 12.0 * u, c.y - 10.0 * u, 24.0 * u, 20.0 * u, 7.0 * u), cc, 1.0, false)
+						for k in 6:
+							draw_circle(c + Vector2(-10.0 + 4.0 * k, 10.0) * u, 1.6 * u, Color(1, 1, 1, 0.95))
+						draw_circle(c + Vector2(3, -4) * u, 3.0 * u, Color(Icons.MUSTARD))
+						if i == 0:
+							Icons.screen()
+							Icons.dashes(self, Icons.rr(c.x - 8.0 * u, c.y - 7.0 * u, 16.0 * u, 13.0 * u, 3.0 * u), Icons.PAPER_EDGE, 1.2 * u, 3.0 * u, 2.0 * u, 1.0, true)
 					"motif":
 						Icons.patch(self, Icons.circ(c, 13.0 * u, 16), md.paper, 1.0, false)
 						if Tags.MOTIFS[i] == "none":

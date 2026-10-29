@@ -46,6 +46,9 @@ func _shot(name: String) -> void:
 
 
 func _key(k: Key) -> void:
+	if main.settings and main.settings.is_open:   # 窓から目が離れると設定が開き、キーが効かなくなる
+		main.settings.set_open(false)
+		p.menu_open = false
 	for down in [true, false]:
 		var e := InputEventKey.new()
 		e.physical_keycode = k

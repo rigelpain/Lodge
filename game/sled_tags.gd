@@ -45,7 +45,11 @@ const PAPERS := [Color(0.96, 0.93, 0.86), Color(0.86, 0.72, 0.52), Color(0.80, 0
 const THREADS := [Color(0.20, 0.25, 0.42), Color(0.80, 0.24, 0.20), Color(0.95, 0.92, 0.84), Color(0.88, 0.66, 0.20),
 	Color(0.25, 0.45, 0.30), Color(0.62, 0.28, 0.38), Color(0.45, 0.30, 0.18), Color(0.25, 0.45, 0.42)]
 const MOTIFS := ["none", "snow", "star", "pine", "heart", "dots", "stripe", "mitten"]
-const PARTS := ["shape", "paper", "edge", "string", "motif"]
+## 方位磁針のピンクッション（hud.gd の _draw_pillow）の色。0 は名札の地の色（少し淡く）、ほかは淡い色
+const CUSHIONS := [Color(0, 0, 0, 0), Color(0.96, 0.78, 0.82), Color(0.80, 0.89, 0.97), Color(0.97, 0.93, 0.82),
+	Color(0.80, 0.93, 0.85), Color(0.88, 0.82, 0.95), Color(0.98, 0.94, 0.70)]
+const PARTS := ["shape", "paper", "edge", "string", "motif", "cushion"]
+const PART_DEFAULT := {"cushion": 1}   # 部品が無いとき（前に保存した名札）の番号。ほかは 0
 
 
 static func count() -> int:
@@ -58,7 +62,17 @@ static func part_count(part: String) -> int:
 		"shape": return SHAPES.size()
 		"paper": return PAPERS.size()
 		"motif": return MOTIFS.size()
+		"cushion": return CUSHIONS.size()
 	return THREADS.size()
+
+
+## 方位磁針のピンクッションの色（自分の名札の cushion の部品）
+static func cushion_color(d) -> Color:
+	var i: int = int(d.get("cushion", PART_DEFAULT.cushion)) if d is Dictionary else PART_DEFAULT.cushion
+	i = posmod(i, CUSHIONS.size())
+	if i == 0:
+		return design(d).paper.lerp(Color(1, 1, 1), 0.3)
+	return CUSHIONS[i]
 
 
 ## 名札の柄を、描くための辞書 {shape, paper, edge, string, motif, ink} にする
@@ -83,7 +97,8 @@ static func has_tag(d) -> bool:
 ## 人の番号から決める、はじめの自分の名札（装備の画面で変えられる）
 static func default_design(who: int) -> Dictionary:
 	return {"shape": posmod(who, SHAPES.size()), "paper": posmod(who * 5 + 1, PAPERS.size()), "edge": posmod(who * 3, THREADS.size()),
-		"string": posmod(who * 3 + 1, THREADS.size()), "motif": posmod(who * 2 + 1, MOTIFS.size())}
+		"string": posmod(who * 3 + 1, THREADS.size()), "motif": posmod(who * 2 + 1, MOTIFS.size()),
+		"cushion": PART_DEFAULT.cushion}
 
 
 static func _key(d) -> String:

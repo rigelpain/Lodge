@@ -1454,7 +1454,8 @@ func _load_tag() -> void:
 		return
 	var d := {}
 	for part in preload("res://sled_tags.gd").PARTS:
-		d[part] = int(cf.get_value("tag", part, 0))
+		if cf.has_section_key("tag", part):   # 前に保存した名札に無い部品は、はじめの値のまま
+			d[part] = int(cf.get_value("tag", part, 0))
 	craft.send({"kind": "tag_design", "who": id, "design": d})
 
 
