@@ -6,6 +6,7 @@ const FpHands := preload("res://fp_hands.gd")
 const Emotes := preload("res://emotes.gd")
 const EmoteRing := preload("res://emote_ring.gd")
 const Palm := preload("res://palm.gd")
+const SackLook := preload("res://sack_look.gd")
 ## あなた。一人称で、見えるのは自分の人形と同じ柄の袖口と、紙の手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
@@ -21,6 +22,8 @@ const Palm := preload("res://palm.gd")
 ## 売り子のおじさんの前で F で売り台を開く。ミシンの前で F か T でミシンの画面を開き、持ち物から型紙と布を選んで縫う。
 ## 米袋は装備（craft.gd の sacks）: N で、いま選んでいる米袋を足もとにぽんと出して、すぐ乗る（坂ならそのまま滑り出す）。
 ## もう一度 N で降りて、くるっと丸めて帯に戻す。離れた所に出したままなら、N で足もとへ呼び戻す。
+## 出すときは、帯の丸めた袋を引き抜いて前へ広げ、しゃがんで腰を下ろし、前の紐を握る（人形のコマ。doll.gd の sack_start）。
+## 乗るのは押した瞬間なので、坂ならその途中から滑り出し、Space で蹴ればすぐ座った姿になって漕げる。
 ## どの米袋を装備するかは、I で開く装備の画面（craft_ui.gd）で選ぶ。
 ## 左クリックの順: 雪玉を持っていれば投げる → 高い両手のひらなら拍手。
 
@@ -128,6 +131,12 @@ func _ready() -> void:
 	doll.kind = "kasa"
 	doll.layers = 1 << 1
 	add_child(doll)
+
+	# 米袋に座ったときに一人称で見える両脚（層 3）。米袋に合わせて置く
+	_fp_legs = FpHands.make_legs(doll.kind, 1 << 2)
+	_fp_legs.top_level = true
+	_fp_legs.visible = false
+	add_child(_fp_legs)
 
 	# 一人称の手: 自分の人形と同じ柄の袖口から、紙の手がのぞく（層 3。一人称の画面にだけ映す）
 	for s in [-1, 1]:
@@ -391,9 +400,16 @@ func get_off() -> void:
 	if mode != Mode.RIDE:
 		return
 	sled.dismount(self)
+	var was := seat
 	seat = Vector3.INF
 	mode = Mode.WALK
 	_col.disabled = false
+	if sled.kind == "sack":
+		# 米袋: その場で立ち上がり、袋のすぐ後ろに立つ（足もとで丸めて帯に戻せるように）。袋の形はふだんへ
+		SackLook.set_stage(sled, was, 0)
+		global_position = sled.global_position + sled.global_basis.z * 0.6 + Vector3.UP * 0.2
+		velocity = Vector3.ZERO
+		return
 	global_position = sled.global_position + sled.global_basis.x * 1.4 + Vector3.UP * 0.5
 	velocity = Vector3.ZERO
 
@@ -470,6 +486,7 @@ func _physics_process(dt: float) -> void:
 			_walk(dt, false)
 	_update_point()
 	_update_emote(dt)
+	_sack_events(dt)
 	_pose_hands(dt)
 	_pose_doll()
 
@@ -490,6 +507,12 @@ func _pose_doll() -> void:
 	doll.holding_ball = holding_ball
 	doll.crouch = crouching
 	doll.point = point_at
+	if craft:
+		# 帯の丸めた米袋（出していなければ下げている）
+		var spec: Dictionary = craft.sack(id)
+		doll.belt_sack = not spec.is_empty() and craft.sack_sled(id) == null
+		if not spec.is_empty():
+			doll.belt_color = preload("res://fabrics.gd").color(spec.fabric) if spec.fabric != "" else preload("res://sled.gd").KINDS["sack"].color
 
 
 ## 右クリックで指さしを入れたり切ったりする。入れると、いま向いている先（画面のまんなかが当たる所）を指し、
@@ -656,10 +679,13 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 		dip = (0.1 if f % 14 < 3 else 0.0) * _drag_k * calm
 	if not third:
 		var eye := Vector3(0, eye_y - 0.3 * _drag_k - dip + jolt, -0.35 * _drag_k)
-		if mode == Mode.RIDE:
+		if mode == Mode.RIDE and doll.sack_seated():
 			# 乗っているときは、座った人形の目の所（席や人形が変わっても合う）。ソリが傾けば一緒に傾く。
-			# 乗り降りは同じ lerp で、すっと立ち上がる・腰を下ろす
-			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * doll.eye_point(true))
+			# 乗り降りは同じ lerp で、すっと立ち上がる・腰を下ろす。米袋は、袋を広げ終えて腰を下ろしてから下がる
+			var e := doll.eye_point(true)
+			if sled.kind == "sack":
+				e += SACK_EYE   # 米袋では少し後ろへもたれる（膝と紐を握った手と袋の前の縁が、画面の下に見える）
+			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * e)
 		eye.y += _cam_em.z
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
 		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0)
@@ -728,7 +754,15 @@ func _pose_hands(dt: float) -> void:
 				else:
 					target = Vector3(-0.3, -0.3 + sin(_t * 6.0) * 0.01 * velocity.length(), -0.45)
 			Mode.RIDE:
-				target = Vector3(0.28 * s, -0.32, -0.35)
+				if sled.kind == "sack":
+					var k := doll.sack_k("out")
+					if k >= 0 and k < 3:
+						# 取り出して広げる: 右手を帯へ（画面の下の外）→ 胸の前で両手に → 前へ振り下ろす
+						target = [Vector3(0.3 * s, -0.7, 0.05), Vector3(0.1 * s, -0.3, -0.3), Vector3(0.15 * s, -0.42, -0.52)][k]
+					else:
+						target = cam.to_local(sled.to_global(seat + Vector3(0.2 * s, 0.1, -0.5)))   # 袋の前の左右の耳で紐を握る（まん中の膝が見えるように）
+				else:
+					target = Vector3(0.28 * s, -0.32, -0.35)
 			_:
 				target = Vector3(0.27 * s, -0.25 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.48)
 		var em_hand := _emote_hand(s)
@@ -742,7 +776,7 @@ func _pose_hands(dt: float) -> void:
 		# 手も姿勢と同じ決まり: コマが変わるときだけ置き直す（一人称では揺らさない。目の前でふるえると見ていてつらい）。
 		# ソリをつかんでいる間は、ソリに対しての位置で保つ（ソリが動いても手が縁から離れない）
 		if fi != _hand_frame:
-			var on_sled := mode == Mode.GRIP and not pointing and em_hand == Vector3.INF
+			var on_sled: bool = (mode == Mode.GRIP or (mode == Mode.RIDE and sled.kind == "sack" and doll.sack_seated())) and not pointing and em_hand == Vector3.INF
 			h.set_meta("hold", sled.to_local(cam.to_global(target)) if on_sled else target)
 			h.set_meta("on_sled", on_sled)
 		var hold: Vector3 = h.get_meta("hold", target)
@@ -751,6 +785,7 @@ func _pose_hands(dt: float) -> void:
 		var arm := h.position - Vector3(0.2 * s, -0.42, 0.12)
 		h.basis = Basis.looking_at(arm, Vector3.UP)
 	_hand_frame = fi
+	_pose_fp_legs(fi)
 	# 一人称の雪玉: 作っている途中は大きくなり、できたら右手に
 	var em := doll.emote_now()
 	var grow := 0.0
@@ -1280,6 +1315,89 @@ static func held_shape(it: Dictionary) -> Node3D:
 	return root
 
 
+# ---------------------------------------------------------------- 米袋を出す・座る・しまう動き（doll.gd の sack_start）
+
+const SACK_LOOK := -0.32     # 米袋に腰を下ろすとき、これより上を見ていれば膝のあたりまで視線を下げる (rad。袋の傾きから)
+const SACK_EYE := Vector3(0, -0.03, 0.2)   # 米袋に座ったときの目の、人形の目からのずれ（後ろへもたれる）
+var _sack_ev := 0            # 米袋を出す動きで、済んだ出来事（1 広げた / 2 腰を下ろした / 3 乗っている形）
+var _sack_hidden: Node3D     # 広げるコマまで隠している米袋の見た目
+var _sack_landed := false
+var _fp_legs: Node3D         # 一人称の両脚（米袋に座っているときだけ）
+var _legs_frame := -1
+
+
+## 米袋を出す動きの出来事を、人形のコマに合わせて起こす: 広げる（ばさっ）→ 腰を下ろす（ぽふっ。袋がへこみ、雪の粉）
+func _sack_events(dt: float) -> void:
+	var k := doll.sack_k("out")
+	if k < 0 or mode != Mode.RIDE or sled == null or sled.kind != "sack":
+		if k >= 0:
+			doll.sack_anim = ""
+		if _sack_hidden and is_instance_valid(_sack_hidden):
+			_sack_hidden.visible = true
+		_sack_hidden = null
+		return
+	if k >= 2 and _sack_ev < 1:
+		_sack_ev = 1
+		if _sack_hidden and is_instance_valid(_sack_hidden):
+			_sack_hidden.visible = true
+		_sack_hidden = null
+		_sack_sound("fling")
+	if k == 3 and _sack_ev < 2 and not _sack_landed:
+		_sack_landed = true   # 雪の上に落ちて広がる
+		preload("res://snowball.gd").splat_at(get_parent(), sled.to_global(Vector3(0, 0.03, -0.2)), sled.global_basis.y, true)
+	SackLook.fling(sled, k)
+	if k >= 4 and _sack_ev < 2:
+		_sack_ev = 2
+		SackLook.set_stage(sled, seat, 1)
+		_sack_sound("sit")
+		for sx in [-1, 1]:
+			preload("res://snowball.gd").splat_at(get_parent(), sled.to_global(Vector3(0.32 * sx, 0.03, seat.z)), sled.global_basis.y, true)
+	if k >= 5 and _sack_ev < 3:
+		_sack_ev = 3
+		SackLook.set_stage(sled, seat, 2)
+	if k >= 3 and k <= 6 and not third:
+		# 腰を下ろしながら、膝のあたりへ目を落とす（下り坂では袋が前へ傾いている分も）
+		var slope := asin(clampf((-sled.global_basis.z).y, -1.0, 1.0))
+		_pitch = move_toward(_pitch, minf(_pitch, SACK_LOOK + minf(slope, 0.0)), dt * 3.0)
+
+
+func _sack_sound(what: String) -> void:
+	var au := get_parent().get_node_or_null("Audio")
+	if au and au.has_method("sack"):
+		au.sack(self, what)
+
+
+## 一人称の両脚: 米袋に座っているあいだ、袋の上に投げ出した腿とすねと足先。蹴る足は横へ出て、後ろへ蹴り、戻る（人形と同じコマ）
+func _pose_fp_legs(fi: int) -> void:
+	var show: bool = mode == Mode.RIDE and sled.kind == "sack" and doll.sack_seated() and not third
+	_fp_legs.visible = show
+	if not show:
+		return
+	_fp_legs.global_transform = Transform3D(sled.global_basis.orthonormalized(), sled.to_global(seat))
+	if fi == _legs_frame:
+		return
+	_legs_frame = fi
+	var kk: int = fi - doll._kick_frame
+	for side in ["L", "R"]:
+		var sx := 1.0 if side == "R" else -1.0
+		var hip := Vector3(0.08 * sx, 0.02, 0.0)
+		var knee := Vector3(0.1 * sx, 0.15, -0.25)
+		var foot := Vector3(0.1 * sx, -0.08, -0.47)
+		if kk >= 0 and kk < 3 and side == doll._kick_leg:
+			knee = [Vector3(0.17 * sx, 0.03, -0.22), Vector3(0.2 * sx, -0.02, -0.12), Vector3(0.13 * sx, 0.05, -0.25)][kk]
+			foot = [Vector3(0.28 * sx, -0.12, -0.38), Vector3(0.32 * sx, -0.14, 0.05), Vector3(0.16 * sx, -0.1, -0.42)][kk]
+		FpHands.pose_leg(_fp_legs, side, hip, knee, foot)
+
+## 乗るのは今（summon_sack）。見た目は、帯から取り出して広げ、腰を下ろすまでをコマで追う（袋は広げるコマまで隠す）
+func _start_sack_out() -> void:
+	doll.sack_start("out")
+	_sack_ev = 0
+	_sack_landed = false
+	_sack_hidden = sled.get("_body")
+	if _sack_hidden:
+		_sack_hidden.visible = false
+
+
 # ---------------------------------------------------------------- 装備の米袋（craft.gd の sack_out・sack_in）
 
 const SACK_NEAR := 3.5       # 出している米袋がこれより近ければ、N でしまう（遠ければ足もとへ呼び戻す）
@@ -1293,12 +1411,15 @@ func toggle_sack() -> void:
 		if on_it or (near and gs.riders.is_empty()):
 			if on_it:
 				get_off()
+			doll.sack_start("in")   # 立ってかがみ、くるくる丸めて帯へ
+			_sack_sound("roll")
 			craft.send({"kind": "sack_in", "who": id})
 			return
 		if not gs.riders.is_empty():
 			return   # ほかの人が乗っている
 		craft.send({"kind": "sack_in", "who": id})   # 遠くに置いたまま: しまって、足もとに出し直す
-	summon_sack()
+	if summon_sack():
+		_start_sack_out()
 
 
 ## 足もとに米袋を出して、すぐ乗る。つかんでいる・紐を持っている・ほかのソリに乗っているなら、離れてから

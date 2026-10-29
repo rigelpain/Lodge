@@ -452,6 +452,22 @@ func kick(who: Node3D) -> void:
 	_play_step(w, _pick("step_snow_push", 4), -6.0, rng.randf_range(1.15, 1.3), who == player)
 
 
+## 米袋を出す・座る・しまう（player.gd が呼ぶ）。what: "fling" ばさっと広げる / "sit" ぽふっと座る / "roll" くるくる丸める
+func sack(who: Node3D, what: String) -> void:
+	var near := who == player
+	var at := who.global_position + Vector3.UP * 0.3
+	var ev := {"frame": Doll.frame_index()}
+	match what:
+		"fling":
+			_emote_sound(ev, 0, "swish", 2, -8.0, rng.randf_range(0.78, 0.86), at, near)
+		"sit":
+			_emote_sound(ev, 0, "felt_pat", 3, -2.0, rng.randf_range(0.62, 0.7), at, near)
+			_emote_sound(ev, 0, "snow_splat", 3, -13.0, rng.randf_range(1.1, 1.2), at, near)
+		"roll":
+			_emote_sound(ev, 2, "swish", 2, -15.0, rng.randf_range(1.25, 1.4), at, near)
+			_emote_sound(ev, 8, "felt_pat", 3, -8.0, rng.randf_range(1.1, 1.2), at, near)
+
+
 func _play_step(w: Dictionary, s: AudioStreamWAV, db: float, pitch: float, is_player: bool) -> void:
 	if is_player:
 		_shot2(w.step, s, db, pitch)

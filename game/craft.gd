@@ -202,7 +202,7 @@ func _apply(ev: Dictionary) -> bool:
 			if gs.rope_holder and gs.rope_holder.has_method("let_go"):
 				gs.rope_holder.let_go()
 			ev["item"] = {"kind": "folded", "sled": "sack", "fabric": gs.fabric, "tag": gs.tag}
-			_origami(ev, false, gs.global_transform, true, 2.5)   # くるっと丸めて、持ち主の帯へ飛ぶ（速回し）
+			_origami(ev, false, gs.global_transform, true, 3.0)   # くるっと丸めて、持ち主の帯へ飛ぶ（速回し。10 コマで、人形のしまう動き doll.gd の SACK_IN と同じ）
 			sack_out.erase(who)
 			if world:   # この米袋を相手にしていた人（と人形）は、もとのソリへ
 				for c in world.get_children():
