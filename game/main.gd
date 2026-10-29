@@ -22,10 +22,20 @@ const HILL_R := 25.0      # 丘の広がり (m)
 const SIZE := 256         # 地面の一辺 (m)。Jolt の地形は 2 のべき乗 + 1 点で作る
 const START := Vector3(0, 0, 38)
 
-## ロッジ（lodge/ の Blender の台本で作った glb）。スタートの先、少し西の麓に置き、
-## 正面（ガラスの食堂とテラス、glb の +Z）を頂上へ向ける。足もとの地面はならす
-const LODGE_POS := Vector2(-27, 76)          # (x, z)
-const LODGE_YAW := 2.8004                    # atan2(27, -76): 正面を頂上の向きへ
+## ふもとのくぼみ（2026-10-30 代表「丘のふもとをへこませて、ロッジに突っ込まないような減速の仕組みを」）。
+## 丘はすり鉢の中に立つ: 丘の裾が浅い輪の溝に下り、その外はゆるく上り返して、まわりの高台（ロッジもこの上）になる。
+## 滑り降りたソリは溝に落ち、上り返しで止まって底へ戻る。丘はどの向きにも滑れるので、どこへ下りても受け止められるよう輪にする
+const BOWL_R := 60.0      # くぼみの底の半径 (m)
+const BOWL_W := 16.0      # 底から内側へ、くぼみが丘の裾に溶けるまでの幅 (m)
+const BOWL_D := 1.5       # くぼみの深さ（丘の裾から下へ, m）
+const RIM_W := 26.0       # 底から外の高台へ上り返す幅 (m)
+const RIM_H := 3.0        # 外の高台の高さ（もとの地面から, m）
+
+## ロッジ（lodge/ の Blender の台本で作った glb）。くぼみの外、スタートの先の少し西に置き、
+## 正面（ガラスの食堂とテラス、glb の +Z）を頂上へ向ける。足もとの地面はならす。
+## 2026-10-30 代表「ロッジを丘からちょっと離して」: 頂上から 81 m → 104 m（向きは同じ）
+const LODGE_POS := Vector2(-35, 98)          # (x, z)
+const LODGE_YAW := 2.7986                    # atan2(35, -98): 正面を頂上の向きへ
 const LODGE_PAD := Rect2(-32, -16, 57, 37)   # ならす範囲（ロッジの座標の x, z）。下屋から外階段の踊り場まで
 const LODGE_BLEND := 10.0                    # ならした所から丘へ戻るまでの幅 (m)
 
@@ -74,6 +84,44 @@ static func hill(x: float, z: float) -> float:
 	return HILL_H * exp(-(x * x + z * z) / (2.0 * HILL_R * HILL_R))
 
 
+## すり鉢: 底（半径 BOWL_R）で BOWL_D だけ下がる溝（cos² でなめらかに）と、底から外へ RIM_H まで上る高台
+static func bowl(x: float, z: float) -> float:
+	var r := sqrt(x * x + z * z)
+	var dip := 0.0
+	var t := (r - BOWL_R) / BOWL_W
+	if absf(t) < 1.0:
+		var c := cos(t * PI * 0.5)
+		dip = -BOWL_D * c * c
+	return dip + RIM_H * smoothstep(BOWL_R, BOWL_R + RIM_W, r)
+
+
+## ロッジでならす前の地面: 丘とくぼみ
+static func ground(x: float, z: float) -> float:
+	return hill(x, z) + bowl(x, z)
+
+
+## ロッジの座標 (x, z) を世界の (x, z) へ
+static func lodge_to_world(l: Vector2) -> Vector2:
+	var c := cos(LODGE_YAW)
+	var s := sin(LODGE_YAW)
+	return LODGE_POS + Vector2(l.x * c + l.y * s, -l.x * s + l.y * c)
+
+
+## くぼみからロッジへの道: 風除室の前（ロッジの座標 (PATH_X, 17)）から頂上の向きへ、くぼみの底まで。
+## 踏み固めた雪の帯（見た目の色と、吹きだまりのうねりがないこと）。道の上で 1、外で 0。margin だけ幅を広げて測れる
+const PATH_X := -13.4      # 風除室の中心（audio.gd の VEST.x と同じ）
+const PATH_HALF := 1.6     # 道の半分の幅 (m)
+const PATH_TINT := Color(0.86, 0.88, 0.93)   # 踏み固めた雪の色（少し灰青に沈む）
+
+static func path_weight(x: float, z: float, margin := 0.0) -> float:
+	var a := lodge_to_world(Vector2(PATH_X, 17.0))
+	var dir := -a.normalized()
+	var d := Vector2(x, z) - a
+	var along := clampf(d.dot(dir), 0.0, a.length() - BOWL_R)
+	var off := (d - dir * along).length()
+	return 1.0 - smoothstep(PATH_HALF + margin, PATH_HALF + margin + 1.2, off)
+
+
 ## ロッジの足もとで 0、離れると 1
 static func lodge_weight(x: float, z: float) -> float:
 	var d := Vector2(x, z) - LODGE_POS
@@ -86,7 +134,7 @@ static func lodge_weight(x: float, z: float) -> float:
 
 
 static func height(x: float, z: float) -> float:
-	return lerpf(hill(LODGE_POS.x, LODGE_POS.y), hill(x, z), lodge_weight(x, z))
+	return lerpf(ground(LODGE_POS.x, LODGE_POS.y), ground(x, z), lodge_weight(x, z))
 
 
 static var _drift: FastNoiseLite
@@ -98,7 +146,7 @@ static func drift(x: float, z: float) -> float:
 		_drift.seed = 5
 		_drift.frequency = 0.06
 		_drift.fractal_octaves = 3
-	return _drift.get_noise_2d(x, z) * 0.35 * lodge_weight(x, z)
+	return _drift.get_noise_2d(x, z) * 0.35 * lodge_weight(x, z) * (1.0 - path_weight(x, z))
 
 
 ## 見た目の雪面が当たり判定の地面からずれている量。1 m 刻みの点のあいだは直線でつなぐ（滑りあとを雪面に載せる用）
@@ -235,12 +283,14 @@ func _ready() -> void:
 
 ## ロッジの中から運び出せない大きさのソリ（craft.gd の OUT_FRONT）を、縫ったときに出す所: 玄関前の広場の先の雪の上。
 ## 向きは頂上（ロッジの正面と同じ）。重なる物があれば、横へずらす
+const DELIVER_Z := 26.0   # ロッジの座標で正面へ (m)。高台の上、すり鉢の上り返しの手前（33 m だと坂の途中になる）
+
 func delivery_spot(kind: String) -> Transform3D:
 	var lodge: Node3D = get_node_or_null("Lodge")
 	var yaw := LODGE_YAW + PI
 	var k: Dictionary = Sled.KINDS.get(kind, Sled.KINDS["mid"])
 	for dx in [0.0, 3.0, -3.0, 6.0, -6.0]:
-		var p := lodge.to_global(Vector3(-13.4 + dx, 0, 33.0)) if lodge else START
+		var p := lodge.to_global(Vector3(-13.4 + dx, 0, DELIVER_Z)) if lodge else START
 		p.y = height(p.x, p.z)
 		var q := PhysicsShapeQueryParameters3D.new()
 		var box := BoxShape3D.new()
@@ -254,7 +304,7 @@ func delivery_spot(kind: String) -> Transform3D:
 				clear = false
 		if clear:
 			return Transform3D(Basis(Vector3.UP, yaw), p)
-	var p0 := lodge.to_global(Vector3(-13.4, 0, 33.0)) if lodge else START
+	var p0 := lodge.to_global(Vector3(-13.4, 0, DELIVER_Z)) if lodge else START
 	p0.y = height(p0.x, p0.z)
 	return Transform3D(Basis(Vector3.UP, yaw), p0)
 
@@ -580,12 +630,19 @@ func _make_world() -> void:
 	for k in 20:
 		var a := k * TAU / 20.0 + rng.randf_range(-0.06, 0.06)
 		var r := rng.randf_range(124, 140)
+		var sc := Vector3(rng.randf_range(40, 70), rng.randf_range(14, 26), rng.randf_range(30, 50))
+		var yaw := rng.randf() * TAU
+		var c := Vector2(cos(a), sin(a)) * r
+		# ロッジの後ろでは、建物にかからない所まで外へずらす（消すと、ロッジの裏で地面の端が見える）
+		var reach := maxf(sc.x, sc.z) * 0.5
+		while lodge_weight(c.x, c.y) < 1.0 or lodge_weight(c.x - c.normalized().x * reach, c.y - c.normalized().y * reach) < 1.0:
+			c *= 1.04
 		var m := MeshInstance3D.new()
 		m.mesh = SphereMesh.new()
 		m.material_override = far_mat
-		m.position = Vector3(cos(a) * r, -3.0, sin(a) * r)
-		m.scale = Vector3(rng.randf_range(40, 70), rng.randf_range(14, 26), rng.randf_range(30, 50))
-		m.rotation.y = rng.randf() * TAU
+		m.position = Vector3(c.x, RIM_H - 3.0, c.y)
+		m.scale = sc
+		m.rotation.y = yaw
 		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		m.name = "FarMound%d" % k
 		add_child(m)
@@ -598,7 +655,7 @@ func _make_lodge() -> void:
 	if lodge == null:
 		lodge = (load("res://lodge/lodge.tscn") as PackedScene).instantiate()
 		add_child(lodge)
-	lodge.position = Vector3(LODGE_POS.x, hill(LODGE_POS.x, LODGE_POS.y), LODGE_POS.y)
+	lodge.position = Vector3(LODGE_POS.x, ground(LODGE_POS.x, LODGE_POS.y), LODGE_POS.y)
 	lodge.rotation = Vector3(0, LODGE_YAW, 0)
 
 
@@ -715,6 +772,7 @@ func _make_ground() -> void:
 			var x := i * step - half
 			var z := j * step - half
 			var y := height(x, z) + drift(x, z)
+			st.set_color(Color.WHITE.lerp(PATH_TINT, path_weight(x, z)))
 			st.set_uv(Vector2(x, z) * 0.5)
 			st.add_vertex(Vector3(x, y, z))
 	for j in cols - 1:
@@ -730,7 +788,9 @@ func _make_ground() -> void:
 	st.generate_tangents()
 	var mesh := MeshInstance3D.new()
 	mesh.mesh = st.commit()
-	mesh.material_override = Look.snow()
+	var snow := Look.snow()
+	snow.vertex_color_use_as_albedo = true   # 道の踏み固めた色
+	mesh.material_override = snow
 	ground_mesh = mesh
 	add_child(mesh)
 
@@ -745,7 +805,7 @@ func _make_ground() -> void:
 		var p := Vector3(cos(a) * r, 0, sin(a) * r)
 		if p.z > 20 and abs(p.x) < 14:
 			continue
-		if lodge_weight(p.x, p.z) < 1.0:   # ロッジに重ねない
+		if lodge_weight(p.x, p.z) < 1.0 or path_weight(p.x, p.z, 2.0) > 0.0:   # ロッジと道に重ねない
 			continue
 		var h := rng.randf_range(4, 8)
 		var tree := Props.make(TREES[k % TREES.size()])
@@ -764,10 +824,11 @@ func _make_slope_props() -> void:
 		for x in [-9.0, 9.0]:
 			_put_prop("res://props/flag_%s.glb" % ("red" if i % 2 == 0 else "navy"), x, z, 0.4 if x < 0 else PI - 0.4)
 			i += 1
-	# 案内板: スタートにロッジへの矢印、ロッジの前に丘への矢印（文字なし）
+	# 案内板: スタートにロッジへの矢印、ロッジの前（道の出だしの脇）に丘への矢印（文字なし）
 	_put_prop("res://props/sign_lodge.glb", 5.0, 41.0, PI)
-	var to_lodge := Vector2(-13, 14)
-	_put_prop("res://props/sign_slope.glb", -14.0, 62.0, atan2(-to_lodge.x, -to_lodge.y))
+	var at := lodge_to_world(Vector2(PATH_X + 3.0, 24.0))
+	var to_lodge := LODGE_POS - at
+	_put_prop("res://props/sign_slope.glb", at.x, at.y, atan2(-to_lodge.x, -to_lodge.y))
 	# 毛糸の安全ネット: 登り道の右の外れに 4 区間と、終わりの杭
 	for k in 5:
 		var net := _put_prop("res://props/net_span.glb", 13.0, 30.0 - 2.5 * k, PI / 2)
@@ -787,7 +848,7 @@ func _make_slope_props() -> void:
 		var z := sin(a) * r
 		if z > 8 and abs(x) < 16:
 			continue
-		if lodge_weight(x, z) < 1.0:
+		if lodge_weight(x, z) < 1.0 or path_weight(x, z, 1.0) > 0.0:
 			continue
 		_put_prop(LUMPS[k % LUMPS.size()], x, z, rng.randf() * TAU)
 
