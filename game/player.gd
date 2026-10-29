@@ -24,6 +24,8 @@ const SackLook := preload("res://sack_look.gd")
 ## もう一度 N で降りて、くるっと丸めて帯に戻す。離れた所に出したままなら、N で足もとへ呼び戻す。
 ## 出すときは、帯の丸めた袋を引き抜いて前へ広げ、しゃがんで腰を下ろし、前の紐を握る（人形のコマ。doll.gd の sack_start）。
 ## 乗るのは押した瞬間なので、坂ならその途中から滑り出し、Space で蹴ればすぐ座った姿になって漕げる。
+## 走りながら（歩きながら）出すと、前へ飛び乗る勢いで滑り出す（SACK_CARRY）。平らな所でも少し滑ってから止まる。
+## 乗っているあいだの Space は足で蹴る。たたくたびに一回、押しっぱなしなら KICK_HOLD_GAP ごとに蹴る（たたくほうが速い）。
 ## どの米袋を装備するかは、I で開く装備の画面（craft_ui.gd）で選ぶ。
 ## 左クリックの順: 雪玉を持っていれば投げる → 高い両手のひらなら拍手。
 
@@ -309,6 +311,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_SPACE:
 				if mode == Mode.RIDE and sled.kick(self):
 					_kicked()   # 乗っているあいだの Space は足で漕ぐ（ジャンプしない）
+					_kick_hold = KICK_HOLD_GAP
 			KEY_TAB:
 				if ring and not menu_open:
 					ring.open(hand, _height(), point_at != Vector3.INF)
@@ -432,7 +435,20 @@ func get_off() -> void:
 # ---------------------------------------------------------------- 米袋で足で漕ぐ・追いついて止める
 
 const CATCH_REACH := 2.4     # 米袋に乗ったまま F でつかめる、ほかのソリのつかみ所までの距離 (m)
+const KICK_HOLD_GAP := 0.3   # Space を押しっぱなしにしたときの、蹴る間 (s。1 秒に 3 回ほど。たたけばもっと速く蹴れる)
 var _kick_side := 1
+var _kick_hold := 0.0
+
+
+## Space を押しっぱなし: 間をおいて蹴りつづける（蹴れない速さのあいだは、蹴れるようになったらすぐ）
+func _hold_kick(dt: float) -> void:
+	if not Input.is_physical_key_pressed(KEY_SPACE) or menu_open:
+		_kick_hold = KICK_HOLD_GAP
+		return
+	_kick_hold -= dt
+	if _kick_hold <= 0.0 and sled.kick(self):
+		_kicked()
+		_kick_hold = KICK_HOLD_GAP
 
 ## 蹴れた: 足を交互に出し（人形のコマ）、足もとに雪の粉、蹴る音
 func _kicked() -> void:
@@ -492,6 +508,7 @@ func _physics_process(dt: float) -> void:
 			global_position = sled.to_global(seat)
 			ride_lean = Vector3(_key(KEY_D) - _key(KEY_A), _key(KEY_W), _key(KEY_S))
 			sled.lean(ride_lean.x, ride_lean.y > 0.0, ride_lean.z > 0.0)
+			_hold_kick(dt)
 			prompt = "W 前傾　S 後傾で止まる　A/D 体重をかけて曲がる　E 降りる"
 		Mode.GRIP:
 			_grip(dt)
@@ -1437,6 +1454,8 @@ func _start_sack_out() -> void:
 # ---------------------------------------------------------------- 装備の米袋（craft.gd の sack_out・sack_in）
 
 const SACK_NEAR := 3.5       # 出している米袋がこれより近ければ、N でしまう（遠ければ足もとへ呼び戻す）
+const SACK_CARRY := 1.8      # 走りながら出すと、前へ飛び乗る勢いで、前へ進んでいた速さのこれだけ倍で滑り出す（横・後ろはそのまま）
+const SACK_CARRY_MAX := 6.5  # 受けつぐ速さの上限 (m/s)
 
 ## N: 米袋を出して乗る／降りてしまう／遠くの米袋を足もとへ呼び戻す
 func toggle_sack() -> void:
@@ -1458,8 +1477,16 @@ func toggle_sack() -> void:
 		_start_sack_out()
 
 
-## 足もとに米袋を出して、すぐ乗る。つかんでいる・紐を持っている・ほかのソリに乗っているなら、離れてから
+## 足もとに米袋を出して、すぐ乗る。つかんでいる・紐を持っている・ほかのソリに乗っているなら、離れてから。
+## 歩いて・走っていれば、その勢いを米袋の初めの速さにする（前へは飛び乗る分 SACK_CARRY 倍）
 func summon_sack() -> bool:
+	var carry := Vector3.ZERO
+	if mode == Mode.WALK:
+		carry = Vector3(velocity.x, 0, velocity.z)
+		var fwd := -global_basis.z
+		fwd.y = 0
+		carry += fwd.normalized() * maxf(0.0, carry.dot(fwd.normalized())) * (SACK_CARRY - 1.0)
+		carry = carry.limit_length(SACK_CARRY_MAX)
 	if mode == Mode.GRIP or mode == Mode.ROPE:
 		let_go()
 	elif mode == Mode.RIDE:
@@ -1469,7 +1496,8 @@ func summon_sack() -> bool:
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	var at: Vector3 = hit.position if hit else global_position
 	var up: Vector3 = hit.normal if hit and hit.normal.y > 0.6 else Vector3.UP
-	if not craft.send({"kind": "sack_out", "who": id, "at": at, "yaw": rotation.y, "up": up}):
+	carry -= up * carry.dot(up)   # 雪面に沿わせる
+	if not craft.send({"kind": "sack_out", "who": id, "at": at, "yaw": rotation.y, "up": up, "v": carry}):
 		return false
 	var gs: RigidBody3D = craft.sack_sled(id)
 	if gs == null:
