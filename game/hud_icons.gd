@@ -20,7 +20,7 @@ const LEG := Color(0.28, 0.27, 0.32)
 
 const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "lean_l", "lean_r", "brake",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
-	"cam_dist", "cam_height", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
+	"cam_dist", "cam_height", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
 
 static var user_scale := 1.0   # 設定の「HUD の大きさ」（settings.gd が入れる）
 static var _felt: ImageTexture
@@ -215,6 +215,9 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"jump": _jump(ci, a, tint)
 		"look": _look(ci, a)
 		"zoom": _zoom(ci, a)
+		"hill": _hill(ci, a)
+		"speed": _speed(ci, a)
+		"hourglass": _hourglass(ci, a)
 		"cam_dist": _cam_dist(ci, a, tint)
 		"cam_height": _cam_height(ci, a, tint)
 		"view": _view(ci, a, tint)
@@ -300,6 +303,56 @@ static func badge_w(keys: Array, size: float) -> float:
 
 static func _key_w(k: String, size: float) -> float:
 	return size * 0.42 if k.begins_with("mouse") else keycap_w(k, size * 0.5)
+
+
+## 刺繍の文字（数字）: 太らせた字を、藍の縁の糸と、少し明るい糸で重ねる（判子のように輪郭がしっかりした字）。
+## at は字の左の、縦のまんなか。返り値は字の幅（px）
+static func stitched_text(ci: CanvasItem, text: String, at: Vector2, size: float, col: Color, bold := true) -> float:
+	var font := _bold_font() if bold else ThemeDB.fallback_font
+	var fs := maxi(8, int(round(size)))
+	var asc := font.get_ascent(fs)
+	var desc := font.get_descent(fs)
+	var base := at + Vector2(0, (asc - desc) / 2.0)
+	var w := font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
+	ci.draw_string_outline(font, base + Vector2(0.8, 1.2), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(2, fs / 6), Color(SHADOW, 0.18))
+	ci.draw_string_outline(font, base, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(2, fs / 7), Color(PAPER, 0.95))
+	ci.draw_string(font, base, text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, col)
+	if bold and fs >= 14:   # 糸の撚り: 字の上に細い明るい筋を重ねる
+		ci.draw_string(font, base + Vector2(-0.5, -0.6), text, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(col.lightened(0.45), 0.25))
+	return w
+
+
+static var _bold: FontVariation
+
+static func _bold_font() -> Font:
+	if _bold == null:
+		_bold = FontVariation.new()
+		_bold.base_font = ThemeDB.fallback_font
+		_bold.variation_embolden = 0.7
+	return _bold
+
+
+## 吊るす紙の札: 上の両角を切った無地の紙。外側に影と藍の縁取り、内側に破線のステッチ（どの背景の上でも読める）。
+## rect は画面の px、cut は角を切る長さ、u は線の太さの倍率
+static func paper_tag(ci: CanvasItem, rect: Rect2, cut: float, u := 1.0) -> void:
+	screen()
+	var x := rect.position.x
+	var y := rect.position.y
+	var w := rect.size.x
+	var h := rect.size.y
+	var pts := PackedVector2Array([Vector2(x + cut, y), Vector2(x + w - cut, y), Vector2(x + w, y + cut), Vector2(x + w, y + h),
+		Vector2(x, y + h), Vector2(x, y + cut)])
+	var sh := PackedVector2Array()
+	for p in pts:
+		sh.append(p + Vector2(2.0, 3.0) * u)
+	ci.draw_colored_polygon(sh, Color(SHADOW, 0.30))
+	ci.draw_colored_polygon(pts, PAPER)
+	var edge := pts.duplicate()
+	edge.append(pts[0])
+	ci.draw_polyline(edge, Color(THREAD, 0.85), 1.6 * u, true)
+	var inset := Geometry2D.offset_polygon(pts, -5.0 * u)
+	if inset.size() > 0:
+		dashes(ci, inset[0], Color(THREAD, 0.5), 1.1 * u, 4.0 * u, 3.0 * u, 1.0, true)
 
 
 ## 紙のタグ: 角を切った紙に、穴と糸の輪。rect は画面の px
@@ -610,6 +663,43 @@ static func _look(ci: CanvasItem, a: float) -> void:
 	ci.draw_circle(_o + Vector2(6, -2) * _s, 2.0 * _s, Color(1, 1, 1, 0.85 * a))
 	arrow(ci, Vector2(-8, 22), Vector2(-26, 22), THREAD, a, 1.8)
 	arrow(ci, Vector2(8, 22), Vector2(26, 22), THREAD, a, 1.8)
+
+
+## 小さな丘（頂上に旗）。確かめ用の札の「高さ」
+static func _hill(ci: CanvasItem, a: float) -> void:
+	var p := PackedVector2Array()
+	for i in 17:
+		var x := lerpf(-26.0, 26.0, i / 16.0)
+		p.append(Vector2(x, 16.0 - 26.0 * exp(-x * x / 180.0)))
+	p.append(Vector2(26, 18))
+	p.append(Vector2(-26, 18))
+	patch(ci, p, Color(0.88, 0.92, 0.99), a, true, THREAD)
+	thread(ci, PackedVector2Array([Vector2(0, -10), Vector2(0, -24)]), WOOD, 1.8, a)
+	patch(ci, PackedVector2Array([Vector2(0, -24), Vector2(11, -20.5), Vector2(0, -17)]), RED, a, false)
+
+
+## 風の筋（速さ）。確かめ用の札の「速さ」
+static func _speed(ci: CanvasItem, a: float) -> void:
+	sled_side(ci, Vector2(8, 10), 0.8, a)
+	for i in 3:
+		var y := -14.0 + i * 8.0
+		var p := PackedVector2Array()
+		for k in 9:
+			var x := lerpf(-28.0, 2.0 - i * 4.0, k / 8.0)
+			p.append(Vector2(x, y + sin(k * 0.9 + i) * 1.6))
+		thread(ci, p, THREAD, 1.6, (1.0 - i * 0.2) * a)
+
+
+## 砂時計（木の枠に、白い砂）。確かめ用の札の「fps」
+static func _hourglass(ci: CanvasItem, a: float) -> void:
+	patch(ci, PackedVector2Array([Vector2(-11, -18), Vector2(11, -18), Vector2(2, 0), Vector2(11, 18), Vector2(-11, 18), Vector2(-2, 0)]),
+		Color(0.80, 0.90, 0.99), a, false)
+	patch(ci, PackedVector2Array([Vector2(-6, -9), Vector2(6, -9), Vector2(1.2, -1), Vector2(-1.2, -1)]), PAPER, a, false)
+	patch(ci, PackedVector2Array([Vector2(-1.2, 5), Vector2(1.2, 5), Vector2(9, 16), Vector2(-9, 16)]), PAPER, a, false)
+	for y: float in [-21.0, 18.0]:
+		patch(ci, rr(-15, y, 30, 4, 1.5), WOOD, a, false)
+	for x: float in [-13.0, 13.0]:
+		thread(ci, PackedVector2Array([Vector2(x, -18), Vector2(x, 18)]), WOOD, 2.0, a)
 
 
 ## 小さなフェルトのカメラ（右を向く）

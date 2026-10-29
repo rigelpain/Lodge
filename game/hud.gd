@@ -24,7 +24,7 @@ var hints_on := true
 var uses := {}                # 案内 → した回数（そのプレイの間だけ）
 
 var _view: Control
-var _debug: Label
+var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
 var _flow := 0.0
 var _n_push := 0
@@ -58,13 +58,6 @@ func _ready() -> void:
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_view.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	add_child(_view)
-	_debug = Label.new()
-	_debug.position = Vector2(16, 12)
-	_debug.add_theme_font_size_override("font_size", 16)
-	_debug.add_theme_color_override("font_color", Color(0.12, 0.12, 0.12))
-	_debug.add_theme_color_override("font_outline_color", Color(1, 1, 1, 0.7))
-	_debug.add_theme_constant_override("outline_size", 3)
-	add_child(_debug)
 
 
 ## 画面の高さと、設定の「HUD の大きさ」に合わせた大きさ（1080・100% で 1）
@@ -130,9 +123,8 @@ func _process(dt: float) -> void:
 		var h: Dictionary = _hints[id]
 		h.a = move_toward(h.a, 1.0 if h.on else 0.0, dt * (4.0 if h.on else 3.0))
 	_layout_bottom()
-	_debug.visible = debug_on
 	if debug_on:
-		_debug.text = _debug_text(sled, p)
+		_dbg = _debug_values(sled, p)
 	_view.queue_redraw()
 
 
@@ -346,14 +338,21 @@ func _badge_w(h: Dictionary, sz: float) -> float:
 	return Icons.badge_w(h.keys, sz)
 
 
-func _debug_text(sled: RigidBody3D, p: Node) -> String:
-	var s := sled.global_position
-	var t := "押している人: %d　ソリの高さ: %.1f m（頂上 %.0f m）　速さ: %.1f m/s　%d fps" % [sled.pushers, s.y, main.HILL_H,
-		sled.linear_velocity.length(), Engine.get_frames_per_second()]
-	if p:
-		t += "\n" + ["歩く", "つかむ", "乗る", "紐"][p.mode] + ("　" + p.prompt if p.prompt != "" else "")
-		t += "\n覚えた案内: " + str(uses)
-	return t
+## 確かめ用の札に出す値: 押している人数・ソリの高さ（頂上まで）・速さ・fps・いまの状態・覚えた案内の数
+func _debug_values(sled: RigidBody3D, p: Node) -> Dictionary:
+	var known_n := 0
+	for id in uses:
+		if known(id):
+			known_n += 1
+	return {
+		"push": sled.pushers,
+		"h": sled.global_position.y,
+		"top": main.HILL_H,
+		"speed": sled.linear_velocity.length(),
+		"fps": int(Engine.get_frames_per_second()),
+		"mode": p.mode if p else -1,
+		"known": known_n,
+	}
 
 
 # ---- 描く ----------------------------------------------------------------------------
@@ -381,6 +380,8 @@ class View extends Control:
 			var e := ease(h.a, 0.5)
 			Icons.badge(self, h.keys, h.icon, at + Vector2(0, (1.0 - e) * 10.0 * u), sz, e)
 		_draw_pip_back(u)
+		if hud.debug_on and not hud._dbg.is_empty():
+			_draw_debug(u)
 		if hud.main.settings and hud.main.settings.is_open:
 			_draw_card(u)
 
@@ -750,6 +751,56 @@ class View extends Control:
 			draw_circle(tip, 3.8 * u, Color(pin[2], al))
 			if dist > 0.0:
 				_tape(tip, (tip - bc).normalized(), dist, u, al)
+
+	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。
+	## 段ごとに絵と数字: 人の形（押している人数）、丘（ソリの高さ／頂上）、風（速さ）、砂時計（fps）、いまの状態の絵と、
+	## 覚えた案内の数だけの玉止め。地は無地の生成りで、外側に影と藍の縁取り（雪・空・ロッジの中でも読める）
+	func _draw_debug(u: float) -> void:
+		var d: Dictionary = hud._dbg
+		var row := 34.0 * u
+		var w := 176.0 * u
+		var top := 30.0 * u
+		var h := top + row * 5.0 + 12.0 * u
+		var x0 := 18.0 * u
+		var y0 := 26.0 * u
+		var hole := Vector2(x0 + w / 2.0, y0 + 13.0 * u)
+		# 吊るす糸（画面の上の縁から、はとめへ）
+		Icons.screen()
+		Icons.thread(self, PackedVector2Array([Vector2(hole.x - 10.0 * u, -2.0), hole + Vector2(0, -4.0 * u), Vector2(hole.x + 10.0 * u, -2.0)]),
+			Icons.RED, 1.8 * u, 1.0)
+		Icons.paper_tag(self, Rect2(x0, y0, w, h), 10.0 * u, u)
+		draw_circle(hole, 5.0 * u, Icons.PAPER_EDGE)
+		draw_circle(hole, 3.2 * u, Color(0.35, 0.30, 0.28, 0.9))
+		var lx := x0 + 30.0 * u
+		var tx := x0 + 58.0 * u
+		var y := y0 + top + row / 2.0
+		var main: Node3D = hud.main
+		var lines := [
+			["person", str(d.push), "", Icons.RED],
+			["hill", "%.1f" % d.h, "/%d m" % int(d.top), Icons.THREAD],
+			["speed", "%.1f" % d.speed, "m/s", Icons.THREAD],
+			["hourglass", str(d.fps), "fps", Icons.RED if d.fps < 30 else Icons.THREAD],
+		]
+		for i in lines.size():
+			var ln: Array = lines[i]
+			Icons.icon(self, ln[0], Vector2(lx, y - (5.0 * u if ln[0] == "person" else 0.0)), (48.0 if ln[0] == "person" else 40.0) * u, 1.0)
+			var nw := Icons.stitched_text(self, ln[1], Vector2(tx, y), 20.0 * u, ln[3])
+			if ln[2] != "":
+				Icons.stitched_text(self, ln[2], Vector2(tx + nw + 4.0 * u, y + 2.0 * u), 12.0 * u, Icons.THREAD.lightened(0.25), false)
+			Icons.screen()
+			Icons.dashes(self, PackedVector2Array([Vector2(x0 + 12.0 * u, y + row / 2.0), Vector2(x0 + w - 12.0 * u, y + row / 2.0)]),
+				Icons.PAPER_EDGE, 1.0 * u, 3.0 * u, 3.0 * u, 0.9)
+			y += row
+		# いまの状態（歩く・つかむ・乗る・紐）の絵と、覚えた案内の数だけの玉止め
+		var mode: int = d.mode
+		if mode >= 0:
+			var st: String = ["walk", "grab", "ride", "rope"][mini(mode, 3)]
+			Icons.icon(self, st, Vector2(lx, y + (6.0 * u if st == "walk" else 0.0)), (60.0 if st == "walk" else 46.0) * u, 1.0)
+		for k in mini(int(d.known), 12):
+			var c := Vector2(tx + 4.0 * u + (k % 6) * 15.0 * u, y - 5.0 * u + (k / 6) * 12.0 * u)
+			draw_circle(c + Vector2(0.6, 1.0) * u, 4.2 * u, Color(Icons.SHADOW, 0.25))
+			draw_circle(c, 4.2 * u, Icons.RED)
+			draw_arc(c, 2.4 * u, 0.4, 4.0, 8, Icons.RED.lightened(0.35), 1.0 * u, true)   # 糸の巻き
 
 	## 右上の 360° 映像が後ろ向きのしるし（「後ろ」の文字の代わり）
 	func _draw_pip_back(u: float) -> void:
