@@ -126,6 +126,12 @@ static func _pattern(ci: CanvasItem, c: Vector2, sc: float, kind: String, a: flo
 		Icons.dashes(ci, Icons.xf(curl, rot, c, sc * k), Icons.THREAD, 1.2, 3.0, 2.2, a)
 	# 留めた待ち針の赤い頭
 	ci.draw_circle(Icons._o + (Transform2D(rot, c) * (Vector2(-14, -19) * sc)) * Icons._s, 2.6 * Icons._s * sc, Color(Icons.RED, a))
+	# 畳める（一人用）型紙の印: 右下の角に、折り目の入った小さな折り紙の包み
+	if preload("res://craft.gd").foldable(kind):
+		var fc: Vector2 = Transform2D(rot, c) * (Vector2(11, 16) * sc)
+		Icons.patch(ci, Icons.xf(Icons.rr(-6, -6, 12, 12, 1.5), PI / 4 + rot, fc, sc), Icons.RED, a, false)
+		Icons.patch(ci, Icons.xf(PackedVector2Array([Vector2(-6, -6), Vector2(6, -6), Vector2(0, 0)]), PI / 4 + rot, fc, sc), Icons.RED.darkened(0.2), a, false)
+		Icons.dashes(ci, Icons.xf(PackedVector2Array([Vector2(-6, 0), Vector2(6, 0)]), PI / 4 + rot, fc, sc), Icons.CAP, 0.9, 1.6, 1.2, a)
 
 
 ## 布: たたんだ布を 2 枚重ねた束。上の布の角が折り返る

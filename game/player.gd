@@ -1021,6 +1021,10 @@ func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != id:
 		return
 	match ev.kind:
+		"sewn":   # 自分の縫ったソリが、最後に触ったソリになる（左下の札がその場所を出す）
+			var made: RigidBody3D = craft.sleds.get(int(ev.id))
+			if made:
+				_touched(made)
 		"fold":
 			last_sled = null
 			last_item = ev.item
@@ -1074,7 +1078,8 @@ func foldable_near() -> RigidBody3D:
 	var best_d := FOLD_REACH
 	for s in get_tree().get_nodes_in_group("sleds"):
 		var rb := s as RigidBody3D
-		if rb == null or not rb.get("crafted") or not rb.visible or rb.is_queued_for_deletion() or craft.id_of(rb) < 0:
+		if rb == null or not rb.get("crafted") or not rb.visible or rb.is_queued_for_deletion() or craft.id_of(rb) < 0 \
+				or not craft.foldable(rb.kind):
 			continue
 		var lp := rb.to_local(global_position)
 		var edge := Vector2(maxf(absf(lp.x) - rb.HALF.x, 0.0), maxf(absf(lp.z) - rb.HALF.y, 0.0)).length()
@@ -1084,12 +1089,47 @@ func foldable_near() -> RigidBody3D:
 	return best
 
 
-## G: そばの縫ったソリを畳んで持ち物に入れる
+## G: そばの縫ったソリを畳んで持ち物に入れる（畳めるのは一人用だけ）。畳めないソリのそばなら、折ろうとして角がぴくっと動くだけ
 func fold_near() -> bool:
 	var s := foldable_near()
 	if s == null:
+		var other := _sled_in_reach()
+		if other:
+			_twitch(other)
 		return false
 	return craft.send({"kind": "fold", "who": id, "id": craft.id_of(s)})
+
+
+## 手の届くソリ（畳めるかどうかは問わない）
+func _sled_in_reach() -> RigidBody3D:
+	var best: RigidBody3D = null
+	var best_d := FOLD_REACH
+	for s in get_tree().get_nodes_in_group("sleds"):
+		var rb := s as RigidBody3D
+		if rb == null or not rb.visible:
+			continue
+		var lp := rb.to_local(global_position)
+		var edge := Vector2(maxf(absf(lp.x) - rb.HALF.x, 0.0), maxf(absf(lp.z) - rb.HALF.y, 0.0)).length()
+		if edge < best_d:
+			best = rb
+			best_d = edge
+	return best
+
+
+## 畳めないソリ: 前の角が少し持ち上がって、ぱたんと戻る（12 コマで 6 コマ。見た目だけ）
+func _twitch(s: RigidBody3D) -> void:
+	var body: Node3D = s.get("_body")
+	if body == null or body.has_meta("twitching"):
+		return
+	body.set_meta("twitching", true)
+	var rest := body.transform
+	for a in [0.05, 0.09, 0.06, -0.015, 0.01, 0.0]:
+		body.transform = Transform3D(rest.basis * Basis(Vector3.RIGHT, a), rest.origin + Vector3.UP * maxf(a, 0.0) * s.HALF.y)
+		await get_tree().create_timer(1.0 / 12.0).timeout
+		if not is_instance_valid(body):
+			return
+	body.transform = rest
+	body.remove_meta("twitching")
 
 
 ## 畳んだソリを広げて置く所: 前の床の、ソリの長さの半分 + 0.7 m 先。壁や物とぶつかるなら INF

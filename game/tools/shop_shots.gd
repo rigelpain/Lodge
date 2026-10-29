@@ -33,6 +33,9 @@ func _wait(s: float) -> void:
 
 
 func _shot(name: String) -> void:
+	if main.settings and main.settings.is_open:   # 窓から目が離れると設定が開くことがある（撮るときは閉じる）
+		main.settings.set_open(false)
+		main.player.menu_open = false
 	await process_frame
 	await process_frame
 	n += 1
@@ -61,7 +64,7 @@ func _run() -> void:
 	var craft: Node = main.craft
 	var ui: CanvasLayer = main.craft_ui
 	var who: int = p.id
-	var kind: String = args.get("sled", "mid")
+	var kind: String = args.get("sled", "sack")   # 畳めるのは一人用（米袋）だけ
 	var fabric: String = args.get("fabric", "navy")
 	p.set("_pitch", 0.12)
 	await _wait(0.6)
@@ -153,6 +156,17 @@ func _run() -> void:
 	if made == null:
 		quit(1)
 		return
+	if kind in preload("res://craft.gd").OUT_FRONT:
+		# 運び出せない大きさ: ロッジの前に、空から包みが落ちて開いて出てくる
+		var lp: Vector3 = main.get_node("Lodge").to_local(made.global_position)
+		_say("ロッジの前に出た: %s（ロッジの座標 x=%.1f y=%.1f）" % [lp.z > 25.0, lp.x, -lp.z])
+		var front: Vector3 = made.global_position - made.global_basis.z * (made.HALF.y + 4.5) + made.global_basis.x * 2.0
+		front.y = main.height(front.x, front.z) + 0.1
+		_stand(front, made.global_position, -0.3)   # 坂の上の側から、ロッジの方を見下ろす
+		await _wait(0.1)
+		await _shot("delivered_drop")
+		await _wait(1.6)
+		await _shot("delivered")
 	# 出てきたソリを、少し離れて見る
 	var back: Vector3 = made.global_position - made.global_basis.z * (made.HALF.y + 2.2) + Vector3.UP * 0.1
 	_stand(back, made.global_position, -0.3)
@@ -173,6 +187,17 @@ func _run() -> void:
 	_stand(side, made.global_position, -0.45)
 	await _wait(0.4)
 	_say("畳めるソリ: %s" % (p.foldable_near() != null))
+	if not craft.foldable(kind):
+		# 畳めない（二人以上で乗る）ソリ: G で折ろうとしても、前の角がぴくっと動くだけ。G のワッペンも出ない
+		_say("G で畳む: %s" % p.fold_near())
+		await _wait(1.5 / 12.0)
+		await _shot("cannot_fold")
+		await _wait(0.6)
+		_say("持ち物 %s（入らない）" % [craft.bag(who)])
+		var lf := FileAccess.open(_dir().path_join("log.txt"), FileAccess.WRITE)
+		lf.store_string("\n".join(log_lines) + "\n")
+		quit()
+		return
 	await _shot("before_fold")
 	_say("畳む: %s" % p.fold_near())
 	await _wait(3.0 / 12.0)

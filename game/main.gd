@@ -222,6 +222,32 @@ func _ready() -> void:
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 
 
+## ロッジの中から運び出せない大きさのソリ（craft.gd の OUT_FRONT）を、縫ったときに出す所: 玄関前の広場の先の雪の上。
+## 向きは頂上（ロッジの正面と同じ）。重なる物があれば、横へずらす
+func delivery_spot(kind: String) -> Transform3D:
+	var lodge: Node3D = get_node_or_null("Lodge")
+	var yaw := LODGE_YAW + PI
+	var k: Dictionary = Sled.KINDS.get(kind, Sled.KINDS["mid"])
+	for dx in [0.0, 3.0, -3.0, 6.0, -6.0]:
+		var p := lodge.to_global(Vector3(-13.4 + dx, 0, 33.0)) if lodge else START
+		p.y = height(p.x, p.z)
+		var q := PhysicsShapeQueryParameters3D.new()
+		var box := BoxShape3D.new()
+		box.size = k.box
+		q.shape = box
+		q.transform = Transform3D(Basis(Vector3.UP, yaw), p + Vector3.UP * (k.box.y * 0.5 + 0.3))
+		var clear := true
+		for r in get_world_3d().direct_space_state.intersect_shape(q, 8):
+			if not (r.collider is StaticBody3D and (r.collider as Node).get_child_count() > 0 and (r.collider as Node).get_child(0) is CollisionShape3D \
+					and ((r.collider as Node).get_child(0) as CollisionShape3D).shape is HeightMapShape3D):
+				clear = false
+		if clear:
+			return Transform3D(Basis(Vector3.UP, yaw), p)
+	var p0 := lodge.to_global(Vector3(-13.4, 0, 33.0)) if lodge else START
+	p0.y = height(p0.x, p0.z)
+	return Transform3D(Basis(Vector3.UP, yaw), p0)
+
+
 ## 右上のライブ映像: 自分の頭の上に載せた 360° カメラの映像。
 ## 6 方向を同時に撮り、シェーダで 1 枚の全天球（正距円筒）に合成する。V でリトルプラネット
 const FACE_PX := 160

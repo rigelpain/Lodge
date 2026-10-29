@@ -57,6 +57,8 @@ func _ready() -> void:
 		start = Doll.frame_index()
 	if unfolding and who:
 		_from = to_local(who.global_position + Vector3.UP * 1.1)
+	elif unfolding:
+		_from = Vector3(0, 4.0, 0)   # 持ち主がいない（ミシンからロッジの前へ届く）: 空から落ちてくる
 	_pose(0)
 
 
