@@ -15,7 +15,7 @@ const SackLook := preload("res://sack_look.gd")
 ## 身ぶり: Tab を押しているあいだ輪が出て、マウスの向きで選び、離すと出す。輪と同じ 6 つを 1〜6 キーでも:
 ## 1 高い手のひら、2 低い手のひら、3 指さし、4 ウン、5 ンーン、6 首をかしげてウン？、7 おーーーい（遠くへ呼ぶ）。手のひらは下ろすまで掲げたまま、
 ## 腕は見ている向きへ。手は Q で片手⇄両手、X で右⇄左。滑りながら高い両手のひらにすると、ひとりでに「ワ〜」。B を押しているあいだ、白い息を長く吐く（押した瞬間に短く吸う）。
-## 左 Ctrl を押しているあいだしゃがむ。しゃがんで雪面を見て F で、雪玉を丸める。
+## 左 Ctrl を押しているあいだしゃがむ。しゃがんで F で、雪玉を丸める（一人称は雪面を見て。三人称は足もとの少し先の雪面で）。
 ## 左クリック: 雪玉を持っていれば押してためて（振りかぶり）、離して投げる（長く押すほど遠くへ）。両手のひらなら拍手。
 ## 持ち物（craft.gd）: ホイールか、トラックパッドの二本指スクロールか、Z（Shift+Z で逆）で手に持つ物を替える
 ## （素手 → 持ち物 → …。持ち物がないときと Alt を押しているときは、ホイールは視野角。視野角はトラックパッドならピンチ）。
@@ -1157,7 +1157,14 @@ func _stop_exhale() -> void:
 ## 見ている先の近くに雪面があるか（しゃがんで手が届く所。地面の当たりは高さの地図）
 func _snow_ahead() -> bool:
 	var from := cam.global_position
-	var q := PhysicsRayQueryParameters3D.create(from, from - cam.global_basis.z * 2.2)
+	var to := from - cam.global_basis.z * 2.2
+	if third:
+		# 三人称ではカメラが人形の後ろ上にあり、カメラからの線は雪に届かない。人形の胸から、足もとの少し先の雪面へ
+		var fwd := -global_basis.z
+		fwd.y = 0
+		from = global_position + Vector3.UP * 0.9
+		to = global_position + fwd.normalized() * 0.7 + Vector3.DOWN * 0.6
+	var q := PhysicsRayQueryParameters3D.create(from, to)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
 	if hit.is_empty() or hit.normal.y < 0.5:
