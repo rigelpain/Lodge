@@ -261,6 +261,41 @@ class View extends Control:
 			_draw_machine(u)
 		if ui._bar_a > 0.01:
 			_draw_bar(u, ui._bar_a)
+		_draw_gear(u)
+
+	## 装備の枠: 帯に下げた米袋。N で出す・しまう、Shift+N で替える。持っている米袋の数だけ点（選んでいるのは赤）
+	func _draw_gear(u: float) -> void:
+		var craft: Node = ui.craft
+		var who: int = ui._who()
+		var list: Array = craft.sacks.get(who, [])
+		if list.is_empty() or ui.shop_open or ui.machine_open:
+			return
+		var spec: Dictionary = craft.sack(who)
+		var out: bool = craft.sack_sled(who) != null
+		var w := 132.0 * u
+		var h := 66.0 * u
+		var bag: Array = craft.bag(who)
+		var bar_w := (bag.size() + 1) * 74.0 * u + 24.0 * u + 96.0 * u
+		var right := (size.x / 2.0 - bar_w / 2.0 - 90.0 * u) if ui._bar_a > 0.01 else size.x / 2.0 + w / 2.0
+		var r := Rect2(right - w, size.y - 20.0 * u - h, w, h)
+		Icons.screen()
+		Icons.patch(self, Icons.rr(r.position.x, r.position.y, w, h, 14.0 * u), Icons.PAPER, 0.85, false)
+		# 帯（革）と、下げた米袋
+		Icons.patch(self, Icons.rr(r.position.x + 6.0 * u, r.position.y + 10.0 * u, w - 12.0 * u, 10.0 * u, 4.0 * u), Icons.WOOD.darkened(0.2), 1.0, true, Icons.CAP)
+		var band: Color = Fabrics.color(spec.get("fabric", "")) if spec.get("fabric", "") != "" else Color("B8402E")
+		var pc := Vector2(r.position.x + w * 0.62, r.position.y + h * 0.58)
+		Icons._o = pc
+		Icons._s = u
+		Icons.thread(self, PackedVector2Array([Vector2(-8, -24), Vector2(-8, -10)]), Icons.WOOD, 2.0, 1.0)   # 帯から下げる紐
+		Icons.thread(self, PackedVector2Array([Vector2(8, -24), Vector2(8, -10)]), Icons.WOOD, 2.0, 1.0)
+		if out:   # 出している: 帯は空で、破線の形
+			Icons.dashes(self, Icons.rr(-24, -11, 48, 22, 11), Icons.PAPER_EDGE, 1.4, 3.0, 2.0, 1.0, true)
+		else:
+			CraftIcons.sack_roll(self, Vector2.ZERO, 1.2, band, 1.0)
+		Icons.keycap(self, "N", Vector2(r.position.x + 20.0 * u, r.position.y + h * 0.6), 26.0 * u, 1.0)
+		for i in list.size():
+			var dp := Vector2(pc.x - (list.size() - 1) * 4.5 * u + i * 9.0 * u, r.end.y - 8.0 * u)
+			draw_circle(dp, 3.0 * u, Color(Icons.RED if i == int(craft.sack_sel.get(who, 0)) else Icons.PAPER_EDGE, 1.0))
 
 	## 持ち物の列
 	func _draw_bar(u: float, a: float) -> void:

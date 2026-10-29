@@ -648,7 +648,7 @@ func _hold_hands() -> void:
 	_update_all()
 	for k in 2:
 		var h = _hold[k]
-		if h == null:
+		if h == null or not is_instance_valid(h[0]):   # 握っていたソリが消えた（米袋を帯に戻した）ら、次のコマまで握らない
 			continue
 		var space: Node3D = h[0]
 		_reach("L" if k == 0 else "R", _to_skel(space.to_global(h[1])), h.size() > 2 and h[2])
