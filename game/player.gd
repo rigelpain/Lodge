@@ -25,7 +25,7 @@ const SackLook := preload("res://sack_look.gd")
 ## 出すときは、帯の丸めた袋を引き抜いて前へ広げ、しゃがんで腰を下ろし、前の紐を握る（人形のコマ。doll.gd の sack_start）。
 ## 乗るのは押した瞬間なので、坂ならその途中から滑り出し、Space で蹴ればすぐ座った姿になって漕げる。
 ## 走りながら（歩きながら）出すと、前へ飛び乗る勢いで滑り出す（SACK_CARRY）。平らな所でも少し滑ってから止まる。
-## 乗っているあいだの Space は足で蹴る。たたくたびに一回、押しっぱなしなら KICK_HOLD_GAP ごとに蹴る（たたくほうが速い）。
+## 乗っているあいだの Space は足で蹴る。たたくたびに一回だけ（押しっぱなしでは蹴らない。2026-10-30 代表「スペース連打じゃないとだめ。ダサくて必死にこぐのがいい」）。
 ## どの米袋を装備するかは、I で開く装備の画面（craft_ui.gd）で選ぶ。
 ## ランタンも装備（craft.gd の lanterns）: 帯の左に提げ、R で点ける・消す（2026-10-29 代表。ソリをふもとへ戻すのは Backspace に移した）。
 ## 左クリックの順: 雪玉を持っていれば投げる → 高い両手のひらなら拍手。
@@ -312,7 +312,6 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_SPACE:
 				if mode == Mode.RIDE and sled.kick(self):
 					_kicked()   # 乗っているあいだの Space は足で漕ぐ（ジャンプしない）
-					_kick_hold = KICK_HOLD_GAP
 			KEY_TAB:
 				if ring and not menu_open:
 					ring.open(hand, _height(), point_at != Vector3.INF)
@@ -439,20 +438,8 @@ func get_off() -> void:
 # ---------------------------------------------------------------- 米袋で足で漕ぐ・追いついて止める
 
 const CATCH_REACH := 2.4     # 米袋に乗ったまま F でつかめる、ほかのソリのつかみ所までの距離 (m)
-const KICK_HOLD_GAP := 0.3   # Space を押しっぱなしにしたときの、蹴る間 (s。1 秒に 3 回ほど。たたけばもっと速く蹴れる)
 var _kick_side := 1
-var _kick_hold := 0.0
 
-
-## Space を押しっぱなし: 間をおいて蹴りつづける（蹴れない速さのあいだは、蹴れるようになったらすぐ）
-func _hold_kick(dt: float) -> void:
-	if not Input.is_physical_key_pressed(KEY_SPACE) or menu_open:
-		_kick_hold = KICK_HOLD_GAP
-		return
-	_kick_hold -= dt
-	if _kick_hold <= 0.0 and sled.kick(self):
-		_kicked()
-		_kick_hold = KICK_HOLD_GAP
 
 ## 蹴れた: 足を交互に出し（人形のコマ）、足もとに雪の粉、蹴る音
 func _kicked() -> void:
@@ -512,7 +499,6 @@ func _physics_process(dt: float) -> void:
 			global_position = sled.to_global(seat)
 			ride_lean = Vector3(_key(KEY_D) - _key(KEY_A), _key(KEY_W), _key(KEY_S))
 			sled.lean(ride_lean.x, ride_lean.y > 0.0, ride_lean.z > 0.0)
-			_hold_kick(dt)
 			prompt = "W 前傾　S 後傾で止まる　A/D 体重をかけて曲がる　E 降りる"
 		Mode.GRIP:
 			_grip(dt)
