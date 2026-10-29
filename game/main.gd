@@ -10,6 +10,7 @@ const Look := preload("res://look.gd")
 ##   --no-wind     滑るときの風のエフェクトを出さない（重さを比べる用）
 ##   --cam=x,y,z,tx,ty,tz  --no-player のときのカメラの位置と見る先（ロッジを撮る用）
 ##   --hud-debug   画面の左上に確かめ用の数字（押している人数・高さ・速さ・fps）を出す
+##   --bot-lean=follow|off  一緒に乗った仲間が、あなたの体重移動に合わせるか（既定 follow）
 ##   --sled=KIND   ソリの大きさ（sack 米袋 1 人・small 2 人・mid 3 人（既定）・large 8 人）
 ##   --sled-color=色  ソリのメインカラー（ソリの主なフェルトと滑りあとの糸）。2F5DA8 のような 16 進か、white・navy などの色の名前
 ##   --stitch=名前  滑りあとの縫い目の差し替え（running なみ縫い・zigzag・chain くさり縫い・saddle サドルステッチ）。既定はソリの大きさで決まる
@@ -150,6 +151,7 @@ func _ready() -> void:
 		b.sled = sled
 		b.player = player
 		b.side = 1 if i % 2 == 0 else -1
+		b.lean_mode = args.get("bot-lean", "follow")
 		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
 		add_child(b)
 

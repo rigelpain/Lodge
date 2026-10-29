@@ -10,12 +10,15 @@ const Palm := preload("res://palm.gd")
 ## 一緒に乗っているとき、あなたが高い両手のひらにしたら一緒に上げる（万歳）。声には同じ声、「ウン？」には「ウン」、拍手には拍手。
 ## 「おーーーい」と呼ぶと、遠くからでもそちらを見て、「おーい」と返すか手を振る（ソリをつかんでいれば声で返す）。
 ## 雪玉が当たると、のけぞって笑う。つかんでいたら手を離し、少しして（REGRAB_WAIT）つかみ直しに行く。
+## 一緒に乗っているときは、あなたの体重移動（A/D・前傾・後傾）に LEAN_DELAY 遅れて合わせる（lean_mode = "follow"）。
+## 体重移動は乗っている一人ひとりの力が足し合わさるので、仲間が合わせると大きいソリもぐっと曲がる。"off" なら何もしない。
 ## 速く下るソリをつかむと引きずられ、引きずられている間は押さずに踏ん張る（止める力は sled.gd がまとめてかける）。
 
 enum State { PUSH, WAIT, RIDE }
 
 const SPEED := 2.4
 const REGRAB_WAIT := 1.5     # 雪玉が当たって手を離してから、つかみ直すまで (s)
+const LEAN_DELAY := 0.3      # 一緒に乗っているとき、あなたの体重移動に合わせるまでの遅れ (s)
 const GRAVITY := 9.8
 
 var sled: RigidBody3D
@@ -41,6 +44,10 @@ var _five_until := 0         # このコマまでに届かなければやめる
 var _five_sent := false      # もう手を上げた（あとは合うまで、相手の前へ寄り続ける）
 var _em := {}
 var _regrab := 0.0           # これが 0 になるまでつかまない
+var lean_mode := "follow"    # 一緒に乗っているときの体重移動: "follow" あなたに合わせる、"off" しない（main.gd の --bot-lean=）
+var _lean_q: Array = []      # [時刻, あなたの体重移動]（遅れて合わせるため）
+var _lean_now := Vector3.ZERO
+var _clock := 0.0
 
 
 func _ready() -> void:
@@ -108,6 +115,7 @@ func _physics_process(dt: float) -> void:
 		# あなたがいないときは、仲間が体重をかけて滑り出す
 		if player == null and to_top < 8.0:
 			sled.lean(0.0, true)
+		_follow_lean(dt)
 		_still = _still + dt if sled.linear_velocity.length() < 0.4 else 0.0
 		if _still > 1.5 and to_top > 14.0:
 			_still = 0.0
@@ -206,6 +214,21 @@ func _physics_process(dt: float) -> void:
 	_pose_doll()
 
 
+## 一緒に乗っているあなたの体重移動に、少し遅れて合わせる
+func _follow_lean(dt: float) -> void:
+	_clock += dt
+	var riding_with: bool = player != null and player.get("mode") == player.Mode.RIDE and player.sled == sled
+	if lean_mode != "follow" or not riding_with:
+		_lean_q.clear()
+		_lean_now = Vector3.ZERO
+		return
+	_lean_q.append([_clock, player.ride_lean])
+	while not _lean_q.is_empty() and _clock - _lean_q[0][0] >= LEAN_DELAY:
+		_lean_now = _lean_q.pop_front()[1]
+	if _lean_now != Vector3.ZERO:
+		sled.lean(_lean_now.x, _lean_now.y > 0.0, _lean_now.z > 0.0)
+
+
 ## 持ち場へ歩いて行って立ち、見る先を向く（ミシンの足踏み。sewing_machine.gd が呼ぶ）
 func _stand_at_post(dt: float) -> void:
 	var to := post.global_position - global_position
@@ -249,6 +272,7 @@ func _pose_doll() -> void:
 	else:
 		doll.act = Doll.Act.WALK
 	doll.sled = sled
+	doll.lean = Vector2(_lean_now.x, _lean_now.y - _lean_now.z) if state == State.RIDE else Vector2.ZERO
 	doll.grip = handle
 	doll.effort = handle != Vector3.INF and sled.pushers > 0
 	doll.dragged = handle != Vector3.INF and sled.is_dragged(self)
