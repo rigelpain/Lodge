@@ -48,6 +48,7 @@ var sleds := {}                # ソリの番号 → 縫った・広げたソリ
 var _next_sled := 1
 const GEARS := ["sack"]        # 装備の種類（装備の画面の並び）
 var tag_designs := {}          # 人の番号 → 自分の名札（sled_tags.gd の部品の辞書）。通信では「誰が」の印として配る
+var tag_owned := {}            # 人の番号 → 手に入れた「あとで手に入る」名札の部品 {部品: [番号, ...]}（最初から使える部品は書かない）
 var sacks := {}                # 人の番号 → 持っている米袋の配列 [{fabric, tag}]（0 番は標準）
 var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
@@ -64,8 +65,16 @@ func join(who: int) -> void:
 	bags[who] = []
 	hands[who] = -1
 	tag_designs[who] = preload("res://sled_tags.gd").default_design(who)
+	tag_owned[who] = {}
 	sacks[who] = [{"fabric": "", "tag": 0}]   # 標準の米袋（名札は持ち主の名札）
 	sack_sel[who] = 0
+
+
+## 名札の部品 part の i 番を使えるか（最初から使える部品か、手に入れた部品）
+func tag_can_use(who: int, part: String, i: int) -> bool:
+	if preload("res://sled_tags.gd").is_starter(part, i):
+		return true
+	return i in tag_owned.get(who, {}).get(part, [])
 
 
 ## 種類 gear の、持っている物の配列と、装備している番号
@@ -214,10 +223,27 @@ func _apply(ev: Dictionary) -> bool:
 						if d and d.get("sled") == gs:
 							d.set("sled", world.get("sled"))
 			gs.queue_free()
+		"tag_unlock":   # あとで手に入る名札の部品を手に入れる（報酬や店から。値はここでは取らない）
+			var Tags := preload("res://sled_tags.gd")
+			var part := String(ev.get("part", ""))
+			var i := int(ev.get("index", -1))
+			if not part in Tags.PARTS or i < 0 or i >= Tags.part_count(part):
+				return false
+			var owned: Dictionary = tag_owned.get(who, {})
+			if not owned.has(part):
+				owned[part] = []
+			if not i in owned[part]:
+				owned[part].append(i)
+			tag_owned[who] = owned
 		"tag_design":
+			var Tags := preload("res://sled_tags.gd")
+			var old: Dictionary = tag_designs.get(who, {})
 			var d: Dictionary = {}
-			for part in preload("res://sled_tags.gd").PARTS:
-				d[part] = posmod(int(ev.design.get(part, 0)), preload("res://sled_tags.gd").part_count(part))
+			for part in Tags.PARTS:   # 書いていない部品は前のまま。まだ手に入れていない部品も前のまま
+				var i := posmod(int(ev.design.get(part, old.get(part, Tags.DEFAULT[part]))), Tags.part_count(part))
+				if not tag_can_use(who, part, i):
+					i = int(old.get(part, Tags.DEFAULT[part]))
+				d[part] = i
 			ev["design"] = d
 			tag_designs[who] = d
 			for s in get_tree().get_nodes_in_group("sleds"):   # その人のソリの名札を付け替える
