@@ -272,6 +272,14 @@ func _fluff_texture() -> Texture2D:
 func _process(dt: float) -> void:
 	if player == null or sled == null:
 		return
+	if player.mode == player.Mode.RIDE and player.sled != sled and is_instance_valid(player.sled):
+		# 乗ったソリが替わった（縫ったソリなど）: 雪しぶきもそのソリへ移す
+		sled = player.sled
+		_spray.reparent(sled, false)
+	elif player.mode != player.Mode.RIDE and sled.get("crafted") and get_parent().get("sled"):
+		# 降りた縫ったソリは畳まれて消えることがあるので、しぶきはもとのソリへ戻しておく
+		sled = get_parent().sled
+		_spray.reparent(sled, false)
 	var v := sled.linear_velocity
 	var speed := v.length()
 	var riding: bool = player.mode == player.Mode.RIDE and player.sled == sled
