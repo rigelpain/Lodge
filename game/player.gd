@@ -19,8 +19,9 @@ const Palm := preload("res://palm.gd")
 ## 持ち物（craft.gd）: ホイールか、トラックパッドの二本指スクロールか、Z（Shift+Z で逆）で手に持つ物を替える
 ## （素手 → 持ち物 → …。持ち物がないときと Alt を押しているときは、ホイールは視野角。視野角はトラックパッドならピンチ）。
 ## 売り子のおじさんの前で F で売り台を開く。ミシンの前で F か T でミシンの画面を開き、持ち物から型紙と布を選んで縫う。
-## 縫ったソリのそばで G で畳んで持ち物に入れ、畳んだソリを手に持って左クリックで、前の床に広げて置く。
-## 左クリックの順: 雪玉を持っていれば投げる → 畳んだソリを持っていれば広げる → 高い両手のひらなら拍手。
+## 米袋は装備（craft.gd の sacks）: N で、いま選んでいる米袋を足もとにぽんと出して、すぐ乗る（坂ならそのまま滑り出す）。
+## もう一度 N で降りて、くるっと丸めて帯に戻す。離れた所に出したままなら、N で足もとへ呼び戻す。Shift+N で呼び出す米袋を替える。
+## 左クリックの順: 雪玉を持っていれば投げる → 高い両手のひらなら拍手。
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
 const DASH := 3.4            # Shift で走る速さ
@@ -88,12 +89,10 @@ var _held_key := ""
 const HELD_TILT := 0.12      # 畳んだソリの包みの名札の面を、まっすぐより少し上へ傾ける (rad)
 const HELD_TURN := 0.0     # 少し内へ回す (rad)
 const HELD_SCALE := 1.25     # 一人称で持つ包みの大きさ
-var _unfold_up := Vector3.UP # 広げる所の床の傾き（unfold_spot が決める）
 var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
 var _pan_acc := 0.0          # 二本指スクロールのたまった量
 const PAN_STEP := 1.5        # これだけたまったら 1 つ持ち替える
 var last_item := {}          # 最後に触ったソリを畳んで持っていれば、その持ち物（last_sled は null）
-const FOLD_REACH := 2.6      # G で畳めるソリまでの距離（ソリの縁から, m）
 const SLED_SWITCH := 0.8     # 近いソリへ持ち替える差 (m)。行ったり来たりしないよう
 
 
@@ -248,9 +247,12 @@ func _unhandled_input(e: InputEvent) -> void:
 					_exhaling = true
 					_exhale_t = 0.0
 					emote("breath")
-			KEY_G:
-				if mode == Mode.WALK and not rooted():
-					fold_near()
+			KEY_N:
+				if craft and not menu_open and not rooted():
+					if e.shift_pressed:
+						craft.send({"kind": "sack_pick", "who": id, "index": int(craft.sack_sel.get(id, 0)) + 1})
+					else:
+						toggle_sack()
 			KEY_Z:
 				# 手に持つ物を替える（Shift で逆回り）。ホイールやトラックパッドが使えないとき
 				if craft and not craft.bag(id).is_empty() and not menu_open:
@@ -757,8 +759,6 @@ func set_hands(name_: String) -> void:
 func _left_click() -> void:
 	if holding_ball:
 		wind_up()
-	elif held().get("kind") == "folded" and mode == Mode.WALK:
-		unfold_ahead()
 	elif hands_name == "high_both":
 		emote("clap")
 
@@ -1070,133 +1070,6 @@ func shop_near() -> bool:
 	return d.length() < 0.6 or (-global_basis.z).dot(d.normalized()) > 0.4
 
 
-## 畳めるソリ（縫った・広げたソリ）が手の届く所にあれば、それ
-func foldable_near() -> RigidBody3D:
-	if craft == null:
-		return null
-	var best: RigidBody3D = null
-	var best_d := FOLD_REACH
-	for s in get_tree().get_nodes_in_group("sleds"):
-		var rb := s as RigidBody3D
-		if rb == null or not rb.get("crafted") or not rb.visible or rb.is_queued_for_deletion() or craft.id_of(rb) < 0 \
-				or not craft.foldable(rb.kind):
-			continue
-		var lp := rb.to_local(global_position)
-		var edge := Vector2(maxf(absf(lp.x) - rb.HALF.x, 0.0), maxf(absf(lp.z) - rb.HALF.y, 0.0)).length()
-		if edge < best_d and rb.riders.is_empty() and rb.holders.is_empty() and rb.rope_holder == null:
-			best = rb
-			best_d = edge
-	return best
-
-
-## G: そばの縫ったソリを畳んで持ち物に入れる（畳めるのは一人用だけ）。畳めないソリのそばなら、折ろうとして角がぴくっと動くだけ
-func fold_near() -> bool:
-	var s := foldable_near()
-	if s == null:
-		var other := _sled_in_reach()
-		if other:
-			_twitch(other)
-		return false
-	return craft.send({"kind": "fold", "who": id, "id": craft.id_of(s)})
-
-
-## 手の届くソリ（畳めるかどうかは問わない）
-func _sled_in_reach() -> RigidBody3D:
-	var best: RigidBody3D = null
-	var best_d := FOLD_REACH
-	for s in get_tree().get_nodes_in_group("sleds"):
-		var rb := s as RigidBody3D
-		if rb == null or not rb.visible:
-			continue
-		var lp := rb.to_local(global_position)
-		var edge := Vector2(maxf(absf(lp.x) - rb.HALF.x, 0.0), maxf(absf(lp.z) - rb.HALF.y, 0.0)).length()
-		if edge < best_d:
-			best = rb
-			best_d = edge
-	return best
-
-
-## 畳めないソリ: 前の角が少し持ち上がって、ぱたんと戻る（12 コマで 6 コマ。見た目だけ）
-func _twitch(s: RigidBody3D) -> void:
-	var body: Node3D = s.get("_body")
-	if body == null or body.has_meta("twitching"):
-		return
-	body.set_meta("twitching", true)
-	var rest := body.transform
-	for a in [0.05, 0.09, 0.06, -0.015, 0.01, 0.0]:
-		body.transform = Transform3D(rest.basis * Basis(Vector3.RIGHT, a), rest.origin + Vector3.UP * maxf(a, 0.0) * s.HALF.y)
-		await get_tree().create_timer(1.0 / 12.0).timeout
-		if not is_instance_valid(body):
-			return
-	body.transform = rest
-	body.remove_meta("twitching")
-
-
-## 畳んだソリを広げて置く所: 前の床の、ソリの長さの半分 + 0.7 m 先。壁や物とぶつかるなら INF
-func unfold_spot() -> Vector3:
-	var it := held()
-	if it.get("kind") != "folded":
-		return Vector3.INF
-	var k: Dictionary = preload("res://sled.gd").KINDS.get(it.sled, {})
-	if k.is_empty():
-		return Vector3.INF
-	var box: Vector3 = k.box
-	var fwd := -global_basis.z
-	fwd.y = 0
-	fwd = fwd.normalized()
-	var center := global_position + fwd * (box.z * 0.5 + 0.7)
-	var space := get_world_3d().direct_space_state
-	# 床: 前後の 2 点の高さから傾きを出し、真ん中の床に置く（坂ではソリを坂に沿わせる）
-	var hits := []
-	for o in [0.0, 0.45, -0.45]:
-		var p: Vector3 = center + fwd * o * box.z
-		var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 3.0, p + Vector3.DOWN * 4.0)   # 坂の上の端は足もとより高い
-		q.exclude = [get_rid()]
-		var hit := space.intersect_ray(q)
-		if hit.is_empty():
-			return Vector3.INF
-		hits.append(hit)
-	var up: Vector3 = hits[0].normal
-	var along: Vector3 = (hits[1].position - hits[2].position).normalized()
-	var side := along.cross(up).normalized()
-	up = side.cross(along).normalized() if side.length() > 0.5 else up
-	if up.y < 0.75:
-		return Vector3.INF   # 急すぎる
-	_unfold_up = up
-	var at: Vector3 = hits[0].position
-	# ぶつかる物がないか（床の少し上に、ソリの大きさの箱）
-	var hy := maxf(box.y, 0.3)
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(box.x, hy, box.z) * 0.95
-	var sq := PhysicsShapeQueryParameters3D.new()
-	sq.shape = shape
-	sq.transform = Transform3D(preload("res://craft.gd")._basis(rotation.y, up), at + up * (hy * 0.5 + 0.15))
-	sq.exclude = [get_rid()]
-	for r in space.intersect_shape(sq, 8):
-		if not _is_ground(r.collider):   # 坂の地面に少しかかるのはよい（ソリは地面に置く）
-			return Vector3.INF
-	return at
-
-
-## 外の地面（高さの地図）か
-static func _is_ground(n: Object) -> bool:
-	if n is Node:
-		for c in (n as Node).get_children():
-			if c is CollisionShape3D and (c as CollisionShape3D).shape is HeightMapShape3D:
-				return true
-	return false
-
-
-## 左クリック: 手に持った畳んだソリを、前の床に広げて置く
-func unfold_ahead() -> bool:
-	var at := unfold_spot()
-	if at == Vector3.INF:
-		return false
-	var slot: int = craft.hands.get(id, -1)
-	return craft.send({"kind": "unfold", "who": id, "slot": slot, "item": held().duplicate(), "at": at, "yaw": rotation.y,
-			"up": _unfold_up})
-
-
 ## ミシンの前（立つ所のそば）で、ミシンの方を向いていて、縫い始められるか
 func machine_near() -> bool:
 	var sew = get_parent().get("sewing")
@@ -1276,3 +1149,45 @@ static func held_shape(it: Dictionary) -> Node3D:
 	root.add_child(mi)
 	root.rotation.x = 0.5
 	return root
+
+
+# ---------------------------------------------------------------- 装備の米袋（craft.gd の sack_out・sack_in）
+
+const SACK_NEAR := 3.5       # 出している米袋がこれより近ければ、N でしまう（遠ければ足もとへ呼び戻す）
+
+## N: 米袋を出して乗る／降りてしまう／遠くの米袋を足もとへ呼び戻す
+func toggle_sack() -> void:
+	var gs: RigidBody3D = craft.sack_sled(id)
+	if gs:
+		var on_it := mode == Mode.RIDE and sled == gs
+		var near := global_position.distance_to(gs.global_position) < SACK_NEAR
+		if on_it or (near and gs.riders.is_empty()):
+			if on_it:
+				get_off()
+			craft.send({"kind": "sack_in", "who": id})
+			return
+		if not gs.riders.is_empty():
+			return   # ほかの人が乗っている
+		craft.send({"kind": "sack_in", "who": id})   # 遠くに置いたまま: しまって、足もとに出し直す
+	summon_sack()
+
+
+## 足もとに米袋を出して、すぐ乗る。つかんでいる・紐を持っている・ほかのソリに乗っているなら、離れてから
+func summon_sack() -> bool:
+	if mode == Mode.GRIP or mode == Mode.ROPE:
+		let_go()
+	elif mode == Mode.RIDE:
+		get_off()
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 1.0, global_position + Vector3.DOWN * 2.0)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	var at: Vector3 = hit.position if hit else global_position
+	var up: Vector3 = hit.normal if hit and hit.normal.y > 0.6 else Vector3.UP
+	if not craft.send({"kind": "sack_out", "who": id, "at": at, "yaw": rotation.y, "up": up}):
+		return false
+	var gs: RigidBody3D = craft.sack_sled(id)
+	if gs == null:
+		return false
+	sled = gs
+	get_on()
+	return mode == Mode.RIDE

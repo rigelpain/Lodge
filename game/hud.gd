@@ -79,14 +79,12 @@ func _input(e: InputEvent) -> void:
 	if not (e is InputEventKey and e.pressed and not e.echo):
 		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_RIGHT:
 			learn("gesture")
-		elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT and main.player \
-				and main.player.held().get("kind") == "folded":
-			learn("unfold")
+
 		return
 	match e.physical_keycode:
 		KEY_R: learn("return")
 		KEY_T: learn("sew"); learn("set")
-		KEY_G: learn("fold")
+		KEY_N: learn("sack")
 		KEY_Q, KEY_X, KEY_TAB, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_B: learn("gesture")
 
 
@@ -275,12 +273,7 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
-	# 縫ったソリのそば: G で畳む。畳んだソリを持っていれば、左クリックで広げる
-	var fold_s: RigidBody3D = p.foldable_near()
-	if fold_s:
-		_hint("fold", ["G"], "fold", fold_s.global_position + Vector3.UP * 1.2)
-	elif p.held().get("kind") == "folded" and p.unfold_spot() != Vector3.INF:
-		_hint("unfold", ["mouse_l"], "unfold")
+
 	# ほかの人のそば: 手を振る・指さす・声
 	var someone := false
 	var far := true
@@ -486,7 +479,7 @@ class View extends Control:
 		if hud.main.get("sewing") != null:
 			rows.append([["T"], "needle"])
 		if hud.main.get("craft") != null:   # 工房: 売り子に F、ミシンに T でセット、G で畳む、左クリックで広げる、ホイールで持ち替え
-			rows += [[["F"], "shop"], [["F"], "set"], [["G"], "fold"], [["mouse_l"], "unfold"], [["mouse_wheel"], "hand"], [["Z"], "hand"]]
+			rows += [[["F"], "shop"], [["F"], "set"], [["N"], "sack"], [["Shift", "N"], "sack_pick"], [["mouse_wheel"], "hand"], [["Z"], "hand"]]
 		var bs := 46.0 * u                # 一つの段のワッペンの高さ
 		var row_h := bs * 1.08
 		var col_w := 0.0

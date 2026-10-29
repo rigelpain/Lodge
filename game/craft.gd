@@ -14,6 +14,10 @@ extends Node
 ##   sewn   {sled, fabric, at, yaw, id}  ミシンが縫い上げた。広げた実寸のソリが at に出る
 ##   fold   {id, item}         置いてあるソリを畳んで、持ち物に入れる（畳む動きは origami.gd）。item に名札の柄 tag も入る
 ##   unfold {slot, item, at, yaw, up, id}  畳んだソリを手から前の床に広げて置く（up は床の傾き）
+##   sack_out  {at, yaw, up}   装備の米袋（いま選んでいるもの）を足もとに出す（2026-10-29 代表: 米袋は装備。持ち物の列は使わない）
+##   sack_in   {}              出している米袋を、くるっと丸めて帯に戻す
+##   sack_pick {index}         装備の枠の中で、呼び出す米袋を替える
+## 米袋は全員が最初から 1 つ（標準）持つ。米袋の型紙と布で縫った米袋は、持ち物でなく装備の枠に入り、選ばれる
 
 signal happened(ev: Dictionary)
 
@@ -39,6 +43,12 @@ var bags := {}                 # 人の番号 → 持ち物（item の配列）
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
 var _next_sled := 1
+var sacks := {}                # 人の番号 → 装備の米袋の配列 [{fabric, tag}]（0 番は標準）
+var sack_sel := {}             # 人の番号 → 呼び出す米袋の番号
+var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
+var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
+const SACK_FAR := 30.0         # 誰も乗っていない米袋から持ち主がこれより離れて…
+const SACK_FAR_T := 4.0        # …この秒たつと、ひとりでに帯に戻る
 
 
 ## 人を登録する（財布と持ち物を作る）
@@ -48,6 +58,20 @@ func join(who: int) -> void:
 	wallets[who] = START_BUTTONS
 	bags[who] = []
 	hands[who] = -1
+	sacks[who] = [{"fabric": "", "tag": 1 + posmod(who - 1, preload("res://sled_tags.gd").count() - 1)}]   # 標準の米袋
+	sack_sel[who] = 0
+
+
+## いま呼び出す米袋 {fabric, tag}
+func sack(who: int) -> Dictionary:
+	var list: Array = sacks.get(who, [])
+	return list[clampi(sack_sel.get(who, 0), 0, list.size() - 1)] if not list.is_empty() else {}
+
+
+## 出している米袋（なければ null）
+func sack_sled(who: int) -> RigidBody3D:
+	var s = sack_out.get(who)
+	return s if s != null and is_instance_valid(s) and not s.is_queued_for_deletion() else null
 
 
 func bag(who: int) -> Array:
@@ -116,7 +140,13 @@ func _apply(ev: Dictionary) -> bool:
 			hands[who] = -1
 		"sewn":
 			ev["tag"] = 1 + (_next_sled - 1) % (preload("res://sled_tags.gd").count() - 1)   # 名札の柄は順に（0 は最初のソリ）
-			if ev.sled in OUT_FRONT and world and world.has_method("delivery_spot"):
+			if ev.sled == "sack" and sacks.has(who):
+				# 米袋は装備: 床には出さず、装備の枠に入れて、呼び出す米袋にする
+				ev["tag"] = 1 + posmod(int(sacks[who][-1].tag), preload("res://sled_tags.gd").count() - 1)   # 前の米袋の次の柄
+				sacks[who].append({"fabric": ev.fabric, "tag": ev.tag})
+				sack_sel[who] = sacks[who].size() - 1
+				ev["gear"] = true
+			elif ev.sled in OUT_FRONT and world and world.has_method("delivery_spot"):
 				# 運び出せない大きさ: ロッジの前に、空から包みが落ちて開いて出てくる
 				var spot: Transform3D = world.delivery_spot(ev.sled)
 				ev["at"] = spot.origin
@@ -127,6 +157,49 @@ func _apply(ev: Dictionary) -> bool:
 				_origami(ev, true, Transform3D(Basis(Vector3.UP, ev.yaw), ev.at), false)
 			else:
 				ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, 0, Vector3.UP, ev.tag)
+		"sack_out":
+			var spec := sack(who)
+			if spec.is_empty() or sack_sled(who) != null:
+				return false
+			var gid := _place("sack", spec.fabric, ev.at, ev.yaw, 0, ev.get("up", Vector3.UP), spec.tag, false)
+			var gs: RigidBody3D = sleds[gid]
+			sleds.erase(gid)   # 装備の米袋は畳むソリの数に入れない
+			gs.crafted = false
+			gs.name = "Sack%d" % who
+			gs.set_meta("gear_of", who)
+			sack_out[who] = gs
+			_sack_far[who] = 0.0
+			ev["id"] = gid
+			_pop(gs)
+		"sack_in":
+			var gs := sack_sled(who)
+			if gs == null:
+				return false
+			for r in gs.riders.duplicate():
+				if r.has_method("get_off"):
+					r.get_off()
+			for h in gs.holders.keys():
+				if h.has_method("let_go"):
+					h.let_go()
+			if gs.rope_holder and gs.rope_holder.has_method("let_go"):
+				gs.rope_holder.let_go()
+			ev["item"] = {"kind": "folded", "sled": "sack", "fabric": gs.fabric, "tag": gs.tag}
+			_origami(ev, false, gs.global_transform, true, 2.5)   # くるっと丸めて、持ち主の帯へ飛ぶ（速回し）
+			sack_out.erase(who)
+			if world:   # この米袋を相手にしていた人（と人形）は、もとのソリへ
+				for c in world.get_children():
+					if c is CharacterBody3D and c.get("sled") == gs:
+						c.set("sled", world.get("sled"))
+						if c.get("last_sled") == gs:
+							c.set("last_sled", world.get("sled"))
+						var d = c.get("doll")
+						if d and d.get("sled") == gs:
+							d.set("sled", world.get("sled"))
+			gs.queue_free()
+		"sack_pick":
+			var n: int = sacks[who].size()
+			sack_sel[who] = posmod(int(ev.index), n)
+			ev["index"] = sack_sel[who]
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):
@@ -161,12 +234,13 @@ func _take(who: int, slot: int, item: Dictionary) -> bool:
 
 
 ## 畳む・広げる動き（origami.gd）を、ソリの所に置く
-func _origami(ev: Dictionary, unfolding: bool, at: Transform3D, from_who := true) -> void:
+func _origami(ev: Dictionary, unfolding: bool, at: Transform3D, from_who := true, speed := 1.0) -> void:
 	var o: Node3D = load("res://origami.gd").new()
 	o.kind = ev.item.sled
 	o.fabric = ev.item.fabric
 	o.unfolding = unfolding
 	o.start = int(ev.frame)
+	o.speed = speed
 	var hub: Node = world.get_node_or_null("Emotes") if world else null
 	o.who = hub.who_of(int(ev.who)) if hub and from_who else null   # いなければ、包みは空から落ちてくる
 	o.name = "Origami"
@@ -180,7 +254,7 @@ func _free(s: Node3D) -> bool:
 
 
 ## 実寸のソリを置く。wait コマのあいだは止めておく（広げる動きのあいだ）
-func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP, tag := 0) -> int:
+func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP, tag := 0, room := true) -> int:
 	var id := _next_sled
 	_next_sled += 1
 	var s := Sled.new()
@@ -197,8 +271,39 @@ func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up
 	if wait > 0:
 		s.hold_still(wait)
 	sleds[id] = s
-	_make_room(s)
+	if room:
+		_make_room(s)
 	return id
+
+
+## 米袋が足もとに、ぽんと出る（見た目だけ。12 コマで 4 コマ: ふくらんで、少し行き過ぎて戻る）
+func _pop(s: RigidBody3D) -> void:
+	var body: Node3D = s.get("_body")
+	if body == null:
+		return
+	for k in [0.35, 1.15, 0.95, 1.0]:
+		body.scale = Vector3(k, k, k)
+		await get_tree().create_timer(1.0 / 12.0).timeout
+		if not is_instance_valid(body):
+			return
+
+
+## 誰も乗っていない米袋から持ち主が遠く離れたら、ひとりでに帯に戻す（ホストの片付け）
+func _physics_process(dt: float) -> void:
+	if sack_out.is_empty():
+		return
+	var hub: Node = world.get_node_or_null("Emotes") if world else null
+	for who in sack_out.keys():
+		var gs := sack_sled(who)
+		var owner: Node3D = hub.who_of(who) if hub else null
+		if gs == null:
+			sack_out.erase(who)
+			continue
+		var idle: bool = gs.riders.is_empty() and gs.holders.is_empty() and gs.rope_holder == null
+		var far := owner == null or owner.global_position.distance_to(gs.global_position) > SACK_FAR
+		_sack_far[who] = (_sack_far.get(who, 0.0) + dt) if idle and far else 0.0
+		if _sack_far[who] > SACK_FAR_T:
+			send({"kind": "sack_in", "who": who, "auto": true})
 
 
 ## ソリの出る所に立っている人を、ソリの横へよける（重なったまま出すと、ソリが薄い床の下へ押し出される）

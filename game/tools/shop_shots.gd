@@ -2,8 +2,8 @@ extends SceneTree
 ## 型紙と布を買って、ミシンでソリを縫い、畳んで持ち、外で広げて乗るまでを通して、場面ごとに一人称で撮る（確かめ用）。
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/shop_shots.gd -- \
 ##       --bots=0 --no-sound --no-pip --spawn=shop --dir=/path/shots [--sled=mid] [--fabric=navy]
-## 流れ: おじさんの前 → 売り台を開く → 型紙を選んで買う → 布を選んで買う → ミシンの前で型紙をセット → 布をセット →
-##       縫う（入れる・ため・解放・見せる・余韻）→ 出てきたソリ → G で畳む → 持ち物 → 外の坂で広げる → 乗って滑る。
+## 流れ: おじさんの前 → 売り台を開く → 型紙を選んで買う → 布を選んで買う → ミシンの画面で型紙と布を選んで縫う →
+##       縫う（入れる・ため・解放・見せる・余韻）→ 出てきたソリ（米袋なら装備の枠に入る。大はロッジの前に出る）。
 ## 操作は人の手と同じ入口（player.gd の関数、craft_ui.gd の選ぶ・買う）を呼ぶ。<dir>/<番号>_<名前>.png を書き、
 ## 終わりに財布・持ち物・置いたソリの数を出す。
 
@@ -148,6 +148,16 @@ func _run() -> void:
 			break
 		await process_frame
 	await _wait(0.5)
+	if kind == "sack":
+		# 米袋は装備: 床には出ず、装備の枠に入って、呼び出す米袋になる（持ち物の列は使わない）
+		_say("装備の米袋 %s 選んでいる %d 持ち物 %s" % [craft.sacks.get(who), craft.sack_sel.get(who, 0), craft.bag(who)])
+		p.set("_pitch", 0.0)
+		await _wait(0.4)
+		await _shot("sewn_gear")
+		var lf := FileAccess.open(_dir().path_join("log.txt"), FileAccess.WRITE)
+		lf.store_string("\n".join(log_lines) + "\n")
+		quit()
+		return
 	var made: RigidBody3D = null
 	for s in get_nodes_in_group("sleds"):
 		if s.get("crafted"):
@@ -182,69 +192,8 @@ func _run() -> void:
 		p.set("_pitch", atan2(tp.y - (from.y + 1.55), Vector2(tp.x - from.x, tp.z - from.z).length()))
 		await _wait(0.4)
 		await _shot("sewn_tag")
-	# ---- 畳む（12 コマで 30 コマ。何コマ目かで撮る）
-	var side: Vector3 = made.global_position + made.global_basis.x * (made.HALF.x + 1.4) + Vector3.UP * 0.1
-	_stand(side, made.global_position, -0.45)
-	await _wait(0.4)
-	_say("畳めるソリ: %s" % (p.foldable_near() != null))
-	if not craft.foldable(kind):
-		# 畳めない（二人以上で乗る）ソリ: G で折ろうとしても、前の角がぴくっと動くだけ。G のワッペンも出ない
-		_say("G で畳む: %s" % p.fold_near())
-		await _wait(1.5 / 12.0)
-		await _shot("cannot_fold")
-		await _wait(0.6)
-		_say("持ち物 %s（入らない）" % [craft.bag(who)])
-		var lf := FileAccess.open(_dir().path_join("log.txt"), FileAccess.WRITE)
-		lf.store_string("\n".join(log_lines) + "\n")
-		quit()
-		return
-	await _shot("before_fold")
-	_say("畳む: %s" % p.fold_near())
-	await _wait(3.0 / 12.0)
-	await _shot("fold_a")
-	for i in 4:
-		await _wait(5.0 / 12.0)
-		await _shot("fold_" + "bcde"[i])
-	await _wait(0.8)
-	p.set("_pitch", 0.0)
-	await _shot("in_bag")
-	await _wait(0.5)
-	await _shot("in_bag_turn")   # 名札の回る図が回っている
-	_say("財布 %d 持ち物 %s 手 %d" % [craft.wallet(who), craft.bag(who), craft.hands.get(who, -1)])
-	# ---- 外の坂で広げる（ふもとから少し上で、坂の下へ向いて）
-	var out_at := Vector3(2.0, 0, 22.0)
-	out_at.y = main.height(out_at.x, out_at.z) + 0.2
-	_stand(out_at, Vector3(2.0, 0.0, 60.0), -0.35)
-	await _wait(1.2)
-	await _shot("outside_hold")
-	_say("広げる所: %s" % p.unfold_spot())
-	_say("広げる: %s" % p.unfold_ahead())
-	await _wait(3.0 / 12.0)
-	await _shot("unfold_a")
-	for i in 4:
-		await _wait(5.0 / 12.0)
-		await _shot("unfold_" + "bcde"[i])
-	await _wait(1.0)
-	await _shot("unfolded")
-	var placed: RigidBody3D = null
-	for s in get_nodes_in_group("sleds"):
-		if s.get("crafted") and s.visible:
-			placed = s
-	if placed == null:
-		_say("広げたソリがない")
-		quit(1)
-		return
-	# ---- 乗って滑る: 広げたソリは坂の下を向いている。E と同じく乗って、W（前傾）で滑り出す
-	p.set("sled", placed)
-	p.get_on()
-	_say("乗った: %s" % (p.mode == p.Mode.RIDE))
-	placed.parked = false
-	placed.apply_central_impulse(-placed.global_basis.z * 1.5 * placed.mass)
-	await _wait(1.5)
-	await _shot("ride_1")
-	await _wait(1.5)
-	await _shot("ride_2")
-	_say("滑る速さ %.1f m/s" % placed.linear_velocity.length())
-	var f := FileAccess.open(_dir().path_join("log.txt"), FileAccess.WRITE)
-	f.store_string("\n".join(log_lines) + "\n")
+	# 畳めるのは米袋だけで、米袋は装備（N で呼び出す。tools/sack_gear_shots.gd）。ほかのソリは押して運ぶ（tools/carry_out_check.gd）
+	_say("持ち物 %s（ソリは入らない）" % [craft.bag(who)])
+	var lf := FileAccess.open(_dir().path_join("log.txt"), FileAccess.WRITE)
+	lf.store_string("\n".join(log_lines) + "\n")
 	quit()

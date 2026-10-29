@@ -25,6 +25,7 @@ var fabric := "red"
 var unfolding := false       # false: 畳む、true: 広げる
 var who: Node3D              # 包みが飛んでいく・落ちてくる人
 var start := 0               # 始まりのコマ（Doll.frame_index()）
+var speed := 1.0             # 速回し（米袋を帯に戻すときは 2.5 倍。30 コマを 12 コマで）
 var _w := 1.5
 var _l := 2.8
 var _frame := -1
@@ -63,7 +64,7 @@ func _ready() -> void:
 
 
 func _process(_dt: float) -> void:
-	var k := Doll.frame_index() - start
+	var k := int((Doll.frame_index() - start) * speed)
 	if k == _frame:
 		return
 	_frame = k
