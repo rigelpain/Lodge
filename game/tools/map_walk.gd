@@ -33,6 +33,8 @@ func _process(dt: float) -> bool:
 		main.hud.visible = false
 	if not _placed and t > 0.5:
 		_placed = true
+		if p.has_method("set_third"):   # 一人称で撮る（--third で三人称）
+			p.set_third(args.has("third"))
 		var v: PackedFloat64Array = args["stand"].split_floats(",")
 		var pos: Vector3 = p.global_position
 		if not args.has("spawn"):

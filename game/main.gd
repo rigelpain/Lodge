@@ -19,7 +19,8 @@ const Look := preload("res://look.gd")
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
-const SIZE := 256         # 地面の一辺 (m)。Jolt の地形は 2 のべき乗 + 1 点で作る
+const SIZE := 256         # 地面の 1 枚の一辺 (m)。Jolt の地形は 2 のべき乗 + 1 点で作る
+const TILES_Z := [0.0, 256.0, 512.0]   # 地面の区画のまんなかの z。丘の 1 枚と、南の大きな山（mountain.gd）の 2 枚。x は -128〜128
 const START := Vector3(0, 0, 38)
 
 ## ふもとのくぼみ（2026-10-30 代表「丘のふもとをへこませて、ロッジに突っ込まないような減速の仕組みを」）。
@@ -40,6 +41,7 @@ const LODGE_PAD := Rect2(-32, -16, 57, 37)   # ならす範囲（ロッジの座
 const LODGE_BLEND := 10.0                    # ならした所から丘へ戻るまでの幅 (m)
 
 const Sled := preload("res://sled.gd")
+const Mountain := preload("res://mountain.gd")
 const Props := preload("res://props.gd")
 const Player := preload("res://player.gd")
 const Bot := preload("res://bot.gd")
@@ -95,9 +97,9 @@ static func bowl(x: float, z: float) -> float:
 	return dip + RIM_H * smoothstep(BOWL_R, BOWL_R + RIM_W, r)
 
 
-## ロッジでならす前の地面: 丘とくぼみ
+## ロッジでならす前の地面: 丘とくぼみと、南の大きな山
 static func ground(x: float, z: float) -> float:
-	return hill(x, z) + bowl(x, z)
+	return hill(x, z) + bowl(x, z) + Mountain.lift(x, z)
 
 
 ## ロッジの座標 (x, z) を世界の (x, z) へ
@@ -112,6 +114,8 @@ static func lodge_to_world(l: Vector2) -> Vector2:
 const PATH_X := -13.4      # 風除室の中心（audio.gd の VEST.x と同じ）
 const PATH_HALF := 1.6     # 道の半分の幅 (m)
 const PATH_TINT := Color(0.86, 0.88, 0.93)   # 踏み固めた雪の色（少し灰青に沈む）
+const COURSE_TINT := Color(0.92, 0.95, 1.0)  # 大きな山のコースの圧雪した雪の色（少し青い白）
+const LIP_TINT := Color(0.42, 0.55, 0.85)    # ジャンプ台の踏み切りの縁（藍に染めた帯）
 
 static func path_weight(x: float, z: float, margin := 0.0) -> float:
 	var a := lodge_to_world(Vector2(PATH_X, 17.0))
@@ -146,7 +150,7 @@ static func drift(x: float, z: float) -> float:
 		_drift.seed = 5
 		_drift.frequency = 0.06
 		_drift.fractal_octaves = 3
-	return _drift.get_noise_2d(x, z) * 0.35 * lodge_weight(x, z) * (1.0 - path_weight(x, z))
+	return _drift.get_noise_2d(x, z) * 0.35 * lodge_weight(x, z) * (1.0 - maxf(path_weight(x, z), Mountain.path_weight(x, z)))
 
 
 ## 見た目の雪面が当たり判定の地面からずれている量。1 m 刻みの点のあいだは直線でつなぐ（滑りあとを雪面に載せる用）
@@ -592,7 +596,7 @@ func _make_world() -> void:
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	env.fog_enabled = true                               # 遠くは空の色に青く霞む。陽の側は明るく
 	env.fog_light_color = Color(0.74, 0.82, 0.95)
-	env.fog_density = 0.0025
+	env.fog_density = 0.0016   # 南の大きな山（300〜500 m 先）が霞みすぎないよう
 	env.fog_aerial_perspective = 0.4
 	env.fog_sun_scatter = 0.08
 	env.fog_sky_affect = 0.15
@@ -622,30 +626,36 @@ func _make_world() -> void:
 	sun_light = sun
 	add_child(sun)
 
-	# 遠景: 地平線にフェルトの山なみ。地面の端（±128 m）を隠すよう、すき間なく輪にする。
-	# スピーカーの柱（audio.gd の POST_R = 95 m）より外
+	# 遠景: 地平線にフェルトの山なみ。地面（x は ±128 m、z は -128〜640 m の長方形）の外周に沿って、すき間なく並べ、
+	# 地面の端を隠す。高台の高さぶん持ち上げる
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 11
 	var far_mat := Look.felt(Color(0.72, 0.79, 0.90), 0.3)
-	for k in 20:
-		var a := k * TAU / 20.0 + rng.randf_range(-0.06, 0.06)
-		var r := rng.randf_range(124, 140)
-		var sc := Vector3(rng.randf_range(40, 70), rng.randf_range(14, 26), rng.randf_range(30, 50))
-		var yaw := rng.randf() * TAU
-		var c := Vector2(cos(a), sin(a)) * r
-		# ロッジの後ろでは、建物にかからない所まで外へずらす（消すと、ロッジの裏で地面の端が見える）
-		var reach := maxf(sc.x, sc.z) * 0.5
-		while lodge_weight(c.x, c.y) < 1.0 or lodge_weight(c.x - c.normalized().x * reach, c.y - c.normalized().y * reach) < 1.0:
-			c *= 1.04
-		var m := MeshInstance3D.new()
-		m.mesh = SphereMesh.new()
-		m.material_override = far_mat
-		m.position = Vector3(c.x, RIM_H - 3.0, c.y)
-		m.scale = sc
-		m.rotation.y = yaw
-		m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-		m.name = "FarMound%d" % k
-		add_child(m)
+	var x0 := -SIZE / 2.0
+	var x1 := SIZE / 2.0
+	var z0: float = TILES_Z[0] - SIZE / 2.0
+	var z1: float = TILES_Z[TILES_Z.size() - 1] + SIZE / 2.0
+	var edges := [[Vector2(x0, z0), Vector2(x1, z0), Vector2(0, -1)], [Vector2(x1, z0), Vector2(x1, z1), Vector2(1, 0)],
+		[Vector2(x1, z1), Vector2(x0, z1), Vector2(0, 1)], [Vector2(x0, z1), Vector2(x0, z0), Vector2(-1, 0)]]
+	var k := 0
+	for e in edges:
+		var a: Vector2 = e[0]
+		var b: Vector2 = e[1]
+		var out: Vector2 = e[2]
+		var count := int(ceilf(a.distance_to(b) / 40.0))
+		for q in count:
+			var c: Vector2 = a.lerp(b, (q + rng.randf_range(0.2, 0.8)) / count) + out * rng.randf_range(0.0, 14.0)
+			var sc := Vector3(rng.randf_range(45, 75), rng.randf_range(14, 26), rng.randf_range(30, 50))
+			var m := MeshInstance3D.new()
+			m.mesh = SphereMesh.new()
+			m.material_override = far_mat
+			m.position = Vector3(c.x, RIM_H - 3.0, c.y)
+			m.scale = sc
+			m.rotation.y = (0.0 if out.y != 0.0 else PI / 2) + rng.randf_range(-0.3, 0.3)   # 長い向きを地面の縁に沿わせる
+			m.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			m.name = "FarMound%d" % k
+			add_child(m)
+			k += 1
 
 
 ## ロッジ（game/lodge/lodge.tscn）。main.tscn に置いてあり、エディタでも見える。
@@ -740,20 +750,95 @@ func _make_snowfall(follow: Node3D) -> void:
 
 
 func _make_ground() -> void:
-	var n := SIZE + 1
 	var half := SIZE / 2.0
-	var heights := PackedFloat32Array()
-	heights.resize(n * n)
+	var z0: float = TILES_Z[0] - half
+	var rows := int(TILES_Z[TILES_Z.size() - 1] + half - z0) + 1
+	# 高さは 1 m おきに 1 回だけ計算し、当たり判定と見た目で使い回す。まわり 1 点ずつ広げる（法線用）
+	var g := SIZE + 3
+	var gr := rows + 2
+	var hs := PackedFloat32Array()   # 当たり判定の高さ
+	var vs := PackedFloat32Array()   # 見た目の雪面の高さ（吹きだまりのうねりを足す）
+	hs.resize(g * gr)
+	vs.resize(g * gr)
+	for j in gr:
+		for i in g:
+			var x := i - 1 - half
+			var z := j - 1 + z0
+			var h := height(x, z)
+			hs[j * g + i] = h
+			vs[j * g + i] = h + drift(x, z)
+	var at := func(i: int, j: int) -> float: return hs[(j + 1) * g + i + 1]   # i: x + half、j: z - z0
+
+	# 当たり判定: 丘の 1 枚（257 点四方）と、大きな山の 1 枚（513 点四方。x の ±128 m の外は縁の高さを延ばす）。
+	# 山のコースは継ぎ目のない 1 枚に載せる（別々の地形の継ぎ目では、重いソリが段に引っかかって止まる）。
+	# 2 枚の継ぎ目は z = 128 m の平らな高台（ロッジの裏）
+	var n := SIZE + 1
+	var hill_h := PackedFloat32Array()
+	hill_h.resize(n * n)
 	for j in n:
 		for i in n:
-			heights[j * n + i] = height(i - half, j - half)
+			hill_h[j * n + i] = at.call(i, j)
+	_add_height_body(hill_h, n, Vector3(0, 0, TILES_Z[0]))
+	var m := SIZE * 2 + 1
+	var mz0 := int(TILES_Z[0] + half - z0)   # 山の 1 枚の北の端の行
+	var mtn_h := PackedFloat32Array()
+	mtn_h.resize(m * m)
+	for j in m:
+		var jj := mini(mz0 + j, rows - 1)
+		for i in m:
+			mtn_h[j * m + i] = at.call(clampi(i - SIZE / 2, 0, SIZE), jj)
+	_add_height_body(mtn_h, m, Vector3(0, 0, TILES_Z[0] + half + SIZE))
 
-	# 当たり判定
+	# 見た目: 256 m 四方ずつ。1 m 刻み、頂点を共有してなめらかに。法線は格子から出すので、継ぎ目で影がずれない
+	var snow := Look.snow()
+	snow.vertex_color_use_as_albedo = true   # 道の踏み固めた色
+	for t in TILES_Z.size():
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		for j in n:
+			var jr := t * SIZE + j
+			for i in n:
+				var x := i - half
+				var z := jr + z0
+				var c := (jr + 1) * g + i + 1
+				st.set_normal(Vector3(vs[c - 1] - vs[c + 1], 2.0, vs[c - g] - vs[c + g]).normalized())
+				var col := Color.WHITE.lerp(COURSE_TINT, Mountain.course_weight(x, z)).lerp(LIP_TINT, Mountain.lip_weight(x, z))
+				st.set_color(col.lerp(PATH_TINT, maxf(path_weight(x, z), Mountain.path_weight(x, z))))
+				st.set_uv(Vector2(x, z) * 0.5)
+				st.add_vertex(Vector3(x, vs[c], z))
+		for j in n - 1:
+			for i in n - 1:
+				var a := j * n + i
+				st.add_index(a)
+				st.add_index(a + 1)
+				st.add_index(a + n)
+				st.add_index(a + n)
+				st.add_index(a + 1)
+				st.add_index(a + n + 1)
+		st.generate_tangents()
+		var mesh := MeshInstance3D.new()
+		mesh.name = "Ground%d" % t
+		mesh.mesh = st.commit()
+		mesh.material_override = snow
+		if ground_mesh == null:
+			ground_mesh = mesh
+		add_child(mesh)
+
+	var mt := Mountain.new()
+	mt.name = "Mountain"
+	mt.world = self
+	add_child(mt)
+	_make_hill_trees()
+
+
+## 地形の当たり判定を 1 枚足す（n 点四方、1 m おき、まんなかが center）
+func _add_height_body(heights: PackedFloat32Array, n: int, center: Vector3) -> void:
 	var shape := HeightMapShape3D.new()
 	shape.map_width = n
 	shape.map_depth = n
 	shape.map_data = heights
 	var body := StaticBody3D.new()
+	body.position = center
 	var col := CollisionShape3D.new()
 	col.shape = shape
 	body.add_child(col)
@@ -762,38 +847,8 @@ func _make_ground() -> void:
 	body.physics_material_override = pm
 	add_child(body)
 
-	# 見た目: 1 m 刻み、頂点を共有してなめらかな法線に。わずかなうねりで雪の吹きだまりを出す
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var step := 1
-	var cols := SIZE / step + 1
-	for j in cols:
-		for i in cols:
-			var x := i * step - half
-			var z := j * step - half
-			var y := height(x, z) + drift(x, z)
-			st.set_color(Color.WHITE.lerp(PATH_TINT, path_weight(x, z)))
-			st.set_uv(Vector2(x, z) * 0.5)
-			st.add_vertex(Vector3(x, y, z))
-	for j in cols - 1:
-		for i in cols - 1:
-			var a := j * cols + i
-			st.add_index(a)
-			st.add_index(a + 1)
-			st.add_index(a + cols)
-			st.add_index(a + cols)
-			st.add_index(a + 1)
-			st.add_index(a + cols + 1)
-	st.generate_normals()
-	st.generate_tangents()
-	var mesh := MeshInstance3D.new()
-	mesh.mesh = st.commit()
-	var snow := Look.snow()
-	snow.vertex_color_use_as_albedo = true   # 道の踏み固めた色
-	mesh.material_override = snow
-	ground_mesh = mesh
-	add_child(mesh)
 
+func _make_hill_trees() -> void:
 	# 木（ソリの通り道は空ける）。フェルトの円錐を 2 段重ねたミニチュアの木（props/build_tree.py の glb）
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 7
