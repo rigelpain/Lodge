@@ -85,6 +85,11 @@ var _hold: Array = [null, null]   # 手ごとに [基準のノード, その座�
 var _arm_base := {}          # コマで決めた腕の回転（毎フレームここから伸ばし直す）
 var _streams := {}           # 息の煙の出口: "small" ふだん、"big" 声、"long" B の長い息・おーい
 var _blow := {"small": 0.0, "big": 0.0}   # 吐き続ける残り (s)。0 になったら出すのをやめる（出た煙は流れ続ける）
+var _scale_base := {}        # 出口ごとの、粒の大きさ [最小, 最大]（寒さを掛ける前）
+var _breath_mat: ShaderMaterial
+var _cold := -1.0            # 白い息の見え方（0 暖かくて見えない 〜 1 ふつう 〜 1.6 とても寒い）。口もとの気温から、数秒でなじむ
+var _cold_want := 1.0
+var _cold_t := 0.0
 var _next_out := 0
 var _frame := -1
 var _yaw := 0.0
@@ -917,6 +922,7 @@ func _make_breath() -> void:
 	if not sun.is_empty():
 		mat.set_shader_parameter("sun_dir", -(sun[0] as Node3D).global_basis.z)
 	quad.material = mat
+	_breath_mat = mat   # 人形ごとの材質（濃さを寒さで変える）
 	var grow := Curve.new()   # 出口で細く、離れるほど太く
 	grow.add_point(Vector2(0.0, 0.2))
 	grow.add_point(Vector2(0.25, 0.65))
@@ -935,17 +941,18 @@ func _make_breath() -> void:
 		e.explosiveness = 0.0
 		e.randomness = 0.0          # 出す間隔はそろえる（ばらつかせると粒が寄り集まって、かたまりに分かれる）
 		e.lifetime_randomness = 0.2
-		e.direction = Vector3(0, 0.1, -1)
+		e.direction = Vector3(0, 0.12, -1)
 		e.spread = 5.0             # 出口では細く
 		e.initial_velocity_min = spec[3] * 0.85
 		e.initial_velocity_max = spec[3] * 1.15
 		e.damping_min = 0.45       # 口から離れるとゆっくりになり、たまって広がる
 		e.damping_max = 0.7
-		e.gravity = Vector3(0, 0.05, 0)   # 前へ伸びてから、ゆっくり上がる
+		e.gravity = Vector3(0, 0.24, 0)   # 暖かい息なので、前へ少し伸びてから、ゆっくり上へ昇りながら広がる
 		e.angle_min = 0.0
 		e.angle_max = 360.0
 		e.angular_velocity_min = -14.0
 		e.angular_velocity_max = 14.0
+		_scale_base[key] = [spec[2] * 0.85, spec[2] * 1.15]
 		e.scale_amount_min = spec[2] * 0.85
 		e.scale_amount_max = spec[2] * 1.15
 		e.scale_amount_curve = grow
@@ -968,16 +975,35 @@ func _puff(size: float, speed: float) -> void:
 	e.initial_velocity_min = v * 0.85
 	e.initial_velocity_max = v * 1.15
 	var k := clampf(size / 1.6, 0.8, 1.3) if key == "big" else 1.0   # 声が大きいほど、煙も太く
-	e.scale_amount_min = spec[2] * 0.85 * k
-	e.scale_amount_max = spec[2] * 1.15 * k
-	_blow[key] = maxf(_blow[key], 0.35 + 0.25 * size)   # ふだん 0.6 秒、声 0.8〜0.85 秒
+	_scale_base[key] = [spec[2] * 0.85 * k, spec[2] * 1.15 * k]
+	# ふだん 0.6 秒、声 0.8〜0.85 秒。寒いほど長く吐く（暖かいと短い）
+	_blow[key] = maxf(_blow[key], (0.35 + 0.25 * size) * (0.7 + 0.35 * maxf(_cold, 0.0)))
 
 
-## 吐いている残りを減らし、残りのあいだだけ煙を出す（なめらかに。姿勢のコマとは関係なく）
+## 吐いている残りを減らし、残りのあいだだけ煙を出す（なめらかに。姿勢のコマとは関係なく）。
+## 寒さ（口もとの気温、temperature.gd）で見え方を変える: 暖かい所では出さない。寒いほど煙が大きく、濃く、長く吐く。
+## 寒さは 0.25 秒おきに引き、2 秒ほどの時定数でなじむ（ロッジを出入りしても急に切り替わらない）
 func _blow_breath(dt: float) -> void:
-	for key in _blow:
-		_blow[key] = maxf(0.0, _blow[key] - dt)
-		(_streams[key] as CPUParticles3D).emitting = _blow[key] > 0.0
+	_cold_t -= dt
+	if _cold_t <= 0.0:
+		_cold_t = 0.25
+		var temp := get_node_or_null("/root/Temperature")
+		_cold_want = temp.breath(_long.global_position) if temp else 1.0
+		if _cold < 0.0:
+			_cold = _cold_want   # はじめは、その場の寒さから
+	_cold = lerpf(_cold, _cold_want, 1.0 - exp(-dt / 2.0))
+	var seen := _cold > 0.04
+	var size := 0.7 + 0.35 * _cold
+	_breath_mat.set_shader_parameter("opacity", 0.78 * clampf(_cold, 0.0, 1.25))   # 暖かくなるにつれて薄れ、消える
+	for key in _streams:
+		var e: CPUParticles3D = _streams[key]
+		e.scale_amount_min = _scale_base[key][0] * size
+		e.scale_amount_max = _scale_base[key][1] * size
+		if key in _blow:
+			_blow[key] = maxf(0.0, _blow[key] - dt)
+			e.emitting = _blow[key] > 0.0 and seen
+		elif not seen:
+			e.emitting = false   # 長い息も、暖かい所では白くならない
 
 
 # ---------------------------------------------------------------- 身ぶり（emotes.gd）

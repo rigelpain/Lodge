@@ -7,7 +7,7 @@
 |---|---|
 | `day_side.jpg` | 昼、顔の横から（煙の形がいちばん分かる） |
 | `evening_side.jpg` | 夕方（18 時半）、顔の横から |
-| `lodge_side.jpg` | ロッジの中、顔の横から |
+| `lodge_side.jpg` | ロッジの中、顔の横から（気温を入れる前。いまはロッジの中では息は白くならない。[temperature/](temperature/README.md)） |
 | `day_fp.jpg` | 昼、一人称（右下の小窓も写る） |
 | `lodge_fp.jpg` | ロッジの中、一人称 |
 

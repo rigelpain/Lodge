@@ -528,6 +528,11 @@ func _update_lodge(dt: float) -> void:
 
 ## 0 外、1 風除室、2 中
 func _zone_of(pos: Vector3) -> int:
+	return zone_at(lodge, pos)
+
+
+## ロッジに対して、その位置が 0 外・1 風除室・2 中のどこか（temperature.gd も、この判定で中か外かを決める）
+static func zone_at(lodge: Node3D, pos: Vector3) -> int:
 	if lodge == null:
 		return 0
 	var l := lodge.to_local(pos)
