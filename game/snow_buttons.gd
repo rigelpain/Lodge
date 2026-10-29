@@ -15,7 +15,10 @@ extends Node3D
 ## 歩いて裁ちばさみで取る: 歩いて近づき F（player.gd）で、はさみを出してちょきんと切る（12 fps）。そのあいだは動けず、
 ##   取ったボタンは切った人だけに入る。ソリで通るほうが、たくさん・速く取れる。
 ## 滑った距離と速さでも: 一回の滑り（乗って滑り出してから止まるまで）の長さで木のボタン、いちばん速い所（RIDE_BRASS）を
-##   超えるたびに真鍮のボタンが一つ。速さの表示（speedo.gd）の縫い目に縫い込まれ、止まると糸が巻き取られてボタンに変わる（hud.gd）。
+##   超えるたびに真鍮のボタンが一つ。どちらも、もらえた瞬間に速さの表示（speedo.gd）の糸の上へぽんと縫い込まれ、
+##   止まると糸が巻き取られて、糸の上のボタンが財布へ飛ぶ（hud.gd・craft_ui.gd）。
+## 取得音: 財布に入る瞬間に、素材ごとの音（木「コッ」・真鍮「チン」・白蝶貝「シャラン」・螺鈿）を耳元で鳴らす（craft_ui.gd が
+##   audio.gd の coin を呼ぶ）。ソリで取っても、はさみで取っても、滑った分でも同じ。その場では、糸が切れる「ぷつん」と「ぽん」だけ
 ##   分け方は雪のボタンと同じ。
 ##
 ## 出来事（craft.gd・emotes.gd と同じ形。中身は数・文字・Vector3 だけ）。ホストが決めて配る:
@@ -23,8 +26,10 @@ extends Node3D
 ##   snip   {id, sled, by, at}                       ソリ（名前）が、ボタン id の糸を切った（by は、はさみで切った人の番号。ソリなら -1）
 ##   share  {id, gives: {番号: 数}, parts: {番号: 端数}, at}  切ったボタンを分ける。数はそのあと craft の earn で財布へ
 ##   shear  {id, who}                                歩いてきた人が裁ちばさみを出した（frame + SHEAR_CUT コマで snip。snip の by に人の番号）
-##   ride_mark {sled, speed}                         滑っているソリが、いちばん速い所 speed を超えた（真鍮が縫い込まれる）
-##   ride_pay  {sled, dist, wood, brass, gives: {番号: 数}}  一回の滑りが終わった。滑った長さ（m）と、木と真鍮の数
+##   ride_mark {sled, look, speed}                   滑っているソリに、ボタンが一つ縫い込まれた（look: "wood" は RIDE_M_PER_WOOD 滑るごと、
+##                                                   "brass" はいちばん速い所 speed を超えたとき）
+##   ride_pay  {sled, dist, wood, brass, sewn, gives: {番号: 数}}  一回の滑りが終わった。滑った長さ（m）と、木と真鍮の数。
+##                                                   sewn は縫い込んだ順のボタンの並び（"wood"・"brass"）
 ## いまは一人の画面の中だけ: send() がすぐ _apply() して配る。通信を入れたら、当たりの判定（_physics_process）と
 ## 置き場所選び・分け方はホストだけがして、ほかの人は出来事を受けて見た目を動かす（風の揺れは各自の画面だけ）。
 
@@ -79,7 +84,6 @@ const SHEAR_CUT := 8           # はさみを出してから、糸が切れる�
 const SHEAR_END := 15          # はさみをしまい終わるまで（コマ）。このあいだは動けない
 # ---- 滑った距離と速さ（一回の滑りごと）。斜面のボタンを拾うほうが多くもらえるくらいに
 const RIDE_M_PER_WOOD := 12.0  # これだけ滑るごとに木のボタン 1 つ (m)
-const RIDE_MIN := 15.0         # これより短い滑りは数えない (m)
 const RIDE_MAX_WOOD := 18      # 一回の滑りの木のボタンの上限
 const RIDE_BRASS := [10.0, 13.0]     # この速さ (m/s) を超えるたびに真鍮のボタン 1 つ（一回の滑りで一度ずつ）
 const RIDE_STOP_T := 1.0       # 0.5 m/s より遅いのがこれだけ続いたら、滑り終わり (s)
@@ -365,7 +369,8 @@ func _track_runs(dt: float) -> void:
 		var run: Dictionary = _runs.get(sled, {})
 		if run.is_empty():
 			if riding and v > 1.5:
-				run = {"top": sled.global_position.y, "cells": {}, "dist": 0.0, "best": 0.0, "marks": [], "riders": {}, "slow": 0.0}
+				run = {"top": sled.global_position.y, "cells": {}, "dist": 0.0, "best": 0.0, "marks": [], "riders": {}, "slow": 0.0,
+						"wood": 0, "sewn": []}
 				_runs[sled] = run
 			continue
 		if riding:
@@ -380,7 +385,12 @@ func _track_runs(dt: float) -> void:
 			for m in RIDE_BRASS:
 				if v >= m and not m in run.marks:
 					run.marks.append(m)
-					send({"kind": "ride_mark", "sled": String(sled.name), "speed": m})
+					run.sewn.append("brass")
+					send({"kind": "ride_mark", "sled": String(sled.name), "look": "brass", "speed": m})
+			while run.wood < mini(floori(run.dist / RIDE_M_PER_WOOD), RIDE_MAX_WOOD):   # RIDE_M_PER_WOOD 滑るごとに木を一つ
+				run.wood += 1
+				run.sewn.append("wood")
+				send({"kind": "ride_mark", "sled": String(sled.name), "look": "wood", "speed": v})
 		run.slow = run.slow + dt if (v < 0.5 or not riding) else 0.0
 		if run.slow >= RIDE_STOP_T:
 			var drop := (float(run.top) - sled.global_position.y) / maxf(1.0, world.height(0.0, 0.0))
@@ -452,12 +462,16 @@ func _share(sled: RigidBody3D, id_: int, n: int, at: Vector3) -> void:
 	_pay(gives.gives, at)
 
 
-## 財布へ（craft.gd の earn）。from: "spool" なら、画面では速さの表示の糸巻きから飛ぶ
-func _pay(gives: Dictionary, at: Vector3, from := "") -> void:
+## 財布へ（craft.gd の earn）。from: "spool" なら、画面では速さの表示の糸の上から飛ぶ。
+## pieces は飛ぶボタンの並び（滑った分は縫い込んだ順）。全部（full）をもらった人にだけ付ける（手伝った人の分は段ごとに分けて飛ぶ）
+func _pay(gives: Dictionary, at: Vector3, from := "", pieces := [], full := -1) -> void:
 	var craft: Node = world.get("craft") if world else null
 	if craft:
 		for who in gives:
-			craft.send({"kind": "earn", "who": who, "n": gives[who], "at": at, "from": from})
+			var ev := {"kind": "earn", "who": who, "n": gives[who], "at": at, "from": from}
+			if not pieces.is_empty() and int(gives[who]) == full:
+				ev["pieces"] = pieces.duplicate()
+			craft.send(ev)
 
 
 ## 分け方: 乗っていた人（番号の配列）に n ずつ、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
@@ -548,16 +562,14 @@ func _do_cuts() -> void:
 ## 一回の滑り（乗って滑り出してから止まるまで）の長さと速さを数え、終わったら分ける
 func _ride_pay(sled: RigidBody3D, run: Dictionary) -> void:
 	var dist: float = run.dist
-	if dist < RIDE_MIN:
-		return
-	var wood := mini(floori(dist / RIDE_M_PER_WOOD), RIDE_MAX_WOOD)
+	var wood: int = run.wood
 	var brass: int = run.marks.size()
 	var n := wood + 10 * brass
 	if n <= 0:
 		return
 	var g := _gives(sled, run.riders.keys(), n)
-	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": wood, "brass": brass, "gives": g.gives})
-	_pay(g.gives, sled.global_position, "spool")
+	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": wood, "brass": brass, "sewn": run.sewn, "gives": g.gives})
+	_pay(g.gives, sled.global_position, "spool", run.sewn, n)
 
 
 # ================================================================ 見た目
@@ -916,8 +928,7 @@ func _pop(b: Btn, f: int, sled: Node3D) -> void:
 	b.lid.visible = false
 	b.cut_bits = true
 	_audio("snap", b.at, f)
-	_audio("pop", b.at, f + 1)
-	_audio("take", b.at, f + 2, b.tier)
+	_audio("pop", b.at, f + 1)   # 素材ごとの取得音は、財布に入る瞬間に耳元で（craft_ui.gd → audio.gd の coin）
 	_confetti(b.at + b.up * 0.15, b.tier)
 	# 切れた糸の残りは、しばらく雪に残って消える
 	get_tree().create_timer(4.0).timeout.connect(func() -> void:

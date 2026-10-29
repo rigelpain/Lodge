@@ -8,8 +8,9 @@ extends RefCounted
 ##   縫い目     リボンの上を下へ縫い進む（滑った長さの分だけ流れる）。速いほど太く・濃く・目が長く、10 m/s の先は 2 列
 ##   色         糸の色が、ソリのメインカラーから明るい山吹へ少しずつ変わる
 ## ご褒美（今日いちばん・節目の速さを超えた瞬間）: ボビンがぽんと跳ね、糸がぱっと広がり、縫い目に小さな結び目ができて流れていく。
-## 滑った距離と速さのボタン（snow_buttons.gd）: いちばん速い所を超えると、縫い目に真鍮のボタンが一つ縫い込まれて流れていく。
-## 止まると、縫い目の糸が下の端から巻き取られていき（reel）、ボビンが逆に回る。巻き取った糸はボタンに変わって財布へ飛ぶ（craft_ui.gd）。
+## 滑った距離と速さのボタン（snow_buttons.gd）: 12 m 滑るごとに木のボタン、いちばん速い所を超えると真鍮のボタンが、
+## 糸の上へぽんと縫い込まれ（sewn）、縫い目と一緒に下へ流れて、糸の下の端にたまっていく（数珠のように上へ積もる）。
+## 止まると、縫い目の糸が下の端から巻き取られていき（reel）、ボビンが逆に回る。糸の上のボタンは、上から順に財布へ飛ぶ（craft_ui.gd）。
 ## 立体の板を使うとき（hud_plates.gd）は、ボビンは Blender の glb、リボンは厚みのある板で、縫い目はリボンの板に重ねる。
 ## 案の見比べ（糸巻き・巻尺・フェルトのメーター）は design/hud/speedo-ideas.png。
 
@@ -91,9 +92,34 @@ static func draw_spool(ci: CanvasItem, g: Dictionary, k: float, spin: float, bas
 		ci.draw_circle(bp + bd * 13.0 * u, 3.6 * u, Color(Icons.RED, a))
 
 
+const SEWN_R := 8.0   # 糸の上のボタンの半径（1080 のときの px）
+
+
+## 糸の上のボタンの、画面の場所（sewn の並びと同じ順。外れたものも、外れる前の場所）。縫い込んだときから下へ流れ、
+## 下の端（巻き取り中はその上がっていく端）に着いたら、古いものから下に積もる
+static func sewn_positions(g: Dictionary, dist: float, sewn: Array, reel := 0.0) -> Array:
+	var u: float = g.u
+	var y0: float = g.y0
+	var y1: float = g.y1
+	if reel > 0.0:
+		y1 = lerpf(y1, y0, ease(reel, 0.6))
+	var limit := y1 - SEWN_R * u
+	var out := []
+	for e in sewn:
+		var y: float = maxf(y0 + (dist - float(e.d)) * STITCH_PX * u, y0)
+		if not e.get("off", false):
+			if y >= limit:
+				y = limit
+				limit = maxf(limit - SEWN_R * u * 1.15, y0)
+		else:
+			y = minf(y, limit)
+		out.append(Vector2(g.x, y))
+	return out
+
+
 ## リボンと、その上を下へ縫い進む縫い目・結び目・流れる糸・舞う切れはし。ribbon が true ならリボンの地も描く（平らなとき）
 static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, dist: float, base: Color, knots: Array, a: float, ribbon := true,
-		brass := [], reel := 0.0) -> void:
+		sewn := [], reel := 0.0) -> void:
 	var u: float = g.u
 	var x: float = g.x
 	var y0: float = g.y0
@@ -131,13 +157,18 @@ static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, 
 			ci.draw_circle(Vector2(x, ky) + Vector2(0.8, 1.2) * u, 6.0 * u, Color(Icons.SHADOW, 0.25 * a))
 			ci.draw_circle(Vector2(x, ky), 6.0 * u, Color(col.darkened(0.15), a * (1.0 - f * 0.5)))
 			ci.draw_arc(Vector2(x, ky), 3.6 * u, 0.3, 4.2, 10, Color(col.lightened(0.4), a * (1.0 - f * 0.5)), 1.2 * u, true)
-	# 縫い込まれた真鍮のボタン: 縫い目と一緒に下へ流れていく（巻き取りでは、下の端に追われて上へ）
-	for bd in brass:
-		var by: float = minf(y0 + (dist - float(bd)) * STITCH_PX * u, y1)
-		if by > y0 - 4.0 * u and by <= y1_full:
-			Icons._o = Vector2(x, maxf(by, y0))
-			Icons._s = 1.0
-			preload("res://craft_icons.gd").money(ci, Vector2.ZERO, 9.0 * u, "brass", a, spin * 0.2)
+	# 縫い込まれたボタン: 縫い目と一緒に下へ流れ、下の端にたまる（巻き取りでは、下の端に追われて上へ）。
+	# 縫い込んだばかりは、ぽんとふくらむ
+	var ps := sewn_positions(g, dist, sewn, reel)
+	for i in sewn.size():
+		var e: Dictionary = sewn[i]
+		if e.get("off", false):
+			continue
+		var age := (dist - float(e.d)) * STITCH_PX * u / (14.0 * u)   # 縫い込んでから流れた長さ（ボタン 1 つ半ほどで 1）
+		var pop := 1.0 + 0.6 * sin(clampf(age, 0.0, 1.0) * PI) if age < 1.0 else 1.0
+		Icons._o = ps[i]
+		Icons._s = 1.0
+		preload("res://craft_icons.gd").money(ci, Vector2.ZERO, SEWN_R * u * pop, String(e.look), a, spin * 0.2 + i)
 	# 縫い目の横を下へ流れる糸（速いほど長く、波が細かい）
 	var len := (y1 - y0) * clampf(0.2 + 0.8 * k, 0.2, 1.0)
 	var tail := PackedVector2Array()

@@ -29,6 +29,9 @@ var bots: Array = []
 var lodge: Node3D
 var rng := RandomNumberGenerator.new()
 var debug := ""
+## 確かめ用: true のあいだ、鳴らした音を played に書きとめる {t（ゲームの秒）, name, near（耳元か）, dist（聞く所からの m）, wind（滑走の風の dB）}
+var log_on := false
+var played: Array = []
 
 var _streams := {}
 var _last_pick := {}
@@ -468,6 +471,73 @@ func sack(who: Node3D, what: String) -> void:
 			_emote_sound(ev, 8, "felt_pat", 3, -8.0, rng.randf_range(1.1, 1.2), at, near)
 
 
+## お金のボタンが財布に入った瞬間の音（craft_ui.gd が、飛んでいったボタンが財布に着くたびに呼ぶ）。自分の耳元で鳴らす。
+## 1 枚ごとに、ボタンが財布の山に当たって重なる硬く軽い「チャリ」（button_chari、8 つから選ぶ）。続けて入るときは
+## COIN_GAP のあいだ（少しずつばらつかせる）で続けて鳴らし、チャリチャリチャリ…と小気味よく連なる（2026-10-30 代表）。
+## 真鍮・白蝶貝・螺鈿は、そのチャリに素材の音（チン・シャラン・螺鈿の特別な音）を重ねて、連打の中で光らせる
+const COIN_GAP := Vector2(0.05, 0.075)
+const COIN_SHINE := {"brass": ["button_take_brass", -3.0], "pearl": ["button_take_pearl", -2.0], "raden": ["button_take_raden", 1.0]}
+var _coin_at := 0.0   # 次のチャリを鳴らせる時刻（_clock）
+
+
+## step: 続けて入る何枚目か（0 から）。続くほど、ほんの少しずつ音が上がる
+func coin(look: String, step := 0) -> void:
+	var wait := maxf(0.0, _coin_at - _clock)
+	_coin_at = _clock + wait + rng.randf_range(COIN_GAP.x, COIN_GAP.y)
+	if wait > 0.0:
+		await get_tree().create_timer(wait).timeout
+	var s := _pick("button_chari", 8)
+	if s == null:
+		return
+	_note("button_chari", true, Vector3.ZERO)
+	var p := AudioStreamPlayer.new()
+	p.bus = "Self"
+	add_child(p)
+	_shot2(p, s, rng.randf_range(-3.0, -1.0), (1.0 + 0.012 * mini(step, 16)) * rng.randf_range(0.92, 1.08))
+	p.finished.connect(p.queue_free)
+	if COIN_SHINE.has(look):   # 上の素材: 連打の中で光る
+		var spec: Array = COIN_SHINE[look]
+		var t := _wav("%s_01" % spec[0])
+		if t:
+			_note(spec[0], true, Vector3.ZERO)
+			var q := AudioStreamPlayer.new()
+			q.bus = "Self"
+			add_child(q)
+			_shot2(q, t, spec[1], rng.randf_range(0.98, 1.03))
+			q.finished.connect(q.queue_free)
+
+
+## 速さの表示の糸の上のボタンが、ぽんと外れて財布へ飛び出す（ぷつ。小さく高く、耳元で）
+func coin_off() -> void:
+	var s := _pick("button_snap", 3)
+	if s == null:
+		return
+	_note("button_snap", true, Vector3.ZERO)
+	var p := AudioStreamPlayer.new()
+	p.bus = "Self"
+	add_child(p)
+	_shot2(p, s, -16.0, rng.randf_range(1.3, 1.45))
+	p.finished.connect(p.queue_free)
+
+
+## 滑り終わって、もらったボタンが全部財布に入ったときの締めくくり（ちゃりん）。count 枚、brass は真鍮が混ざったか。
+## 少し（〜5）・ふつう（〜12）・たくさんか真鍮入りで、3 つの大きさ。最後の取得音のすぐあとに、耳元で
+func reward(count: int, brass: bool) -> void:
+	var size := 3 if brass or count > 12 else (2 if count > 5 else 1)
+	var wait := maxf(0.0, _coin_at - _clock) + 0.08
+	_coin_at = _clock + wait + 0.3
+	await get_tree().create_timer(wait).timeout
+	var s := _wav("button_reward_%02d" % size)
+	if s == null:
+		return
+	_note("button_reward_%02d" % size, true, Vector3.ZERO)
+	var p := AudioStreamPlayer.new()
+	p.bus = "Self"
+	add_child(p)
+	_shot2(p, s, [0.0, -1.0, 0.0, 1.0][size], 1.0)
+	p.finished.connect(p.queue_free)
+
+
 ## 雪に縫い留められたボタン（snow_buttons.gd が呼ぶ）。frame は出来事のコマ。その場所から鳴らす。
 ## what: "snap" 糸がぷつん / "pop" ボタンがぽん / "land" 降ってきて雪にぽふ / "sew" 糸がするっと縫い付く /
 ##       "take" 取った（tier: 0 木のコッ・1 真鍮のチン・2 白蝶貝のシャラン・3 螺鈿） / "shears" 裁ちばさみのシャキン / "swish" はさみを出す
@@ -698,6 +768,12 @@ func _on_emote(ev: Dictionary) -> void:
 
 
 ## 出来事のコマ + k に、音を 1 つ鳴らす。自分の音は耳元（Self／Voice）、人の音はその場所から
+func _note(name_: String, near: bool, at: Vector3) -> void:
+	if log_on:
+		played.append({"t": Engine.get_physics_frames() / float(Engine.physics_ticks_per_second), "name": name_, "near": near,
+				"dist": 0.0 if near else _listener().distance_to(at), "wind": _wind_rush.volume_db if _wind_rush else -80.0})
+
+
 func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "", fixed := 0) -> void:
 	var tps := Engine.physics_ticks_per_second
 	var tick := (int(ev.frame) + k) * tps / Doll.FPS
@@ -707,6 +783,7 @@ func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, 
 		return
 	if wait > 0.0:
 		await get_tree().create_timer(wait, true, true).timeout
+	_note(name_, near, at)
 	if near:
 		var p := AudioStreamPlayer.new()
 		p.bus = bus if bus != "" else "Self"

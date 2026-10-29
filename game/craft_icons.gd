@@ -285,10 +285,11 @@ static func _shears(ci: CanvasItem, c: Vector2, a: float) -> void:
 	Icons.patch(ci, Icons.circ(c + Vector2(0, 2), 2.0, 10), BRASS, a, false)
 
 
-## 値段: 段ごとに分けたボタンを並べる（大きい段から、3 個ずつの段）。center は画面の px、r はボタンの半径（px）。
-## col は木のボタンの色（足りないときの赤など）
+## 値段: 段ごとに分けたボタンを並べる（価値の低い順に左から。財布の山と同じ向き。3 個ずつの段）。center は画面の px、
+## r はボタンの半径（px）。col は木のボタンの色（足りないときの赤など）
 static func price(ci: CanvasItem, center: Vector2, n: int, r: float, a := 1.0, col := COIN) -> void:
 	var list: Array = preload("res://craft.gd").pieces(n)
+	list.reverse()
 	var m := list.size()
 	var per := 3 if m > 3 else m
 	var rows := ceili(m / 3.0)

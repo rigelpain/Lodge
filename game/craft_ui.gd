@@ -16,9 +16,10 @@ extends CanvasLayer
 ##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
 ##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: 取った所からボタンが画面を飛んで財布へ入り、
-##     財布がぽんと跳ねる。飛ぶボタンは、増えた分を段ごとに分けた 1 枚ずつ（真鍮・白蝶貝・螺鈿は光る）。滑ってもらった分は、
-##     速さの表示の糸巻きから、ぽんぽんと続けて飛ぶ。持ち物の列が出ていなければ、画面の下のまんなかに財布だけを少しのあいだ出す
-##   財布は段ごとの山（左から螺鈿・白蝶貝・真鍮・木）。両替はひとりでに（木が 10 枚になると真鍮 1 枚）
+##     財布がぽんと跳ねる。財布に着くたびに、素材ごとの取得音（audio.gd の coin。木コッ・真鍮チン・白蝶貝シャラン・螺鈿）。
+##     飛ぶボタンは、増えた分を段ごとに分けた 1 枚ずつ（真鍮・白蝶貝・螺鈿は光る）。滑ってもらった分は、速さの表示の糸の上に
+##     縫い込まれたボタンが、上から順にぽんぽんと続けて飛ぶ。持ち物の列が出ていなければ、画面の下のまんなかに財布だけを少しのあいだ出す
+##   財布は段ごとの山（左から木・真鍮・白蝶貝・螺鈿。価値の低い順）。両替はひとりでに（木が 10 枚になると真鍮 1 枚）
 ## 出来事は craft.gd へ送る（いまはすぐ配られる。通信ではホストが確かめる）。
 
 const Icons := preload("res://hud_icons.gd")
@@ -49,9 +50,11 @@ var _hover_btn := ""         # "buy" "close"
 var _shake := 0.0
 var _pop := {}               # 持ち物の番号 → 跳ねの残り
 var _coin_pop := 0.0
-var _flies: Array = []       # 財布へ飛んでいるボタン 1 枚ずつ {from（画面の px）, t（0→1）, look（段）, v（値打ち）}
+var _flies: Array = []       # 財布へ飛んでいるボタン 1 枚ずつ {from（画面の px）, t（0→1）, look（段）, v（値打ち）, sewn（速さの表示の糸の上の番号。なければ -1）}
 var _pending := 0            # 飛んでいて、まだ財布に描かない値打ち（木のボタンの何個分）
 var _tier_at := {}           # 段 → 財布のその段の山の、次の 1 枚が載る所（画面の px。描くときに決まる）
+var _batches := {}           # 滑った分（spool）の一まとまり → {left: まだ飛んでいる数, count, brass}。全部入ったら締めくくりの「ちゃりん」
+var _next_batch := 1
 var _shine_t := 0.0          # お金のボタンの光の時計
 var _purse_a := 0.0          # 財布だけの札の濃さ
 var _purse_hold := 0.0       # 財布だけの札を出しておく残りの秒
@@ -146,16 +149,26 @@ func _on_craft(ev: Dictionary) -> void:
 			var spool: bool = ev.get("from", "") == "spool"
 			var from := _screen_of(at)
 			var hud = main.get("hud") if main else null
-			if spool and hud and hud.get("_reel") != null and (hud._reel > 0.0 or hud._spd_a > 0.1):   # 速さの表示の糸巻きから
+			var on_spool: bool = spool and hud and hud.get("_reel") != null and (hud._reel > 0.0 or hud._spd_a > 0.1)
+			if on_spool:   # 速さの表示の糸巻きから（糸の上に見つからないボタン）
 				from = preload("res://speedo.gd").layout(hud.speedo_box_now(), 0.0).c
-			var list: Array = Craft.pieces(int(ev.n))
+			var list: Array = ev.get("pieces", []).duplicate() if ev.has("pieces") else Craft.pieces(int(ev.n))
 			if list.size() > 24:   # 多すぎるときは大きい段だけ飛ばし、残りはまとめて財布へ
 				list = list.slice(0, 24)
 			var flown := 0
+			var gap := 0.065   # 続けて入る間: 財布でチャリチャリ…と連なる（audio.gd の coin）
+			if on_spool:
+				list.reverse()   # 糸の上の、あとで縫い込んだ（上の）ボタンから順に
+			var batch := 0
+			if spool:
+				batch = _next_batch
+				_next_batch += 1
+				_batches[batch] = {"left": list.size(), "count": list.size(), "brass": "brass" in list}
 			for k in list.size():
 				var v: int = {"raden": 1000, "pearl": 100, "brass": 10, "wood": 1}[list[k]]
 				flown += v
-				_flies.append({"from": from, "t": -0.45 - k * (0.16 if spool else 0.07), "look": list[k], "v": v})
+				var si: int = hud.sewn_claim(list[k]) if on_spool else -1
+				_flies.append({"from": from, "t": -0.45 - k * gap, "look": list[k], "v": v, "sewn": si, "step": k, "batch": batch})
 			_pending += flown
 			_purse_hold = 3.5
 		"buy", "fold":
@@ -404,12 +417,31 @@ func _process(dt: float) -> void:
 	_bar_a = move_toward(_bar_a, 1.0 if show else 0.0, dt * 4.0)
 	_shake = maxf(0.0, _shake - dt * 2.5)
 	_coin_pop = maxf(0.0, _coin_pop - dt * 2.5)
+	var hud = main.get("hud") if main else null
 	for f in _flies.duplicate():
+		var was: float = f.t
 		f.t += dt / FLY_T
-		if f.t >= 1.0:   # 財布に入った: ぽんと跳ねる
+		var audio = main.get_node_or_null("Audio") if main else null
+		if was < 0.0 and f.t >= 0.0 and int(f.get("sewn", -1)) >= 0 and hud:   # 糸の上のボタンが、ぽんと外れて飛び出す（ぷつ）
+			f.from = hud.sewn_screen(int(f.sewn))
+			hud.sewn_off(int(f.sewn))
+			if audio:
+				audio.coin_off()
+		if f.t >= 1.0:   # 財布に入った: ぽんと跳ねて、素材の音（続くほど少し上がる）
 			_flies.erase(f)
 			_pending -= int(f.v)
 			_coin_pop = 1.0
+			if audio:
+				audio.coin(String(f.look), int(f.get("step", 0)))
+			var bt: Dictionary = _batches.get(int(f.get("batch", 0)), {})
+			if not bt.is_empty():
+				bt.left -= 1
+				if bt.left <= 0:   # 滑った分が全部入った: 締めくくりの「ちゃりん」
+					_batches.erase(int(f.batch))
+					_coin_pop = 1.0
+					_purse_hold = maxf(_purse_hold, 2.5)   # 財布をもう少し見せておく
+					if audio:
+						audio.reward(int(bt.count), bool(bt.brass))
 	_purse_hold = maxf(0.0, _purse_hold - dt)
 	_shine_t += dt
 	var purse: bool = (_purse_hold > 0.0 or not _flies.is_empty()) and _bar_a < 0.5
@@ -521,14 +553,16 @@ class View extends Control:
 		var wx := x0 + n * (cell + gap) + 16.0 * u
 		_coins(wx, y + cell - 4.0 * u, coins, 9.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI)), a)
 
-	## 財布のボタンを、左 x0・下 y から、段ごとの山に積んで描く（左から螺鈿・白蝶貝・真鍮・木。どの段も 9 枚までなので 1 山。
+	## 財布のボタンを、左 x0・下 y から、段ごとの山に積んで描く（左から木・真鍮・白蝶貝・螺鈿。価値の低い順。どの段も 9 枚までなので 1 山。
 	## 螺鈿だけは 10 枚ごとに山を足す）。木の山は 0 枚でも場所を取る（飛んでくるボタンの行き先）。
 	## 段ごとの次の 1 枚が載る所を ui._tier_at に、木の山のそれを ui._wallet_at に入れる
 	func _coins(x0: float, y: float, coins: int, cr: float, a: float) -> void:
 		var sp := Craft.split(coins)
 		var col := 0
 		var dy := cr * 0.55
-		for m in Craft.MONEY:
+		var order: Array = Craft.MONEY.duplicate()
+		order.reverse()   # 価値の低い順に左から
+		for m in order:
 			var look: String = m[1]
 			var c: int = sp[look]
 			if c == 0 and look != "wood":
