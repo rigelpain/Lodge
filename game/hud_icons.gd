@@ -20,7 +20,7 @@ const LEG := Color(0.28, 0.27, 0.32)
 
 const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "lean_l", "lean_r", "brake",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
-	"pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
+	"cam_dist", "cam_height", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
 
 static var user_scale := 1.0   # 設定の「HUD の大きさ」（settings.gd が入れる）
 static var _felt: ImageTexture
@@ -215,6 +215,8 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"jump": _jump(ci, a, tint)
 		"look": _look(ci, a)
 		"zoom": _zoom(ci, a)
+		"cam_dist": _cam_dist(ci, a, tint)
+		"cam_height": _cam_height(ci, a, tint)
 		"view": _view(ci, a, tint)
 		"pip_cycle": _pip(ci, a, false)
 		"pip_off": _pip(ci, a, true)
@@ -608,6 +610,31 @@ static func _look(ci: CanvasItem, a: float) -> void:
 	ci.draw_circle(_o + Vector2(6, -2) * _s, 2.0 * _s, Color(1, 1, 1, 0.85 * a))
 	arrow(ci, Vector2(-8, 22), Vector2(-26, 22), THREAD, a, 1.8)
 	arrow(ci, Vector2(8, 22), Vector2(26, 22), THREAD, a, 1.8)
+
+
+## 小さなフェルトのカメラ（右を向く）
+static func _camera(ci: CanvasItem, c: Vector2, a: float, sc := 1.0) -> void:
+	patch(ci, xf(rr(-9, -6, 18, 12, 3), 0.0, c, sc), Color(0.34, 0.36, 0.42), a, false)
+	patch(ci, xf(rr(-5, -9, 6, 4, 1.5), 0.0, c, sc), Color(0.34, 0.36, 0.42), a, false)
+	patch(ci, xf(circ(Vector2(1, 0), 4.2, 14), 0.0, c, sc), Color(0.70, 0.84, 0.97), a, false)
+	ci.draw_arc(_o + (c + Vector2(1, 0) * sc) * _s, 4.2 * sc * _s, 0, TAU, 16, Color(SHADOW, 0.5 * a), 1.0, true)
+	ci.draw_circle(_o + (c + Vector2(-6, -3.5) * sc) * _s, 1.2 * sc * _s, Color(RED, a))
+
+
+## 三人称のカメラの距離: 後ろ姿の人形と、前後に動くカメラ
+static func _cam_dist(ci: CanvasItem, a: float, col: Color) -> void:
+	doll(ci, Vector2(16, 26), col, "back", a, 0.95)
+	_camera(ci, Vector2(-18, -8), a, 0.9)
+	arrow(ci, Vector2(-14, 8), Vector2(2, 8), THREAD, a, 1.8)
+	arrow(ci, Vector2(-14, 8), Vector2(-30, 8), THREAD, a, 1.8)
+
+
+## 三人称のカメラの高さ: 後ろ姿の人形と、上下に動くカメラ
+static func _cam_height(ci: CanvasItem, a: float, col: Color) -> void:
+	doll(ci, Vector2(12, 28), col, "back", a, 0.95)
+	_camera(ci, Vector2(-14, -2), a, 0.9)
+	arrow(ci, Vector2(-26, -2), Vector2(-26, -26), THREAD, a, 1.8)
+	arrow(ci, Vector2(-26, -2), Vector2(-26, 22), THREAD, a, 1.8)
 
 
 static func _zoom(ci: CanvasItem, a: float) -> void:

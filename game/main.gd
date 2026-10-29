@@ -947,6 +947,10 @@ func _apply_setting(key: String, v) -> void:
 			if snowfall: snowfall.emitting = v; snowfall.visible = v
 		"third":
 			if player: player.set_third(v)
+		"cam_dist":
+			if player: player.cam_dist = v
+		"cam_height":
+			if player: player.cam_height = v
 		"fov":
 			if player: player.base_fov = v
 		"sens":
