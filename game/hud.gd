@@ -868,9 +868,13 @@ class View extends Control:
 			var r: Rect2 = hud.speedo_box()
 			r.position.y += (1.0 - e) * 24.0 * u   # 下からふわっと上がってくる
 			draw_set_transform_matrix(Icons.wind_xform(r.get_center(), 4.0, 0.0, 0.025, 2.5 * u))   # ボビンの形が読める程度に、小刻みに
-			Speedo.draw(self, r, hud._spd, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud.spd_best,
-				hud._spd_pop, hud._spd_knots, e)
+			var style: String = hud.main.args.get("speedo", "both")   # both: ボビンと左右の縫い目 / seams: 縫い目だけ / bobbin: ボビンだけ
+			if style != "seams":
+				Speedo.draw(self, r, hud._spd, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud.spd_best,
+					hud._spd_pop, hud._spd_knots, e)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
+			if style != "bobbin":
+				Speedo.seams(self, size, u, Speedo.level_of(hud._spd), hud._spd_dist, hud._spd_color, e)
 
 	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。
 	## 段ごとに絵と数字: 人の形（押している人数）、丘（ソリの高さ／頂上）、風（速さ）、砂時計（fps）、いまの状態の絵と、

@@ -122,3 +122,42 @@ static func draw(ci: CanvasItem, box: Rect2, speed: float, k: float, spin: float
 		var bp := c + bd * (r + 4.0 * u)
 		Icons.thread(ci, PackedVector2Array([bp, bp + bd * 12.0 * u]), Color(0.7, 0.72, 0.76), 1.4 * u, a)
 		ci.draw_circle(bp + bd * 13.0 * u, 3.6 * u, Color(Icons.RED, a))
+
+
+## 視界の左右の端の縫い目（速さの線）: 目の高さの少し下から、画面の下の角へ向かう 2 本の縫い目が、滑る速さで外へ縫い流れる。
+## 景色が横を流れていく向きと同じなので、目の端でも速さを感じる。速いほど太く・濃く・目が長く、10 m/s の先は 2 本目が並ぶ。
+## 景色の真ん中は空け、左下の名札・右上の 360° 映像・右下の小窓にはかからない所を通す
+static func seams(ci: CanvasItem, vs: Vector2, u: float, k: float, dist: float, base: Color, a: float) -> void:
+	if a <= 0.01 or k <= 0.02:
+		return
+	var col := thread_color(base, k)
+	var lines := [
+		[Vector2(0.20, 0.50), Vector2(0.025, 0.74)],   # 左: 目の高さの少し下 → 左下（名札の上）
+		[Vector2(0.80, 0.50), Vector2(0.975, 0.72)],   # 右: → 右下（小窓の上）
+	]
+	var strength := clampf(k, 0.0, 2.0)
+	var rows := 1 if k < 1.05 else 2
+	for ln in lines:
+		var p0: Vector2 = ln[0] * vs
+		var p1: Vector2 = ln[1] * vs
+		var d := (p1 - p0)
+		var L := d.length()
+		var dir := d / L
+		var nrm := Vector2(-dir.y, dir.x) * (1.0 if p0.x < vs.x / 2.0 else -1.0)
+		for row in rows:
+			var off_n := nrm * row * 16.0 * u
+			var step := (26.0 + 22.0 * minf(strength, 1.5)) * u          # 速いほど目が長い
+			var on := step * (0.45 + 0.2 * minf(strength, 1.0))
+			var w := (2.2 + 3.2 * minf(strength, 1.6)) * u                 # 速いほど太い
+			var flow := fposmod(dist * 38.0 * u, step)                       # 外へ縫い流れる
+			var s := -step + flow
+			while s < L:
+				var s0 := maxf(s, 0.0)
+				var s1 := minf(s + on, L)
+				if s1 > s0:
+					var f := (s0 + s1) / 2.0 / L
+					var fade := smoothstep(0.0, 0.25, f) * (1.0 - smoothstep(0.85, 1.0, f))   # 端はふわっと
+					var al := a * fade * (0.25 + 0.65 * minf(strength, 1.0)) * (1.0 if row == 0 else 0.6)
+					Icons.screen()
+					Icons.thread(ci, PackedVector2Array([p0 + dir * s0 + off_n, p0 + dir * s1 + off_n]), col, w * (0.7 + 0.5 * f), al)
+				s += step
