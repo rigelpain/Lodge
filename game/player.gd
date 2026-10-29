@@ -16,6 +16,10 @@ const Palm := preload("res://palm.gd")
 ## 腕は見ている向きへ。手は Q で片手⇄両手、X で右⇄左。滑りながら高い両手のひらにすると、ひとりでに「ワ〜」。B を押しているあいだ、白い息を長く吐く（押した瞬間に短く吸う）。
 ## 左 Ctrl を押しているあいだしゃがむ。しゃがんで雪面を見て F で、雪玉を丸める。
 ## 左クリック: 雪玉を持っていれば押してためて（振りかぶり）、離して投げる（長く押すほど遠くへ）。両手のひらなら拍手。
+## 持ち物（craft.gd）: ホイールで手に持つ物を替える（素手 → 持ち物 → …。持ち物がないときと Alt を押しているときは、ホイールは視野角）。
+## 売り子のおじさんの前で F で売り台を開く。型紙か布を手に持ってミシンの前で T でセットする（両方そろうと縫い始める）。
+## 縫ったソリのそばで G で畳んで持ち物に入れ、畳んだソリを手に持って左クリックで、前の床に広げて置く。
+## 左クリックの順: 雪玉を持っていれば投げる → 畳んだソリを持っていれば広げる → 高い両手のひらなら拍手。
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
 const DASH := 3.4            # Shift で走る速さ
@@ -76,6 +80,15 @@ var _exhale_t := 0.0
 var _cam_roll := 0.0         # 首をかしげると視点も少し傾く
 var _cam_em := Vector3.ZERO  # 身ぶりで視点に足す（x 上下の向き、y 左右の向き、z 高さ）。なめらかに追う
 var _drag_k := 0.0           # 引きずられている度合い（0→1 になめらかに）。視点が前へ傾き、低く揺れる
+var craft: Node              # 工房の配り役（main.gd の Craft）。財布と持ち物
+var shopping := false        # 売り台が開いている（craft_ui.gd）。歩かない
+var _held_fp: Node3D         # 一人称の右手に持った物の形
+var _held_key := ""
+var _unfold_up := Vector3.UP # 広げる所の床の傾き（unfold_spot が決める）
+var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
+var last_item := {}          # 最後に触ったソリを畳んで持っていれば、その持ち物（last_sled は null）
+const FOLD_REACH := 2.6      # G で畳めるソリまでの距離（ソリの縁から, m）
+const SLED_SWITCH := 0.8     # 近いソリへ持ち替える差 (m)。行ったり来たりしないよう
 
 
 func _ready() -> void:
@@ -132,6 +145,11 @@ func _ready() -> void:
 		add_child(layer)
 		ring = EmoteRing.new()
 		layer.add_child(ring)
+	craft = get_parent().get_node_or_null("Craft")
+	if craft and id >= 0:
+		craft.join(id)
+		craft.happened.connect(_on_craft)
+	last_sled = sled
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -152,10 +170,14 @@ func _unhandled_input(e: InputEvent) -> void:
 		# トラックパッドのピンチ: 広げると寄る（視野角が狭まる）
 		base_fov = clamp(base_fov / e.factor, 50.0, 110.0)
 	elif e is InputEventMouseButton and e.pressed:
-		if e.button_index == MOUSE_BUTTON_WHEEL_UP:
-			base_fov = clamp(base_fov - 3.0, 50.0, 110.0)
-		elif e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			base_fov = clamp(base_fov + 3.0, 50.0, 110.0)
+		if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
+			var step := -1 if e.button_index == MOUSE_BUTTON_WHEEL_UP else 1
+			if menu_open:
+				pass
+			elif craft and not craft.bag(id).is_empty() and not e.alt_pressed:
+				cycle_hand(step)   # 持ち物があれば、ホイールは手に持つ物
+			else:
+				base_fov = clamp(base_fov + 3.0 * step, 50.0, 110.0)
 		elif e.button_index == MOUSE_BUTTON_RIGHT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			toggle_point()
 		elif e.button_index == MOUSE_BUTTON_LEFT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -180,6 +202,9 @@ func _unhandled_input(e: InputEvent) -> void:
 					return
 				if crouching and mode == Mode.WALK and _snow_ahead():
 					emote("make_ball")   # しゃがんで雪面に手を伸ばす: 雪玉を丸める
+					return
+				if mode == Mode.WALK and shop_near():
+					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
 					return
 				match mode:
 					Mode.GRIP, Mode.ROPE:
@@ -207,6 +232,9 @@ func _unhandled_input(e: InputEvent) -> void:
 					_exhaling = true
 					_exhale_t = 0.0
 					emote("breath")
+			KEY_G:
+				if mode == Mode.WALK and not rooted():
+					fold_near()
 			KEY_E:
 				if mode == Mode.RIDE:
 					get_off()
@@ -232,6 +260,7 @@ func grab() -> void:
 	handle = stand
 	push_dir = gp[1]
 	mode = Mode.GRIP
+	_touched(sled)
 	_col.disabled = true
 	_snap = 0.0
 	# 体を押す向きに向ける（視線はそのあと自由）
@@ -244,6 +273,7 @@ func grab_rope() -> void:
 	if not sled.take_rope(self):
 		return
 	mode = Mode.ROPE
+	_touched(sled)
 
 
 func let_go() -> void:
@@ -275,6 +305,7 @@ func get_on() -> void:
 		let_go()
 	seat = s
 	mode = Mode.RIDE
+	_touched(sled)
 	_col.disabled = true
 
 
@@ -299,6 +330,8 @@ func _physics_process(dt: float) -> void:
 	pulling = false
 	prompt = ""
 
+	if mode == Mode.WALK:
+		_pick_sled()
 	match mode:
 		Mode.RIDE:
 			global_position = sled.to_global(seat)
@@ -398,8 +431,8 @@ func _step_up(dir: Vector3) -> void:
 
 func _walk(dt: float, with_rope: bool) -> void:
 	var input := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
-	if rooted():
-		input = Vector2.ZERO   # 雪玉を丸める・ハイタッチのあいだは、その場で
+	if rooted() or shopping:
+		input = Vector2.ZERO   # 雪玉を丸める・ハイタッチ・買い物のあいだは、その場で
 	var dir := (global_basis * Vector3(input.x, 0, input.y)).normalized()
 	var speed := DASH if Input.is_physical_key_pressed(KEY_SHIFT) else SPEED
 	if crouching:
@@ -564,6 +597,7 @@ func _pose_hands(dt: float) -> void:
 		grow = 1.0
 	_ball_fp.visible = grow > 0.0
 	_ball_fp.scale = Vector3.ONE * maxf(grow, 0.01)
+	_place_held_fp(grow > 0.0)
 	_place_shapes_fp(em)
 
 
@@ -690,6 +724,8 @@ func set_hands(name_: String) -> void:
 func _left_click() -> void:
 	if holding_ball:
 		wind_up()
+	elif held().get("kind") == "folded" and mode == Mode.WALK:
+		unfold_ahead()
 	elif hands_name == "high_both":
 		emote("clap")
 
@@ -922,3 +958,218 @@ func _snow_ahead() -> bool:
 		if c is CollisionShape3D and (c as CollisionShape3D).shape is HeightMapShape3D:
 			return true
 	return false
+
+
+# ---------------------------------------------------------------- 持ち物と工房（craft.gd）
+
+## 手に持っている物（素手なら {}）
+func held() -> Dictionary:
+	return craft.held(id) if craft else {}
+
+
+func _touched(s: RigidBody3D) -> void:
+	last_sled = s
+	last_item = {}
+
+
+## 自分の畳む・広げるで、最後に触ったソリを替える
+func _on_craft(ev: Dictionary) -> void:
+	if ev.get("who", -1) != id:
+		return
+	match ev.kind:
+		"fold":
+			last_sled = null
+			last_item = ev.item
+		"unfold":
+			var s: RigidBody3D = craft.sleds.get(int(ev.id))
+			if s:
+				_touched(s)
+
+
+## ホイール: 素手 → 持ち物 1 → 2 → … と回す
+func cycle_hand(step: int) -> void:
+	var n: int = craft.bag(id).size()
+	var cur: int = craft.hands.get(id, -1)
+	var next := posmod(cur + 1 + step, n + 1) - 1
+	craft.send({"kind": "hand", "who": id, "slot": next})
+
+
+## いちばん近いソリを、押す・乗る・畳む相手にする（歩いているときだけ。つかむ・乗るあいだは替えない）
+func _pick_sled() -> void:
+	var best: RigidBody3D = sled if is_instance_valid(sled) and sled.visible and not sled.is_queued_for_deletion() else null
+	var best_d := INF
+	if best:
+		best_d = global_position.distance_to(best.global_position) - SLED_SWITCH
+	for s in get_tree().get_nodes_in_group("sleds"):
+		var rb := s as RigidBody3D
+		if rb == null or rb == best or not rb.visible or rb.is_queued_for_deletion():
+			continue
+		var d := global_position.distance_to(rb.global_position)
+		if d < best_d:
+			best = rb
+			best_d = d
+	if best and best != sled:
+		sled = best
+
+
+## 売り子のおじさんに話しかけられる所で、おじさんの方を向いているか
+func shop_near() -> bool:
+	var sk = get_parent().get("shopkeeper")
+	if sk == null or get_parent().get("craft_ui") == null or not sk.can_talk(self):
+		return false
+	var d: Vector3 = sk.global_position - global_position
+	d.y = 0
+	return d.length() < 0.6 or (-global_basis.z).dot(d.normalized()) > 0.4
+
+
+## 畳めるソリ（縫った・広げたソリ）が手の届く所にあれば、それ
+func foldable_near() -> RigidBody3D:
+	if craft == null:
+		return null
+	var best: RigidBody3D = null
+	var best_d := FOLD_REACH
+	for s in get_tree().get_nodes_in_group("sleds"):
+		var rb := s as RigidBody3D
+		if rb == null or not rb.get("crafted") or not rb.visible or rb.is_queued_for_deletion() or craft.id_of(rb) < 0:
+			continue
+		var lp := rb.to_local(global_position)
+		var edge := Vector2(maxf(absf(lp.x) - rb.HALF.x, 0.0), maxf(absf(lp.z) - rb.HALF.y, 0.0)).length()
+		if edge < best_d and rb.riders.is_empty() and rb.holders.is_empty() and rb.rope_holder == null:
+			best = rb
+			best_d = edge
+	return best
+
+
+## G: そばの縫ったソリを畳んで持ち物に入れる
+func fold_near() -> bool:
+	var s := foldable_near()
+	if s == null:
+		return false
+	return craft.send({"kind": "fold", "who": id, "id": craft.id_of(s)})
+
+
+## 畳んだソリを広げて置く所: 前の床の、ソリの長さの半分 + 0.7 m 先。壁や物とぶつかるなら INF
+func unfold_spot() -> Vector3:
+	var it := held()
+	if it.get("kind") != "folded":
+		return Vector3.INF
+	var k: Dictionary = preload("res://sled.gd").KINDS.get(it.sled, {})
+	if k.is_empty():
+		return Vector3.INF
+	var box: Vector3 = k.box
+	var fwd := -global_basis.z
+	fwd.y = 0
+	fwd = fwd.normalized()
+	var center := global_position + fwd * (box.z * 0.5 + 0.7)
+	var space := get_world_3d().direct_space_state
+	# 床: 前後の 2 点の高さから傾きを出し、真ん中の床に置く（坂ではソリを坂に沿わせる）
+	var hits := []
+	for o in [0.0, 0.45, -0.45]:
+		var p: Vector3 = center + fwd * o * box.z
+		var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 3.0, p + Vector3.DOWN * 4.0)   # 坂の上の端は足もとより高い
+		q.exclude = [get_rid()]
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			return Vector3.INF
+		hits.append(hit)
+	var up: Vector3 = hits[0].normal
+	var along: Vector3 = (hits[1].position - hits[2].position).normalized()
+	var side := along.cross(up).normalized()
+	up = side.cross(along).normalized() if side.length() > 0.5 else up
+	if up.y < 0.75:
+		return Vector3.INF   # 急すぎる
+	_unfold_up = up
+	var at: Vector3 = hits[0].position
+	# ぶつかる物がないか（床の少し上に、ソリの大きさの箱）
+	var hy := maxf(box.y, 0.3)
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(box.x, hy, box.z) * 0.95
+	var sq := PhysicsShapeQueryParameters3D.new()
+	sq.shape = shape
+	sq.transform = Transform3D(preload("res://craft.gd")._basis(rotation.y, up), at + up * (hy * 0.5 + 0.15))
+	sq.exclude = [get_rid()]
+	for r in space.intersect_shape(sq, 8):
+		if not _is_ground(r.collider):   # 坂の地面に少しかかるのはよい（ソリは地面に置く）
+			return Vector3.INF
+	return at
+
+
+## 外の地面（高さの地図）か
+static func _is_ground(n: Object) -> bool:
+	if n is Node:
+		for c in (n as Node).get_children():
+			if c is CollisionShape3D and (c as CollisionShape3D).shape is HeightMapShape3D:
+				return true
+	return false
+
+
+## 左クリック: 手に持った畳んだソリを、前の床に広げて置く
+func unfold_ahead() -> bool:
+	var at := unfold_spot()
+	if at == Vector3.INF:
+		return false
+	var slot: int = craft.hands.get(id, -1)
+	return craft.send({"kind": "unfold", "who": id, "slot": slot, "item": held().duplicate(), "at": at, "yaw": rotation.y,
+			"up": _unfold_up})
+
+
+## ミシンの前で T: 手に持った型紙か布をセットする。セットできたら true
+func load_machine(machine: Node) -> bool:
+	var it := held()
+	if craft == null or it.is_empty() or not machine.accepts(it):
+		return false
+	return craft.send({"kind": "load", "who": id, "slot": craft.hands.get(id, -1), "item": it.duplicate()})
+
+
+## 一人称の右手に、持っている物の形を持たせる（雪玉を持っているときは雪玉だけ）
+func _place_held_fp(ball: bool) -> void:
+	var it := held() if not ball else {}
+	var key := str(it)
+	if key == _held_key:
+		return
+	_held_key = key
+	if _held_fp:
+		_held_fp.queue_free()
+		_held_fp = null
+	if it.is_empty():
+		return
+	var right: Node3D = hands[0] if hands[0].get_meta("side") > 0 else hands[1]
+	_held_fp = held_shape(it)
+	_held_fp.position = Vector3(-0.02, 0.05, -0.08)
+	_held_fp.scale = Vector3.ONE * 0.7
+	for mi in _held_fp.find_children("*", "MeshInstance3D", true, false):
+		(mi as MeshInstance3D).layers = 1 << 2
+	right.add_child(_held_fp)
+
+
+## 手に持った物の小さな形（一人称の右手と、確かめ用）
+static func held_shape(it: Dictionary) -> Node3D:
+	var root := Node3D.new()
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	match it.get("kind", ""):
+		"pattern":   # クラフト紙の型紙。待ち針の赤い頭
+			bm.size = Vector3(0.13, 0.003, 0.17)
+			mi.material_override = Look.paper(Color(0.84, 0.72, 0.52))
+			var pin := MeshInstance3D.new()
+			var sm := SphereMesh.new()
+			sm.radius = 0.008
+			sm.height = 0.016
+			pin.mesh = sm
+			pin.material_override = Look.felt(Color(0.80, 0.24, 0.20))
+			pin.position = Vector3(-0.045, 0.006, -0.06)
+			root.add_child(pin)
+		"fabric":    # たたんだ布の束
+			bm.size = Vector3(0.14, 0.035, 0.1)
+			mi.material_override = Look.felt(preload("res://fabrics.gd").color(it.get("fabric", "red")), 6.0)
+		"folded":    # 折り紙の包み。名札には、広げた姿がくるくる回る図
+			bm.size = Vector3(0.11, 0.045, 0.11)
+			mi.material_override = Look.felt(preload("res://fabrics.gd").color(it.get("fabric", "red")), 6.0)
+			mi.rotation.y = PI / 4
+			var Tags := preload("res://sled_tags.gd")
+			var tg := Tags.hang(root, Vector3(0.05, 0.03, -0.02), int(it.get("tag", 0)), 0.12, Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")))
+			tg.rotation = Vector3(-0.6, 0.3, 0)
+	mi.mesh = bm
+	root.add_child(mi)
+	root.rotation.x = 0.5
+	return root

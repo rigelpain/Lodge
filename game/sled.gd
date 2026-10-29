@@ -2,6 +2,7 @@ extends RigidBody3D
 
 const Props := preload("res://props.gd")
 const Look := preload("res://look.gd")
+const Fabrics := preload("res://fabrics.gd")
 const Snowball := preload("res://snowball.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
@@ -57,6 +58,18 @@ var main_color := Color(0, 0, 0, 0)
 var _body: Node3D              # 見た目（glb か仮の箱）
 ## 滑りあとの縫い目の差し替え（STITCHES の名前）。空なら KINDS の既定。置く前に入れる（main.gd の --stitch=）
 var stitch_override := ""
+## 布の色（fabrics.gd の名前）。ミシンで縫ったソリに付く。入れるとメインカラー（main_color・set_main_color）になる
+var fabric := "":
+	set(v):
+		fabric = v
+		if v == "":
+			return
+		if is_node_ready():
+			set_main_color(Fabrics.color(v))
+		else:
+			main_color = Fabrics.color(v)
+var crafted := false           # ミシンで縫った・広げたソリ（畳んで持てる。craft.gd）
+var tag := 0                   # 名札の柄（sled_tags.gd）。手すりの前の結び目から小さく吊るす
 var kind_mass := 60.0          # 表の重さ（米袋は 1 kg）。乗っている人の重さと合わせて止める計算に使う
 var _k := 1.0                  # 体の重さ / MID_MASS
 var SEATS: Array = KINDS.mid.seats
@@ -145,6 +158,7 @@ var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定�
 
 
 func _ready() -> void:
+	add_to_group("sleds")
 	if not KINDS.has(kind):
 		kind = "mid"
 	var k: Dictionary = KINDS[kind]
@@ -175,6 +189,8 @@ func _ready() -> void:
 	rope = preload("res://sled_rope.gd").new()
 	rope.sled = self
 	add_child(rope)
+	var tg: Node3D = preload("res://sled_tags.gd").hang(self, rope._ties[1] + Vector3(0.02, -0.02, 0), tag, clampf(HALF.x * 0.32, 0.16, 0.26))
+	tg.rotation.y = PI / 2   # 紙の面を外（横）へ向ける
 
 	_make_shadow_and_trail()
 
@@ -336,6 +352,17 @@ func lean(steer: float, forward: bool, back: bool = false) -> void:
 	_steer += steer
 	_lean_fwd = _lean_fwd or forward
 	_lean_back = _lean_back or back
+
+
+## 広げる動きのあいだ（frames コマ）、止めて見た目を隠しておく（craft.gd が折り紙の形を見せる）
+func hold_still(frames: int) -> void:
+	freeze = true
+	visible = false
+	await get_tree().create_timer(frames / 12.0).timeout
+	if is_instance_valid(self):
+		freeze = false
+		visible = true
+		parked = true
 
 
 func reset_to(pos: Vector3) -> void:

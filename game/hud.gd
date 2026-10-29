@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## 画面の表示（HUD）。文字を使わず、アイコン・矢印・形で伝える。決まりと場面ごとの絵は design/hud.md。
-##   左下: ソリの札（紙のタグ）。丘の断面の上をソリの印が動き、登った分だけ赤い糸が伸びる。下に、いまソリにいる人の形と、
-##         押している人の数だけの糸の矢印（人が加わるほど矢印が増え、速く流れる）
+##   左下: ソリの札。最後に触ったソリ（つかむ・紐・乗る・広げる）のタグの柄で描く（sled_tags.gd）。丘の断面の上をソリの印が動き、
+##         登った分だけ赤い糸が伸びる。下に、いまソリにいる人の形と、押している人の数だけの糸の矢印。
+##         そのソリを畳んで持っていれば、印は持っている人の所で、人の横に広げた姿がくるくる回る図
 ##   物の上: 近づいたときだけ、キーの形と動きの絵のワッペン。3 回したら（覚えたら）もう出さない
 ##   画面の下のまんなか: つかんでいる・紐を持っている・乗っているときの手引き。ほかの人のそばでは身ぶりの手引き
 ##   Esc: 設定の画面の左に、すべてのキーと絵を並べた札
@@ -9,6 +10,7 @@ extends CanvasLayer
 ## 絵は hud_icons.gd。ミシン（main.sewing）とエモート（main.emotes）は、あればその案内も出す。
 
 const Icons := preload("res://hud_icons.gd")
+const SledTags := preload("res://sled_tags.gd")
 const Player := preload("res://player.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
 const TAG_NEAR := 30.0        # ソリからこの距離より近いと札を出す (m)
@@ -39,6 +41,8 @@ var _meet_n := 0
 var _meeting := false
 var _still_t := 0.0
 var _seen_back := false
+var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
+var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
 
 
 func _ready() -> void:
@@ -75,22 +79,36 @@ func _input(e: InputEvent) -> void:
 	if not (e is InputEventKey and e.pressed and not e.echo):
 		if e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_RIGHT:
 			learn("gesture")
+		elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT and main.player \
+				and main.player.held().get("kind") == "folded":
+			learn("unfold")
 		return
 	match e.physical_keycode:
 		KEY_R: learn("return")
-		KEY_T: learn("sew")
+		KEY_T: learn("sew"); learn("set")
+		KEY_G: learn("fold")
 		KEY_Q, KEY_G, KEY_TAB, KEY_1, KEY_2, KEY_3, KEY_4, KEY_B: learn("gesture")
 
 
 func _process(dt: float) -> void:
 	if main == null or main.sled == null:
 		return
-	var sled: RigidBody3D = main.sled
 	var p: CharacterBody3D = main.player
-	_update_people(dt, sled, p)
-	var want_tag := 1.0
+	var sled: RigidBody3D = p.sled if p and is_instance_valid(p.sled) else main.sled   # あなたのそばのソリ（案内に使う。縫ったソリも）
+	# 札: 最後に触ったソリ。畳んで持っていれば、その包み
+	_tag_item = {}
+	_tag_sled = main.sled
 	if p:
-		var near: bool = p.global_position.distance_to(sled.global_position) < TAG_NEAR or p.mode != Player.Mode.WALK
+		var last = p.get("last_sled")
+		if last != null and is_instance_valid(last) and last.visible:
+			_tag_sled = last
+		elif not (p.get("last_item") as Dictionary).is_empty():
+			_tag_sled = null
+			_tag_item = p.last_item
+	_update_people(dt, _tag_sled, p)
+	var want_tag := 1.0
+	if p and _tag_sled:
+		var near: bool = p.global_position.distance_to(_tag_sled.global_position) < TAG_NEAR or p.mode != Player.Mode.WALK
 		want_tag = 1.0 if near else 0.0
 	_tag_a = move_toward(_tag_a, want_tag, dt * 2.5)
 	for h in _hints.values():
@@ -112,6 +130,11 @@ func _process(dt: float) -> void:
 # ---- ソリの札 ------------------------------------------------------------------------
 
 func _update_people(dt: float, sled: RigidBody3D, p: Node3D) -> void:
+	if sled == null:   # 畳んだソリ: 持っている人だけ
+		_n_push = 0
+		_people = [[p, "stand", Icons.RED, true]] if p else []
+		_flow += dt * 0.4
+		return
 	var raw: int = sled.pushers
 	if raw >= _n_push:
 		if raw > _n_push and _n_push >= 0:
@@ -241,10 +264,23 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			if at_side and sled.riders.size() < sled.SEATS.size():
 				var seat: Vector3 = sled.to_global(sled.SEATS[sled.riders.size()])
 				_hint("ride", ["E"], "ride", seat + Vector3.UP * 0.75)
-	# ミシンの前（PR #12 の sewing_machine.gd。人が近づくと「呼ぶ」= 1 になる）
+	# ミシンの前（PR #12 の sewing_machine.gd。人が近づくと「呼ぶ」= 1 になる）。
+	# 工房があるときは、型紙か布を手に持っていればセットの案内（T と型紙と布の絵）
 	var sew = main.get("sewing")
 	if sew and is_instance_valid(sew) and int(sew.get("phase")) == 1:
-		_hint("sew", ["T"], "needle", sew.global_position + Vector3.UP * 2.2)
+		if main.get("craft") == null:
+			_hint("sew", ["T"], "needle", sew.global_position + Vector3.UP * 2.2)
+		elif sew.accepts(p.held()):
+			_hint("set", ["T"], "set", sew.global_position + Vector3.UP * 2.2)
+	# 売り子のおじさん: F で売り台
+	if p.shop_near() and not p.shopping:
+		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
+	# 縫ったソリのそば: G で畳む。畳んだソリを持っていれば、左クリックで広げる
+	var fold_s: RigidBody3D = p.foldable_near()
+	if fold_s:
+		_hint("fold", ["G"], "fold", fold_s.global_position + Vector3.UP * 1.2)
+	elif p.held().get("kind") == "folded" and p.unfold_spot() != Vector3.INF:
+		_hint("unfold", ["mouse_l"], "unfold")
 	# ほかの人のそば: 手を振る・指さす・声
 	var someone := false
 	var far := true
@@ -346,11 +382,14 @@ class View extends Control:
 	## 左下の札
 	func _draw_tag(u: float, a: float) -> void:
 		var main: Node3D = hud.main
-		var sled: RigidBody3D = main.sled
+		var sled: RigidBody3D = hud._tag_sled
+		var item: Dictionary = hud._tag_item
 		var w := 262.0 * u
 		var h := 146.0 * u
 		var r := Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
-		Icons.tag(self, r, a)
+		var idx: int = int(sled.get("tag")) if sled else int(item.get("tag", 0))
+		SledTags.draw_tag(self, r, idx, a, false)
+		var ink: Color = SledTags.design(idx).edge
 		# 丘の断面（頂上から PROFILE_R までの右半分と、頂上の向こうを少し）
 		var x0 := r.position.x + 44.0 * u
 		var x1 := r.end.x - 14.0 * u
@@ -377,8 +416,8 @@ class View extends Control:
 		Icons.patch(self, PackedVector2Array([lodge + Vector2(-7, 0) * u, lodge + Vector2(7, 0) * u, lodge + Vector2(7, -8) * u,
 			lodge + Vector2(0, -14) * u, lodge + Vector2(-7, -8) * u]), Icons.WOOD, a, false)
 		draw_rect(Rect2(lodge + Vector2(-2.2, -6.5) * u, Vector2(4.4, 4.0) * u), Color(1.0, 0.72, 0.30, a))
-		# ソリの印と、ふもとからソリまでの赤い糸
-		var sp := sled.global_position
+		# ソリの印と、ふもとからソリまでの赤い糸（畳んでいれば、持っている人の所）
+		var sp: Vector3 = sled.global_position if sled else (main.player.global_position if main.player else Vector3.ZERO)
 		var sr := clampf(Vector2(sp.x, sp.z).length(), 0.0, PROFILE_R)
 		var climbed := PackedVector2Array()
 		for i in 25:
@@ -389,7 +428,10 @@ class View extends Control:
 		var slope := atan2(to_y.call(main.hill(sr + 1.0, 0.0)) - to_y.call(main.hill(sr - 1.0, 0.0)), to_x.call(sr + 1.0) - to_x.call(sr - 1.0))
 		Icons._o = mark + Vector2(0, -6.0 * u).rotated(slope)
 		Icons._s = 0.5 * u
-		Icons.sled_side(self, Vector2.ZERO, 1.0, a, slope, true)   # 前は左（頂上）
+		if sled:
+			Icons.sled_side(self, Vector2.ZERO, 1.0, a, slope, true)   # 前は左（頂上）
+		else:   # 畳んだ包み
+			Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
 		# いまソリにいる人と、押している人の数だけの糸の矢印
 		var px := r.position.x + 52.0 * u
 		var py := r.end.y - 12.0 * u - 26.0 * 70.0 * u / 64.0   # 人形の箱の中心（足もとが札の下の縁の少し上）
@@ -403,6 +445,14 @@ class View extends Control:
 			var lift := 6.0 * u * sin(pop * PI)
 			Icons.icon(self, "person" if x[1] == "stand" else "person_sit", Vector2(px, py - lift), sz, a * (1.0 if x[3] else 0.5), x[2])
 			px += 30.0 * u
+		if sled == null and not item.is_empty():
+			# 畳んだソリは形がわからないので、広げた姿をくるくる回して見せる（タグの窓）
+			var tw := 62.0 * u
+			var win := Rect2(Vector2(r.end.x - tw - 14.0 * u, r.end.y - tw - 8.0 * u), Vector2(tw, tw))
+			Icons.screen()
+			Icons.patch(self, Icons.rr(win.position.x, win.position.y, tw, tw, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, ink)
+			draw_texture_rect(SledTags.turntable(item.get("sled", "mid"), item.get("fabric", "")), win.grow(-3.0 * u), false, Color(1, 1, 1, a))
+			return
 		Icons.screen()
 		var n: int = mini(hud._n_push, 5)
 		px += 8.0 * u
@@ -435,6 +485,8 @@ class View extends Control:
 			rows += [[["Q"], "wave"], [["G"], "voice"]]
 		if hud.main.get("sewing") != null:
 			rows.append([["T"], "needle"])
+		if hud.main.get("craft") != null:   # 工房: 売り子に F、ミシンに T でセット、G で畳む、左クリックで広げる、ホイールで持ち替え
+			rows += [[["F"], "shop"], [["T"], "set"], [["G"], "fold"], [["mouse_l"], "unfold"], [["mouse_wheel"], "hand"]]
 		var bs := 46.0 * u                # 一つの段のワッペンの高さ
 		var row_h := bs * 1.08
 		var col_w := 0.0

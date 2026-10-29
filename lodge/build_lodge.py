@@ -893,9 +893,10 @@ def build_interior():
     for x in (KITCHEN["x0"], KITCHEN["x1"]):
         W.box(x - 0.06, KITCHEN["y_front"], FL1, x + 0.06, Y1 - R, CEIL1 - 0.3)
     W.done(bevel=0.01)
-    # カウンター（レジ・配膳、貸出）と裏の台、上にメニュー板
+    # カウンター（レジ・配膳）と裏の台、上にメニュー板。
+    # 貸出のカウンターは置かない（2026-10-29 代表: ミシンの前の塀を消し、横に型紙と布の売り子を立たせる）
     C = M("counters", "board", "interior")
-    for c in (COUNTER, RENTAL):
+    for c in (COUNTER,):
         C.box(c["x0"], c["y0"] + 0.06, FL1, c["x1"], c["y1"], c["h"] + FL1 - 0.05)
         C.box(c["x0"] - 0.04, c["y0"] - 0.06, FL1 + c["h"] - 0.05, c["x1"] + 0.04, c["y1"] + 0.03, FL1 + c["h"])
     C.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
@@ -1424,7 +1425,7 @@ def build_collision():
     # 家具（座れる・ぶつかるもの）
     for x, y in TABLES:
         Fu.box(x, y, FL1, x + TABLE["w"], y + TABLE["d"], FL1 + TABLE["h"])
-    for cc in (COUNTER, RENTAL):
+    for cc in (COUNTER,):   # 貸出のカウンターはない
         Fu.box(cc["x0"], cc["y0"], FL1, cc["x1"], cc["y1"], FL1 + cc["h"])
     Fu.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
     Fu.box(WINDOW_BAR["x0"], WINDOW_BAR["y0"], FL1, WINDOW_BAR["x1"], WINDOW_BAR["y0"] + WINDOW_BAR["d"],
