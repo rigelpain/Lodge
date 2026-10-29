@@ -3,7 +3,7 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/sack_gear_shots.gd -- --bots=0 --no-sound --no-pip --dir=/path/shots
 ## 1. 坂の途中で N: 足もとに米袋が出て、すぐ乗り、滑り出す
 ## 2. 乗ったまま N: 降りて、丸めて帯に戻る
-## 3. Shift+N: 呼び出す米袋を替える（縫った米袋を 1 つ足しておく）。N で替えた米袋が出る
+## 3. I で装備の画面を開き、色違いの米袋を選んで閉じ、N でその米袋が出る（縫った米袋を足しておく）
 ## 4. 出したまま降りて遠くへ歩く: 30 m・4 秒で、ひとりでに帯に戻る
 ## 5. 大きいソリをつかんだまま N: 手を離して、米袋に乗る
 ## キーは本物の入力のイベントで流す
@@ -91,16 +91,25 @@ func _run() -> void:
 	await _wait(0.4)
 	_say("乗ったまま N: 帯に戻った %s 歩く %s" % [c.sack_sled(who) == null, p.mode == p.Mode.WALK])
 	await _shot("05_stowed")
-	# 3. 縫った米袋を足して Shift+N
+	# 3. 縫った米袋を足して、装備の画面（I）で選ぶ → 閉じる → N
 	c.sacks[who].append({"fabric": "mustard", "tag": 6})
-	await _key(KEY_N, true)
-	_say("Shift+N: 選んでいる %d / %d" % [c.sack_sel[who], c.sacks[who].size()])
-	await _wait(0.2)
-	await _shot("06_picked")
+	c.sacks[who].append({"fabric": "navy", "tag": 3})
+	c.bags[who] = [{"kind": "pattern", "sled": "small"}, {"kind": "fabric", "fabric": "plum"}]
+	await _key(KEY_I)
+	await _wait(0.4)
+	_say("I: 装備の画面 %s" % main.craft_ui.gear_open)
+	await _shot("06_gear_open")
+	_say("からしの米袋を選ぶ: %s 装備 %d / %d" % [main.craft_ui.equip(1), c.sack_sel[who], c.sacks[who].size()])
+	await _wait(0.3)
+	await _shot("06b_gear_picked")
+	await _key(KEY_I)
+	await _wait(0.3)
+	_say("I でもう一度: 閉じた %s" % (not main.craft_ui.gear_open))
+	await _shot("06c_gear_closed")
 	await _key(KEY_N)
 	await _wait(0.6)
 	gs = c.sack_sled(who)
-	_say("替えた米袋が出た: %s（布 %s）" % [gs != null, gs.fabric if gs else ""])
+	_say("N で装備の米袋が出た: %s（布 %s）" % [gs != null, gs.fabric if gs else ""])
 	await _shot("07_mustard")
 	# 4. 降りて遠くへ
 	p.get_off()
