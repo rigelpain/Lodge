@@ -31,12 +31,14 @@ var _tag_view: Control
 var spd_best := 0.0           # 今日いちばんの速さ（このプレイの間）
 var _spd := 0.0               # 表示している速さ（なめらかに追う）
 var _spd_a := 0.0
-var _spd_phase := 0.0
 var _spd_pop := 0.0
 var _spd_slow := 9.0          # 遅いのが続いている長さ (s)
 var _wind := 0.0              # HUD の物が受ける風（設定を掛ける前）。速さの盛り上がりを追い、止まるとふわっと戻る
 var _spd_marks := {}          # この滑りで、もう弾んだ節目（"best"・10 m/s など）
-var _confetti: Array = []     # 紙吹雪 [位置, 速さ, 角度, 回る速さ, 色, 残り]
+var _spd_spin := 0.0          # ボビンを回した角度
+var _spd_dist := 0.0          # 滑った長さ (m)。下の端の縫い目が、これだけ流れる
+var _spd_knots: Array = []    # ご褒美の結び目を結んだときの _spd_dist
+var _spd_color := Icons.RED   # 乗っているソリのメインカラー（糸の色のもと）
 var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
 var _flow := 0.0
@@ -360,7 +362,7 @@ func _badge_w(h: Dictionary, sz: float) -> float:
 
 
 ## 乗って滑っているときだけ、糸巻きの速さの表示を出す。止まるとふわっと消える。
-## 今日いちばんの速さを超えた瞬間と、10 m/s を超えた瞬間に、数字が弾んで紙吹雪が散る（一回の滑りで一度ずつ）
+## 今日いちばんの速さを超えた瞬間と、10・13・15 m/s を超えた瞬間に、ボビンが跳ねて糸が広がり、結び目ができる（一回の滑りで一度ずつ）
 func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 	var on := false
 	var speed := 0.0
@@ -370,7 +372,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		_spd_slow = 0.0 if speed > 1.0 else _spd_slow + dt
 		on = _spd_slow < 1.2
 	# HUD の物が受ける風: 乗って滑っているあいだ、速さの盛り上がり（風・速さの表示と同じ値）を追う
-	var want_wind := Speedo.level_of(speed) if p and p.mode == Player.Mode.RIDE else 0.0
+	var want_wind := minf(Speedo.level_of(speed), 1.3) if p and p.mode == Player.Mode.RIDE else 0.0   # 読めなくなるほどは揺らさない
 	_wind = move_toward(_wind, want_wind, dt * (2.5 if want_wind > _wind else 0.8))
 	var vals: Dictionary = main.settings.values if main.settings else {}
 	var calm := 0.0 if not vals.get("hud_wind", true) else (0.2 if not vals.get("bob", true) else 1.0)
@@ -387,7 +389,10 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 	on = on and allowed and not menu
 	_spd_a = move_toward(_spd_a, 1.0 if on else 0.0, dt * (3.0 if on else 1.2))
 	_spd = lerpf(_spd, speed, minf(1.0, dt * 8.0))
-	_spd_phase += dt * _spd * 1.3
+	_spd_spin += dt * _spd * 2.0
+	_spd_dist += dt * _spd
+	if p and is_instance_valid(p.sled) and p.sled.has_method("color"):
+		_spd_color = p.sled.color()
 	_spd_pop = maxf(0.0, _spd_pop - dt * 2.2)
 	if not on:
 		if _spd_a <= 0.0:
@@ -396,32 +401,19 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		if speed > spd_best + 0.2 and speed > 4.0:
 			if spd_best > 0.0 and not _spd_marks.has("best"):
 				_spd_marks["best"] = true
-				_cheer(18)
+				_cheer()
 			spd_best = speed
 		for m in [10.0, 13.0, 15.0]:
 			if speed >= m and not _spd_marks.has(m):
 				_spd_marks[m] = true
-				_cheer(10)
-	for c in _confetti:
-		c[1].y += 520.0 * dt * ui()
-		c[1] *= 0.985
-		c[0] += c[1] * dt
-		c[2] += c[3] * dt
-		c[5] -= dt
-	_confetti = _confetti.filter(func(c): return c[5] > 0.0)
+				_cheer()
+	_spd_knots = _spd_knots.filter(func(d): return _spd_dist - d < 60.0)
 
 
-func _cheer(n: int) -> void:
+## ご褒美: ボビンがぽんと跳ね、糸がぱっと広がり、縫い目に小さな結び目ができる（speedo.gd が描く）
+func _cheer() -> void:
 	_spd_pop = 1.0
-	var r := speedo_box()
-	var from := Vector2(r.position.x + r.size.x * 0.78, r.position.y + r.size.y * 0.45)
-	var cols := [Icons.RED, Icons.MUSTARD, Icons.NAVY, Icons.PAPER, Color(0.45, 0.68, 0.48)]
-	var u := ui()
-	for i in n:
-		var ang := randf_range(-PI * 0.95, -PI * 0.05)
-		var v := Vector2(cos(ang), sin(ang)) * randf_range(220.0, 520.0) * u
-		_confetti.append([from + Vector2(randf_range(-20, 20), randf_range(-10, 10)) * u, v, randf() * TAU, randf_range(-9.0, 9.0),
-			cols[i % cols.size()], randf_range(0.9, 1.5)])
+	_spd_knots.append(_spd_dist)
 
 
 ## 速さの表示の置き場（画面の px）: 下の端の右寄り。右下の小窓（自分の姿）と日時計の左に、下の縁をそろえて置く。
@@ -429,7 +421,7 @@ func _cheer(n: int) -> void:
 func speedo_box() -> Rect2:
 	var u := ui()
 	var vs := _view.size
-	var w := 440.0 * u
+	var w := 300.0 * u   # 左の持ち物・装備の枠に、縫い目がかからない幅
 	var h := 160.0 * u
 	var right := vs.x - 14.0 * u - 104.0 * u   # 日時計のぶん
 	var sc = main.get("self_cam")
@@ -488,7 +480,7 @@ class View extends Control:
 			Icons.badge(self, h.keys, h.icon, bc, sz, e)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 		_draw_pip_back(u)
-		if hud._spd_a > 0.01 or not hud._confetti.is_empty():
+		if hud._spd_a > 0.01:
 			_draw_speedo(u)
 		if hud.debug_on and not hud._dbg.is_empty():
 			_draw_debug(u)
@@ -869,20 +861,16 @@ class View extends Control:
 			if dist > 0.0:
 				_tape(tip, (tip - bc).normalized(), dist, u, al)
 
-	## 乗って滑っているときの速さ（糸巻き）と紙吹雪
+	## 乗って滑っているときの速さ（ボビン。数字は出さない）
 	func _draw_speedo(u: float) -> void:
 		var e := ease(hud._spd_a, 0.6)
 		if e > 0.01:
 			var r: Rect2 = hud.speedo_box()
 			r.position.y += (1.0 - e) * 24.0 * u   # 下からふわっと上がってくる
-			draw_set_transform_matrix(Icons.wind_xform(r.get_center(), 4.0, 0.0, 0.025, 2.5 * u))   # 数字が読める程度に、小刻みに
-			Speedo.draw(self, "bobbin", r, hud._spd, Speedo.level_of(hud._spd), hud._spd_phase, hud.spd_best, hud._spd_pop, e)
+			draw_set_transform_matrix(Icons.wind_xform(r.get_center(), 4.0, 0.0, 0.025, 2.5 * u))   # ボビンの形が読める程度に、小刻みに
+			Speedo.draw(self, r, hud._spd, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud.spd_best,
+				hud._spd_pop, hud._spd_knots, e)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
-		for c in hud._confetti:
-			var t := Transform2D(c[2], c[0])
-			var s := 8.0 * u
-			var pts := PackedVector2Array([t * Vector2(-s, -s * 0.6), t * Vector2(s, -s * 0.6), t * Vector2(s, s * 0.6), t * Vector2(-s, s * 0.6)])
-			draw_colored_polygon(pts, Color(c[4], clampf(c[5] * 2.0, 0.0, 1.0)))
 
 	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。
 	## 段ごとに絵と数字: 人の形（押している人数）、丘（ソリの高さ／頂上）、風（速さ）、砂時計（fps）、いまの状態の絵と、
