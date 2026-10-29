@@ -83,8 +83,8 @@ var _rot := {}               # 番号 → いまの回転（親の座標）
 var _g := {}                 # 番号 → いまの向きと位置（骨の座標の空間）
 var _hold: Array = [null, null]   # 手ごとに [基準のノード, その座標での手の所] か null
 var _arm_base := {}          # コマで決めた腕の回転（毎フレームここから伸ばし直す）
-var _breath: CPUParticles3D
-var _breaths: Array[CPUParticles3D] = []   # 息の出口は 2 つ。交互に使い、まだ流れている息を消さない
+var _streams := {}           # 息の煙の出口: "small" ふだん、"big" 声、"long" B の長い息・おーい
+var _blow := {"small": 0.0, "big": 0.0}   # 吐き続ける残り (s)。0 になったら出すのをやめる（出た煙は流れ続ける）
 var _next_out := 0
 var _frame := -1
 var _yaw := 0.0
@@ -95,7 +95,7 @@ var _voice := 0
 var _next_breath := 0
 var _rng := RandomNumberGenerator.new()
 var _scale := 1.0
-var _long: CPUParticles3D    # 深呼吸の長い息
+var _long: CPUParticles3D    # B の長い息・おーい（_streams["long"]）
 var _ball: Node3D            # 右手の雪玉
 var _shapes := {}            # 手の形のアップリケ: 形 → {1: 右手, -1: 左手}
 var _palm_goal := {}         # 側 → [形, 手形の置き所（人形の座標）]。コマで決め、腕はその手首へ伸ばす
@@ -131,7 +131,6 @@ func _ready() -> void:
 		_order.append(i)
 	_order.sort_custom(func(a, b): return depth.call(a) < depth.call(b))
 	_make_breath()
-	_make_long_breath()
 	_make_ball()
 	_make_roll()
 	_shapes = Palm.make_set(Color(FpHands.STYLE.get(kind, FpHands.STYLE["kasa"]).hand), layers)
@@ -486,6 +485,7 @@ func _physics_process(dt: float) -> void:
 		_pose()
 	_hold_hands()
 	_apply()
+	_blow_breath(dt)
 	_place_shapes()
 
 
@@ -787,16 +787,20 @@ func _make_foot_shadow() -> void:
 
 # ---------------------------------------------------------------- 白い息
 
-## 白い息はちぎった綿。カメラを向く板に、コードで作った綿の形（中はふわっと濃く、縁は繊維のようにほつれる）を貼る。
-## 人の姿勢ではないので、12 コマにせずなめらかに流す。太陽の側はほんのり明るい生成り、影の側は雪の影の青
+## 白い息は、口もとから一続きに流れて広がる綿の煙。小さく柔らかい粒を次々に出して重ね、出口では細く濃く、
+## 離れるほど太く薄くほどける。体が動くと出た所に煙が残るので、ゆるく曲がる帯になる。粒の縁は毛羽立ち、
+## ほつれた糸のような細い筋が出る（手芸の綿）。人の姿勢ではないので、12 コマにせずなめらかに流す。
+## 色はほぼ真っ白で、少し透けて後ろが見える。光の当て方で灰色や青に沈まないよう、陰は薄い青白だけ（光を受けない塗り）
 const BREATH_SHADER := """
 shader_type spatial;
 render_mode blend_mix, depth_draw_never, cull_disabled, unshaded, shadows_disabled;
 
 uniform sampler2D cotton : source_color, filter_linear_mipmap, repeat_disable;
-uniform vec3 warm : source_color = vec3(0.98, 0.95, 0.89);
-uniform vec3 cool : source_color = vec3(0.58, 0.66, 0.82);
+uniform vec3 warm : source_color = vec3(1.0, 0.995, 0.985);
+uniform vec3 cool : source_color = vec3(0.88, 0.91, 0.96);
 uniform vec3 sun_dir = vec3(-0.5, -0.6, -0.6);   // 光の進む向き（世界）
+uniform float opacity = 0.78;                     // 少し透ける（後ろの景色がうっすら見える）
+uniform float bright = 1.75;                      // 画面の明るさの圧縮（トーンマップ）のあとでも真っ白に見えるよう、1 より明るく
 
 varying float spin;
 varying vec2 sun2;
@@ -819,11 +823,14 @@ void fragment() {
 	float inside = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0);
 	vec4 t = texture(cotton, (clamp(q, 0.0, 1.0) + cell) * 0.5);
 	t.a *= inside;
-	// 太陽の側（板の中で光の来る向き）ほど明るく、厚い所ほど影の青が残る
+	// 太陽の側ほど明るい。陰は薄い青白まで（灰色や青に沈ませない）
 	float side = dot(normalize(p * vec2(1.0, -1.0) + 1e-4), sun2) * smoothstep(0.0, 0.35, length(p));
-	float lit = clamp(0.6 + 0.45 * side - 0.4 * t.r, 0.0, 1.0);
-	ALBEDO = mix(cool, warm, lit);
-	ALPHA = t.a * COLOR.a;
+	float lit = clamp(0.78 + 0.25 * side - 0.18 * t.r, 0.0, 1.0);
+	// 縁（薄くなりかけの所）だけ、ごく薄い青白のふち: 白い雪の前でも煙の形が分かり、毛羽の縁が見える
+	float rim = smoothstep(0.06, 0.3, t.a) * (1.0 - smoothstep(0.3, 0.7, t.a));
+	vec3 col = mix(mix(cool, warm, lit), cool * 0.68, rim * 0.5);
+	ALBEDO = col * bright;
+	ALPHA = t.a * COLOR.a * opacity;
 }
 """
 
@@ -847,79 +854,60 @@ static func cotton_texture() -> Texture2D:
 static func _cotton_tuft(n: int, seed: int) -> Image:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 21 + seed * 17
-	var blobs := []
-	var count := rng.randi_range(7, 12)
-	for i in count:
-		var c := Vector2(rng.randf_range(-0.38, 0.38), rng.randf_range(-0.3, 0.3))
-		blobs.append([c, rng.randf_range(0.1, 0.25)])
-	var dens := FastNoiseLite.new()
-	dens.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	dens.frequency = 3.0
-	dens.fractal_octaves = 4
-	dens.seed = 5 + seed
+	# 芯: 少しだけでこぼこした丸。重ねたときに一続きに見えるよう、縁へなだらかに薄くなる
+	var lumps := []
+	for i in rng.randi_range(3, 5):
+		lumps.append([Vector2(rng.randf_range(-0.18, 0.18), rng.randf_range(-0.15, 0.15)), rng.randf_range(0.28, 0.42)])
 	var warp := FastNoiseLite.new()
 	warp.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-	warp.frequency = 2.5
+	warp.frequency = 2.2
 	warp.seed = 9 + seed
+	var dens := FastNoiseLite.new()
+	dens.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	dens.frequency = 4.0
+	dens.fractal_octaves = 3
+	dens.seed = 5 + seed
 	var fib := FastNoiseLite.new()
 	fib.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	fib.frequency = 1.0
-	fib.fractal_octaves = 3
+	fib.fractal_octaves = 2
 	fib.seed = 13 + seed
 	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
 	for y in n:
 		for x in n:
 			var p := Vector2(x + 0.5, y + 0.5) / n * 2.0 - Vector2.ONE
+			var w := p + 0.12 * Vector2(warp.get_noise_2d(p.x, p.y), warp.get_noise_2d(p.x + 30.0, p.y))
 			var f := 0.0
-			for bl in blobs:
-				var d: float = (p - bl[0]).length() / bl[1]
-				f += exp(-d * d)
-			var dn := 0.5 + 0.5 * dens.get_noise_2d(p.x, p.y)
-			var body := smoothstep(0.25, 1.3, f * (0.45 + 1.1 * dn)) * (0.45 + 0.55 * dn)
-			# 繊維: くねらせた座標で、細かい筋（一方向に引き伸ばす）
-			var q := p + 0.18 * Vector2(warp.get_noise_2d(p.x, p.y), warp.get_noise_2d(p.x + 40.0, p.y))
-			var strand := 0.5 + 0.5 * fib.get_noise_2d(q.x * 6.0, q.y * 26.0)
-			var fringe := smoothstep(0.02, 0.35, f) * pow(strand, 2.0)
-			var alpha := clampf(maxf(body, fringe * 0.8) * (1.0 - smoothstep(0.85, 1.0, p.length())), 0.0, 1.0)
+			for l in lumps:
+				var d: float = (w - l[0]).length() / l[1]
+				f = maxf(f, exp(-d * d * 1.0))
+			var dn := 0.75 + 0.25 * dens.get_noise_2d(p.x, p.y)
+			var body := f * dn
+			# 毛羽とほつれた糸: 芯のまわりに、外へ向かってくねる細い筋（角度に沿って細かく、半径に沿って長く）
+			var ang := atan2(w.y, w.x)
+			var r := w.length()
+			var strand := 0.5 + 0.5 * fib.get_noise_2d(ang * 9.0, r * 3.0 + seed * 7.0)
+			var fringe := pow(strand, 6.0) * smoothstep(0.95, 0.35, r) * smoothstep(0.15, 0.45, r)
+			var alpha := clampf(maxf(body, fringe * 0.55) * (1.0 - smoothstep(0.85, 1.0, p.length())), 0.0, 1.0)
 			img.set_pixel(x, y, Color(body, 1, 1, alpha))
 	return img
+
+
+## 息の煙の出口ごとの出し方: [1 秒あたりの粒, 粒の寿命 (s), 大きさ, はじめの速さ (m/s)]
+## 粒は出口で小さく（大きさの 2 割）、寿命の終わりに 2 倍ほどまで広がる。粒どうしが重なる速さで出すので、一続きの煙になる
+const STREAMS := {
+	"small": [26.0, 1.9, 0.85, 0.42],   # ふだんの息: 0.6 秒ほど、細く短く
+	"big": [30.0, 2.4, 1.15, 0.62],     # 声の息: 大きく勢いよく
+	"long": [24.0, 2.9, 1.35, 0.55],    # B の長い息・おーい: 吐いているあいだ出し続ける
+}
 
 
 func _make_breath() -> void:
 	var att := BoneAttachment3D.new()
 	att.bone_name = "head"
 	skel.add_child(att)
-	_breath = CPUParticles3D.new()
-	_breath.emitting = false
-	_breath.one_shot = true
-	_breath.local_coords = false
-	_breath.amount = 4
-	_breath.lifetime = 2.4
-	_breath.explosiveness = 0.55
-	_breath.randomness = 0.6
-	_breath.direction = Vector3(0, 0.2, -1)
-	_breath.spread = 16.0
-	_breath.gravity = Vector3(0, 0.1, 0)
-	_breath.damping_min = 0.5
-	_breath.damping_max = 0.9
-	# 粒ごとに向き・回り方・大きさをばらつかせる
-	_breath.angle_min = 0.0
-	_breath.angle_max = 360.0
-	_breath.angular_velocity_min = -25.0
-	_breath.angular_velocity_max = 25.0
-	_breath.scale_amount_min = 0.7
-	_breath.scale_amount_max = 1.3
-	var curve := Curve.new()   # ふくらみながらほどける
-	curve.add_point(Vector2(0.0, 0.25))
-	curve.add_point(Vector2(0.35, 0.75))
-	curve.add_point(Vector2(1.0, 1.6))
-	_breath.scale_amount_curve = curve
-	var ramp := Gradient.new()   # すっと現れて、ゆっくり薄くなる
-	ramp.offsets = PackedFloat32Array([0.0, 0.12, 0.5, 1.0])
-	ramp.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(1, 1, 1, 0.95), Color(1, 1, 1, 0.6), Color(1, 1, 1, 0.0)])
-	_breath.color_ramp = ramp
 	var quad := QuadMesh.new()
-	quad.size = Vector2(0.34, 0.34)
+	quad.size = Vector2(0.36, 0.36)
 	var sh := Shader.new()
 	sh.code = BREATH_SHADER
 	var mat := ShaderMaterial.new()
@@ -929,28 +917,67 @@ func _make_breath() -> void:
 	if not sun.is_empty():
 		mat.set_shader_parameter("sun_dir", -(sun[0] as Node3D).global_basis.z)
 	quad.material = mat
-	_breath.mesh = quad
-	_breath.layers = 1 | layers   # 息は誰の画面にも映す（自分の息は、自分の体の層にも入れて右下の小窓に映す）
-	_breath.position = MOUTH[kind]
-	att.add_child(_breath)
-	_breaths.append(_breath)
-	var second := _breath.duplicate() as CPUParticles3D
-	att.add_child(second)
-	_breaths.append(second)
+	var grow := Curve.new()   # 出口で細く、離れるほど太く
+	grow.add_point(Vector2(0.0, 0.2))
+	grow.add_point(Vector2(0.25, 0.65))
+	grow.add_point(Vector2(1.0, 2.3))
+	var fade := Gradient.new()   # 出口で濃く、離れるほど薄く
+	fade.offsets = PackedFloat32Array([0.0, 0.05, 0.3, 0.7, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.6), Color(1, 1, 1, 0.25), Color(1, 1, 1, 0.0)])
+	for key in STREAMS:
+		var spec: Array = STREAMS[key]
+		var e := CPUParticles3D.new()
+		e.emitting = false
+		e.one_shot = false
+		e.local_coords = false   # 出た煙はその場に残る: 体が動くと、煙がゆるく曲がった帯になる
+		e.lifetime = spec[1]
+		e.amount = int(ceil(spec[0] * spec[1]))
+		e.explosiveness = 0.0
+		e.randomness = 0.0          # 出す間隔はそろえる（ばらつかせると粒が寄り集まって、かたまりに分かれる）
+		e.lifetime_randomness = 0.2
+		e.direction = Vector3(0, 0.1, -1)
+		e.spread = 5.0             # 出口では細く
+		e.initial_velocity_min = spec[3] * 0.85
+		e.initial_velocity_max = spec[3] * 1.15
+		e.damping_min = 0.45       # 口から離れるとゆっくりになり、たまって広がる
+		e.damping_max = 0.7
+		e.gravity = Vector3(0, 0.05, 0)   # 前へ伸びてから、ゆっくり上がる
+		e.angle_min = 0.0
+		e.angle_max = 360.0
+		e.angular_velocity_min = -14.0
+		e.angular_velocity_max = 14.0
+		e.scale_amount_min = spec[2] * 0.85
+		e.scale_amount_max = spec[2] * 1.15
+		e.scale_amount_curve = grow
+		e.color_ramp = fade
+		e.mesh = quad
+		e.layers = 1 | layers   # 息は誰の画面にも映す（自分の息は、自分の体の層にも入れて右下の小窓に映す）
+		e.position = MOUTH[kind]
+		att.add_child(e)
+		_streams[key] = e
+	_long = _streams["long"]
 
 
-## size 1 がふだんの小さな息。声を出したときは大きく、数も多く、勢いよく
+## 息を吐く。size 1 がふだんの小さな息、声のときは大きく。吐く長さのあいだ口から煙を出し続ける（出た煙は流れて消える）。
+## speed は吐く勢い
 func _puff(size: float, speed: float) -> void:
-	_breath = _breaths[_next_out]
-	_next_out = (_next_out + 1) % _breaths.size()
-	var big := size > 1.2
-	_breath.amount = 7 if big else 4
-	_breath.scale_amount_min = 0.7 * size
-	_breath.scale_amount_max = 1.3 * size
-	_breath.initial_velocity_min = 0.25 * speed + 0.15
-	_breath.initial_velocity_max = 0.5 * speed + 0.2
-	_breath.lifetime = 3.0 if big else 2.4
-	_breath.restart()
+	var key := "big" if size > 1.2 else "small"
+	var e: CPUParticles3D = _streams[key]
+	var spec: Array = STREAMS[key]
+	var v: float = spec[3] * clampf(0.6 + 0.4 * speed, 0.6, 1.6)
+	e.initial_velocity_min = v * 0.85
+	e.initial_velocity_max = v * 1.15
+	var k := clampf(size / 1.6, 0.8, 1.3) if key == "big" else 1.0   # 声が大きいほど、煙も太く
+	e.scale_amount_min = spec[2] * 0.85 * k
+	e.scale_amount_max = spec[2] * 1.15 * k
+	_blow[key] = maxf(_blow[key], 0.35 + 0.25 * size)   # ふだん 0.6 秒、声 0.8〜0.85 秒
+
+
+## 吐いている残りを減らし、残りのあいだだけ煙を出す（なめらかに。姿勢のコマとは関係なく）
+func _blow_breath(dt: float) -> void:
+	for key in _blow:
+		_blow[key] = maxf(0.0, _blow[key] - dt)
+		(_streams[key] as CPUParticles3D).emitting = _blow[key] > 0.0
 
 
 # ---------------------------------------------------------------- 身ぶり（emotes.gd）
@@ -1262,38 +1289,6 @@ func _emote_breath(kind_: String, k: int) -> void:
 		"hit":
 			if k == 0:
 				_puff(1.3, 0.9)
-
-
-## 吐く息。ふつうの息より大きな綿を、吐いているあいだ出し続ける（真っ白で、長く残る）
-func _make_long_breath() -> void:
-	_long = _breaths[0].duplicate() as CPUParticles3D
-	_breaths[0].get_parent().add_child(_long)
-	_long.one_shot = false   # 吐いているあいだ出し続ける
-	_long.emitting = false
-	_long.amount = 30
-	_long.lifetime = 2.8
-	_long.explosiveness = 0.0
-	_long.randomness = 0.5
-	_long.direction = Vector3(0, 0.45, -1)
-	_long.spread = 9.0
-	_long.initial_velocity_min = 0.55
-	_long.initial_velocity_max = 0.85
-	_long.gravity = Vector3(0, 0.12, 0)
-	_long.damping_min = 0.2
-	_long.damping_max = 0.4
-	_long.scale_amount_min = 1.5
-	_long.scale_amount_max = 2.3
-	var ramp := Gradient.new()   # 真っ白に出て、ゆっくり薄くなる
-	ramp.offsets = PackedFloat32Array([0.0, 0.08, 0.6, 1.0])
-	ramp.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(1, 1, 1, 1.0), Color(1, 1, 1, 0.8), Color(1, 1, 1, 0.0)])
-	_long.color_ramp = ramp
-	# 長い息は真っ白に: 影の側の青を淡くした材質を、この息だけに
-	var q := (_long.mesh as QuadMesh).duplicate() as QuadMesh
-	var m := (q.material as ShaderMaterial).duplicate() as ShaderMaterial
-	m.set_shader_parameter("cool", Color(0.86, 0.89, 0.95))
-	m.set_shader_parameter("warm", Color(1.0, 0.99, 0.96))
-	q.material = m
-	_long.mesh = q
 
 
 ## 右手の雪玉（ふだんは隠す）
