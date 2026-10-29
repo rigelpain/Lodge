@@ -69,6 +69,7 @@ var fabric := "":
 		else:
 			main_color = Fabrics.color(v)
 var crafted := false           # ミシンで縫った・広げたソリ（畳んで持てる。craft.gd）
+var tag := 0                   # 名札の柄（sled_tags.gd）。手すりの前の結び目から小さく吊るす
 var kind_mass := 60.0          # 表の重さ（米袋は 1 kg）。乗っている人の重さと合わせて止める計算に使う
 var _k := 1.0                  # 体の重さ / MID_MASS
 var SEATS: Array = KINDS.mid.seats
@@ -188,6 +189,8 @@ func _ready() -> void:
 	rope = preload("res://sled_rope.gd").new()
 	rope.sled = self
 	add_child(rope)
+	var tg: Node3D = preload("res://sled_tags.gd").hang(self, rope._ties[1] + Vector3(0.02, -0.02, 0), tag, clampf(HALF.x * 0.32, 0.16, 0.26))
+	tg.rotation.y = PI / 2   # 紙の面を外（横）へ向ける
 
 	_make_shadow_and_trail()
 

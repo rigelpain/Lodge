@@ -85,6 +85,8 @@ var shopping := false        # 売り台が開いている（craft_ui.gd）。�
 var _held_fp: Node3D         # 一人称の右手に持った物の形
 var _held_key := ""
 var _unfold_up := Vector3.UP # 広げる所の床の傾き（unfold_spot が決める）
+var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
+var last_item := {}          # 最後に触ったソリを畳んで持っていれば、その持ち物（last_sled は null）
 const FOLD_REACH := 2.6      # G で畳めるソリまでの距離（ソリの縁から, m）
 const SLED_SWITCH := 0.8     # 近いソリへ持ち替える差 (m)。行ったり来たりしないよう
 
@@ -138,14 +140,16 @@ func _ready() -> void:
 	if hub:
 		id = hub.join(self)
 		hub.happened.connect(_on_emote)
-	craft = get_parent().get_node_or_null("Craft")
-	if craft and id >= 0:
-		craft.join(id)
 		var layer := CanvasLayer.new()
 		layer.layer = 5
 		add_child(layer)
 		ring = EmoteRing.new()
 		layer.add_child(ring)
+	craft = get_parent().get_node_or_null("Craft")
+	if craft and id >= 0:
+		craft.join(id)
+		craft.happened.connect(_on_craft)
+	last_sled = sled
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -256,6 +260,7 @@ func grab() -> void:
 	handle = stand
 	push_dir = gp[1]
 	mode = Mode.GRIP
+	_touched(sled)
 	_col.disabled = true
 	_snap = 0.0
 	# 体を押す向きに向ける（視線はそのあと自由）
@@ -268,6 +273,7 @@ func grab_rope() -> void:
 	if not sled.take_rope(self):
 		return
 	mode = Mode.ROPE
+	_touched(sled)
 
 
 func let_go() -> void:
@@ -299,6 +305,7 @@ func get_on() -> void:
 		let_go()
 	seat = s
 	mode = Mode.RIDE
+	_touched(sled)
 	_col.disabled = true
 
 
@@ -960,6 +967,25 @@ func held() -> Dictionary:
 	return craft.held(id) if craft else {}
 
 
+func _touched(s: RigidBody3D) -> void:
+	last_sled = s
+	last_item = {}
+
+
+## 自分の畳む・広げるで、最後に触ったソリを替える
+func _on_craft(ev: Dictionary) -> void:
+	if ev.get("who", -1) != id:
+		return
+	match ev.kind:
+		"fold":
+			last_sled = null
+			last_item = ev.item
+		"unfold":
+			var s: RigidBody3D = craft.sleds.get(int(ev.id))
+			if s:
+				_touched(s)
+
+
 ## ホイール: 素手 → 持ち物 1 → 2 → … と回す
 func cycle_hand(step: int) -> void:
 	var n: int = craft.bag(id).size()
@@ -1136,10 +1162,13 @@ static func held_shape(it: Dictionary) -> Node3D:
 		"fabric":    # たたんだ布の束
 			bm.size = Vector3(0.14, 0.035, 0.1)
 			mi.material_override = Look.felt(preload("res://fabrics.gd").color(it.get("fabric", "red")), 6.0)
-		"folded":    # 折り紙の包み
+		"folded":    # 折り紙の包み。名札には、広げた姿がくるくる回る図
 			bm.size = Vector3(0.11, 0.045, 0.11)
 			mi.material_override = Look.felt(preload("res://fabrics.gd").color(it.get("fabric", "red")), 6.0)
 			mi.rotation.y = PI / 4
+			var Tags := preload("res://sled_tags.gd")
+			var tg := Tags.hang(root, Vector3(0.05, 0.03, -0.02), int(it.get("tag", 0)), 0.12, Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")))
+			tg.rotation = Vector3(-0.6, 0.3, 0)
 	mi.mesh = bm
 	root.add_child(mi)
 	root.rotation.x = 0.5

@@ -12,7 +12,7 @@ extends Node
 ##   hand   {slot}             手に持つ物を替える（-1 は素手）
 ##   load   {slot, item}       手に持った型紙か布をミシンにセットする（ミシンが読む）
 ##   sewn   {sled, fabric, at, yaw, id}  ミシンが縫い上げた。広げた実寸のソリが at に出る
-##   fold   {id, item}         置いてあるソリを畳んで、持ち物に入れる（畳む動きは origami.gd）
+##   fold   {id, item}         置いてあるソリを畳んで、持ち物に入れる（畳む動きは origami.gd）。item に名札の柄 tag も入る
 ##   unfold {slot, item, at, yaw, up, id}  畳んだソリを手から前の床に広げて置く（up は床の傾き）
 
 signal happened(ev: Dictionary)
@@ -97,12 +97,13 @@ func _apply(ev: Dictionary) -> bool:
 			if not _take(who, int(ev.slot), ev.item):
 				return false
 		"sewn":
-			ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, 0)
+			ev["tag"] = 1 + (_next_sled - 1) % (preload("res://sled_tags.gd").count() - 1)   # 名札の柄は順に（0 は最初のソリ）
+			ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, 0, Vector3.UP, ev.tag)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or bags[who].size() >= SLOTS or not _free(s):
 				return false
-			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric}
+			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag}
 			ev["at"] = s.global_position
 			ev["yaw"] = s.rotation.y
 			sleds.erase(int(ev.id))
@@ -115,7 +116,7 @@ func _apply(ev: Dictionary) -> bool:
 			if not _take(who, int(ev.slot), ev.item):
 				return false
 			var up: Vector3 = ev.get("up", Vector3.UP)
-			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up)
+			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, int(ev.item.get("tag", 0)))
 			_origami(ev, true, Transform3D(_basis(ev.yaw, up), ev.at))
 	happened.emit(ev)
 	return true
@@ -151,13 +152,14 @@ func _free(s: Node3D) -> bool:
 
 
 ## 実寸のソリを置く。wait コマのあいだは止めておく（広げる動きのあいだ）
-func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP) -> int:
+func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP, tag := 0) -> int:
 	var id := _next_sled
 	_next_sled += 1
 	var s := Sled.new()
 	s.kind = kind
 	s.fabric = fabric
 	s.crafted = true
+	s.tag = tag
 	s.name = "MadeSled%d" % id
 	s.transform = Transform3D(_basis(yaw, up), at + up * 0.08)   # 床に少し浮かせて置く（めり込むと床の下へ押し出される）
 	if world and world.has_method("snow_lift"):

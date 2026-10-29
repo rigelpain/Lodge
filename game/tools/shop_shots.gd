@@ -134,6 +134,16 @@ func _run() -> void:
 	_stand(back, made.global_position, -0.3)
 	await _wait(0.4)
 	await _shot("sewn_sled")
+	# 手すりの前に吊るした名札の寄り
+	var tag_n: Node3D = made.get_node_or_null("Tag")
+	if tag_n:
+		var tp := tag_n.global_position + Vector3.DOWN * 0.15
+		var from := tp + made.global_basis.x * 1.1 - made.global_basis.z * 0.3
+		from.y = made.global_position.y
+		_stand(from, tp, 0.0)
+		p.set("_pitch", atan2(tp.y - (from.y + 1.55), Vector2(tp.x - from.x, tp.z - from.z).length()))
+		await _wait(0.4)
+		await _shot("sewn_tag")
 	# ---- 畳む（12 コマで 30 コマ。何コマ目かで撮る）
 	var side: Vector3 = made.global_position + made.global_basis.x * (made.HALF.x + 1.4) + Vector3.UP * 0.1
 	_stand(side, made.global_position, -0.45)
@@ -149,6 +159,8 @@ func _run() -> void:
 	await _wait(0.8)
 	p.set("_pitch", 0.0)
 	await _shot("in_bag")
+	await _wait(0.5)
+	await _shot("in_bag_turn")   # 名札の回る図が回っている
 	_say("財布 %d 持ち物 %s 手 %d" % [craft.wallet(who), craft.bag(who), craft.hands.get(who, -1)])
 	# ---- 外の坂で広げる（ふもとから少し上で、坂の下へ向いて）
 	var out_at := Vector3(2.0, 0, 22.0)
