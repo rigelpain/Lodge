@@ -42,15 +42,10 @@ var _meeting := false
 var _still_t := 0.0
 var _seen_back := false
 var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
-var compass_style := "3d"      # 方位磁針の形（"3d" 3D のピンクッション、2D の "pillow" 四角いピンクッション・"cushion" トマトの針山・"yarn" 毛糸玉・"glass" フィルムの玉。--compass=）
-var pin3d: SubViewport          # 3D のピンクッションと待ち針（pin_cushion_3d.gd）
 var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
 
 
 func _ready() -> void:
-	pin3d = preload("res://pin_cushion_3d.gd").new()
-	pin3d.main = main
-	add_child(pin3d)
 	layer = 3
 	_view = View.new()
 	_view.hud = self
@@ -115,10 +110,6 @@ func _process(dt: float) -> void:
 		var near: bool = p.global_position.distance_to(_tag_sled.global_position) < TAG_NEAR or p.mode != Player.Mode.WALK
 		want_tag = 1.0 if near else 0.0
 	_tag_a = move_toward(_tag_a, want_tag, dt * 2.5)
-	# 名札の上の方位磁針（3D のピンクッション）: 自分のソリの方へ待ち針が倒れる
-	if pin3d and p:
-		pin3d.set_color(SledTags.cushion_color(main.craft.tag_designs.get(p.id, 0)) if main.get("craft") else Color(0.96, 0.78, 0.82))
-		pin3d.update_pins(get_viewport().get_camera_3d(), p)
 
 	for h in _hints.values():
 		h.on = false
@@ -365,7 +356,6 @@ class View extends Control:
 		var u: float = hud.ui()
 		if hud._tag_a > 0.01:
 			_draw_tag(u, hud._tag_a)
-		_draw_compass_above(u)
 		var cam := get_viewport().get_camera_3d()
 		for id in hud._hints:
 			var h: Dictionary = hud._hints[id]
@@ -386,7 +376,6 @@ class View extends Control:
 
 	## 左下の札: 自分の名札（形・色・柄・素材は自分の名札のデザイン）の中に無地の窓を敷き（sled_tags.gd の window_rect）、
 	## その窓に、いま関わっているソリ（最後に触ったソリ）の丘の断面・印・人の形・糸の矢印を描く（_draw_tag_info）。
-	## 名札の上には、自分のソリの方へ待ち針が倒れる 3D のピンクッション（_draw_compass_above。名札が消えていても出る）
 	func _draw_tag(u: float, a: float) -> void:
 		var main: Node3D = hud.main
 		var sled: RigidBody3D = hud._tag_sled
@@ -494,288 +483,6 @@ class View extends Control:
 			var wave := 0.5 + 0.5 * sin((hud._flow - i * 0.3) * TAU)
 			var big: float = 1.0 + 0.5 * hud._chev_pop * float(i == n - 1)
 			Icons.chevron(self, Vector2(px + i * 16.0 * u, py + 6.0 * u), 20.0 * u * big, Icons.THREAD, a * (0.55 + 0.45 * wave), 0.0, 3.0 * u)
-
-	## 名札の上に、方位磁針（3D のピンクッションと待ち針）。玉の所に距離の巻尺
-	func _draw_compass_above(u: float) -> void:
-		var w := 262.0 * u
-		var h := 146.0 * u
-		var tag := Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
-		if hud.compass_style != "3d":   # 2D の形（--compass=pillow|cushion|yarn|glass）
-			_draw_compass(Vector2(tag.position.x + 110.0 * u, tag.position.y - 62.0 * u), 56.0 * u, u, 1.0)
-			return
-		var pc = hud.pin3d
-		if pc == null or pc.count == 0:
-			return
-		var vs := Vector2(pc.size)
-		var dw := 210.0 * u
-		var dr := Rect2(Vector2(tag.position.x + 6.0 * u, tag.position.y - dw * vs.y / vs.x + 26.0 * u), Vector2(dw, dw * vs.y / vs.x))
-		draw_texture_rect(pc.get_texture(), dr, false)
-		for hp in pc.head_points:
-			if float(hp[1]) <= 0.0:
-				continue
-			var at: Vector2 = dr.position + (hp[0] as Vector2) * dr.size / vs
-			var out := (at - dr.get_center()).normalized()
-			out = (out + Vector2(0, -0.5)).normalized()
-			_tape(at + out * 6.0 * u, out, float(hp[1]), u, 1.0)
-
-	## 自分のソリの向きと距離: [画面での向き（玉の半径 1 で）, 前の度合い（1 真正面、-1 真後ろ）, 色, 距離（0 は乗っている）,
-	## 水平の向き（x 右、y 前。カメラの前と右を水平にした基準の、長さ 1）]
-	func _compass_pins() -> Array:
-		var main: Node3D = hud.main
-		var p = main.player
-		var cam := get_viewport().get_camera_3d()
-		var pins := []
-		if cam == null or p == null:
-			return pins
-		for s in main.get_tree().get_nodes_in_group("sleds"):
-			if not is_instance_valid(s) or not s.visible or int(s.get("owner_id")) != int(p.id):
-				continue
-			var col: Color = s.color() if s.has_method("color") else Icons.RED
-			if p.mode == Player.Mode.RIDE and p.sled == s:
-				pins.append([Vector2.ZERO, 0.0, col, 0.0, Vector2.ZERO])
-				continue
-			var w: Vector3 = s.global_position + Vector3.UP * 0.3 - cam.global_position
-			var d: Vector3 = cam.global_basis.inverse() * w
-			var dist := d.length()
-			var dir := d / maxf(dist, 0.001)
-			var fwd: Vector3 = -cam.global_basis.z
-			fwd.y = 0.0
-			fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
-			var right := fwd.cross(Vector3.UP)
-			var flat := Vector2(w.dot(right), w.dot(fwd))
-			pins.append([Vector2(dir.x, -dir.y), -dir.z, col, dist, flat.normalized() if flat.length() > 0.01 else Vector2(0, 1)])
-		pins.sort_custom(func(x, y): return x[1] < y[1])   # 後ろのから描く
-		return pins
-
-	## 距離の札: 巻尺のテープの切れはし（黄色い紙に目盛り）に、小さな数（m）
-	func _tape(at: Vector2, out: Vector2, dist: float, u: float, a: float) -> void:
-		var font := ThemeDB.fallback_font
-		var fs := int(round(11.0 * u))
-		var txt := "%d" % roundi(dist)
-		var tw := font.get_string_size(txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x
-		var w := tw + 8.0 * u
-		var h := fs + 4.0 * u
-		var c := at + out * (w * 0.5 + 2.0 * u)
-		var r := Rect2(c - Vector2(w, h) / 2.0, Vector2(w, h))
-		Icons.screen()
-		Icons.patch(self, Icons.rr(r.position.x, r.position.y, w, h, 2.0 * u), Color(0.97, 0.84, 0.30), a, false)
-		for k in int(w / (3.0 * u)):   # 目盛り
-			var x := r.position.x + 1.5 * u + k * 3.0 * u
-			draw_line(Vector2(x, r.position.y), Vector2(x, r.position.y + (2.5 if k % 2 == 0 else 1.5) * u), Color(0.25, 0.2, 0.1, 0.8 * a), 0.8 * u)
-		draw_string(font, Vector2(r.position.x + 4.0 * u, r.end.y - 2.5 * u), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.20, 0.16, 0.10, a))
-
-	## 方位磁針（hud.compass_style: "pillow" ピンクッション・"cushion" トマトの針山・"yarn" 毛糸玉・"glass" フィルムの玉）。
-	## 自分のソリが 1 台も無いときは出さない（何も指さない飾りに見えるので）
-	func _draw_compass(bc: Vector2, R: float, u: float, a: float) -> void:
-		if _compass_pins().is_empty():
-			return
-		match hud.compass_style:
-			"cushion": _draw_cushion(bc, R, u, a)
-			"yarn": _draw_yarn(bc, R, u, a)
-			"glass": _draw_glass(bc, R, u, a)
-			_: _draw_pillow(bc, R, u, a)
-
-	## 斜め上から見下ろすピンクッション（代表が見せた「ピンクッション 角型」）: ふっくらした四角いフェルトの枕に、
-	## ぽこぽこした玉縁のレース。色は自分の名札の cushion の部品（sled_tags.gd の cushion_color）。
-	## 自分のソリの数だけ、玉の付いた待ち針が刺さり、そのソリのある水平の向き（自分の前が奥、右が右）へ倒れる。
-	## 針はクッションの、ソリの側の斜面に刺す。後ろのソリの針は手前の斜面から手前へ倒れるので、短く重ならない。
-	## 奥の針から先に描く。乗っているソリの針は、クッションの上に寝かせる
-	func _draw_pillow(bc: Vector2, R: float, u: float, a: float) -> void:
-		var pins := _compass_pins()
-		var main: Node3D = hud.main
-		var craft = main.get("craft")
-		var mine = craft.tag_designs.get(main.player.id, 0) if craft and main.player else 0
-		var col: Color = SledTags.cushion_color(mine)
-		var rx := R * 0.9
-		var sq := 0.5                          # 斜めから見た上の面のつぶれ
-		var ry := rx * sq
-		var hb := R * 0.2                      # 側面（縫い目の下）の高さ
-		var puff := R * 0.16                   # まんなかのふくらみ
-		var c := bc + Vector2(0, R * 0.24)
-		# 上の面の輪郭: 角の丸い四角の、辺のなかほどが外へふくらむ形（平面の座標 -1〜1 で）
-		var plane := PackedVector2Array()
-		for side in 4:
-			for k in 10:
-				var t := k / 10.0
-				var a0: Vector2 = [Vector2(-1, 1), Vector2(1, 1), Vector2(1, -1), Vector2(-1, -1)][side]
-				var a1: Vector2 = [Vector2(1, 1), Vector2(1, -1), Vector2(-1, -1), Vector2(-1, 1)][side]
-				var nrm := (a0 + a1) * 0.5
-				var q := a0.lerp(a1, t) * 0.86 + nrm.normalized() * 0.1 * sin(PI * t)
-				plane.append(q)
-		var to_s := func(q: Vector2, lift := 0.0) -> Vector2:
-			return c + Vector2(q.x * rx, -q.y * ry) - Vector2(0, lift)
-		var top := PackedVector2Array()
-		var low := PackedVector2Array()
-		for q in plane:
-			top.append(to_s.call(q))
-			low.append(to_s.call(q) + Vector2(0, hb))
-		Icons.screen()
-		draw_colored_polygon(Icons.ell(c + Vector2(0, hb + 3.0 * u), rx * 0.95, ry * 0.9, 28), Color(Icons.SHADOW, 0.18 * a))   # 落ち影
-		Icons.patch(self, low, col.darkened(0.22), a, false)
-		Icons.patch(self, top, col.darkened(0.08), a, false)   # 上の面（下の輪郭の手前の半分が、側面に見える）
-		var dome := PackedVector2Array()   # ふくらんだまんなか（縁より少し上へ）
-		for q in plane:
-			dome.append(to_s.call(q * 0.78, puff * 0.6))
-		Icons.patch(self, dome, col, a, false)
-		# ふくらみ: まんなかの明るさ（毛羽のフェルトの上に、淡い光）
-		draw_colored_polygon(Icons.ell(c - Vector2(rx * 0.12, ry * 0.25 + puff * 0.5), rx * 0.55, ry * 0.5, 24), Color(1, 1, 1, 0.22 * a))
-		draw_colored_polygon(Icons.ell(c - Vector2(rx * 0.18, ry * 0.32 + puff * 0.6), rx * 0.25, ry * 0.22, 18), Color(1, 1, 1, 0.18 * a))
-		# 玉縁のレース: 縫い目の線に、ぽこぽこした白い玉
-		var seam := top.duplicate()
-		seam.append(top[0])
-		draw_polyline(seam, Color(col.darkened(0.3), a), 1.2 * u, true)
-		var per := 0.0
-		for k in seam.size() - 1:
-			per += seam[k].distance_to(seam[k + 1])
-		var n := int(per / (5.5 * u))
-		for k in n:
-			var p := _along_poly(seam, per * k / n)
-			draw_circle(p, 2.3 * u, Color(0.99, 0.97, 0.94, a))
-			draw_circle(p, 2.3 * u, Color(col.darkened(0.15), 0.35 * a), false, 0.6 * u)
-		# 待ち針: ソリの側の斜面に刺し、そのソリの方へ倒す。奥から手前へ
-		var order := pins.duplicate()
-		order.sort_custom(func(x, y): return (x[4] as Vector2).y > (y[4] as Vector2).y)
-		for pin in order:
-			var pc: Color = pin[2]
-			var dist: float = pin[3]
-			if dist <= 0.0:   # 乗っている: クッションの上に寝かせる
-				var l: Vector2 = to_s.call(Vector2(-0.6, 0.05), puff)
-				var r2: Vector2 = to_s.call(Vector2(0.6, 0.05), puff)
-				draw_line(l, r2, Color(0.70, 0.72, 0.78, a), 2.2 * u, true)
-				draw_circle(r2, 6.6 * u, Color(1, 1, 1, a))
-				draw_circle(r2, 5.4 * u, Color(pc, a))
-				continue
-			var b: Vector2 = pin[4]
-			var q := b * 0.32
-			var base: Vector2 = to_s.call(q, puff * (1.0 - q.length_squared()))
-			# 倒れる向き: 奥（前のソリ）へは上へ、手前（後ろのソリ）へは手前の斜面の上を大きく手前へ。真後ろでも点にならない
-			var tip := base + Vector2(b.x * R * 0.6, -b.y * R * (0.42 if b.y > 0.0 else 0.8)) + Vector2(0, -R * 0.34)
-			draw_line(base, tip, Color(0.62, 0.64, 0.70, a), 2.2 * u, true)   # 待ち針の軸
-			draw_line(base, tip, Color(1, 1, 1, 0.5 * a), 0.8 * u, true)
-			draw_circle(base, 1.6 * u, Color(col.darkened(0.35), 0.7 * a))     # 刺さった所のくぼみ
-			var hr := (6.0 - 1.2 * b.y) * u   # 奥へ倒れた針の玉は小さく、手前へ倒れた針の玉は大きく
-			draw_circle(tip, hr + 1.4 * u, Color(1, 1, 1, a))
-			draw_circle(tip, hr, Color(pc, a))
-			draw_circle(tip - Vector2(hr, hr) * 0.35, hr * 0.3, Color(1, 1, 1, 0.6 * a))
-			var out := Vector2(b.x, -b.y * sq).normalized() if Vector2(b.x, b.y * sq).length() > 0.05 else Vector2.UP
-			out = (out + Vector2(0, -0.6)).normalized()
-			_tape(tip + out * hr, out, dist, u, a)
-
-	## 折れ線の上の、始まりから d の所
-	func _along_poly(pts: PackedVector2Array, d: float) -> Vector2:
-		for k in pts.size() - 1:
-			var l := pts[k].distance_to(pts[k + 1])
-			if d <= l:
-				return pts[k].lerp(pts[k + 1], d / maxf(l, 0.001))
-			d -= l
-		return pts[pts.size() - 1]
-
-	## 針山（トマトの形の赤いフェルト、緑のへた）に、ソリの数だけ待ち針。上のまんなかから、そのソリの方へ傾いて立つ。
-	## 後ろのソリの針は針山の陰（先に描いて、針山で隠す）。玉はソリのメインカラー。乗っているソリの針は針山の上に寝かせる
-	func _draw_cushion(bc: Vector2, R: float, u: float, a: float) -> void:
-		var pins := _compass_pins()
-		var c := bc + Vector2(0, R * 0.32)
-		var rx := R * 0.82
-		var ry := R * 0.58
-		var base := c - Vector2(0, ry * 0.42)   # 針の刺さる所
-		var drawn := func(pin: Array, part := "all") -> void:
-			var front: float = pin[1]
-			var dist: float = pin[3]
-			if dist <= 0.0:   # 乗っている: 針山の上に寝かせる
-				var l := base + Vector2(-R * 0.62, -ry * 0.18)
-				var r2 := base + Vector2(R * 0.62, -ry * 0.18)
-				draw_line(l, r2, Color(0.70, 0.72, 0.78, a), 2.2 * u, true)
-				draw_circle(r2, 6.0 * u, Color(1, 1, 1, a))
-				draw_circle(r2, 4.8 * u, Color(pin[2], a))
-				return
-			var al: float = a * (0.6 if front < -0.05 else 1.0)
-			var tip: Vector2 = base + (pin[0] as Vector2) * R * 0.98
-			if part != "head":
-				draw_line(base, tip, Color(0.62, 0.64, 0.70, al), 2.0 * u, true)
-				draw_line(base, tip, Color(1, 1, 1, 0.5 * al), 0.8 * u, true)
-			if part == "shaft":
-				return
-			var hr: float = (4.6 + 2.6 * maxf(front, 0.0)) * u
-			draw_circle(tip, hr + 1.4 * u, Color(1, 1, 1, al))
-			draw_circle(tip, hr, Color(pin[2], al))
-			draw_circle(tip - Vector2(hr, hr) * 0.35, hr * 0.3, Color(1, 1, 1, 0.6 * al))
-			var out: Vector2 = (tip - base).normalized() if tip.distance_to(base) > 1.0 else Vector2.UP
-			_tape(tip + out * hr, out, dist, u, al)
-		for pin in pins:   # 後ろ: 軸は針山の陰に（玉と距離は、あとで薄く上に描く）
-			if pin[1] < -0.05 and pin[3] > 0.0:
-				drawn.call(pin, "shaft")
-		Icons.screen()
-		# 針山: 赤いフェルトのトマト。房の筋、緑のへた、下に木の台
-		Icons.patch(self, Icons.rr(c.x - rx * 0.9, c.y + ry * 0.62, rx * 1.8, ry * 0.42, 5.0 * u), Icons.WOOD, a, true, Icons.CAP)
-		Icons.patch(self, Icons.ell(c, rx, ry, 32), Color(0.80, 0.26, 0.22), a, false)
-		var rim := Icons.ell(c, rx + 1.5 * u, ry + 1.5 * u, 40)   # 生成りの縁取り（赤い名札の上でも針山が見えるように）
-		rim.append(rim[0])
-		draw_polyline(rim, Color(0.98, 0.94, 0.86, 0.9 * a), 2.2 * u, true)
-		for k in [-0.55, 0.0, 0.55]:
-			var arc := PackedVector2Array()
-			for t in 9:
-				var y := lerpf(-ry * 0.92, ry * 0.92, t / 8.0)
-				arc.append(c + Vector2(rx * k * sqrt(maxf(0.0, 1.0 - pow(y / ry, 2.0))), y))
-			Icons.dashes(self, arc, Color(0.55, 0.14, 0.12), 1.2 * u, 3.0 * u, 2.0 * u, 0.8 * a)
-		draw_arc(c + Vector2(-rx * 0.35, -ry * 0.3), rx * 0.35, PI * 1.05, PI * 1.5, 10, Color(1, 1, 1, 0.35 * a), 2.0 * u, true)
-		var leaf := PackedVector2Array()
-		for k in 10:
-			var ang := -PI / 2 + TAU * k / 10.0
-			leaf.append(base + Vector2(cos(ang), sin(ang) * 0.55) * (R * (0.28 if k % 2 == 0 else 0.1)))
-		Icons.patch(self, leaf, Color(0.36, 0.55, 0.30), a, false)
-		for pin in pins:   # 後ろの玉と距離、前と、乗っている
-			drawn.call(pin, "head" if pin[1] < -0.05 and pin[3] > 0.0 else "all")
-
-	## 毛糸玉に、ソリの数だけ縫い針。針の先がそのソリの方を指し、針の穴からソリの色の糸が垂れる
-	func _draw_yarn(bc: Vector2, R: float, u: float, a: float) -> void:
-		var pins := _compass_pins()
-		var rr := R * 0.62
-		var drawn := func(pin: Array) -> void:
-			var front: float = pin[1]
-			var dist: float = pin[3]
-			var al: float = a * (0.6 if front < -0.05 else 1.0)
-			var v: Vector2 = pin[0] if dist > 0.0 else Vector2(0, 0.7)
-			var tip: Vector2 = bc + v * R
-			var eye: Vector2 = bc - v * R * 0.25
-			draw_line(eye, tip, Color(0.70, 0.72, 0.78, al), 2.4 * u, true)
-			draw_line(eye, tip, Color(1, 1, 1, 0.5 * al), 0.9 * u, true)
-			draw_circle(eye, 2.2 * u, Color(0.3, 0.3, 0.35, al))
-			var tail := PackedVector2Array()
-			for k in 8:
-				var t := k / 7.0
-				tail.append(eye + Vector2(-6.0 * t, 10.0 * t + 4.0 * sin(t * PI)) * u)
-			Icons.thread(self, tail, pin[2], 2.4 * u, al)
-			if dist > 0.0:
-				_tape(tip, v.normalized() if v.length() > 0.01 else Vector2.UP, dist, u, al)
-		for pin in pins:
-			if pin[1] < -0.05 and pin[3] > 0.0:
-				drawn.call(pin)
-		Icons.screen()
-		Icons.patch(self, Icons.circ(bc, rr, 28), Color(0.86, 0.74, 0.50), a, false)
-		for k in 4:   # 巻いた毛糸の筋
-			var e := Icons.ell(Vector2.ZERO, rr * 0.95, rr * (0.3 + 0.15 * k), 28)
-			Icons.dashes(self, Icons.xf(e, 0.5 + k * 0.7, bc, 1.0), Color(0.62, 0.48, 0.28), 1.3 * u, 4.0 * u, 1.5 * u, 0.8 * a, true)
-		for pin in pins:
-			if not (pin[1] < -0.05 and pin[3] > 0.0):
-				drawn.call(pin)
-
-	## フィルムと白い糸の枠の玉（はじめの案）
-	func _draw_glass(bc: Vector2, R: float, u: float, a: float) -> void:
-		var pins := _compass_pins()
-		Icons.screen()
-		Icons.patch(self, Icons.rr(bc.x - R * 0.55, bc.y + R * 0.78, R * 1.1, R * 0.28, 6.0 * u), Icons.WOOD, a, true, Icons.CAP)
-		draw_circle(bc, R, Color(0.86, 0.92, 1.0, 0.42 * a))
-		draw_arc(bc, R, 0.0, TAU, 48, Color(1, 1, 1, 0.9 * a), 2.6 * u, true)
-		Icons.dashes(self, Icons.ell(bc, R - 2.0 * u, (R - 2.0 * u) * 0.28, 36), Color(0.55, 0.62, 0.78), 1.0 * u, 3.0 * u, 3.0 * u, 0.6 * a, true)
-		for pin in pins:
-			var dist: float = pin[3]
-			var tip: Vector2 = bc + ((pin[0] as Vector2) * 0.82 if dist > 0.0 else Vector2(0, 0.55)) * R
-			var al: float = a * (0.45 if pin[1] < -0.1 else 1.0)
-			draw_line(bc, tip, Color(0.62, 0.64, 0.70, al), 2.0 * u, true)
-			draw_circle(tip, 5.0 * u, Color(1, 1, 1, al))
-			draw_circle(tip, 3.8 * u, Color(pin[2], al))
-			if dist > 0.0:
-				_tape(tip, (tip - bc).normalized(), dist, u, al)
 
 	## 右上の 360° 映像が後ろ向きのしるし（「後ろ」の文字の代わり）
 	func _draw_pip_back(u: float) -> void:
