@@ -1447,14 +1447,21 @@ func summon_sack() -> bool:
 
 const TAG_FILE := "user://my_tag.cfg"
 
-## 保存してある自分の名札を読む（なければ、人の番号から決めたはじめの名札のまま）
+## 保存してある自分の名札を読む（なければ、人の番号から決めたはじめの名札のまま）。
+## 手に入れた部品を先に戻してから、名札を付ける（前の版の保存にない部品は、はじめの名札のまま）
 func _load_tag() -> void:
 	var cf := ConfigFile.new()
 	if cf.load(TAG_FILE) != OK:
 		return
+	var Tags := preload("res://sled_tags.gd")
+	if cf.has_section("owned"):
+		for part in cf.get_section_keys("owned"):
+			for i in cf.get_value("owned", part, []):
+				craft.send({"kind": "tag_unlock", "who": id, "part": part, "index": int(i)})
 	var d := {}
-	for part in preload("res://sled_tags.gd").PARTS:
-		d[part] = int(cf.get_value("tag", part, 0))
+	for part in Tags.PARTS:
+		if cf.has_section_key("tag", part):
+			d[part] = int(cf.get_value("tag", part))
 	craft.send({"kind": "tag_design", "who": id, "design": d})
 
 
@@ -1464,4 +1471,7 @@ func save_tag() -> void:
 	var d: Dictionary = craft.tag_designs.get(id, {})
 	for part in d:
 		cf.set_value("tag", part, d[part])
+	var owned: Dictionary = craft.tag_owned.get(id, {})
+	for part in owned:
+		cf.set_value("owned", part, owned[part])
 	cf.save(TAG_FILE)
