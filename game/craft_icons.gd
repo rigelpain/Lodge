@@ -37,10 +37,9 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			Icons.arrow(ci, Vector2(0, 12), Vector2(0, 28), Icons.THREAD, a, 2.0)
 		"hand":
 			Icons.mitten(ci, Vector2(0, 2), 0.0, tint, a, true, 1.5)
-		"sack":   # 帯の米袋を、足もとにぽんと広げて乗る
-			sack_roll(ci, Vector2(0, -12), 0.8, Color("B8402E"), a)
-			Icons.arrow(ci, Vector2(0, 0), Vector2(0, 14), Icons.THREAD, a, 2.0)
-			Icons.patch(ci, Icons.rr(-18, 16, 36, 9, 4), KRAFT, a, false)
+		"sack":   # 米袋を足もとに出して、乗る（人が座った米袋）
+			sack_flat(ci, Vector2(0, 14), 0.95, Color("B8402E"), a)
+			Icons.doll(ci, Vector2(-2, 12), tint, "sit", a, 0.62)
 		"gear":   # 装備の画面: 帯と、下げた色違いの米袋
 			Icons.patch(ci, Icons.rr(-26, -22, 52, 8, 3), Icons.WOOD.darkened(0.2), a, true, Icons.CAP)
 			sack_roll(ci, Vector2(-12, 4), 0.5, Color("B8402E"), a)
@@ -84,6 +83,27 @@ static func sack_band(spec: Dictionary) -> Color:
 		return Color("B8402E")
 	var c := Fabrics.color(spec.fabric)
 	return Color("EFE6D2") if c.get_luminance() < 0.5 else c.darkened(0.6)
+
+
+## 雪に置いた米袋を斜め前から見た形（ゲームの米袋と同じ: クラフト紙の平たい袋、口と底に紙テープと縫い目、
+## まんなかに赤い丸に「米」、前に 2 本の帯）。c は袋のまんなか、前は右。band は印刷の色、body は袋の色
+static func sack_flat(ci: CanvasItem, c: Vector2, sc: float, band: Color, a := 1.0, body := KRAFT) -> void:
+	var bag := PackedVector2Array([Vector2(-22, -5), Vector2(18, -7), Vector2(24, 5), Vector2(-20, 8)])   # 少し奥へ傾いた袋
+	Icons.patch(ci, Icons.xf(bag, 0.0, c, sc), body, a, false)
+	var shade := PackedVector2Array([Vector2(-20, 8), Vector2(24, 5), Vector2(24, 7.5), Vector2(-20, 10.5)])   # 厚み
+	Icons.patch(ci, Icons.xf(shade, 0.0, c, sc), body.darkened(0.25), a, false)
+	for t in [[-21.0, -18.0], [18.5, 21.5]]:   # 口と底の紙テープ
+		var x0: float = t[0]
+		var x1: float = t[1]
+		Icons.patch(ci, Icons.xf(PackedVector2Array([Vector2(x0, -5.2 - (x0 + 22) * 0.05), Vector2(x1, -5.4 - (x1 + 22) * 0.05),
+				Vector2(x1 + 0.6, 7.6 - (x1 + 20) * 0.07), Vector2(x0 + 0.6, 7.8 - (x0 + 20) * 0.07)]), 0.0, c, sc), Color("EFE6D2"), a, false)
+	for k in [12.0, 14.5]:   # 前の 2 本の帯
+		Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(k, -6.3), Vector2(k + 3.6, 6.0)]), 0.0, c, sc), band, 1.3, a)
+	var mc := c + Vector2(-2, 0.5) * sc   # 赤い丸に「米」の十字
+	ci.draw_arc(Icons._o + mc * Icons._s, 4.6 * sc * Icons._s, 0.0, TAU, 18, Color(band, a), maxf(1.1 * sc * Icons._s, 1.0), true)
+	for ang in [0.0, PI / 2, PI / 4, -PI / 4]:
+		var d := Vector2.from_angle(ang) * 3.0 * sc
+		ci.draw_line(Icons._o + (mc - d) * Icons._s, Icons._o + (mc + d) * Icons._s, Color(band, a), maxf(0.9 * sc * Icons._s, 1.0), true)
 
 
 ## 丸めた米袋（帯に下げる形）。band は帯の色、body は袋の色
