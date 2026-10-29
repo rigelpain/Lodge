@@ -26,6 +26,7 @@ const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "get
 static var wind := 0.0
 static var wind_t := 0.0        # 揺れの時計 (s)
 static var wind_stepped := true # 12 コマ／秒に刻む（人形と同じコマ撮り）。false でなめらか（見比べ用）
+static var printing := false   # 立体の板に貼る印刷を描いているあいだ true（板の影は 3D で落とすので、外の落ち影を描かない）
 static var user_scale := 1.0   # 設定の「HUD の大きさ」（settings.gd が入れる）
 static var _felt: ImageTexture
 static var _o := Vector2.ZERO   # いま描いている絵の中心（画面）
@@ -162,12 +163,13 @@ static func _map(pts: PackedVector2Array) -> PackedVector2Array:
 # ---- 描く道具（絵の座標で受けて、画面へ写す） ----------------------------------------------
 
 ## フェルトのワッペン: 影、毛羽のむらの面、毛羽立った縁、内側の破線のステッチ
-static func patch(ci: CanvasItem, pts: PackedVector2Array, col: Color, a := 1.0, stitch := true, thread := Color(0, 0, 0, 0)) -> void:
+static func patch(ci: CanvasItem, pts: PackedVector2Array, col: Color, a := 1.0, stitch := true, thread := Color(0, 0, 0, 0), shadow := true) -> void:
 	var m := _map(pts)
-	var sh := PackedVector2Array()
-	for p in m:
-		sh.append(p + Vector2(0.9, 1.4) * maxf(_s, 0.6))
-	ci.draw_colored_polygon(sh, Color(SHADOW, 0.26 * a))
+	if shadow:
+		var sh := PackedVector2Array()
+		for p in m:
+			sh.append(p + Vector2(0.9, 1.4) * maxf(_s, 0.6))
+		ci.draw_colored_polygon(sh, Color(SHADOW, 0.26 * a))
 	var uv := PackedVector2Array()
 	for p in pts:
 		uv.append(p / 22.0)
@@ -340,7 +342,7 @@ static func badge(ci: CanvasItem, keys: Array, icon_name: String, center: Vector
 	_o = center
 	_s = sz / 64.0
 	var hw := w / 2.0 / _s
-	patch(ci, rr(-hw, -30.0, hw * 2.0, 60.0, 26.0), Color(0.99, 0.97, 0.93), 0.92 * a, true, PAPER_EDGE)
+	patch(ci, rr(-hw, -30.0, hw * 2.0, 60.0, 26.0), Color(0.99, 0.97, 0.93), a if printing else 0.92 * a, true, PAPER_EDGE, not printing)
 	var x := center.x - w / 2.0 + sz * 0.2
 	for k in keys:
 		var kw := _key_w(k, sz)
@@ -404,7 +406,8 @@ static func paper_tag(ci: CanvasItem, rect: Rect2, cut: float, u := 1.0) -> void
 	var sh := PackedVector2Array()
 	for p in pts:
 		sh.append(p + Vector2(2.0, 3.0) * u)
-	ci.draw_colored_polygon(sh, Color(SHADOW, 0.30))
+	if not printing:
+		ci.draw_colored_polygon(sh, Color(SHADOW, 0.30))
 	ci.draw_colored_polygon(pts, PAPER)
 	var edge := pts.duplicate()
 	edge.append(pts[0])

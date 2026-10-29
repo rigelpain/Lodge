@@ -131,6 +131,8 @@ func _process(dt: float) -> bool:
 		var bots := main.get_children().filter(func(c): return c != p and c is CharacterBody3D and c.get("doll") != null)
 		if bots.size() > 0:
 			_face(p, bots[0].global_position + Vector3.UP * 1.2, -0.05)
+	if _set and args.has("pitch"):   # 見上げる・見下ろす（空や床を背景にして撮る）
+		p._pitch = float(args["pitch"])
 	if _set and scene == "ride":
 		p.rotation.y = sled.global_rotation.y
 		# --mash=回: 乗っているあいだ、1 秒にこの回数 Space を押す（米袋の足漕ぎ）

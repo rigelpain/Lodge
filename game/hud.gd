@@ -12,6 +12,7 @@ extends CanvasLayer
 const Icons := preload("res://hud_icons.gd")
 const Speedo := preload("res://speedo.gd")
 const RideWind := preload("res://ride_wind.gd")
+const Plates := preload("res://hud_plates.gd")
 const SledTags := preload("res://sled_tags.gd")
 const Player := preload("res://player.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
@@ -26,6 +27,7 @@ var hints_on := true
 var uses := {}                # 案内 → した回数（そのプレイの間だけ）
 
 var _view: Control
+var plates: Node             # 立体の板（hud_plates.gd）。--flat-hud で使わない（前の平らな絵）
 var _tag_view: Control
 # 乗って滑っているときの速さ（糸巻き。speedo.gd）
 var spd_best := 0.0           # 今日いちばんの速さ（このプレイの間）
@@ -75,6 +77,12 @@ func _ready() -> void:
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_view.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	add_child(_view)
+	if main and not main.args.has("flat-hud"):
+		plates = Plates.new()
+		add_child(plates)
+		plates.setup(self)
+		plates.scale_k = clampf(float(main.args.get("hud3d-scale", "0.5")), 0.3, 1.0)   # 板の 3D の絵の解像度（印刷は画面のまま）
+		_tag_view.visible = false
 
 
 ## 画面の高さと、設定の「HUD の大きさ」に合わせた大きさ（1080・100% で 1）
@@ -136,9 +144,12 @@ func _process(dt: float) -> void:
 		var h: Dictionary = _hints[id]
 		h.a = move_toward(h.a, 1.0 if h.on else 0.0, dt * (4.0 if h.on else 3.0))
 	_layout_bottom()
+	_place_hints()
 	if debug_on:
 		_dbg = _debug_values(sled, p)
 	_update_speedo(dt, p, menu)
+	if plates:
+		_update_plates()
 	_view.queue_redraw()
 
 
@@ -348,6 +359,27 @@ func _layout_bottom() -> void:
 		i += 1
 
 
+## 案内のワッペンの、このコマの画面の真ん中と大きさ（物の上の案内は、カメラに映した所）
+func _place_hints() -> void:
+	var u := ui()
+	var cam := get_viewport().get_camera_3d()
+	for id in _hints:
+		var h: Dictionary = _hints[id]
+		h.shown = false
+		if h.a < 0.02:
+			continue
+		var at: Vector2 = h.scr
+		var sz := 74.0 * u
+		if not h.bottom:
+			if cam == null or cam.is_position_behind(h.world):
+				continue
+			at = cam.unproject_position(h.world)
+			sz = 66.0 * u
+		h.draw_at = at + Vector2(0, (1.0 - ease(h.a, 0.5)) * 10.0 * u)
+		h.draw_sz = sz
+		h.shown = true
+
+
 func _badge_w(h: Dictionary, sz: float) -> float:
 	return Icons.badge_w(h.keys, sz)
 
@@ -370,7 +402,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 	Icons.wind = _wind * calm
 	Icons.wind_t += dt
 	Icons.wind_stepped = main.args.get("hud-shake", "step") != "smooth"
-	if _tag_view:   # 名札: 左の糸の輪を支点に、自由な端（右）が風で持ち上がり、ガタガタ震える
+	if _tag_view and not plates:   # 名札: 左の糸の輪を支点に、自由な端（右）が風で持ち上がり、ガタガタ震える
 		var tr: Rect2 = _tag_view.tag_rect(ui())
 		_tag_view.pivot_offset = Vector2(tr.position.x, tr.position.y + tr.size.y * 0.5)
 		_tag_view.rotation = Icons.wind_angle(1.0, -0.09, 0.05)
@@ -407,18 +439,60 @@ func _cheer() -> void:
 	_spd_knots.append(_spd_dist)
 
 
-## 速さの表示の置き場（画面の px）: 下の端の右寄り。右下の小窓（自分の姿）と日時計の左に、下の縁をそろえて置く。
-## 上の右には 360° 映像があり、下のまんなかには案内のワッペンと持ち物の列があるので、その間の空いた所
+## 立体の板を置く: 名札・吊るした札・ワッペン・ボビン・右下の小窓の刺繍枠・持ち物の列。
+## 風の揺れは、板を支点のまわりに傾ける形でかける（平らな絵のときと同じ値）
+func _update_plates() -> void:
+	var u := ui()
+	plates.begin()
+	plates.moving = Icons.wind > 0.001 or _spd_a > 0.01
+	if _tag_a > 0.01:
+		var tr: Rect2 = _view.tag_rect(u)
+		plates.plate("tag", _painter.bind("tag"), tr, 12.0 * u, 8.0 * u, "paper", Vector2(tr.position.x, tr.get_center().y),
+			[1.0, -0.09, 0.05, 2.0 * u], _tag_a)
+	if _spd_a > 0.01:   # 速さの表示: 立体のボビンと、縫い目を縫うフェルトのリボンの板（ボビンから吊るす）
+		var g := Speedo.layout(speedo_box_now(), _spd_pop)
+		plates.model("bobbin", "res://props/hud/hud_bobbin.glb", g.c, g.r / 0.5, -_spd_spin, [4.0, 0.0, 0.03, 2.0 * u], _spd_a)
+		var rb: Rect2 = g.ribbon
+		plates.plate("ribbon", _painter.bind("ribbon"), rb, 8.0 * u, 5.0 * u, "felt", Vector2(rb.get_center().x, rb.position.y),
+			[6.0, 0.05, 0.05, 1.5 * u], _spd_a)
+	var sc = main.get("self_cam")
+	if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
+		sc.plain_frame = true
+		var fr: Control = sc._frame
+		var rr := fr.size.x / 2.0
+		plates.model("hoop", "res://props/hud/hud_hoop.glb", fr.position + fr.size / 2.0, (rr + 3.0 * u) / 1.03, 0.0, [5.0, 0.0, 0.03, 2.5 * u], 1.0)
+	plates.end()
+
+
+## 板に貼る印刷を描く入れ物（View の part だけを描く）
+func _painter(part: String) -> Control:
+	var v := View.new()
+	v.hud = self
+	v.part = part
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	return v
+
+
+## 吊るした札（確かめ用）の場所
+func debug_rect(u: float) -> Rect2:
+	return Rect2(18.0 * u, 26.0 * u, 176.0 * u, 30.0 * u + 34.0 * u * 5.0 + 12.0 * u)
+
+
+## 速さの表示の置き場（画面の px）: 画面の左側の縦の帯。左上の確かめ用の札の下から、左下の名札の上のピンクッションの上まで
 func speedo_box() -> Rect2:
 	var u := ui()
 	var vs := _view.size
-	var w := 300.0 * u   # 左の持ち物・装備の枠に、縫い目がかからない幅
-	var h := 160.0 * u
-	var right := vs.x - 14.0 * u - 104.0 * u   # 日時計のぶん
-	var sc = main.get("self_cam")
-	if sc and is_instance_valid(sc) and not sc.get("hidden"):
-		right -= (236.0 + 18.0) * u          # 小窓のぶん（self_cam.gd の DIAM と MARGIN）
-	return Rect2(right - w, vs.y - h - 6.0 * u, w, h)
+	var top := 26.0 * u + debug_rect(u).size.y + 18.0 * u        # 確かめ用の札の下（出していなくても同じ所）
+	var bottom := vs.y - (146.0 + 18.0) * u - 150.0 * u          # 名札と、その上のピンクッションの上
+	return Rect2(22.0 * u, top, 126.0 * u, maxf(bottom - top, 200.0 * u))
+
+
+## いまの置き場（出てくるときは、上からふわっと下りてくる）
+func speedo_box_now() -> Rect2:
+	var r := speedo_box()
+	r.position.y -= (1.0 - ease(_spd_a, 0.6)) * 24.0 * ui()
+	return r
 
 
 ## 確かめ用の札に出す値: 押している人数・ソリの高さ（頂上まで）・速さ・fps・いまの状態・覚えた案内の数
@@ -442,33 +516,28 @@ func _debug_values(sled: RigidBody3D, p: Node) -> Dictionary:
 
 class View extends Control:
 	var hud: Node
-	var part := ""      # "tag" なら左下の名札だけを描く
+	var part := ""      # "tag" なら左下の名札だけ、"ribbon" なら速さの縫い目だけを描く（立体の板に重ねる印刷）
 
 	func _draw() -> void:
 		var u: float = hud.ui()
+		Icons.printing = part != "" and hud.plates != null
+		if part == "ribbon":
+			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
+			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false)
+			Icons.printing = false
+			return
 		if part == "tag":   # 名札だけを描く入れ物（風で、この入れ物ごと傾ける。名札の絵は中で描く向きを自分で変えるので）
 			if hud._tag_a > 0.01:
 				var tr := tag_rect(u)
 				_draw_tag(u, hud._tag_a)
 				Icons.flap(self, tr.position + Vector2(tr.size.x, 0), Vector2.LEFT, Vector2.DOWN, 22.0 * u, 1.0)
+			Icons.printing = false
 			return
-		var cam := get_viewport().get_camera_3d()
 		for id in hud._hints:
 			var h: Dictionary = hud._hints[id]
-			if h.a < 0.02:
+			if h.a < 0.02 or not h.get("shown", false):
 				continue
-			var at: Vector2 = h.scr
-			var sz := 74.0 * u
-			if not h.bottom:
-				if cam == null or cam.is_position_behind(h.world):
-					continue
-				at = cam.unproject_position(h.world)
-				sz = 66.0 * u
-			var e := ease(h.a, 0.5)
-			var bc := at + Vector2(0, (1.0 - e) * 10.0 * u)
-			draw_set_transform_matrix(Icons.wind_xform(bc, float(id.hash() % 97), 0.0, 0.03, 2.0 * u))   # 貼ったワッペンは小刻みに震える
-			Icons.badge(self, h.keys, h.icon, bc, sz, e)
-			draw_set_transform_matrix(Transform2D.IDENTITY)
+			Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, ease(h.a, 0.5))   # 操作のための表示なので、平らで、風でも揺らさない
 		_draw_pip_back(u)
 		if hud._spd_a > 0.01:
 			_draw_speedo(u)
@@ -598,16 +667,15 @@ class View extends Control:
 	func _draw_speedo(u: float) -> void:
 		var e := ease(hud._spd_a, 0.6)
 		if e > 0.01:
-			var r: Rect2 = hud.speedo_box()
-			r.position.y += (1.0 - e) * 24.0 * u   # 下からふわっと上がってくる
-			draw_set_transform_matrix(Icons.wind_xform(r.get_center(), 4.0, 0.0, 0.025, 2.5 * u))   # ボビンの形が読める程度に、小刻みに
-			var style: String = hud.main.args.get("speedo", "both")   # both: ボビンと左右の縫い目 / seams: 縫い目だけ / bobbin: ボビンだけ
-			if style != "seams":
-				Speedo.draw(self, r, hud._spd, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud.spd_best,
-					hud._spd_pop, hud._spd_knots, e)
+			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
+			var k := Speedo.level_of(hud._spd)
+			if hud.plates == null:   # 平らなとき: リボンは糸巻きから吊るして揺れる。ボビンは小刻みに
+				var rb: Rect2 = g.ribbon
+				draw_set_transform_matrix(Icons.wind_xform(Vector2(rb.get_center().x, rb.position.y), 6.0, 0.05, 0.05, 1.5 * u))
+				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e)
+			draw_set_transform_matrix(Icons.wind_xform(g.c, 4.0, 0.0, 0.03, 2.0 * u))
+			Speedo.draw_spool(self, g, k, hud._spd_spin, hud._spd_color, hud.spd_best, hud._spd_pop, e, hud.plates == null)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
-			if style != "bobbin":
-				Speedo.seams(self, size, u, Speedo.level_of(hud._spd), hud._spd_dist, hud._spd_color, e)
 
 	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。
 	## 段ごとに絵と数字: 人の形（押している人数）、丘（ソリの高さ／頂上）、風（速さ）、砂時計（fps）、いまの状態の絵と、
