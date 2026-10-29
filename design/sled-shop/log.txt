@@ -1,0 +1,13 @@
+型紙を買う: true
+布を買う: true
+財布 8 持ち物 [{ "kind": "pattern", "sled": "mid" }, { "kind": "fabric", "fabric": "navy" }]
+型紙をセット: true
+布をセット: true
+縫ったソリ: mid navy
+畳めるソリ: true
+畳む: true
+財布 8 持ち物 [{ "kind": "folded", "sled": "mid", "fabric": "navy" }] 手 0
+広げる所: (2.0, 11.27455, 24.1)
+広げる: true
+乗った: true
+滑る速さ 7.0 m/s
