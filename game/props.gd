@@ -52,6 +52,115 @@ static func dress(root: Node) -> void:
 		node.add_child(l)
 
 
+## 主な色の差し替え（ソリのメインカラーなど）。焼いた色の画像のうち、色相が key に近く鮮やかな所だけを to の色へ移す。
+## 明るさと鮮やかさは key に対する比で移すので、影・縫い目・暗い握り（felt_red_dark）は to の暗い色になる。
+## ほかの色（金・緑・生成り・クラフト紙・木）はそのまま。素材は material_for と同じ組み方（写真の細部を 3 方向から、ふちの毛羽）を
+## シェーダーで組み直したもの。2 回目からは色だけ変える
+static func recolor(root: Node, key: Color, to: Color) -> void:
+	for node in root.find_children("*", "MeshInstance3D", true, false):
+		var mi: MeshInstance3D = node
+		for i in mi.mesh.get_surface_count():
+			var m := mi.get_surface_override_material(i)
+			if m is ShaderMaterial and m.has_meta("recolor"):
+				m.set_shader_parameter("to", to)
+				continue
+			var b := m as StandardMaterial3D
+			if b == null or b.albedo_texture == null or family(b.resource_name)[0] in ["wood"]:
+				continue
+			var r := ShaderMaterial.new()
+			r.shader = _recolor_shader()
+			r.resource_name = b.resource_name
+			r.set_meta("recolor", true)
+			r.set_shader_parameter("albedo_tex", b.albedo_texture)
+			r.set_shader_parameter("normal_tex", b.normal_texture if b.normal_enabled else null)
+			r.set_shader_parameter("detail_albedo", b.detail_albedo)
+			r.set_shader_parameter("detail_normal", b.detail_normal)
+			r.set_shader_parameter("detail_scale", b.uv2_scale.x)
+			r.set_shader_parameter("roughness", b.roughness)
+			r.set_shader_parameter("rim", b.rim if b.rim_enabled else 0.0)
+			r.set_shader_parameter("rim_tint", b.rim_tint)
+			r.set_shader_parameter("key", key)
+			r.set_shader_parameter("to", to)
+			mi.set_surface_override_material(i, r)
+
+
+static var _recolor_sh: Shader
+
+
+static func _recolor_shader() -> Shader:
+	if _recolor_sh == null:
+		_recolor_sh = Shader.new()
+		_recolor_sh.code = RECOLOR_SHADER
+	return _recolor_sh
+
+
+const RECOLOR_SHADER := """
+shader_type spatial;
+render_mode cull_back, diffuse_burley, specular_schlick_ggx;
+
+uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform sampler2D detail_albedo : source_color, filter_linear_mipmap, repeat_enable;
+uniform sampler2D detail_normal : hint_normal, filter_linear_mipmap, repeat_enable;
+uniform float detail_scale = 1.6;   // 写真の細部を 1 m に何回くり返すか（family の 2 つめ）
+uniform float roughness = 0.95;
+uniform float rim = 0.25;
+uniform float rim_tint = 0.5;
+uniform vec3 key : source_color;    // 焼いてある主な色
+uniform vec3 to : source_color;     // 差し替える色
+uniform float hue_width = 0.04;     // key の色相から、これだけ離れた色まで差し替える（0〜1 の色相環で）
+uniform float min_sat = 0.3;        // これより鮮やかでない色（生成り・白・灰）は差し替えない
+
+varying vec3 v_tri_w;
+varying vec3 v_tri_p;
+
+vec3 rgb2hsv(vec3 c) {
+	vec4 K = vec4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+	vec4 p = mix(vec4(c.bg, K.wz), vec4(c.gb, K.xy), step(c.b, c.g));
+	vec4 q = mix(vec4(p.xyw, c.r), vec4(c.r, p.yzx), step(p.x, c.r));
+	float d = q.x - min(q.w, q.y);
+	return vec3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
+}
+
+vec3 hsv2rgb(vec3 c) {
+	vec3 p = abs(fract(c.xxx + vec3(1.0, 2.0 / 3.0, 1.0 / 3.0)) * 6.0 - 3.0);
+	return c.z * mix(vec3(1.0), clamp(p - 1.0, 0.0, 1.0), c.y);
+}
+
+vec3 recolor(vec3 c) {
+	vec3 h = rgb2hsv(c);
+	vec3 k = rgb2hsv(key);
+	vec3 t = rgb2hsv(to);
+	float dh = abs(h.x - k.x);
+	dh = min(dh, 1.0 - dh);
+	float w = (1.0 - smoothstep(hue_width * 0.6, hue_width, dh)) * smoothstep(min_sat * 0.7, min_sat, h.y);
+	float sat = clamp(h.y * t.y / max(k.y, 1e-3), 0.0, 1.0);
+	float val = min(h.z * max(t.z, 0.06) / max(k.z, 1e-3), 1.0);
+	return mix(c, hsv2rgb(vec3(t.x, sat, val)), w);
+}
+
+vec4 triplanar(sampler2D s, vec3 p, vec3 w) {
+	return texture(s, p.zy * vec2(-1.0, 1.0)) * w.x + texture(s, p.xz) * w.y + texture(s, p.xy) * w.z;
+}
+
+void vertex() {
+	vec3 w = abs(NORMAL);   // StandardMaterial3D の uv2_triplanar（なめらかさ 1）と同じ
+	v_tri_w = w / (w.x + w.y + w.z);
+	v_tri_p = VERTEX * detail_scale * vec3(1.0, -1.0, 1.0);
+}
+
+void fragment() {
+	vec4 d = triplanar(detail_albedo, v_tri_p, v_tri_w);
+	vec3 a = recolor(texture(albedo_tex, UV).rgb);
+	ALBEDO = mix(a, a * d.rgb, d.a);   // 写真の細部の明暗をかけ算（StandardMaterial3D の BLEND_MODE_MUL と同じ）
+	NORMAL_MAP = mix(texture(normal_tex, UV).rgb, triplanar(detail_normal, v_tri_p, v_tri_w).rgb, d.a);
+	ROUGHNESS = roughness;
+	RIM = rim;
+	RIM_TINT = rim_tint;
+}
+"""
+
+
 static func _t(name: String) -> Texture2D:
 	if not _tex.has(name):
 		_tex[name] = load(TEX + name + ".png")
