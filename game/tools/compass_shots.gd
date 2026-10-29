@@ -1,6 +1,7 @@
 extends SceneTree
 ## 自分の名札と、左下の球の方位磁針を確かめて撮る（一人称）。
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/compass_shots.gd -- --bots=0 --no-sound --no-pip --dir=/path/shots [--compass=knots]
+## 0. まだ自分のソリが無いときは、左下は名札だけ
 ## 1. 自分の名札で 3 台縫ったことにして、丘のあちこちに置く（縫った人の名札が付く）
 ## 2. 歩き回り・向きを変えながら撮る: 針がそれぞれのソリを指し、距離が変わる
 ## 3. 米袋を N で出して乗る: 乗っている米袋の針は真下
@@ -65,6 +66,11 @@ func _run() -> void:
 	var c: Node = main.craft
 	var who: int = p.id
 	_say("自分の名札 %s" % [c.tag_designs[who]])
+	# 0. まだ自分のソリが無い: 左下は名札だけ（方位磁針は出ない）
+	p.global_position = _at(0.0, 40.0)
+	p.rotation.y = 0.0
+	await _wait(0.4)
+	await _shot("00_no_sleds")
 	# 1. 3 台縫ったことにして置く
 	var spots := [[_at(14.0, 34.0), "small", "navy"], [_at(-16.0, 26.0), "mid", "mustard"], [_at(4.0, 8.0), "mid", "plum"]]
 	for sp in spots:

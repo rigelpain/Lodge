@@ -42,7 +42,7 @@ var _meeting := false
 var _still_t := 0.0
 var _seen_back := false
 var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
-var compass_style := "cushion" # 方位磁針の形（"cushion" 針山と待ち針、"yarn" 毛糸玉と縫い針、"glass" フィルムの玉。--compass=）
+var compass_style := "kenzan"  # 方位磁針の形（"kenzan" 斜めから見た剣山と待ち針、"cushion" 針山、"yarn" 毛糸玉、"glass" フィルムの玉。--compass=）
 var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
 
 
@@ -364,10 +364,10 @@ class View extends Control:
 		if hud.main.settings and hud.main.settings.is_open:
 			_draw_card(u)
 
-	## 左下の札: 自分の名札（sled_tags.gd）に載せた、針山と待ち針の方位磁針（_draw_cushion）。
-	## 自分の名札が付いたソリ（縫ったソリ・出している米袋）の数だけ待ち針が立ち、いま見ている向きから
-	## そのソリの方を 3D で指す（前にあれば玉が大きく、後ろにあれば針山の陰）。玉の色はソリのメインカラー。
-	## 距離は、玉の先の巻尺のテープの切れはしに小さな数（m）。乗っているソリの針は、針山の上に寝かせる。
+	## 左下の札: 自分の名札（sled_tags.gd）に載せた、斜め上から見下ろす剣山と待ち針の方位磁針（_draw_kenzan）。
+	## 自分の名札が付いたソリ（縫ったソリ・出している米袋）の数だけ待ち針が剣山のまんなかに立ち、そのソリのある水平の向き
+	## （自分の前が剣山の奥、右が右）へ倒れる。玉の色はソリのメインカラー。距離は、玉の先の巻尺のテープの切れはしに小さな数（m）。
+	## 乗っているソリの針は、剣山の上に寝かせる。自分のソリが 1 台も無いときは、剣山は出さず名札だけ。
 	## 右に、いまつかんでいる・乗っているソリにいる人と、押している人の数だけの糸の矢印
 	func _draw_tag(u: float, a: float) -> void:
 		var main: Node3D = hud.main
@@ -393,7 +393,8 @@ class View extends Control:
 			var wave := 0.5 + 0.5 * sin((hud._flow - i * 0.3) * TAU)
 			Icons.chevron(self, Vector2(r.position.x + 186.0 * u + i * 14.0 * u, r.position.y + 26.0 * u), 16.0 * u, Icons.THREAD, a * (0.45 + 0.55 * wave), 0.0, 2.6 * u)
 
-	## 自分のソリの向きと距離: [画面での向き（玉の半径 1 で）, 前の度合い（1 真正面、-1 真後ろ）, 色, 距離（0 は乗っている）]
+	## 自分のソリの向きと距離: [画面での向き（玉の半径 1 で）, 前の度合い（1 真正面、-1 真後ろ）, 色, 距離（0 は乗っている）,
+	## 水平の向き（x 右、y 前。カメラの前と右を水平にした基準の、長さ 1）]
 	func _compass_pins() -> Array:
 		var main: Node3D = hud.main
 		var p = main.player
@@ -406,12 +407,18 @@ class View extends Control:
 				continue
 			var col: Color = s.color() if s.has_method("color") else Icons.RED
 			if p.mode == Player.Mode.RIDE and p.sled == s:
-				pins.append([Vector2.ZERO, 0.0, col, 0.0])
+				pins.append([Vector2.ZERO, 0.0, col, 0.0, Vector2.ZERO])
 				continue
-			var d: Vector3 = cam.global_basis.inverse() * (s.global_position + Vector3.UP * 0.3 - cam.global_position)
+			var w: Vector3 = s.global_position + Vector3.UP * 0.3 - cam.global_position
+			var d: Vector3 = cam.global_basis.inverse() * w
 			var dist := d.length()
 			var dir := d / maxf(dist, 0.001)
-			pins.append([Vector2(dir.x, -dir.y), -dir.z, col, dist])
+			var fwd: Vector3 = -cam.global_basis.z
+			fwd.y = 0.0
+			fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
+			var right := fwd.cross(Vector3.UP)
+			var flat := Vector2(w.dot(right), w.dot(fwd))
+			pins.append([Vector2(dir.x, -dir.y), -dir.z, col, dist, flat.normalized() if flat.length() > 0.01 else Vector2(0, 1)])
 		pins.sort_custom(func(x, y): return x[1] < y[1])   # 後ろのから描く
 		return pins
 
@@ -432,12 +439,77 @@ class View extends Control:
 			draw_line(Vector2(x, r.position.y), Vector2(x, r.position.y + (2.5 if k % 2 == 0 else 1.5) * u), Color(0.25, 0.2, 0.1, 0.8 * a), 0.8 * u)
 		draw_string(font, Vector2(r.position.x + 4.0 * u, r.end.y - 2.5 * u), txt, HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(0.20, 0.16, 0.10, a))
 
-	## 方位磁針（hud.compass_style: "cushion" 針山と待ち針・"yarn" 毛糸玉と縫い針・"glass" フィルムの玉）
+	## 方位磁針（hud.compass_style: "kenzan" 剣山・"cushion" 針山・"yarn" 毛糸玉・"glass" フィルムの玉）。
+	## 自分のソリが 1 台も無いときは出さない（何も指さない飾りに見えるので）
 	func _draw_compass(bc: Vector2, R: float, u: float, a: float) -> void:
+		if _compass_pins().is_empty():
+			return
 		match hud.compass_style:
+			"cushion": _draw_cushion(bc, R, u, a)
 			"yarn": _draw_yarn(bc, R, u, a)
 			"glass": _draw_glass(bc, R, u, a)
-			_: _draw_cushion(bc, R, u, a)
+			_: _draw_kenzan(bc, R, u, a)
+
+	## 斜め上から見下ろす剣山: 低い円盤（上の面は緑のフェルト、縁と側面は真鍮の色）に、短い銀の針がびっしり。
+	## まんなかから、自分のソリの数だけ長い待ち針が立ち、そのソリのある水平の向きへ倒れる（自分の前が奥、右が右）。
+	## 奥の針から先に描き、手前を後に。乗っているソリの針は、剣山の上に寝かせる
+	func _draw_kenzan(bc: Vector2, R: float, u: float, a: float) -> void:
+		var pins := _compass_pins()
+		var rx := R * 0.92
+		var sq := 0.42                         # 斜めから見た上の面のつぶれ
+		var ry := rx * sq
+		var hb := R * 0.2                      # 側面の帯の高さ
+		var c := bc + Vector2(0, R * 0.3)      # 上の面のまんなか
+		var brass := Color(0.78, 0.62, 0.32)
+		Icons.screen()
+		# 側面（下の楕円と帯）と、上の面
+		Icons.patch(self, Icons.ell(c + Vector2(0, hb), rx, ry, 40), brass.darkened(0.35), a, false)
+		draw_rect(Rect2(c.x - rx, c.y, rx * 2.0, hb), Color(brass.darkened(0.25), a))
+		Icons.patch(self, Icons.ell(c, rx, ry, 40), Color(0.28, 0.38, 0.31), a, false)
+		var rim := Icons.ell(c, rx, ry, 48)
+		rim.append(rim[0])
+		draw_polyline(rim, Color(brass, a), 2.6 * u, true)
+		draw_polyline(Icons.ell(c, rx - 3.0 * u, ry - 2.0 * u, 48), Color(brass.lightened(0.3), 0.5 * a), 1.0 * u, true)
+		# 描くものを奥から手前へ: 短い針（剣山の地）と、ソリの待ち針
+		var items := []
+		var rng := RandomNumberGenerator.new()
+		rng.seed = 5
+		for k in 34:
+			var ang := rng.randf() * TAU
+			var rr := sqrt(rng.randf()) * 0.82
+			var q := Vector2(cos(ang) * rr, sin(ang) * rr)   # 上の面の上の点（x 右、y 前）
+			items.append([q.y, "spike", c + Vector2(q.x * rx, -q.y * ry)])
+		for pin in pins:
+			var b: Vector2 = pin[4]
+			items.append([b.y * 0.5 if pin[3] > 0.0 else -2.0, "pin", pin])
+		items.sort_custom(func(x, y): return x[0] > y[0])   # 奥（前の向きが大きい）から
+		for it in items:
+			if it[1] == "spike":
+				var sp: Vector2 = it[2]
+				draw_line(sp, sp - Vector2(0, 7.0 * u), Color(0.80, 0.82, 0.86, 0.9 * a), 1.2 * u, true)
+				draw_circle(sp - Vector2(0, 7.0 * u), 1.2 * u, Color(0.92, 0.93, 0.96, a))
+				continue
+			var pin: Array = it[2]
+			var col: Color = pin[2]
+			var dist: float = pin[3]
+			if dist <= 0.0:   # 乗っている: 剣山の上に寝かせる
+				var l := c + Vector2(-rx * 0.62, -ry * 0.1)
+				var r2 := c + Vector2(rx * 0.62, -ry * 0.1)
+				draw_line(l, r2, Color(0.70, 0.72, 0.78, a), 2.2 * u, true)
+				draw_circle(r2, 6.4 * u, Color(1, 1, 1, a))
+				draw_circle(r2, 5.2 * u, Color(col, a))
+				continue
+			var b: Vector2 = pin[4]
+			var tip := c + Vector2(b.x * R * 0.82, -b.y * R * 0.82 * sq) + Vector2(0, -R * 0.62)
+			draw_line(c, tip, Color(0.62, 0.64, 0.70, a), 2.2 * u, true)   # 待ち針の軸
+			draw_line(c, tip, Color(1, 1, 1, 0.5 * a), 0.8 * u, true)
+			var hr := (6.0 - 1.2 * maxf(b.y, 0.0)) * u   # 奥へ倒れた針の玉は少し小さく
+			draw_circle(tip, hr + 1.4 * u, Color(1, 1, 1, a))
+			draw_circle(tip, hr, Color(col, a))
+			draw_circle(tip - Vector2(hr, hr) * 0.35, hr * 0.3, Color(1, 1, 1, 0.6 * a))
+			var out := Vector2(b.x, -b.y * sq).normalized() if Vector2(b.x, b.y * sq).length() > 0.05 else Vector2.UP
+			out = (out + Vector2(0, -0.6)).normalized()
+			_tape(tip + out * hr, out, dist, u, a)
 
 	## 針山（トマトの形の赤いフェルト、緑のへた）に、ソリの数だけ待ち針。上のまんなかから、そのソリの方へ傾いて立つ。
 	## 後ろのソリの針は針山の陰（先に描いて、針山で隠す）。玉はソリのメインカラー。乗っているソリの針は針山の上に寝かせる
