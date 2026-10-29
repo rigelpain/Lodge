@@ -14,6 +14,8 @@ const VERSION := 3   # 既定値を変えたら上げる。古い保存は、そ
 const ITEMS := [
 	["bob", "視点の揺れ（押す・引くとき）", "bool", true, null],
 	["fov_kick", "押すときに画角が少し広がる", "bool", true, null],
+	["ride_fov", "滑るときに画角が広がる", "bool", true, null],
+	["ride_fov_amt", "滑るときの画角の広がり", "float", 1.0, [0.0, 1.0, 0.05]],
 	["pip", "右上の 360° 映像", "bool", true, null],
 	["selfcam", "右下の自分の姿（前から）", "bool", true, null],
 	["snow", "舞う雪", "bool", true, null],
@@ -145,7 +147,7 @@ func _fmt(key: String, v: float) -> String:
 	match key:
 		"fov": return "%d°" % v
 		"cam_dist", "cam_height": return "%.1f m" % v
-		"scale", "wind", "vol_music", "vol_sfx", "vol_voice", "menu_scale", "hud_scale": return "%d%%" % round(v * 100)
+		"scale", "wind", "ride_fov_amt", "vol_music", "vol_sfx", "vol_voice", "menu_scale", "hud_scale": return "%d%%" % round(v * 100)
 		_: return "%.2f" % v
 
 

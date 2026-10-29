@@ -938,6 +938,10 @@ func _apply_setting(key: String, v) -> void:
 			if ride_wind: ride_wind.strength = v
 		"fov_kick":
 			if player: player.fov_kick_enabled = v
+		"ride_fov":
+			if player: player.ride_fov_enabled = v
+		"ride_fov_amt":
+			if player: player.ride_fov_amount = v
 		"pip":
 			pip_hidden = not v
 			if _pip_layer: _pip_layer.visible = v

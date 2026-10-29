@@ -62,6 +62,21 @@ var _cam_save_t := -1.0      # ホイールで変えた視野角・カメラを�
 var _cam_free := 0.0         # 三人称のカメラが、当たりで縮められずにいられる距離（いまの値）
 var bob_enabled := true      # 設定: 押す・引くときの視点の揺れ
 var fov_kick_enabled := true # 設定: 押すときに画角が少し広がる
+# 滑るときに画角が広がる（2026-10-29 代表「スピードに従って視野角を広げてほしい」）。
+# 乗って滑っているあいだ、速さに合わせて視野角（base_fov）に足す。止まっていれば足さない。
+# 滑るときの風（ride_wind.gd）と同じ速さで広がりはじめ、毛糸が流れきる速さ（SPEED_FULL）までに大半が広がる。
+# 中・大のソリでまっすぐ下ると 8〜10 m/s。残りは米袋の連打（16 m/s 近く）のような速さのためにとっておく
+const RIDE_FOV_MAX := 14.0                  # 足す視野角の上限 (°)
+const RIDE_FOV_SPEED := Vector3(2.0, 9.0, 16.0)  # 広がりはじめる速さ、大半（RIDE_FOV_MAIN）が広がる速さ、上限に届く速さ (m/s)
+const RIDE_FOV_MAIN := 0.7
+const FOV_CAP := 120.0                      # 足したあとの視野角の上限 (°)。広く設定している人でも魚眼にしない
+const RIDE_FOV_RISE := 1.6                  # 追いつく速さ（1/秒）。速くなるときはゆっくり広がり、
+const RIDE_FOV_FALL := 2.4                  # 遅くなるときは少し早めに戻る（止まったあと広いままにしない）
+const RIDE_CAM_PUSH := 0.5                  # 三人称: 上限のとき、カメラを後ろへ引く距離 (m)
+var ride_fov_enabled := true  # 設定: 滑るときに画角が広がる
+var ride_fov_amount := 1.0    # 設定: その強さ（0〜1。上限に掛ける）
+var ride_rush := 0.0          # いまの盛り上がり（0〜1。速さをなめらかにしたもの。HUD などが同じ拍子で読める）
+var ride_fov := 0.0           # いま足している視野角 (°)
 var mouse_sens := 1.0        # 設定: マウスの感度
 var menu_open := false       # 設定画面が開いている間は、クリックでマウスをつかまない
 var _pitch := 0.0
@@ -694,7 +709,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	# 頭からカメラへ玉を滑らせて、壁・天井・地面・ソリに当たる手前で止める（埋まらない）。
 	# 当たって縮むときはすぐ、離れて戻るときはゆっくり（壁の向こうが一瞬見えないように）
 	var pivot := Vector3(0, 1.6, 0)
-	var offset := Vector3(0, cam_height, cam_dist).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
+	var offset := Vector3(0, cam_height, cam_dist + RIDE_CAM_PUSH * ride_fov / RIDE_FOV_MAX).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
 	var pivot_w := to_global(pivot)
 	var want_w := to_global(pivot + offset)
 	var floor_y: float = get_parent().height(want_w.x, want_w.z) + 0.4
@@ -708,6 +723,18 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 		else cam.global_position.lerp(at, min(1.0, dt * 10.0))
 	if cam.global_position.distance_to(pivot_w) > 0.05:
 		cam.look_at(pivot_w, Vector3.UP)
+
+
+## 乗って滑っている速さから、視野角に足す分を決める。速さは雪のでこぼこで細かく揺れるので、ならしてから使う。
+## 一人称も三人称も同じだけ足す（三人称はそのうえでカメラを少し後ろへ引く）
+func _update_ride_fov(dt: float) -> void:
+	var want := 0.0
+	if mode == Mode.RIDE:
+		var v := sled.linear_velocity.length()
+		want = RIDE_FOV_MAIN * smoothstep(RIDE_FOV_SPEED.x, RIDE_FOV_SPEED.y, v) \
+				+ (1.0 - RIDE_FOV_MAIN) * smoothstep(RIDE_FOV_SPEED.y, RIDE_FOV_SPEED.z, v)
+	ride_rush = lerpf(ride_rush, want, 1.0 - exp(-dt * (RIDE_FOV_RISE if want > ride_rush else RIDE_FOV_FALL)))
+	ride_fov = RIDE_FOV_MAX * ride_rush * ride_fov_amount if ride_fov_enabled else 0.0
 
 
 ## 頭（from）からカメラの向き（ray）へ玉を滑らせ、何にも当たらずに行ける距離を返す。
@@ -731,9 +758,11 @@ func _pose_hands(dt: float) -> void:
 	var working := pushing or pulling
 	var bob := sin(_t * 9.0) if bob_enabled else 0.0
 	# 押す・引くと視点がわずかに揺れ、画角が少し広がる
+	_update_ride_fov(dt)
 	_place_camera(dt, bob, working)
 	_save_cam(dt)
-	cam.fov = lerp(cam.fov, base_fov + (4.0 if working and fov_kick_enabled else 0.0), min(1.0, dt * 4.0))
+	var fov := base_fov + (4.0 if working and fov_kick_enabled else 0.0)
+	cam.fov = lerp(cam.fov, maxf(fov, minf(fov + ride_fov, FOV_CAP)), min(1.0, dt * 4.0))
 	var fi := Doll.frame_index()
 	for h in hands:
 		var s: int = h.get_meta("side")
