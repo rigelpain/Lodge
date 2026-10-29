@@ -1272,4 +1272,3 @@ static func held_shape(it: Dictionary) -> Node3D:
 	root.add_child(mi)
 	root.rotation.x = 0.5
 	return root
-
