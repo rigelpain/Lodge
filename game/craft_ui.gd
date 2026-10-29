@@ -401,7 +401,7 @@ class View extends Control:
 		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
 			var fr: Control = sc._frame
 			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
-			bottom = fr.position.y - fr.size.x * 0.11 - 10.0 * u   # 刺繍枠のねじの上
+			bottom = fr.position.y - 44.0 * u   # 刺繍枠の上のねじ（小窓の縁から 1080 で 30 px ほど飛び出す。PR #48）の上
 		var spec: Dictionary = craft.sack(who)
 		var lamp: Dictionary = craft.lantern(who)
 		var cards := [["I", "gear"], ["N", "sack"], ["R", "lamp"]]
