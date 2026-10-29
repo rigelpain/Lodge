@@ -16,6 +16,7 @@ const Palm := preload("res://palm.gd")
 ## いまは一人の画面の中だけ: send() がすぐ frame を付けて _apply() し、みんな（持ち主・音・ほかの人）に配る。
 ## 通信を入れたら: send() はホストへ送るだけにし、ホストが frame を付けて全員に配る。
 ## ハイタッチ・握手の組み合わせ・空振り・雪玉の当たりはホストだけが決め、結果を出来事として配る。
+## 持っている雪玉の数（balls）もホストが持つ（あとで雪玉をお金のように使うので、持ち主の画面では決めない）。
 ##
 ## 姿勢は人形が 12 コマで刻む（doll.gd の play）。出来事は次のコマから始まり、全員の画面で同じコマに動く。
 
@@ -48,6 +49,10 @@ const WHIFF_REACH := 1.0     # 片方だけが向かってこの中まで寄る�
 const FIVE_HIT := 3          # high_five の何コマ目に手が合うか（その前の 3 コマが、引くため）
 const MAKE_READY := 16       # 雪玉ができて手に持つコマ（make_ball の中で）
 const EXHALE_MAX := 5.0      # 息が続く長さ (s)
+const BALL_MAX := 5          # 持てる雪玉の数（右手に 1 つ、残りは帯の袋）
+
+var balls := {}              # 番号 → 持っている雪玉の数
+var _making := {}            # 番号 → 丸めている雪玉ができるコマ（MAKE_READY。それまでにのけぞると、できない）
 
 var people := {}             # 番号 → 人（player.gd・bot.gd）
 var hands := {}              # 番号 → いま掲げている手（HANDS の名前。"high_R" など）
@@ -60,6 +65,11 @@ func join(who: Node3D) -> int:
 	_next_id += 1
 	people[id] = who
 	return id
+
+
+## 持っている雪玉の数
+func balls_of(id: int) -> int:
+	return balls.get(id, 0)
 
 
 func who_of(id: int) -> Node3D:
@@ -75,6 +85,15 @@ func send(ev: Dictionary) -> void:
 
 ## ホストの判定
 func _apply(ev: Dictionary) -> void:
+	match ev.kind:
+		"make_ball":
+			if balls_of(ev.who) >= BALL_MAX:
+				return   # もう持てない
+			_making[ev.who] = int(ev.frame) + MAKE_READY
+		"throw":
+			if balls_of(ev.who) <= 0:
+				return   # 投げる雪玉がない
+			balls[ev.who] = balls_of(ev.who) - 1
 	if ev.kind == "hands":
 		if ev.hands == "":
 			hands.erase(ev.who)
@@ -86,6 +105,8 @@ func _apply(ev: Dictionary) -> void:
 
 
 func _emit(ev: Dictionary) -> void:
+	if ev.kind == "hit":
+		_making.erase(ev.who)   # びっくりして、丸めていた雪玉は崩れる
 	if ev.kind == "splat":
 		_show_splat(ev)
 	elif ev.kind == "high_five" and ev.who < ev.with:
@@ -111,6 +132,11 @@ func _sides(id: int, height: String) -> Array:
 ## 手を掲げた人どうしが出会ったら、合わせる。高い手のひら同士はハイタッチ、低い手のひら同士は握手。合ったら二人とも手を下ろす
 func _physics_process(_dt: float) -> void:
 	var now := Doll.frame_index()
+	# 丸めていた雪玉ができた（出来事にはしない。数は持ち主が毎フレーム見る。通信では数を配る）
+	for id in _making.keys():
+		if now >= int(_making[id]):
+			_making.erase(id)
+			balls[id] = mini(balls_of(id) + 1, BALL_MAX)
 	var ids := hands.keys()
 	for i in ids.size():
 		for j in range(i + 1, ids.size()):

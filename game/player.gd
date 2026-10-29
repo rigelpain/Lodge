@@ -94,12 +94,13 @@ var hub: Emotes              # 身ぶりの配り役（main.gd が置く。い�
 var id := -1                 # 配り役からもらった番号
 var voice_pitch := 1.0       # 声の高さ（人ごとに少し変える）
 var voice_size := 1          # 声の大きさ（sound/wav/voice_*_01 ふつう・02 高い・03 低い）
-var holding_ball := false
+var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
 var ring: EmoteRing
 var _em := {}                # いまの自分の身ぶり（出来事）
 var _winding := false
 var _wind_t := 0.0
 var _ball_fp: MeshInstance3D # 一人称の右手の雪玉
+var _beads_fp: Array[MeshInstance3D] = []   # 一人称の、帯の袋の雪玉の粒
 var _shapes_fp := {}         # 一人称の手の形のアップリケ: 形 → {1: 右手, -1: 左手}
 var hands_name := ""         # いま掲げている手（Palm.HANDS の名前。"high_R" など。"" は下ろしている）
 var hand := "R"              # 身ぶりに使う手（"R" "L" "both"）。Q で片手⇄両手、X で右⇄左
@@ -118,6 +119,7 @@ var _held_key := ""
 const HELD_TILT := 0.12      # 畳んだソリの包みの名札の面を、まっすぐより少し上へ傾ける (rad)
 const HELD_TURN := 0.0     # 少し内へ回す (rad)
 const HELD_SCALE := 1.25     # 一人称で持つ包みの大きさ
+const BEAD := 0.4            # 一人称の、袋の雪玉の粒の大きさ（手の雪玉に比べて）
 var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
 var _pan_acc := 0.0          # 二本指スクロールのたまった量
 const PAN_STEP := 1.5        # これだけたまったら 1 つ持ち替える
@@ -170,6 +172,17 @@ func _ready() -> void:
 			_ball_fp.position = Vector3(0, 0.03, -0.1)
 			_ball_fp.visible = false
 			h.add_child(_ball_fp)
+			# 帯の袋の雪玉の数を、右手のそばに小さな粒で（一人称では帯が見えないので）。手の内側へ一列に
+			for i in Emotes.BALL_MAX:
+				var bead := MeshInstance3D.new()
+				bead.mesh = Doll.ball_mesh()
+				bead.material_override = Doll.ball_material()
+				bead.layers = 1 << 2
+				bead.scale = Vector3.ONE * BEAD
+				bead.position = Vector3(-0.09 - 0.05 * i, -0.02 + 0.006 * i, -0.04)
+				bead.visible = false
+				h.add_child(bead)
+				_beads_fp.append(bead)
 
 	_shapes_fp = Palm.make_set(Color(FpHands.STYLE.get(doll.kind, FpHands.STYLE["kasa"]).hand), 1 << 2)
 	for sh in _shapes_fp:
@@ -526,7 +539,9 @@ func _pose_doll() -> void:
 	doll.rope_hand = _hand_world() if mode == Mode.ROPE else Vector3.INF
 	doll.lean = Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_W) - _key(KEY_S)) if mode == Mode.RIDE else Vector2.ZERO
 	doll.point_sides = Palm.sides_of(hand)
+	holding_ball = ball_count() > 0 and held().is_empty()
 	doll.holding_ball = holding_ball
+	doll.pouch_balls = ball_count() - (1 if holding_ball else 0)
 	doll.crouch = crouching
 	doll.point = point_at
 	if craft:
@@ -830,10 +845,13 @@ func _pose_hands(dt: float) -> void:
 	var grow := 0.0
 	if em[0] == "make_ball" and em[1] >= 4:
 		grow = clampf((em[1] - 4) / 12.0, 0.0, 1.0) * 0.6 + 0.4
-	elif holding_ball:
-		grow = 1.0
+	elif holding_ball and not (em[0] == "throw" and em[1] < Doll.BALL_BACK):
+		grow = 1.0   # 投げたあとは、次の雪玉を帯の袋から出すまで少し空く
 	_ball_fp.visible = grow > 0.0
 	_ball_fp.scale = Vector3.ONE * maxf(grow, 0.01)
+	var beads := doll.pouch_balls + (1 if holding_ball and grow == 0.0 else 0)   # 投げた直後は、次の玉もまだ袋に
+	for i in _beads_fp.size():
+		_beads_fp[i].visible = i < beads
 	_place_held_fp(grow > 0.0)
 	_face_held_fp()
 	_place_shapes_fp(em)
@@ -914,7 +932,7 @@ func available() -> Dictionary:
 		"wa": true, "un": true, "nn": true, "huh": true, "oi": true,
 		"breath": not busy,
 		"clap": not busy and hands_name == "high_both",
-		"make_ball": not busy and mode == Mode.WALK and not holding_ball and crouching,
+		"make_ball": not busy and mode == Mode.WALK and ball_count() < Emotes.BALL_MAX and crouching,
 	}
 
 
@@ -958,9 +976,12 @@ func set_hands(name_: String) -> void:
 	hub.send({"kind": "hands", "who": id, "hands": name_})
 
 
-## 左クリック: 雪玉を持っていれば振りかぶる（離すと投げる）。高い両手のひらなら拍手
+## 左クリック: 雪玉があれば振りかぶる（離すと投げる。持ち物を手に持っていれば、しまって雪玉を出す）。高い両手のひらなら拍手
 func _left_click() -> void:
-	if holding_ball:
+	if ball_count() > 0:
+		if not held().is_empty() and craft:
+			craft.send({"kind": "hand", "who": id, "slot": -1})
+		holding_ball = held().is_empty()
 		wind_up()
 	elif hands_name == "high_both":
 		emote("clap")
@@ -995,13 +1016,16 @@ func _on_emote(ev: Dictionary) -> void:
 	_em = ev
 	doll.play(ev)
 	match ev.kind:
-		"throw":
-			holding_ball = false
 		"hit":
 			_winding = false   # びっくりして振りかぶりが解ける（雪玉は持ったまま）
 			# びっくりしてソリの縁や紐から手を離す（乗っている人は降ろさない）。止めるにはもう一度 F
 			if mode == Mode.GRIP or mode == Mode.ROPE:
 				let_go()
+
+
+## 持っている雪玉の数（配り役が数える。帯の袋と右手の分を合わせて）
+func ball_count() -> int:
+	return hub.balls_of(id) if hub else 0
 
 
 ## 左クリックを押した: 振りかぶる
@@ -1051,9 +1075,6 @@ func _update_emote(dt: float) -> void:
 	var want := Vector3.ZERO
 	var k := _em_k()
 	if not _em.is_empty():
-		if _em.kind == "make_ball" and k >= Emotes.MAKE_READY and not _em.get("got", false):
-			_em["got"] = true
-			holding_ball = true
 		want = _emote_cam(_em.kind, k)
 	if not bob_enabled and not (not _em.is_empty() and _em.kind == "make_ball"):
 		want *= 0.3   # 視点の揺れを切っていれば控えめに（しゃがむ高さだけはそのまま）
