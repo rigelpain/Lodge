@@ -961,12 +961,8 @@ class View extends Control:
 			[["mouse_r"], "point"], [["C"], "view"], [["V"], "pip_cycle"], [["P"], "pip_off"],
 			[["Esc"], "settings"], [["Left", "Right"], "tag_stack"],
 		]
-		# Alt＋ホイール（ピンチ・二本指も）: 一人称は視野角、三人称はカメラの距離。Alt＋Shift＋ホイール（二本指の横）で高さ
-		var pl = hud.main.player
-		if pl and pl.third:
-			rows += [[["Alt", "mouse_wheel"], "cam_dist"], [["Alt", "Shift", "mouse_wheel"], "cam_frame"]]
-		else:
-			rows.append([["Alt", "mouse_wheel"], "zoom"])
+		# ピンチ: 三人称のカメラの距離（一人称で閉じ続けると三人称へ）。視野角と人形の画面の高さは設定からだけ
+		rows.append([["mouse_pinch"], "cam_dist" if hud.main.player and hud.main.player.third else "view"])
 		if hud.main.get("emotes") != null:
 			rows += [[["Tab"], "ring"], [["1", "2", "3"], "ring"], [["4", "5", "6", "7"], "voice"], [["B"], "breath"]]
 		else:
@@ -974,7 +970,7 @@ class View extends Control:
 		if hud.main.get("sewing") != null:
 			rows.append([["T"], "needle"])
 		if hud.main.get("craft") != null:   # 工房: 売り子に F、ミシンに T でセット、G で畳む、左クリックで広げる、ホイールで持ち替え
-			rows += [[["F"], "shop"], [["F"], "set"], [["N"], "sack"], [["R"], "lamp"], [["I"], "gear"], [["mouse_wheel"], "hand"], [["Z"], "hand"]]
+			rows += [[["F"], "shop"], [["F"], "set"], [["N"], "sack"], [["R"], "lamp"], [["I"], "gear"], [["mouse_wheel", "mouse_pan"], "hand"], [["Z"], "hand"]]
 		var bs := 46.0 * u                # 一つの段のワッペンの高さ
 		var row_h := bs * 1.08
 		var col_w := 0.0

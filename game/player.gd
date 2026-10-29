@@ -55,13 +55,13 @@ var push_dir := Vector3.ZERO # 押す向き（ソリの座標）
 var pushing := false
 var pulling := false
 var prompt := ""             # 画面に出す一言（main.gd が読む）
-var base_fov := 75.0         # ホイールで変える視野角
+var base_fov := 75.0         # 一人称の視野角（設定からだけ変える）
 var third := false           # C で三人称
-var cam_dist := 3.4          # 三人称: 頭の後ろからカメラまでの距離 (m)。Alt＋ホイール・ピンチ・二本指の縦・設定
+var cam_dist := 3.4          # 三人称: 頭の後ろからカメラまでの距離 (m)。ピンチ・設定
 var cam_frame := -0.2        # 三人称: 人形の目の高さの線が、画面のどの高さに来るか（まんなかが 0、上の縁が 1、下の縁が -1）。
                              # 負で人形が画面の下のほうに来て、上が広く見える。カメラの見下ろす角度はマウスの上下のまま
                              # （2026-10-30 代表「キャラを中心とした角度ではなく、キャラの水平ラインの画面での高さの調整がしたい」）。
-                             # Alt＋Shift＋ホイール・二本指の横・設定
+                             # 設定からだけ変える
 const CAM_DIST := Vector2(1.4, 9.0)     # 人形の真後ろ近く 〜 ソリ全体が見える遠さ
 const CAM_FRAME := Vector2(-0.75, 0.5)  # 画面の下のほう 〜 少し上
 const CAM_RISE := 0.4                   # カメラは頭より少し上から見る (m)。見下ろす角度はマウスの上下で変わる
@@ -214,13 +214,40 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
-## 一人称の視野角を変える（ホイール・ピンチ・二本指）。少し止まってから設定に保存する
-func _zoom_fov(d: float) -> void:
-	base_fov = clampf(base_fov + d, 50.0, 110.0)
-	_cam_save_t = 0.6
+## トラックパッドのピンチ（2026-10-30 代表「ピンチイン・アウトはカメラ距離の調整」）。指を閉じると引き、開くと寄る。
+## 三人称ではカメラの距離。一人称で指を閉じ続けると三人称へ、三人称でいちばん近くまで寄ってさらに開き続けると一人称へ戻る
+## （同じ動きで、一人称と三人称を行き来できる）
+const PINCH_SWITCH := 0.35   # 切り替えに要る、たまった開き閉じ（ln の和）
+var _pinch_acc := 0.0
+
+func _pinch(factor: float) -> void:
+	var f := log(maxf(factor, 0.01))   # 開くと正、閉じると負
+	if third:
+		if f > 0.0 and cam_dist <= CAM_DIST.x + 0.01:
+			_pinch_acc += f
+			if _pinch_acc >= PINCH_SWITCH:
+				_pinch_acc = 0.0
+				_switch_view(false)
+			return
+		_pinch_acc = 0.0
+		_zoom_cam(cam_dist / factor - cam_dist, 0.0)
+	else:
+		_pinch_acc = _pinch_acc - f if f < 0.0 else 0.0
+		if _pinch_acc >= PINCH_SWITCH:
+			_pinch_acc = 0.0
+			cam_dist = CAM_DIST.x
+			_cam_save_t = 0.6
+			_switch_view(true)
 
 
-## 三人称のカメラの距離と、人形の画面の高さを変える（ホイール・ピンチ・二本指）。少し止まってから設定に保存する
+func _switch_view(on: bool) -> void:
+	set_third(on)
+	var st = get_parent().get("settings")
+	if st:
+		st.sync("third", on)
+
+
+## 三人称のカメラの距離と、人形の画面の高さを変える（距離はピンチで。画面の高さは設定から）。少し止まってから設定に保存する
 func _zoom_cam(d_dist: float, d_frame: float) -> void:
 	cam_dist = clampf(cam_dist + d_dist, CAM_DIST.x, CAM_DIST.y)
 	cam_frame = clampf(cam_frame + d_frame, CAM_FRAME.x, CAM_FRAME.y)
@@ -234,7 +261,6 @@ func _save_cam(dt: float) -> void:
 	if _cam_save_t < 0.0:
 		var st = get_parent().get("settings")
 		if st:
-			st.sync("fov", base_fov)
 			st.sync("cam_dist", cam_dist)
 			st.sync("cam_frame", cam_frame)
 
@@ -252,41 +278,22 @@ func _unhandled_input(e: InputEvent) -> void:
 		rotate_y(-e.relative.x * 0.003 * mouse_sens)
 		_pitch = clamp(_pitch - e.relative.y * 0.003 * mouse_sens, -1.4, 1.3)
 	elif e is InputEventPanGesture:
-		# トラックパッドの二本指スクロール（Mac ではホイールでなくこれで届く）: ホイールと同じ決まり。
-		# 持ち物があれば持ち替え。Alt を押しているか持ち物がなければ、一人称は視野角、三人称は縦で距離・横で高さ
-		if menu_open:
-			pass
-		elif craft and not craft.bag(id).is_empty() and not e.alt_pressed:
+		# トラックパッドの二本指スクロール（Mac ではホイールでなくこれで届く）: 持ち物の持ち替えだけ。持ち物がなければ何もしない
+		# （2026-10-30 代表「二本指スクロールはインベントリ選択にしたい。視野角とカメラ高さは設定からのみ変更」）
+		if not menu_open and craft and not craft.bag(id).is_empty():
 			_pan_acc += e.delta.y
 			if absf(_pan_acc) >= PAN_STEP:
 				cycle_hand(1 if _pan_acc > 0.0 else -1)
 				_pan_acc = 0.0
-		elif third:
-			_zoom_cam(e.delta.y * 0.25, -e.delta.x * 0.03)
-		else:
-			_zoom_fov(e.delta.y * 2.0)
-	elif e is InputEventMagnifyGesture:
-		# トラックパッドのピンチ: 広げると寄る（一人称は視野角が狭まり、三人称はカメラが近づく）
-		if third:
-			_zoom_cam(cam_dist / e.factor - cam_dist, 0.0)
-		else:
-			_zoom_fov(base_fov / e.factor - base_fov)
+	elif e is InputEventMagnifyGesture and not menu_open:
+		_pinch(e.factor)
 	elif e is InputEventMouseButton and e.pressed:
 		if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]:
 			var step := -1 if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_LEFT] else 1
 			# Shift＋ホイールは、Mac では横のホイールとして届くことがある
 			var sideways: bool = e.shift_pressed or e.button_index in [MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]
-			if menu_open:
-				pass
-			elif craft and not craft.bag(id).is_empty() and not e.alt_pressed:
-				cycle_hand(step)   # 持ち物があれば、ホイールは手に持つ物
-			elif third:
-				if sideways:
-					_zoom_cam(0.0, -0.05 * step)   # 上へ回すと、人形が画面の上へ
-				else:
-					_zoom_cam(0.4 * step, 0.0)
-			else:
-				_zoom_fov(3.0 * step)
+			if not menu_open and not sideways and craft and not craft.bag(id).is_empty():
+				cycle_hand(step)   # ホイールは持ち物の持ち替えだけ。持ち物がなければ何もしない
 		elif e.button_index == MOUSE_BUTTON_RIGHT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			toggle_point()
 		elif e.button_index == MOUSE_BUTTON_LEFT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:

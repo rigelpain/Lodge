@@ -20,7 +20,7 @@ const LEG := Color(0.28, 0.27, 0.32)
 
 const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "lean_l", "lean_r", "brake",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
-	"cam_dist", "cam_frame", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
+	"cam_dist", "cam_frame", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "mouse_pinch", "mouse_pan", "back"]
 
 ## HUD の物が受ける風（hud.gd が毎コマ入れる。0〜1.6 ほど）。設定「HUD が風で揺れる」を切ると 0、「視点の揺れ」を切ると小さく
 static var wind := 0.0
@@ -290,6 +290,8 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"mouse_l": mouse(ci, Vector2.ZERO, a, "left")
 		"mouse_move": _mouse_move(ci, a)
 		"mouse_wheel": _mouse_wheel(ci, a)
+		"mouse_pinch": _pinch(ci, a)
+		"mouse_pan": _pan(ci, a)
 		"back": _back(ci, a)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
@@ -857,6 +859,23 @@ static func _mouse_move(ci: CanvasItem, a: float) -> void:
 	arrow(ci, Vector2(14, 0), Vector2(28, 0), THREAD, a, 1.8)
 	arrow(ci, Vector2(0, -19), Vector2(0, -30), THREAD, a, 1.8)
 	arrow(ci, Vector2(0, 19), Vector2(0, 30), THREAD, a, 1.8)
+
+
+## トラックパッドのピンチ: 板の上の 2 本の指先と、開く・閉じる斜めの矢印
+static func _pinch(ci: CanvasItem, a: float) -> void:
+	patch(ci, rr(-20, -16, 40, 32, 5), CAP, a, true, THREAD.lightened(0.3))
+	for s: float in [-1.0, 1.0]:
+		ci.draw_circle(_o + Vector2(5 * s, 4 * s) * _s, 4.2 * _s, Color(RED, a))
+		arrow(ci, Vector2(9 * s, 7 * s), Vector2(17 * s, 13 * s), THREAD, a, 1.6)
+
+
+## トラックパッドの二本指スクロール: 板の上の並んだ 2 本の指先と、上下の矢印
+static func _pan(ci: CanvasItem, a: float) -> void:
+	patch(ci, rr(-20, -16, 40, 32, 5), CAP, a, true, THREAD.lightened(0.3))
+	for s: float in [-1.0, 1.0]:
+		ci.draw_circle(_o + Vector2(5 * s - 4, 0) * _s, 4.2 * _s, Color(RED, a))
+	arrow(ci, Vector2(10, -3), Vector2(10, -13), THREAD, a, 1.6)
+	arrow(ci, Vector2(10, 3), Vector2(10, 13), THREAD, a, 1.6)
 
 
 static func _mouse_wheel(ci: CanvasItem, a: float) -> void:
