@@ -2,6 +2,7 @@ extends RigidBody3D
 
 const Props := preload("res://props.gd")
 const Look := preload("res://look.gd")
+const Fabrics := preload("res://fabrics.gd")
 const Snowball := preload("res://snowball.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
@@ -19,15 +20,17 @@ const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N 
 
 ## 大きさ。大きいほど重く、席が多い（2026-10-29 代表: 小はホームセンターのプラスチックの 1〜2 人用、大はサンタの 8 人乗り）。
 ## 米袋は 1 人用で重さ 0（袋は重さを足さない。乗った人の重さだけ）。
-## 当たりの箱・滑り木・席はこの表が正。glb（props/build_sled.py）はこの寸法に合わせて作る
+## 当たりの箱・滑り木・席はこの表が正。glb（props/build_sled.py）はこの寸法に合わせて作る。
+## color はメインカラーの既定（glb に焼いてある主なフェルトの色。米袋は印刷の赤）。main_color で上書きできる。
+## stitch は滑りあとの縫い目（STITCHES）。重いソリほど太く丈夫な縫い目（2026-10-27 代表が選んだ。props/stitches.md）。stitch_override で差し替えられる
 const KINDS := {
-	"sack": {"mass": 1.0, "box": Vector3(0.6, 0.15, 1.1), "runner_x": 0.2, "runner_z": 0.4,
+	"sack": {"mass": 1.0, "box": Vector3(0.6, 0.15, 1.1), "runner_x": 0.2, "runner_z": 0.4, "color": Color("B8402E"), "stitch": "running",
 			"seats": [Vector3(0, 0.15, 0.1)]},
-	"small": {"mass": 15.0, "box": Vector3(0.75, 0.45, 1.6), "runner_x": 0.28, "runner_z": 0.6,
+	"small": {"mass": 15.0, "box": Vector3(0.75, 0.45, 1.6), "runner_x": 0.28, "runner_z": 0.6, "color": Color("D2553A"), "stitch": "running",
 			"seats": [Vector3(0, 0.06, -0.3), Vector3(0, 0.06, 0.4)]},
-	"mid": {"mass": 60.0, "box": Vector3(1.5, 0.45, 2.8), "runner_x": 0.6, "runner_z": 1.1,
+	"mid": {"mass": 60.0, "box": Vector3(1.5, 0.45, 2.8), "runner_x": 0.6, "runner_z": 1.1, "color": Color("D2553A"), "stitch": "chain",
 			"seats": [Vector3(0, 0.45, -0.75), Vector3(0, 0.45, 0.15), Vector3(0, 0.45, 1.0)]},
-	"large": {"mass": 220.0, "box": Vector3(2.2, 0.45, 4.8), "runner_x": 0.95, "runner_z": 1.9,
+	"large": {"mass": 220.0, "box": Vector3(2.2, 0.45, 4.8), "runner_x": 0.95, "runner_z": 1.9, "color": Color("D2553A"), "stitch": "saddle",
 			"seats": [Vector3(-0.5, 0.55, -1.65), Vector3(0.5, 0.55, -1.65), Vector3(-0.5, 0.55, -0.55), Vector3(0.5, 0.55, -0.55),
 					Vector3(-0.5, 0.55, 0.55), Vector3(0.5, 0.55, 0.55), Vector3(-0.5, 0.55, 1.65), Vector3(0.5, 0.55, 1.65)]},
 }
@@ -49,7 +52,22 @@ const PUSH_FADE := Vector2(3.0, 4.0)   # 押されるソリがこの速さ (m/s)
 signal slipped(who: Node3D)    # 引きずられて手が離れた
 
 var kind := "mid"              # 置く前に決める（main.gd の --sled=sack|small|mid|large）
-var fabric := ""               # 布の色（fabrics.gd の名前）。"" は glb のままの色。ミシンで縫ったソリに付く
+## メインカラー（ソリの主なフェルトと、滑りあとの糸の色）。透明（a = 0）なら KINDS の既定。
+## 置く前に入れるか、置いたあとは set_main_color で（のちのカスタマイズの画面・通信はここを呼ぶ）。main.gd の --sled-color=
+var main_color := Color(0, 0, 0, 0)
+var _body: Node3D              # 見た目（glb か仮の箱）
+## 滑りあとの縫い目の差し替え（STITCHES の名前）。空なら KINDS の既定。置く前に入れる（main.gd の --stitch=）
+var stitch_override := ""
+## 布の色（fabrics.gd の名前）。ミシンで縫ったソリに付く。入れるとメインカラー（main_color・set_main_color）になる
+var fabric := "":
+	set(v):
+		fabric = v
+		if v == "":
+			return
+		if is_node_ready():
+			set_main_color(Fabrics.color(v))
+		else:
+			main_color = Fabrics.color(v)
 var crafted := false           # ミシンで縫った・広げたソリ（畳んで持てる。craft.gd）
 var kind_mass := 60.0          # 表の重さ（米袋は 1 kg）。乗っている人の重さと合わせて止める計算に使う
 var _k := 1.0                  # 体の重さ / MID_MASS
@@ -79,17 +97,61 @@ var _lean_back := false
 var hold_debug := ""
 
 # 足元の影と、滑り木の跡（ステッチ）
-const TRAIL_N := 800          # 残す針目の数（2 本 × 400 = 約 120 m）
-const TRAIL_STEP := 0.3       # 針目の間隔 (m)
+const TRAIL_N := 1600         # 同時に残せる歩みの数（滑り木 2 本 × 800 歩 = 約 240 m、丘を 4 回ほど滑った長さ）。あふれたら、いちばん早く消える目から使い回す
+const TRAIL_STEP := 0.3       # 縫い目の 1 歩の長さ (m)。1 歩ごとに縫い目の形を 1 つ置く
 const TRAIL_ZIG := 0.045      # ジグザグの振れ幅（縫い目の中心から針穴まで, m）
 const TRAIL_JITTER := 0.012   # 針穴の位置のばらつき (m)。手で縫ったような揺れ
+## 縫い目の種類。per は 1 歩に置く糸の目の数、radius は糸の太さ（半径 m）。重いソリほど太く丈夫に
+##   running なみ縫い: 中心線に沿った破線。軽い
+##   zigzag  ジグザグ: 左右交互の針穴を渡る（はじめの滑りあと、PR #6）
+##   chain   くさり縫い: しずく形の輪が、前の輪の中から次の輪が出るようにつながる
+##   saddle  サドルステッチ: 太い糸の斜めの目が 2 列。いちばん丈夫
+const STITCHES := {
+	"running": {"per": 1, "radius": 0.02},
+	"zigzag": {"per": 1, "radius": 0.026},
+	"chain": {"per": 2, "radius": 0.021},
+	"saddle": {"per": 4, "radius": 0.025},
+}
+const RUNNING_DASH := 0.62    # なみ縫いの 1 歩のうち、糸が表に出ている割合
+const CHAIN_WIDTH := 0.052    # くさり縫いの輪の、ふくらんだ所の半分の幅 (m)
+const SADDLE_ROW := 0.08      # サドルステッチの 2 列の、中心からの距離 (m)
+const SADDLE_SLANT := Vector2(0.055, 0.095)   # サドルステッチの 1 目の、横と前後の半分の長さ (m)
+# ---- 滑りあとが消える（調整する値。意味は design/controls-and-physics.md）
+# 古い順に一列で消えるのでなく、縫い目ごとにばらばらの時刻で消えていく。
+# 重いソリ（ソリの重さ ＋ 乗っている人）の跡ほど深く、長く残る。消え方は TRAIL_FADE
+const TRAIL_LIFE := 50.0              # 重さ TRAIL_LIFE_MASS の跡が消えるまでの時間のまんなか (s)
+const TRAIL_LIFE_MASS := 100.0        # その基準の重さ (kg)
+const TRAIL_LIFE_POW := 0.6           # 重さが 2 倍で 2^0.6 ≈ 1.5 倍長く残る
+const TRAIL_LIFE_RANGE := Vector2(12.0, 300.0)   # 消えるまでの時間のまんなかの下限と上限 (s)
+const TRAIL_PATCH := 0.45             # 吹きだまりのまとまりで、残る時間がずれる割合（±）
+const TRAIL_PATCH_SIZE := 3.0         # 吹きだまりのまとまりの大きさ (m)
+const TRAIL_SCATTER := 0.4            # 縫い目ひとつずつで、残る時間がずれる割合（±）
+const TRAIL_BURY := 0.3               # 消えるまでの時間のうち、消えていく（ほつれる・埋もれる）時間の割合
+const TRAIL_BURY_MIN := 4.0           # 消えていく時間の下限 (s)
+## 消え方。"fray" ほつれる（撚りがゆるみ、繊維がまんなかから切れていく。2026-10-29 代表）、"bury" 雪に埋もれる（白くなって沈む）
+const TRAIL_FADE := "fray"
+var trail_fade := TRAIL_FADE          # 置く前に変えてよい（main.gd の --trail-fade=）
+const TRAIL_SCAN := 48                # 空いた目を探すとき、先へ見る数（多いほど正確、重い）
+const TRAIL_CHUNK := 100              # 歩みをこの数ずつの塊に分けて描く（塊の目の数は × per）。画面の外の塊は描かない
+const TRAIL_SEE := 45.0               # これより遠い塊は描かない (m)。糸は細いので、その先はほとんど見えない
 var _blob: MeshInstance3D
-var _trail: MultiMeshInstance3D
+var _stitch: ArrayMesh                        # 1 目の形（塊どうしで共有。色と時計はここに入れる。粗い形は Look.stitch_mesh）
+var _trails: Array[MultiMeshInstance3D] = []  # 目の塊
 var _trail_i := 0
+var _trail_now := 0.0                         # 滑りあとの時計 (s)。確かめ用に進めてよい
+var _trail_end := PackedFloat32Array()        # 目ごとの、消えきる時刻
+var _chunk_end := PackedFloat32Array()        # 塊ごとの、目がすべて消えきる時刻（過ぎたら塊を描かない）
+var _trail_used := 0                          # 使ったことのある目の数
+var _trail_noise := FastNoiseLite.new()
 var _trail_dist := 0.0
 var _trail_last := Vector3.INF
 var _trail_flip := false
-var _trail_holes := [Vector3.INF, Vector3.INF]   # 左右それぞれ、前の針穴
+var _trail_holes := [Vector3.INF, Vector3.INF]   # 左右それぞれ、前の歩みの縫い目の中心
+var _trail_jit := [Vector3.ZERO, Vector3.ZERO]   # 左右それぞれ、前の針穴のばらつき
+var _st: Dictionary = STITCHES.zigzag            # いまの縫い目（STITCHES の 1 つ）
+var _stitch_name := "zigzag"
+var _trail_n := TRAIL_N                          # 目の数（TRAIL_N × per）
+var _trail_chunk := TRAIL_CHUNK                  # 塊の目の数
 var _trail_rng := RandomNumberGenerator.new()
 var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定からずれる量。main が渡す
 
@@ -121,14 +183,24 @@ func _ready() -> void:
 	col.position.y = k.box.y * 0.49
 	add_child(col)
 
-	# 見た目: フェルトの座布団を曲げ木の滑り木に載せたソリ（props/build_sled.py の glb）。寸法はこの物理に合わせてある。
-	# glb がまだない大きさは、当たりの箱と同じ大きさの仮の箱
+	_make_body()
+	# 引き紐: 手すりの両端を結ぶたわんだ紐と、そのまんなかから出る引っ張り紐（sled_rope.gd）
+	rope = preload("res://sled_rope.gd").new()
+	rope.sled = self
+	add_child(rope)
+
+	_make_shadow_and_trail()
+
+## 見た目: フェルトの座布団を曲げ木の滑り木に載せたソリ（props/build_sled.py の glb）。寸法はこの物理に合わせてある。
+## 焼いてある主なフェルトの色（KINDS の color）を、メインカラーに差し替える（props.gd の recolor）。
+## glb がまだない大きさは、当たりの箱と同じ大きさの仮の箱
+func _make_body() -> void:
+	var k: Dictionary = KINDS[kind]
 	var glb := "res://props/sled_%s.glb" % kind
 	if ResourceLoader.exists(glb):
-		var look := Props.make(glb)
-		look.name = "Look"
-		preload("res://fabrics.gd").tint(look, kind, fabric)
-		add_child(look)
+		_body = Props.make(glb)
+		if not color().is_equal_approx(k.color):
+			Props.recolor(_body, k.color, color())
 	else:
 		var mi := MeshInstance3D.new()
 		var bm := BoxMesh.new()
@@ -136,15 +208,36 @@ func _ready() -> void:
 		mi.mesh = bm
 		mi.position.y = k.box.y * 0.5
 		var m := StandardMaterial3D.new()
-		m.albedo_color = Color(0.86, 0.80, 0.66) if kind == "sack" else Color(0.75, 0.25, 0.22)
+		m.albedo_color = color()
 		mi.material_override = m
-		add_child(mi)
-	# 引き紐: 手すりの両端を結ぶたわんだ紐と、そのまんなかから出る引っ張り紐（sled_rope.gd）
-	rope = preload("res://sled_rope.gd").new()
-	rope.sled = self
-	add_child(rope)
+		_body = mi
+	add_child(_body)
 
-	_make_shadow_and_trail()
+
+## いまの滑りあとの縫い目の名前（STITCHES）
+func stitch_kind() -> String:
+	if STITCHES.has(stitch_override):
+		return stitch_override
+	return KINDS.get(kind, KINDS.mid).stitch
+
+
+## いまのメインカラー
+func color() -> Color:
+	return main_color if main_color.a > 0.0 else KINDS.get(kind, KINDS.mid).color
+
+
+## メインカラーを変える（置いたあとでも）。ソリの見た目と、滑りあとの糸（もう残っている跡も）が同じ色になる
+func set_main_color(c: Color) -> void:
+	main_color = c
+	if _body == null:
+		return
+	if _body is MeshInstance3D and (_body as MeshInstance3D).material_override:   # 仮の箱
+		((_body as MeshInstance3D).material_override as StandardMaterial3D).albedo_color = color()
+	else:
+		Props.recolor(_body, KINDS[kind].color, color())
+	if _stitch:
+		Look.stitch_set_color(_stitch, color())
+
 
 ## dir は押す向き（水平）、at は手が触れた所（世界座標）、who は押した人（引きずられている人は押せない）
 func push(dir: Vector3, at: Vector3, who: Node3D = null) -> void:
@@ -310,19 +403,35 @@ func _make_shadow_and_trail() -> void:
 	_blob.top_level = true
 	add_child(_blob)
 
-	_trail = MultiMeshInstance3D.new()
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.use_custom_data = true
-	mm.mesh = Look.stitch_mesh(Color(0.66, 0.75, 0.93))   # 雪より濃い毛糸の青
-	mm.instance_count = TRAIL_N
-	for i in TRAIL_N:
-		mm.set_instance_transform(i, Transform3D(Basis(), Vector3(0, -100, 0)))
-		mm.set_instance_custom_data(i, Color(0.3, 0, 1, 0))
-	_trail.multimesh = mm
-	_trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_trail.top_level = true
-	add_child(_trail)
+	_stitch_name = stitch_kind()
+	_st = STITCHES[_stitch_name]
+	_trail_n = TRAIL_N * int(_st.per)
+	_trail_chunk = TRAIL_CHUNK * int(_st.per)
+	_stitch = Look.stitch_mesh(color())   # 糸はソリのメインカラー
+	Look.stitch_set_shape(_stitch, _st.radius, CHAIN_WIDTH)
+	Look.stitch_set_style(_stitch, 1 if trail_fade == "fray" else 0)
+	for c in ceili(float(_trail_n) / _trail_chunk):
+		var mi := MultiMeshInstance3D.new()
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = _stitch
+		mm.instance_count = mini(_trail_chunk, _trail_n - c * _trail_chunk)
+		mm.visible_instance_count = 0
+		mi.multimesh = mm
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.visibility_range_end = TRAIL_SEE
+		mi.top_level = true
+		mi.visible = false
+		add_child(mi)
+		_trails.append(mi)
+	_trail_end.resize(_trail_n)
+	_trail_end.fill(-1.0)
+	_chunk_end.resize(_trails.size())
+	_chunk_end.fill(-1.0)
+	_trail_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	_trail_noise.frequency = 1.0 / TRAIL_PATCH_SIZE
+	_trail_noise.seed = randi()
 
 
 func _ground_hit(from: Vector3) -> Dictionary:
@@ -331,17 +440,45 @@ func _ground_hit(from: Vector3) -> Dictionary:
 	return get_world_3d().direct_space_state.intersect_ray(q)
 
 
-func _update_shadow_and_trail() -> void:
+## 滑りあとの目が、消えるまでの時間のまんなか (s)。重いソリ（乗っている人も入れる）ほど長い
+func trail_life() -> float:
+	var life := TRAIL_LIFE * pow(load_mass() / TRAIL_LIFE_MASS, TRAIL_LIFE_POW)
+	return clampf(life, TRAIL_LIFE_RANGE.x, TRAIL_LIFE_RANGE.y)
+
+
+## 次の目を置く所: 先の TRAIL_SCAN 個のうち、消えきった目があればそれ、なければいちばん早く消える目
+func _trail_slot() -> int:
+	var best := _trail_i
+	var best_end := INF
+	for j in mini(TRAIL_SCAN, _trail_n):
+		var i := (_trail_i + j) % _trail_n
+		if _trail_end[i] <= _trail_now:
+			best = i
+			break
+		if _trail_end[i] < best_end:
+			best_end = _trail_end[i]
+			best = i
+	_trail_i = (best + 1) % _trail_n
+	_trail_used = maxi(_trail_used, best + 1)
+	return best
+
+
+func _update_shadow_and_trail(dt: float) -> void:
 	if _blob == null:
 		return
+	_trail_now += dt
+	Look.stitch_set_time(_stitch, _trail_now)
+	for c in _trails.size():
+		if _trails[c].visible and _chunk_end[c] <= _trail_now:
+			_trails[c].visible = false
 	var hit := _ground_hit(global_position + Vector3.UP * 0.5)
 	if hit:
 		var n: Vector3 = hit.normal
 		var fwd: Vector3 = -global_basis.z
 		fwd = (fwd - n * fwd.dot(n)).normalized()
 		_blob.global_transform = Transform3D(Basis(n.cross(-fwd).normalized(), n, -fwd), hit.position + n * 0.03)
-	# ステッチ: 動いている間、0.3 m ごとに左右の滑り木の後ろ端に針穴をあけ、前の針穴から糸を渡す。
-	# 針穴は縫い目の中心から左右交互にずらすので、太い糸のジグザグ縫いになる
+	# ステッチ: 動いている間、1 歩（TRAIL_STEP）ごとに左右の滑り木の後ろ端で雪面を探し、
+	# 前の歩みからそこまでを、ソリの縫い目（なみ縫い・くさり縫い・サドルステッチ…）で縫う
 	var v := Vector3(linear_velocity.x, 0, linear_velocity.z)
 	if v.length() < 0.25:
 		_trail_last = Vector3.INF
@@ -363,26 +500,73 @@ func _update_shadow_and_trail() -> void:
 				continue
 			var nn: Vector3 = h.normal
 			var d := (dir - nn * dir.dot(nn)).normalized()
-			var side := d.cross(nn)
-			var hole: Vector3 = h.position + side * ((TRAIL_ZIG if _trail_flip else -TRAIL_ZIG) + _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER)) \
-					+ d * _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER)
+			var c: Vector3 = h.position
 			if snow_lift.is_valid():
-				hole.y += snow_lift.call(hole.x, hole.z)
+				c.y += snow_lift.call(c.x, c.z)
+			var jit: Vector3 = d.cross(nn) * _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER) + d * _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER)
 			var prev: Vector3 = _trail_holes[k]
-			_trail_holes[k] = hole
+			var prev_jit: Vector3 = _trail_jit[k]
+			_trail_holes[k] = c
+			_trail_jit[k] = jit
 			if prev == Vector3.INF:
 				continue
-			var span := hole - prev
-			var len := span.length()
+			var len := prev.distance_to(c)
 			if len < 0.1 or len > 0.6:
 				continue
-			# 前の針穴（原点）から -z の向きへ len だけ伸びる目
-			var z := -span / len
-			var y := (nn - z * nn.dot(z)).normalized()
-			var b := Basis(y.cross(z), y, z)
-			_trail.multimesh.set_instance_transform(_trail_i, Transform3D(b, prev + nn * 0.012))
-			_trail.multimesh.set_instance_custom_data(_trail_i, Color(len, _trail_rng.randf(), _trail_rng.randf_range(0.9, 1.06), 0))
-			_trail_i = (_trail_i + 1) % TRAIL_N
+			_sew(prev, c, prev_jit, jit, nn)
+
+
+## 前の歩み p0 から p1 までを、いまの縫い目で縫う。j0・j1 は針穴のばらつき、nn は雪面の上
+func _sew(p0: Vector3, p1: Vector3, j0: Vector3, j1: Vector3, nn: Vector3) -> void:
+	var f := (p1 - p0).normalized()        # 進む向き（雪面に沿う）
+	var side := f.cross(nn).normalized()
+	match _stitch_name:
+		"running":   # 中心線に沿って、表に出る目と、裏に潜る隙間をくり返す
+			_emit(p0 + j0, p0.lerp(p1, RUNNING_DASH) + j1 * 0.5, nn, 0)
+		"chain":     # しずく形の輪: 根元から左右にふくらむ 2 本の弧。先は次の輪の根元の少し先
+			var tip := p1 + f * 0.04 + j1 * 0.5
+			_emit(p0 + j0 * 0.5, tip, nn, 1)
+			_emit(p0 + j0 * 0.5, tip, nn, 2)
+		"saddle":    # 斜めの短い目を 2 列。列どうしは半目ずらす
+			for row in 2:
+				var x0 := SADDLE_ROW * (1.0 if row == 0 else -1.0)
+				for sub in 2:
+					var cm := p0.lerp(p1, 0.25 + 0.5 * sub + (0.25 if row == 1 else 0.0) - 0.125)
+					var a := cm + side * (x0 - SADDLE_SLANT.x) - f * SADDLE_SLANT.y
+					var b := cm + side * (x0 + SADDLE_SLANT.x) + f * SADDLE_SLANT.y
+					_emit(a + j0 * 0.3, b + j1 * 0.3, nn, 0)
+		_:           # zigzag: 針穴を中心から左右交互にずらす
+			var s := TRAIL_ZIG if _trail_flip else -TRAIL_ZIG
+			_emit(p0 - side * s + j0, p1 + side * s + j1, nn, 0)
+
+
+## 糸の目を 1 つ置く。a（入る針穴）から b（出る針穴）へ。bow は 0 でまっすぐ、1・2 で左・右にふくらむ弧（くさり縫いの輪）
+func _emit(a: Vector3, b: Vector3, nn: Vector3, bow: int) -> void:
+	var span := b - a
+	var len := span.length()
+	if len < 0.04:
+		return
+	# 入る針穴（原点）から -z の向きへ len だけ伸びる目
+	var z := -span / len
+	var y := (nn - z * nn.dot(z)).normalized()
+	var bs := Basis(y.cross(z), y, z)
+	# 消えるまでの時間: 重さで決まるまんなかを、吹きだまりのまとまりと、目ひとつずつでずらす
+	var f := 1.0 + TRAIL_PATCH * clampf(_trail_noise.get_noise_2d(a.x, a.z) * 1.6, -1.0, 1.0) \
+			+ TRAIL_SCATTER * _trail_rng.randf_range(-1.0, 1.0)
+	var life := trail_life() * maxf(f, 0.15)
+	var fade := maxf(life * TRAIL_BURY, TRAIL_BURY_MIN)
+	var slot := _trail_slot()
+	_trail_end[slot] = _trail_now + life
+	var ci := slot / _trail_chunk
+	_chunk_end[ci] = maxf(_chunk_end[ci], _trail_now + life)
+	var chunk := _trails[ci]
+	var mm := chunk.multimesh
+	var j := slot % _trail_chunk
+	mm.visible_instance_count = maxi(mm.visible_instance_count, j + 1)
+	mm.set_instance_transform(j, Transform3D(bs, a + nn * 0.012))
+	# y は 位相（0〜1）＋ 弧の向き（整数）
+	mm.set_instance_custom_data(j, Color(len, _trail_rng.randf() * 0.999 + bow, fade, _trail_now + life - fade))
+	chunk.visible = true
 
 
 func _ground_normal() -> Vector3:
@@ -476,7 +660,7 @@ func _update_drag_puffs() -> void:
 
 
 func _physics_process(dt: float) -> void:
-	_update_shadow_and_trail()
+	_update_shadow_and_trail(dt)
 	pushers = _push_count
 	_push_count = 0
 	_pushed_by = _pushed_now

@@ -11,6 +11,9 @@ const Look := preload("res://look.gd")
 ##   --cam=x,y,z,tx,ty,tz  --no-player のときのカメラの位置と見る先（ロッジを撮る用）
 ##   --hud-debug   画面の左上に確かめ用の数字（押している人数・高さ・速さ・fps）を出す
 ##   --sled=KIND   ソリの大きさ（sack 米袋 1 人・small 2 人・mid 3 人（既定）・large 8 人）
+##   --sled-color=色  ソリのメインカラー（ソリの主なフェルトと滑りあとの糸）。2F5DA8 のような 16 進か、white・navy などの色の名前
+##   --stitch=名前  滑りあとの縫い目の差し替え（running なみ縫い・zigzag・chain くさり縫い・saddle サドルステッチ）。既定はソリの大きさで決まる
+##   --trail-fade=fray|bury  滑りあとの消え方（ほつれる・雪に埋もれる）
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
@@ -119,6 +122,10 @@ func _ready() -> void:
 
 	sled = Sled.new()
 	sled.kind = args.get("sled", "mid")
+	sled.stitch_override = args.get("stitch", "")
+	sled.trail_fade = args.get("trail-fade", sled.TRAIL_FADE)
+	if args.has("sled-color"):
+		sled.main_color = Color.from_string(args["sled-color"], Color(0, 0, 0, 0))
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
 	sled.snow_lift = snow_lift
 	add_child(sled)

@@ -42,7 +42,7 @@ func _ready() -> void:
 	_l = k.box.z
 	var col := Fabrics.color(fabric)
 	if kind == "sack" and fabric == "":
-		col = Fabrics.MAIN["sack"]
+		col = preload("res://sled.gd").KINDS["sack"].color
 	_mat_a = Look.felt(col, 2.0)
 	_mat_b = Look.felt(col.darkened(0.12), 2.0)
 	_crease = Look.felt(col.darkened(0.4) if col.get_luminance() > 0.35 else col.lightened(0.45), 4.0)

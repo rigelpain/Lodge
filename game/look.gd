@@ -379,8 +379,11 @@ static func _wagara_ink(kind: String, x: int, y: int, s: int) -> bool:
 
 
 ## 滑りあとのステッチ（太い 2 本撚りの糸）。1 目ぶんの形を MultiMesh で並べる。
-## 目の形は頂点シェーダーで作るので、各目の長さ・撚りの位相・色のゆらぎを INSTANCE_CUSTOM (長さ m, 位相, 明るさ, -) で渡す。
-## 目は原点（入る針穴）から -z へ長さぶん伸び、もう一方の針穴へ沈む。面 0 が糸、面 1 が針穴のくぼみと糸の下の影（乗算）
+## 目の形は頂点シェーダーで作るので、各目の長さ・撚りの位相・雪に埋もれる時刻を
+## INSTANCE_CUSTOM (長さ m, 位相 0〜1 ＋ 弧の向き, 消えていく時間 s, 消え始める時刻 s) で渡す。時刻は stitch_set_time で進める。
+## 弧の向きは位相の整数の部分: 0 でまっすぐ、1・2 で左・右へふくらむ弧（くさり縫いの輪の半分）。
+## 目は原点（入る針穴）から -z へ長さぶん伸び、もう一方の針穴へ沈む。面 0 が糸、面 1 が針穴のくぼみと糸の下の影（乗算）。
+## 糸の管には粗い形（LOD）を 2 段つける。Godot が画面での大きさから選ぶので、遠くの目と 360° 映像の小窓では粗い形になる
 static func stitch_mesh(color: Color) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	# 面 0: 糸の管。u（縫い目に沿って 0〜1、両端の沈む所を細かく）× a（まわり 0〜1）の格子
@@ -397,17 +400,19 @@ static func stitch_mesh(color: Color) -> ArrayMesh:
 			verts.append(Vector3(cos(a) * 0.03, 0.02 + sin(a) * 0.03, -u * 0.3))
 			norms.append(Vector3(cos(a), sin(a), 0))
 			uvs.append(Vector2(u, float(j) / na))
-	for i in nu:
-		for j in na:
-			var k := i * (na + 1) + j
-			idx.append_array([k, k + 1, k + na + 1, k + 1, k + na + 2, k + na + 1])
+	idx = _grid_index(range(nu + 1), range(na + 1), na)
+	# 粗い形: 輪を間引き（両端の沈む所は残す）、まわりを 4 面に。キーは形の誤差 (m)。この誤差が 1 画素より小さく見える所で使われる
+	var lods := {
+		0.006: _grid_index([0, 1, 2, 4, 6, 8, 10, 12, 13, 14], [0, 2, 4, 6, 8], na),
+		0.014: _grid_index([0, 2, 7, 12, 14], [0, 2, 4, 6, 8], na),
+	}
 	var arr := []
 	arr.resize(Mesh.ARRAY_MAX)
 	arr[Mesh.ARRAY_VERTEX] = verts
 	arr[Mesh.ARRAY_NORMAL] = norms
 	arr[Mesh.ARRAY_TEX_UV] = uvs
 	arr[Mesh.ARRAY_INDEX] = idx
-	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr)
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], lods)
 	var sh := Shader.new()
 	sh.code = THREAD_SHADER
 	var mat := ShaderMaterial.new()
@@ -418,7 +423,7 @@ static func stitch_mesh(color: Color) -> ArrayMesh:
 	# 面 1: 目の下に敷く 1 枚の四角。針穴と影はシェーダーで描く
 	var q := []
 	q.resize(Mesh.ARRAY_MAX)
-	q[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-0.08, 0, 0.08), Vector3(0.08, 0, 0.08), Vector3(-0.08, 0, -0.38), Vector3(0.08, 0, -0.38)])
+	q[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-0.1, 0, 0.08), Vector3(0.1, 0, 0.08), Vector3(-0.1, 0, -0.38), Vector3(0.1, 0, -0.38)])
 	q[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
 	q[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(0, 0), Vector2(0, 0), Vector2(1, 0), Vector2(1, 0)])
 	q[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 2, 1, 1, 2, 3])
@@ -430,8 +435,62 @@ static func stitch_mesh(color: Color) -> ArrayMesh:
 	mat2.set_shader_parameter("shade", Color(0.50, 0.56, 0.74))
 	mat2.render_priority = -1
 	mesh.surface_set_material(1, mat2)
-	mesh.custom_aabb = AABB(Vector3(-0.1, -0.06, -0.8), Vector3(0.2, 0.16, 0.9))
+	mesh.custom_aabb = AABB(Vector3(-0.12, -0.06, -0.8), Vector3(0.24, 0.16, 0.9))
+	stitch_set_color(mesh, color)
 	return mesh
+
+
+## 格子の点の番号（行 rows × 列 cols、1 行は na + 1 点）から、四角を 2 つの三角にした番号の列
+static func _grid_index(rows: Array, cols: Array, na: int) -> PackedInt32Array:
+	var idx := PackedInt32Array()
+	for r in rows.size() - 1:
+		for c in cols.size() - 1:
+			var k00: int = rows[r] * (na + 1) + cols[c]
+			var k01: int = rows[r] * (na + 1) + cols[c + 1]
+			var k10: int = rows[r + 1] * (na + 1) + cols[c]
+			var k11: int = rows[r + 1] * (na + 1) + cols[c + 1]
+			idx.append_array([k00, k01, k10, k01, k11, k10])
+	return idx
+
+
+## 糸の色を変える（ソリのメインカラー）。雪に近い色（白・ごく淡い色）ほど、糸の輪郭と下の影を濃くして縁取る
+static func stitch_set_color(mesh: ArrayMesh, color: Color) -> void:
+	var edge := stitch_edge(color)
+	var thread: ShaderMaterial = mesh.surface_get_material(0)
+	thread.set_shader_parameter("color", color)
+	thread.set_shader_parameter("edge", edge)
+	(mesh.surface_get_material(1) as ShaderMaterial).set_shader_parameter("edge", edge)
+
+
+## 雪の色からの離れぐあいで、縁取りの強さ 0〜1 を決める（白で 1、赤や紺で 0）
+static func stitch_edge(color: Color) -> float:
+	var snow_c := Color(0.97, 0.975, 0.99)   # snow() の地の色
+	var d := Vector3(color.r - snow_c.r, color.g - snow_c.g, color.b - snow_c.b).length()
+	return 1.0 - smoothstep(STITCH_EDGE_NEAR, STITCH_EDGE_FAR, d)
+
+
+const STITCH_EDGE_NEAR := 0.12   # 雪からの色の距離（RGB）がこれより近いと、縁取りいっぱい
+const STITCH_EDGE_FAR := 0.40    # これより離れていれば縁取りなし
+
+
+## 縫い目の形: 糸の太さ（半径 m）と、くさり縫いの輪の半分の幅 (m)
+static func stitch_set_shape(mesh: ArrayMesh, radius: float, bow: float) -> void:
+	var thread: ShaderMaterial = mesh.surface_get_material(0)
+	thread.set_shader_parameter("radius", radius)
+	thread.set_shader_parameter("bow", bow)
+	(mesh.surface_get_material(1) as ShaderMaterial).set_shader_parameter("bow", bow)
+
+
+## 消え方: 0 は雪に埋もれる（白くなって沈む）、1 はほつれる（撚りがゆるみ、繊維がまんなかから切れていく）
+static func stitch_set_style(mesh: ArrayMesh, style: int) -> void:
+	for i in 2:
+		(mesh.surface_get_material(i) as ShaderMaterial).set_shader_parameter("style", style)
+
+
+## 滑りあとの時計（消え始める時刻と比べる、ソリごとの経過秒）
+static func stitch_set_time(mesh: ArrayMesh, t: float) -> void:
+	for i in 2:
+		(mesh.surface_get_material(i) as ShaderMaterial).set_shader_parameter("now", t)
 
 
 const THREAD_SHADER := """
@@ -442,38 +501,64 @@ uniform vec3 color : source_color;
 uniform float radius = 0.026;   // 糸の太さ（半径 m）
 uniform float twist = 12.0;     // 撚りの回数（1 m あたり）
 uniform float dive = 0.06;      // 針穴へ沈んでいく長さ (m)
+uniform float now = 0.0;        // 滑りあとの時計 (s)。stitch_set_time
+uniform float edge = 0.0;       // 雪に近い色の糸の縁取り 0〜1。stitch_set_color
+uniform vec3 snow : source_color = vec3(0.84, 0.86, 0.92);   // かぶる雪の粉の色（編み地の雪の、陰りもこみの見た目の色）
+uniform int style = 1;          // 消え方。0: 雪に埋もれる、1: ほつれる。stitch_set_style
+uniform float bow = 0.04;       // 弧の目（くさり縫いの輪）のふくらみ (m)。stitch_set_shape
 
 varying float v_len;
 varying float v_ph;
 varying float v_tint;
 varying float v_rise;
+varying float v_bury;   // 消えていくぐあい 0〜1（埋もれる・ほつれる）
+varying float v_up;     // 糸の面が上を向いているか（雪の粉は上から積もる）
 
-// 目のふくらみ: 中ほどが少し太く、両端は細って布の下へ潜る。張られて少し平たい
-vec3 thread_at(float u, float a, float len) {
+// 目のふくらみ: 中ほどが少し太く、両端は細って布の下へ潜る。張られて少し平たい。
+// b: 埋もれるにつれて糸は細り、雪の中へ沈む（b = 1 で雪面の下）。
+// f: ほつれるにつれて撚りがゆるみ、2 本が離れてふくらみ、張りがなくなって波打つ
+vec3 thread_at(float u, float a, float len, float b, float f, float ph, float bw) {
 	float e = clamp(min(u, 1.0 - u) * len / dive, 0.0, 1.0);
 	float s = sin(e * 1.5708);
-	float r = radius * mix(0.68, 1.0, s) * (1.0 + 0.08 * sin(3.14159 * u));
-	float yc = mix(-1.3 * radius, 0.88 * radius, s);
-	return vec3(cos(a) * r, yc + sin(a) * r * 0.82, -u * len);
+	float r = radius * mix(0.68, 1.0, s) * (1.0 + 0.08 * sin(3.14159 * u)) * (1.0 - 0.45 * b);
+	float tw = 2.0 * (a + (u * len * twist + ph) * 6.28318);
+	r *= 1.0 + 0.5 * f * cos(tw);
+	float yc = mix(-1.3 * radius, 0.88 * radius, s) - b * b * 3.0 * radius + f * 0.5 * radius * sin(3.14159 * u);
+	float wob = f * 0.35 * radius * sin(u * 9.0 + ph * 30.0) * sin(3.14159 * u);
+	float arc = bw * sin(3.14159 * pow(u, 1.4));   // しずく形: 根元はすぼまり、先の近くでいちばんふくらむ
+	return vec3(cos(a) * r + wob + arc, yc + sin(a) * r * 0.82, -u * len);
 }
 
 void vertex() {
 	v_len = max(INSTANCE_CUSTOM.x, 0.05);
-	v_ph = INSTANCE_CUSTOM.y;
-	v_tint = INSTANCE_CUSTOM.z;
+	v_ph = fract(INSTANCE_CUSTOM.y);
+	float mode = floor(INSTANCE_CUSTOM.y + 0.0005);
+	float bw = mode < 0.5 ? 0.0 : (mode < 1.5 ? bow : -bow);
+	v_tint = 0.9 + 0.16 * fract(v_ph * 91.7);
+	// 消え始め（w）から、消えていく時間（z）で 0 → 1。
+	// 埋もれるときは端の針穴から先に埋もれる。ほつれるときは形はゆるむだけで、切れて消えるのは fragment
+	float b0 = clamp((now - INSTANCE_CUSTOM.w) / max(INSTANCE_CUSTOM.z, 0.01), 0.0, 1.0);
 	float u = UV.x;
 	float a = UV.y * 6.28318;
-	vec3 tu = thread_at(min(u + 0.01, 1.0), a, v_len) - thread_at(max(u - 0.01, 0.0), a, v_len);
-	vec3 ta = thread_at(u, a + 0.05, v_len) - thread_at(u, a - 0.05, v_len);
+	float b = style == 0 ? clamp(b0 * 1.15 - 0.15 * sin(3.14159 * u), 0.0, 1.0) : b0;
+	float sink = style == 0 ? b : 0.0;
+	float f = style == 1 ? smoothstep(0.0, 0.6, b) : 0.0;
+	vec3 tu = thread_at(min(u + 0.01, 1.0), a, v_len, sink, f, v_ph, bw) - thread_at(max(u - 0.01, 0.0), a, v_len, sink, f, v_ph, bw);
+	vec3 ta = thread_at(u, a + 0.05, v_len, sink, f, v_ph, bw) - thread_at(u, a - 0.05, v_len, sink, f, v_ph, bw);
 	vec3 n = normalize(cross(ta, tu));
 	if (dot(n, vec3(cos(a), sin(a), 0.0)) < 0.0) {
 		n = -n;
 	}
-	VERTEX = thread_at(u, a, v_len);
+	VERTEX = thread_at(u, a, v_len, sink, f, v_ph, bw);
 	NORMAL = n;
 	TANGENT = normalize(tu);
 	BINORMAL = normalize(ta);
 	v_rise = clamp(min(u, 1.0 - u) * v_len / dive, 0.0, 1.0);
+	v_bury = b;
+	v_up = normalize((MODEL_MATRIX * vec4(n, 0.0)).xyz).y;
+	if (b0 >= 1.0) {
+		VERTEX = vec3(0.0);   // 消えきった目は描かない（三角が点につぶれる）
+	}
 }
 
 void fragment() {
@@ -483,16 +568,37 @@ void fragment() {
 	float tw = 2.0 * (a + (sm * twist + v_ph) * 6.28318);
 	float c = cos(tw);
 	float groove = smoothstep(0.35, 1.0, -c);   // 2 本の撚り糸が合わさる細い谷
+	// ほつれる: 繊維（撚りに沿った細い筋）が、目のまんなかから先に切れてなくなる。切れ口の繊維は白っぽく毛羽立つ
+	float frayed = 0.0;
+	if (style == 1 && v_bury > 0.0) {
+		float fib = fract(sin(dot(vec2(floor(tw * 1.3), floor(sm * 28.0 + v_ph * 7.0)), vec2(12.9898, 78.233))) * 43758.5453);
+		float cut = v_bury * 1.6 - 0.3 - 0.55 * abs(UV.x - 0.5) * 2.0;
+		if (fib < cut) {
+			discard;
+		}
+		frayed = (1.0 - smoothstep(0.0, 0.3, fib - cut)) * smoothstep(0.0, 0.15, v_bury);
+		groove *= 1.0 + v_bury;   // 2 本のあいだが開く
+	}
 	// 撚りの山と谷で面を傾ける（斜めの筋が光を受ける）
 	NORMAL = normalize(NORMAL + (TANGENT * 0.9 + BINORMAL * 0.35) * sin(tw) * 0.45);
 	// 撚りと逆向きの細い繊維。遠くではちらつくので消す
 	float fp = a * 7.0 - sm * 230.0 + v_ph * 40.0;
 	float fiber = sin(fp) * (1.0 - smoothstep(0.8, 2.5, fwidth(fp)));
 	float sink = mix(0.62, 1.0, smoothstep(0.0, 1.0, v_rise));   // 針穴へ潜る所は暗い
-	ALBEDO = color * v_tint * (1.0 - 0.32 * groove) * sink * (0.94 + 0.06 * fiber);
-	ROUGHNESS = mix(0.6, 0.85, groove); // 山の頂に糸のつや
+	vec3 col = color * v_tint * (1.0 - 0.32 * groove) * sink * (0.94 + 0.06 * fiber);
+	// 雪に近い色の糸: 輪郭（横から見える縁）と撚りの谷を暗くして、雪から浮かせる
+	float sil = pow(1.0 - clamp(dot(normalize(NORMAL), VIEW), 0.0, 1.0), 1.5);
+	col *= 1.0 - edge * (0.45 * sil + 0.25 * groove);
+	// 雪の粉: 上を向いた面から、まだらにかぶっていく（粒は撚りの山ひとつほど）
+	float grain = fract(sin(dot(vec2(floor(sm * 60.0 + v_ph * 17.0), floor(a * 1.3)), vec2(12.9898, 78.233))) * 43758.5453);
+	float fine = fract(sin(dot(floor(vec2(sm * 400.0, a * 6.0)), vec2(39.346, 11.135))) * 24634.6345);
+	float dust = style == 0 ? clamp(v_bury * 1.8 - 0.25 + 0.45 * v_up - 0.5 * grain, 0.0, 1.0) : 0.0;
+	dust = smoothstep(0.0, 1.0, dust);
+	col = mix(col, col * 0.6 + vec3(0.3), frayed * 0.8);   // 毛羽立った繊維は色が抜けて明るい
+	ALBEDO = mix(col, snow * (0.9 + 0.1 * fine), dust);
+	ROUGHNESS = mix(mix(0.6, 0.85, groove), 1.0, dust); // 山の頂に糸のつや。雪をかぶるとつやが消える
 	SPECULAR = 0.3;
-	RIM = 0.35;                         // 輪郭の毛羽
+	RIM = 0.35 * (1.0 - dust) + 0.4 * frayed;   // 輪郭の毛羽（ほつれると増える）
 	RIM_TINT = 0.55;
 }
 """
@@ -503,30 +609,47 @@ shader_type spatial;
 render_mode unshaded, blend_mul, depth_draw_never, cull_disabled, fog_disabled;
 
 uniform vec3 shade : source_color;
+uniform float now = 0.0;    // 滑りあとの時計 (s)
+uniform float edge = 0.0;   // 雪に近い色の糸の縁取り 0〜1（糸の両脇の影を濃く、少し広く）
+uniform int style = 1;      // 消え方。0: 雪に埋もれる、1: ほつれる
+uniform float bow = 0.04;   // 弧の目のふくらみ (m)
 
 varying vec2 v_p;
 varying float v_len;
+varying float v_bury;
+varying float v_bw;
+varying float v_holes;      // 針穴を描くか（弧の 2 本目は、1 本目と同じ針穴なので描かない）
 
 void vertex() {
 	v_len = max(INSTANCE_CUSTOM.x, 0.05);
+	v_bury = clamp((now - INSTANCE_CUSTOM.w) / max(INSTANCE_CUSTOM.z, 0.01), 0.0, 1.0);
+	float mode = floor(INSTANCE_CUSTOM.y + 0.0005);
+	v_bw = mode < 0.5 ? 0.0 : (mode < 1.5 ? bow : -bow);
+	v_holes = mode > 1.5 ? 0.0 : 1.0;
 	VERTEX = vec3(VERTEX.x, 0.0, mix(0.08, -v_len - 0.08, UV.x));
 	v_p = VERTEX.xz;
+	if (v_bury >= 1.0) {
+		VERTEX = vec3(0.0);
+	}
 }
 
 void fragment() {
 	vec2 p = v_p;
-	// 糸の下の影（糸の両脇ににじむ）
-	float d_line = length(vec2(p.x, p.y - clamp(p.y, -v_len, 0.0)));
-	float under = (1.0 - smoothstep(0.012, 0.05, d_line)) * 0.42;
+	// 糸の下の影（糸の両脇ににじむ）。縁取りのときは濃く、少し広く
+	float arc = v_bw * sin(3.14159 * pow(clamp(-p.y / v_len, 0.0, 1.0), 1.4));
+	float d_line = length(vec2(p.x - arc, p.y - clamp(p.y, -v_len, 0.0)));
+	float under = (1.0 - smoothstep(0.012, 0.05 + 0.012 * edge, d_line)) * (0.42 + 0.25 * edge);
 	// 針穴: 小さく暗い芯と、まわりのくぼみ。布が穴へ引かれて放射状のしわが寄る
 	vec2 h0 = p;
 	vec2 h1 = p - vec2(0.0, -v_len);
 	vec2 hv = length(h0) < length(h1) ? h0 : h1;
 	float dh = length(hv);
-	float core = 1.0 - smoothstep(0.004, 0.022, dh);
-	float dimple = 1.0 - smoothstep(0.015, 0.07, dh);
+	float core = (1.0 - smoothstep(0.004, 0.022, dh)) * v_holes;
+	float dimple = (1.0 - smoothstep(0.015, 0.07, dh)) * v_holes;
 	float pull = pow(0.5 + 0.5 * cos(atan(hv.y, hv.x) * 7.0), 4.0) * dimple * (1.0 - core);
 	float k = clamp(under + core * 0.45 + dimple * 0.22 + pull * 0.08, 0.0, 0.7);
+	// 埋もれる: 針穴とくぼみは、糸より先に雪で埋まる。ほつれる: 糸がなくなるのに合わせて、影とくぼみが消える
+	k *= style == 0 ? 1.0 - smoothstep(0.0, 0.6, v_bury) : 1.0 - smoothstep(0.3, 0.9, v_bury);
 	ALBEDO = mix(vec3(1.0), shade, k);
 }
 """
