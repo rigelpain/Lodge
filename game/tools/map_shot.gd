@@ -70,7 +70,10 @@ func _setup() -> void:
 ## --dump=PATH: 置いてある物（glb の名前と x, z, 大きさ）を JSON に書く。図を描く用
 func _dump(path: String) -> void:
 	var items := []
-	for n in main.get_children():
+	var nodes: Array = main.get_children()
+	if main.has_node("Mountain"):
+		nodes += main.get_node("Mountain").get_children()
+	for n in nodes:
 		if n is Node3D and n.scene_file_path != "":
 			items.append({"file": n.scene_file_path.get_file(), "x": n.position.x, "z": n.position.z,
 					"s": n.scale.x, "yaw": n.rotation.y})
@@ -79,18 +82,36 @@ func _dump(path: String) -> void:
 					"sz": n.scale.z, "yaw": n.rotation.y})
 	for post in main.find_children("SpeakerPost*", "Node3D", true, false):
 		items.append({"file": "speaker", "x": post.position.x, "z": post.position.z, "s": 1.0, "yaw": 0.0})
-	# 地面の高さと道（2 m おき、-150〜150 m。地面の外は null）
+	# 地面の高さと道（2 m おき。地面のまわり 20 m まで。地面の外は null）
 	var heights := []
 	var paths := []
 	var half: float = main.SIZE / 2.0
-	for j in 151:
-		for i in 151:
-			var x := -150.0 + i * 2.0
-			var z := -150.0 + j * 2.0
-			var inside := absf(x) <= half and absf(z) <= half
+	var tz: Array = main.TILES_Z if "TILES_Z" in main else [0.0]
+	var zmin: float = tz[0] - half
+	var zmax: float = tz[tz.size() - 1] + half
+	var gx0 := -half - 20.0
+	var gz0 := zmin - 20.0
+	var nx := int((2.0 * half + 40.0) / 2.0) + 1
+	var nz := int((zmax - zmin + 40.0) / 2.0) + 1
+	for j in nz:
+		for i in nx:
+			var x := gx0 + i * 2.0
+			var z := gz0 + j * 2.0
+			var inside := absf(x) <= half and z >= zmin and z <= zmax
 			heights.append(main.height(x, z) if inside else null)
-			paths.append(main.path_weight(x, z) if inside and main.has_method("path_weight") else 0.0)
+			var pw := 0.0
+			if inside and main.has_method("path_weight"):
+				pw = main.path_weight(x, z)
+				if "Mountain" in main:
+					pw = maxf(pw, main.Mountain.path_weight(x, z))
+			paths.append(pw)
+	var secs := {}
+	if "Mountain" in main:
+		for sec in main.Mountain.SECTIONS:
+			secs[sec[0]] = main.Mountain.section(sec[0])
+		secs["course_x"] = main.Mountain.COURSE_X
+		secs["path_x"] = main.Mountain.PATH_X
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(JSON.stringify({"hill_h": main.HILL_H, "hill_r": main.HILL_R, "size": main.SIZE,
 			"start": [main.START.x, main.START.z], "lodge": [main.LODGE_POS.x, main.LODGE_POS.y],
-			"lodge_yaw": main.LODGE_YAW, "items": items, "grid": {"x0": -150.0, "step": 2.0, "n": 151, "h": heights, "path": paths}}))
+			"lodge_yaw": main.LODGE_YAW, "items": items, "mountain": secs, "grid": {"x0": gx0, "z0": gz0, "step": 2.0, "nx": nx, "nz": nz, "h": heights, "path": paths}}))
