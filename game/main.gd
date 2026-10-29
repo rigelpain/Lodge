@@ -298,6 +298,8 @@ func _split_pip_layers() -> void:
 		var top: Node = m
 		while top.get_parent() != null and top.get_parent() != self:
 			top = top.get_parent()
+		if top == sled:
+			continue   # ソリの glb の部品は名前に prop が付くが、ソリは映す
 		var names := [top.name.to_lower(), m.name.to_lower()]
 		var p := m.get_parent()
 		if p and p != self:
