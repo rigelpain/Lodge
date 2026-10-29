@@ -105,7 +105,8 @@ func _input(e: InputEvent) -> void:
 
 		return
 	match e.physical_keycode:
-		KEY_R: learn("return")
+		KEY_BACKSPACE: learn("return")
+		KEY_R: learn("lamp")
 		KEY_T: learn("sew"); learn("set")
 		KEY_N: learn("sack")
 		KEY_I: learn("gear")
@@ -327,11 +328,17 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			_hint("g_wave", ["Q"], "wave")
 			_hint("g_voice", ["G"], "voice")
 		_hint("g_point", ["mouse_r"], "point")
-	# ソリが止まったまま遠い: R で ふもとへ戻せる（ロッジの中では出さない）
+	# 暗いのにランタンが消えている: R で点ける（覚えるまで）
+	var cr = main.get("craft")
+	var dc := get_node_or_null("/root/DayCycle")
+	if cr and dc and dc.has_method("daylight") and dc.daylight() < 0.4 and not known("lamp") \
+			and not cr.lantern(p.id).is_empty() and not cr.lamp_on(p.id):
+		_hint("lamp", ["R"], "lamp")
+	# ソリが止まったまま遠い: Backspace で ふもとへ戻せる（ロッジの中では出さない）
 	_still_t = _still_t + dt if sled.linear_velocity.length() < 0.3 else 0.0
 	var outside: bool = main.lodge_weight(pos.x, pos.z) >= 1.0
 	if _still_t > 6.0 and pos.distance_to(sled.global_position) > 35.0 and outside:
-		_hint("return", ["R"], "return")
+		_hint("return", ["Backspace"], "return")
 
 
 ## 画面の下の案内を、まんなかに横一列に並べる（つかんでいる手の少し上）
@@ -743,7 +750,7 @@ class View extends Control:
 	func _draw_card(u: float, fit := true) -> void:
 		var rows: Array = [
 			[["W", "A", "S", "D"], "walk"], [["Shift"], "run"], [["Space"], "jump"], [["mouse_move"], "look"],
-			[["F"], "grab"], [["F"], "rope"], [["E"], "ride"], [["R"], "return"],
+			[["F"], "grab"], [["F"], "rope"], [["E"], "ride"], [["Backspace"], "return"],
 			[["mouse_r"], "point"], [["C"], "view"], [["V"], "pip_cycle"], [["P"], "pip_off"],
 			[["Esc"], "settings"],
 		]
@@ -760,7 +767,7 @@ class View extends Control:
 		if hud.main.get("sewing") != null:
 			rows.append([["T"], "needle"])
 		if hud.main.get("craft") != null:   # 工房: 売り子に F、ミシンに T でセット、G で畳む、左クリックで広げる、ホイールで持ち替え
-			rows += [[["F"], "shop"], [["F"], "set"], [["N"], "sack"], [["I"], "gear"], [["mouse_wheel"], "hand"], [["Z"], "hand"]]
+			rows += [[["F"], "shop"], [["F"], "set"], [["N"], "sack"], [["R"], "lamp"], [["I"], "gear"], [["mouse_wheel"], "hand"], [["Z"], "hand"]]
 		var bs := 46.0 * u                # 一つの段のワッペンの高さ
 		var row_h := bs * 1.08
 		var col_w := 0.0

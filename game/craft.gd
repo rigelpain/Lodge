@@ -17,10 +17,14 @@ extends Node
 ##   sack_out  {at, yaw, up}   装備の米袋（いま選んでいるもの）を足もとに出す（2026-10-29 代表: 米袋は装備。持ち物の列は使わない）
 ##   sack_in   {}              出している米袋を、くるっと丸めて帯に戻す
 ##   tag_design {design}       自分の名札のデザインを決める（装備の画面）。持ち主の印として、その人のソリ・米袋の名札が替わる
-##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える
-## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋だけ。服や名札の柄を足すときは、
+##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
+##                             ランタンは index -1 で外す（外すと消える）
+##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
+## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
 ## GEARS に種類を足し、_gear_lists に持ち物の配列の入れ物を足す
 ## 米袋は全員が最初から 1 つ（標準）持つ。米袋の型紙と布で縫った米袋は、持ち物でなく装備の枠に入り、選ばれる
+## ランタンも全員が最初から持ち、帯の左に提げている（消えた状態で始まる）。形は lantern.gd の LOOKS（{look}）。
+## いまは木の手提げ（標準）と和紙の提灯の 2 つを最初から持つ。売り台で形違いを売るかは、まだ決めていない
 
 signal happened(ev: Dictionary)
 
@@ -46,13 +50,16 @@ var bags := {}                 # 人の番号 → 持ち物（item の配列）
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
 var _next_sled := 1
-const GEARS := ["sack"]        # 装備の種類（装備の画面の並び）
+const GEARS := ["sack", "lantern"]   # 装備の種類（装備の画面の並び）
 var tag_designs := {}          # 人の番号 → 自分の名札（sled_tags.gd の部品の辞書）。通信では「誰が」の印として配る
 var tag_owned := {}            # 人の番号 → 手に入れた「あとで手に入る」名札の部品 {部品: [番号, ...]}（最初から使える部品は書かない）
 var sacks := {}                # 人の番号 → 持っている米袋の配列 [{fabric, tag}]（0 番は標準）
 var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
 var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
+var lanterns := {}             # 人の番号 → 持っているランタンの配列 [{look}]（0 番は標準）
+var lantern_sel := {}          # 人の番号 → 提げているランタンの番号（-1 は外している）
+var lamps := {}                # 人の番号 → ランタンが点いているか
 const SACK_FAR := 30.0         # 誰も乗っていない米袋から持ち主がこれより離れて…
 const SACK_FAR_T := 4.0        # …この秒たつと、ひとりでに帯に戻る
 
@@ -68,6 +75,9 @@ func join(who: int) -> void:
 	tag_owned[who] = {}
 	sacks[who] = [{"fabric": "", "tag": 0}]   # 標準の米袋（名札は持ち主の名札）
 	sack_sel[who] = 0
+	lanterns[who] = [{"look": "box"}, {"look": "paper"}]
+	lantern_sel[who] = 0
+	lamps[who] = false
 
 
 ## 名札の部品 part の i 番を使えるか（最初から使える部品か、手に入れた部品）
@@ -81,12 +91,14 @@ func tag_can_use(who: int, part: String, i: int) -> bool:
 func gear_list(who: int, gear: String) -> Array:
 	match gear:
 		"sack": return sacks.get(who, [])
+		"lantern": return lanterns.get(who, [])
 	return []
 
 
 func gear_index(who: int, gear: String) -> int:
 	match gear:
 		"sack": return int(sack_sel.get(who, 0))
+		"lantern": return int(lantern_sel.get(who, -1))
 	return -1
 
 
@@ -94,6 +106,18 @@ func gear_index(who: int, gear: String) -> int:
 func sack(who: int) -> Dictionary:
 	var list: Array = sacks.get(who, [])
 	return list[clampi(sack_sel.get(who, 0), 0, list.size() - 1)] if not list.is_empty() else {}
+
+
+## 帯に提げているランタン {look}（外していれば {}）
+func lantern(who: int) -> Dictionary:
+	var list: Array = lanterns.get(who, [])
+	var i := int(lantern_sel.get(who, -1))
+	return list[i] if i >= 0 and i < list.size() else {}
+
+
+## ランタンが点いているか
+func lamp_on(who: int) -> bool:
+	return bool(lamps.get(who, false)) and not lantern(who).is_empty()
 
 
 ## 出している米袋（なければ null）
@@ -252,10 +276,18 @@ func _apply(ev: Dictionary) -> bool:
 		"equip":
 			var list := gear_list(who, String(ev.get("gear", "")))
 			var i := int(ev.index)
-			if i < 0 or i >= list.size():
+			if i >= list.size() or i < (-1 if ev.gear == "lantern" else 0):
 				return false
 			match ev.gear:
 				"sack": sack_sel[who] = i
+				"lantern":
+					lantern_sel[who] = i
+					if i < 0:
+						lamps[who] = false
+		"lamp":
+			if lantern(who).is_empty():
+				return false
+			lamps[who] = bool(ev.on)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):

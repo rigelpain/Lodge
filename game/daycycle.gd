@@ -68,6 +68,11 @@ func _process(dt: float) -> void:
 
 
 ## 時刻を "10:24" の形で
+## 昼の度合い（0 夜 … 1 昼。_apply の day と同じ）。仲間がランタンを点ける目安（bot.gd）
+func daylight() -> float:
+	return smoothstep(-4.0, 12.0, SUN_MAX * sin((hour - 6.0) / 12.0 * PI))
+
+
 func clock() -> String:
 	return "%d:%02d" % [int(hour), int(fmod(hour, 1.0) * 60.0)]
 

@@ -24,6 +24,7 @@
 | [build_counter.py](build_counter.py) | 食べ物を買うカウンターまわり（メニュー板・レジ・お盆・給水機・ティッシュなど） |
 | [build_misc.py](build_misc.py) | 乾かす物干し、入口まわり、自動販売機、壁と窓の飾り |
 | [build_kitchen.py](build_kitchen.py) | 厨房の作業台と、卓に載せる調理の道具（アイロン台・プレス機・乾燥機）とペレットの入れ物 |
+| [build_lantern.py](build_lantern.py) | 持ち歩くランタン（装備）: 木の手提げ（標準）と和紙の提灯 |
 | [build_scenes.py](build_scenes.py) | 書き出した glb を組み合わせた場面（暖炉の前・こたつ・食堂・厨房）。Godot の場面も書き出す |
 | [stitches.md](stitches.md) | 滑りあとの縫い目の見本帳（作ったものと、これから作る候補） |
 | `renders/` | 描いた画像 |
@@ -328,6 +329,18 @@
 - `game/sled.gd`: 箱のソリの見た目を `sled_mid.glb` に。物理（当たり判定・つかむ縁・紐の付け根）は変えていない
 - `game/main.gd` の `_furnish_lodge()`: ロッジの glb の機械の置き場の目印に機械を置く。`slot_vending_1`〜`3` に自販機（赤・青・赤）、`slot_craft_rental` にミシンの制作機。どれも正面を南（食堂の側）へ。`slot_food_kitchen` には厨房の場面（前は床置きの焼き台・スチーマー・乾燥機を置いていた）
 - ロッジの中の調度品と場面（`game/props/sets/`）は、まだロッジに置いていない。置く場所はロッジのセッションと決める（場面は `load("res://props/sets/hearth_nook.tscn").instantiate()` で置ける）
+
+## ランタン（2026-10-29）
+
+代表「キャラの周囲を照らすためのランタンをモデリングして装備できるようにしてください」から。`build_lantern.py`、書き出しは `game/props/lantern/`。実寸（m）で作り、ゲームでは人形の大きさに合わせて縮める（`game/lantern.gd`）。
+
+| 名前 | 形 | 三角形（書き出し） |
+|---|---|---|
+| `lantern_box` | 木の手提げ（標準）。四角すいの屋根と煙出し、四隅の柱、4 面の「ガラス」は透明なフィルムに白い糸のなみ縫いの枠と横の桟。中に和紙で包んだ芯（光る紙）を赤い糸で結び、木の皿の綿に載せる。取っ手は曲げ木に赤い毛糸をらせんに巻く | 約 2,400 |
+| `lantern_paper` | 和紙の提灯。細い木の骨の輪 11 本に紙を張り、上下に濃い木の口、赤い毛糸で提げ、下に房 | 約 2,400 |
+
+- 提げる所（取っ手のてっぺん）が原点で、体は下。目印 `hang`（原点）と `light`（灯りの芯。Godot はここに 1 つだけ灯りをともす）
+- 描く: `Blender -b -P props/build_lantern.py -- --views quarter,close --prefix props/renders/40-lantern`
 
 ## 画像
 

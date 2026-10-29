@@ -303,6 +303,8 @@ static func keycap_w(key: String, size: float) -> float:
 		w = 40.0
 	elif key == "Space":
 		w = 58.0
+	elif key == "Backspace":
+		w = 40.0
 	elif key.length() > 1:
 		w = 16.0 + key.length() * 8.0
 	return w * size / 28.0
@@ -323,6 +325,11 @@ static func keycap(ci: CanvasItem, key: String, center: Vector2, size: float, a 
 		var m := _map(p)
 		m.append(m[0])
 		ci.draw_polyline(m, Color(THREAD, a), maxf(1.6 * _s, 1.0), true)
+	elif key == "Backspace":   # 左向きの五角形に ×（文字にすると長い）
+		var p := PackedVector2Array([Vector2(-11, 0), Vector2(-5, -7), Vector2(11, -7), Vector2(11, 7), Vector2(-5, 7), Vector2(-11, 0)])
+		ci.draw_polyline(_map(p), Color(THREAD, a), maxf(1.6 * _s, 1.0), true)
+		ci.draw_polyline(_map(PackedVector2Array([Vector2(-1, -3), Vector2(5, 3)])), Color(THREAD, a), maxf(1.6 * _s, 1.0), true)
+		ci.draw_polyline(_map(PackedVector2Array([Vector2(5, -3), Vector2(-1, 3)])), Color(THREAD, a), maxf(1.6 * _s, 1.0), true)
 	elif key != "Space":
 		var font := ThemeDB.fallback_font
 		var fs := int(round((15.0 if key.length() == 1 else 12.0) * _s))

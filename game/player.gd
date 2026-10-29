@@ -25,6 +25,7 @@ const SackLook := preload("res://sack_look.gd")
 ## 出すときは、帯の丸めた袋を引き抜いて前へ広げ、しゃがんで腰を下ろし、前の紐を握る（人形のコマ。doll.gd の sack_start）。
 ## 乗るのは押した瞬間なので、坂ならその途中から滑り出し、Space で蹴ればすぐ座った姿になって漕げる。
 ## どの米袋を装備するかは、I で開く装備の画面（craft_ui.gd）で選ぶ。
+## ランタンも装備（craft.gd の lanterns）: 帯の左に提げ、R で点ける・消す（2026-10-29 代表。ソリをふもとへ戻すのは Backspace に移した）。
 ## 左クリックの順: 雪玉を持っていれば投げる → 高い両手のひらなら拍手。
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
@@ -330,6 +331,9 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_N:
 				if craft and not menu_open and not rooted():
 					toggle_sack()
+			KEY_R:
+				if craft and not menu_open:
+					toggle_lamp()
 			KEY_I:
 				if craft and not menu_open and get_parent().get("craft_ui"):
 					get_parent().craft_ui.open_gear()   # 装備の画面
@@ -528,6 +532,9 @@ func _pose_doll() -> void:
 		doll.belt_sack = not spec.is_empty() and craft.sack_sled(id) == null
 		if not spec.is_empty():
 			doll.belt_color = preload("res://fabrics.gd").color(spec.fabric) if spec.fabric != "" else preload("res://sled.gd").KINDS["sack"].color
+		# 帯の左のランタン
+		doll.lantern = craft.lantern(id).get("look", "")
+		doll.lantern_lit = craft.lamp_on(id)
 
 
 ## 右クリックで指さしを入れたり切ったりする。入れると、いま向いている先（画面のまんなかが当たる所）を指し、
@@ -1437,6 +1444,11 @@ func _start_sack_out() -> void:
 # ---------------------------------------------------------------- 装備の米袋（craft.gd の sack_out・sack_in）
 
 const SACK_NEAR := 3.5       # 出している米袋がこれより近ければ、N でしまう（遠ければ足もとへ呼び戻す）
+
+## R: 帯のランタンを点ける・消す（提げていなければ何もしない）
+func toggle_lamp() -> bool:
+	return craft.send({"kind": "lamp", "who": id, "on": not craft.lamp_on(id)})
+
 
 ## N: 米袋を出して乗る／降りてしまう／遠くの米袋を足もとへ呼び戻す
 func toggle_sack() -> void:
