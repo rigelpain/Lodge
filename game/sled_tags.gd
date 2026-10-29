@@ -102,19 +102,22 @@ static func outline(r: Rect2, shape: String) -> PackedVector2Array:
 	match shape:
 		"round":
 			return Icons.rr(x, y, w, h, h * 0.22)
-		"pinked":   # ぎざぎざの縁
+		"pinked":   # ぎざぎざの縁。辺ごとの歯の数は偶数にして、角はとがったまま、角の点は 1 度だけ（重ねると塗れない）
 			var p := PackedVector2Array()
-			var n := int(w / 9.0)
-			for i in n + 1:
-				p.append(Vector2(x + w * i / n, y + (0.0 if i % 2 == 0 else 4.0)))
-			var m := int(h / 9.0)
-			for i in m + 1:
-				p.append(Vector2(x + w - (0.0 if i % 2 == 0 else 4.0), y + h * i / m))
-			for i in n + 1:
-				p.append(Vector2(x + w - w * i / n, y + h - (0.0 if i % 2 == 0 else 4.0)))
-			for i in m + 1:
-				p.append(Vector2(x + (0.0 if i % 2 == 0 else 4.0), y + h - h * i / m))
-			return p
+			var z := minf(4.0, minf(w, h) * 0.12)   # 歯の深さ（小さい名札では浅く）
+			var n := maxi(2, int(w / 9.0))
+			n += n % 2
+			var m := maxi(2, int(h / 9.0))
+			m += m % 2
+			for i in n:
+				p.append(Vector2(x + w * i / n, y + (0.0 if i % 2 == 0 else z)))
+			for i in m:
+				p.append(Vector2(x + w - (0.0 if i % 2 == 0 else z), y + h * i / m))
+			for i in n:
+				p.append(Vector2(x + w - w * i / n, y + h - (0.0 if i % 2 == 0 else z)))
+			for i in m:
+				p.append(Vector2(x + (0.0 if i % 2 == 0 else z), y + h - h * i / m))
+			return _clean(p)
 		"ticket":   # 両端に半円の切り欠き
 			var p := PackedVector2Array([Vector2(x, y), Vector2(x + w, y)])
 			for i in 9:
@@ -128,24 +131,37 @@ static func outline(r: Rect2, shape: String) -> PackedVector2Array:
 			return p
 		"flag":     # 燕尾の旗
 			return PackedVector2Array([Vector2(x, y), Vector2(x + w, y), Vector2(x + w - h * 0.3, y + h / 2), Vector2(x + w, y + h), Vector2(x, y + h)])
-		"scallop":  # 波の縁
+		"scallop":  # 波の縁。波の高さと間は大きさに合わせる（小さい名札で、つぶれて 1〜2 点にならないよう）
 			var p := PackedVector2Array()
-			var inner := Rect2(x + 6, y + 6, w - 12, h - 12)
+			var ins := minf(6.0, minf(w, h) * 0.16)
+			var inner := Rect2(x + ins, y + ins, w - ins * 2.0, h - ins * 2.0)
 			var per := Icons.rr(inner.position.x, inner.position.y, inner.size.x, inner.size.y, inner.size.y * 0.3)
 			var tot := 0.0
 			for i in per.size():
 				tot += per[i].distance_to(per[(i + 1) % per.size()])
-			var n := int(tot / 7.0)
+			var n := maxi(12, int(tot / maxf(3.0, ins * 1.17)))
+			n += n % 2
 			var ctr := inner.get_center()
 			for i in n:
 				var q := _along(per, tot * i / n)
 				var out := (q - ctr).normalized()
-				p.append(q + out * (6.0 if i % 2 == 0 else 2.0))
-			return p
+				p.append(q + out * (ins if i % 2 == 0 else ins * 0.33))
+			return _clean(p)
 		"hex":
 			return PackedVector2Array([Vector2(x + c, y), Vector2(x + w - c * 0.6, y), Vector2(x + w, y + h / 2), Vector2(x + w - c * 0.6, y + h),
 					Vector2(x + c, y + h), Vector2(x, y + h / 2)])
 	return PackedVector2Array([Vector2(x + c, y), Vector2(x + w, y), Vector2(x + w, y + h), Vector2(x + c, y + h), Vector2(x, y + h - c), Vector2(x, y + c)])
+
+
+## 続けて重なった点（と、終わりと始まりが同じ点）を除く。重なった点のある多角形は三角形に分けられず、塗れない
+static func _clean(p: PackedVector2Array) -> PackedVector2Array:
+	var o := PackedVector2Array()
+	for q in p:
+		if o.is_empty() or o[o.size() - 1].distance_to(q) > 0.05:
+			o.append(q)
+	while o.size() > 3 and o[o.size() - 1].distance_to(o[0]) <= 0.05:
+		o.remove_at(o.size() - 1)
+	return o
 
 
 static func _along(pts: PackedVector2Array, d: float) -> Vector2:
