@@ -14,9 +14,9 @@ extends Node3D
 ## 12 コマでは 1 秒に 6 回より速い上下は正しく見えない（遅く見えたり逆に回って見えたりする）ので、針の速さの上限は
 ## 5.5 回／秒、はずみ車は針 1 往復で半回転にしてある。
 ## 操作: 立つ所のそばで T で縫う。Y でコマ撮り／なめらか。H で仲間（ボット）を足踏みに呼ぶ／帰す。
-## 工房（craft.gd）があるとき: 型紙か布を手に持って T でセットする（台の上に置かれる）。型紙と布の両方がそろうと縫い始め、
-## 布はその色で入り、見せるで出てくるのは型紙の大きさの、広げた実寸のソリ（布の色）。床に着いたら本物のソリになる。
-## 型紙と布はそれぞれ別の人がセットしてもよい（二人で一つのソリを作れる）。
+## 工房（craft.gd）があるとき: 前で F か T でミシンの画面（craft_ui.gd）を開き、持ち物から型紙と布を 1 つずつ選んで縫うボタン。
+## 型紙と布はいっしょに使われ、布はその色で入り、見せるで出てくるのは型紙の大きさの、広げた実寸のソリ（布の色）。
+## 床に着いたら本物のソリになる。
 ## 起動引数: --sew-smooth（なめらかで始める）、--sew-helper（仲間を足踏みに立たせて始める）、--spawn=sew（ミシンの前から始める）
 
 const Doll := preload("res://doll.gd")
@@ -58,9 +58,7 @@ var phase := Phase.WAIT
 var phase_t := 0.0
 var last_charge := 0.0       # 直前のためにかかった時間 (s)。確かめ用
 var helper: Node3D           # H で呼んだ仲間
-var loaded := {}             # セットした型紙と布 {"pattern": 大きさ, "fabric": 色, "who": 型紙をセットした人}
 var _real := {}              # いま縫っている本物のソリ {"sled", "fabric", "who"}（空なら 1 m の見本）
-var _set_look := {}          # 台の上に置いた型紙・布の形
 
 var machine: Node3D
 var _mv := {}                # 名前 → 動かす部品
@@ -174,8 +172,8 @@ func _unhandled_input(e: InputEvent) -> void:
 	match e.physical_keycode:
 		KEY_T:
 			if _user_near():
-				if world.get("craft") and world.get("player"):
-					world.player.load_machine(self)   # 手に持った型紙か布をセットする（両方そろうと縫い始める）
+				if world.get("craft") and world.get("craft_ui"):
+					world.craft_ui.open_machine()   # ミシンの画面: 持ち物から型紙と布を選んで縫う
 				else:
 					use()
 		KEY_Y:
@@ -192,50 +190,18 @@ func use() -> bool:
 	return true
 
 
-## 手に持った物をセットできるか（待つ・呼ぶのときだけ。型紙と布は 1 つずつ）
-func accepts(it: Dictionary) -> bool:
-	if phase != Phase.WAIT and phase != Phase.CALL:
-		return false
-	match it.get("kind", ""):
-		"pattern": return not loaded.has("pattern")
-		"fabric": return not loaded.has("fabric")
-	return false
+## いま縫い始められるか（待つ・呼ぶのとき）
+func can_sew() -> bool:
+	return phase == Phase.WAIT or phase == Phase.CALL
 
 
+## ミシンの画面（craft_ui.gd）で選んだ型紙と布で縫い始める（craft.gd の sew。両方いっしょに使われる）
 func _on_craft(ev: Dictionary) -> void:
-	if ev.kind != "load":
+	if ev.kind != "sew":
 		return
-	var it: Dictionary = ev.item
-	if it.kind == "pattern":
-		loaded["pattern"] = it.sled
-		loaded["who"] = ev.who
-	else:
-		loaded["fabric"] = it.fabric
-	_show_loaded(it.kind)
+	_real = {"sled": ev.pattern.sled, "fabric": ev.fabric.fabric, "who": int(ev.who)}
 	_fx("sew_clack", -10.0, 1.2)
-	if loaded.has("pattern") and loaded.has("fabric"):
-		_real = {"sled": loaded.pattern, "fabric": loaded.fabric, "who": int(loaded.who)}
-		loaded = {}
-		use()
-
-
-## セットした型紙・布を、台の手前に置いて見せる（型紙は左、布は右）
-func _show_loaded(kind: String) -> void:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	if kind == "pattern":
-		bm.size = Vector3(0.34, 0.004, 0.42)
-		mi.material_override = Look.paper(Color(0.84, 0.72, 0.52))
-		mi.position = _bed_point(-0.45) + Vector3(0.38, 0.0, 0)
-		mi.rotation.y = 0.12
-	else:
-		bm.size = Vector3(0.36, 0.05, 0.26)
-		mi.material_override = Look.felt(Fabrics.color(loaded.fabric), 3.0)
-		mi.position = _bed_point(-0.45) + Vector3(-0.38, 0.02, 0)
-		mi.rotation.y = -0.1
-	mi.mesh = bm
-	machine.add_child(mi)
-	_set_look[kind] = mi
+	use()
 
 
 func set_stepped(on: bool) -> void:
@@ -533,9 +499,6 @@ func _start_cloth() -> void:
 	bm.size = Vector3(0.6, 0.016, 0.48)
 	mi.mesh = bm
 	mi.material_override = Look.felt(Color(0.93, 0.89, 0.8) if _real.is_empty() else Fabrics.color(_real.fabric), 3.0)   # 布に、赤い糸の縫い目が並ぶ
-	for k in _set_look:   # 台に置いた型紙と布は、縫う布になって消える
-		(_set_look[k] as Node).queue_free()
-	_set_look = {}
 	_cloth.add_child(mi)
 	machine.add_child(_cloth)
 	_cloth_z0 = _mark["work"].z

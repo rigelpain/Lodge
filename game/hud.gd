@@ -270,8 +270,8 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if sew and is_instance_valid(sew) and int(sew.get("phase")) == 1:
 		if main.get("craft") == null:
 			_hint("sew", ["T"], "needle", sew.global_position + Vector3.UP * 2.2)
-		elif sew.accepts(p.held()):
-			_hint("set", ["T"], "set", sew.global_position + Vector3.UP * 2.2)
+		elif p.machine_near():
+			_hint("set", ["F"], "set", sew.global_position + Vector3.UP * 2.2)
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
@@ -486,7 +486,7 @@ class View extends Control:
 		if hud.main.get("sewing") != null:
 			rows.append([["T"], "needle"])
 		if hud.main.get("craft") != null:   # 工房: 売り子に F、ミシンに T でセット、G で畳む、左クリックで広げる、ホイールで持ち替え
-			rows += [[["F"], "shop"], [["T"], "set"], [["G"], "fold"], [["mouse_l"], "unfold"], [["mouse_wheel"], "hand"]]
+			rows += [[["F"], "shop"], [["F"], "set"], [["G"], "fold"], [["mouse_l"], "unfold"], [["mouse_wheel"], "hand"], [["Z"], "hand"]]
 		var bs := 46.0 * u                # 一つの段のワッペンの高さ
 		var row_h := bs * 1.08
 		var col_w := 0.0

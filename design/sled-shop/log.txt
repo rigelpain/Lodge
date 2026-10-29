@@ -1,8 +1,12 @@
 型紙を買う: true
+布がないと縫えない: true
 布を買う: true
 財布 8 持ち物 [{ "kind": "pattern", "sled": "mid" }, { "kind": "fabric", "fabric": "navy" }]
-型紙をセット: true
-布をセット: true
+二本指スクロールで持ち替え: 1 → 0
+Z で持ち替え: → 1
+ミシンの画面: true 枠 { "pattern": 0, "fabric": 1 }
+縫う: true
+持ち物 []（型紙も布も使った）
 縫ったソリ: mid navy
 畳めるソリ: true
 畳む: true

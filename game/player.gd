@@ -16,8 +16,9 @@ const Palm := preload("res://palm.gd")
 ## 腕は見ている向きへ。手は Q で片手⇄両手、X で右⇄左。滑りながら高い両手のひらにすると、ひとりでに「ワ〜」。B を押しているあいだ、白い息を長く吐く（押した瞬間に短く吸う）。
 ## 左 Ctrl を押しているあいだしゃがむ。しゃがんで雪面を見て F で、雪玉を丸める。
 ## 左クリック: 雪玉を持っていれば押してためて（振りかぶり）、離して投げる（長く押すほど遠くへ）。両手のひらなら拍手。
-## 持ち物（craft.gd）: ホイールで手に持つ物を替える（素手 → 持ち物 → …。持ち物がないときと Alt を押しているときは、ホイールは視野角）。
-## 売り子のおじさんの前で F で売り台を開く。型紙か布を手に持ってミシンの前で T でセットする（両方そろうと縫い始める）。
+## 持ち物（craft.gd）: ホイールか、トラックパッドの二本指スクロールか、Z（Shift+Z で逆）で手に持つ物を替える
+## （素手 → 持ち物 → …。持ち物がないときと Alt を押しているときは、ホイールは視野角。視野角はトラックパッドならピンチ）。
+## 売り子のおじさんの前で F で売り台を開く。ミシンの前で F か T でミシンの画面を開き、持ち物から型紙と布を選んで縫う。
 ## 縫ったソリのそばで G で畳んで持ち物に入れ、畳んだソリを手に持って左クリックで、前の床に広げて置く。
 ## 左クリックの順: 雪玉を持っていれば投げる → 畳んだソリを持っていれば広げる → 高い両手のひらなら拍手。
 
@@ -86,6 +87,8 @@ var _held_fp: Node3D         # 一人称の右手に持った物の形
 var _held_key := ""
 var _unfold_up := Vector3.UP # 広げる所の床の傾き（unfold_spot が決める）
 var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
+var _pan_acc := 0.0          # 二本指スクロールのたまった量
+const PAN_STEP := 1.5        # これだけたまったら 1 つ持ち替える
 var last_item := {}          # 最後に触ったソリを畳んで持っていれば、その持ち物（last_sled は null）
 const FOLD_REACH := 2.6      # G で畳めるソリまでの距離（ソリの縁から, m）
 const SLED_SWITCH := 0.8     # 近いソリへ持ち替える差 (m)。行ったり来たりしないよう
@@ -166,6 +169,13 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		rotate_y(-e.relative.x * 0.003 * mouse_sens)
 		_pitch = clamp(_pitch - e.relative.y * 0.003 * mouse_sens, -1.4, 1.3)
+	elif e is InputEventPanGesture:
+		# トラックパッドの二本指スクロール（Mac ではホイールでなくこれで届く）: 持ち物があれば持ち替え
+		if craft and not craft.bag(id).is_empty() and not menu_open:
+			_pan_acc += e.delta.y
+			if absf(_pan_acc) >= PAN_STEP:
+				cycle_hand(1 if _pan_acc > 0.0 else -1)
+				_pan_acc = 0.0
 	elif e is InputEventMagnifyGesture:
 		# トラックパッドのピンチ: 広げると寄る（視野角が狭まる）
 		base_fov = clamp(base_fov / e.factor, 50.0, 110.0)
@@ -203,6 +213,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				if crouching and mode == Mode.WALK and _snow_ahead():
 					emote("make_ball")   # しゃがんで雪面に手を伸ばす: 雪玉を丸める
 					return
+				if mode == Mode.WALK and machine_near() and (not shop_near() or _facing(get_parent().sewing.machine.global_position) > _facing(get_parent().shopkeeper.global_position)):
+					get_parent().craft_ui.open_machine()   # ミシンの画面（おじさんも近ければ、向いている方）
+					return
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
 					return
@@ -235,6 +248,10 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_G:
 				if mode == Mode.WALK and not rooted():
 					fold_near()
+			KEY_Z:
+				# 手に持つ物を替える（Shift で逆回り）。ホイールやトラックパッドが使えないとき
+				if craft and not craft.bag(id).is_empty() and not menu_open:
+					cycle_hand(-1 if e.shift_pressed else 1)
 			KEY_E:
 				if mode == Mode.RIDE:
 					get_off()
@@ -1136,12 +1153,18 @@ func unfold_ahead() -> bool:
 			"up": _unfold_up})
 
 
-## ミシンの前で T: 手に持った型紙か布をセットする。セットできたら true
-func load_machine(machine: Node) -> bool:
-	var it := held()
-	if craft == null or it.is_empty() or not machine.accepts(it):
-		return false
-	return craft.send({"kind": "load", "who": id, "slot": craft.hands.get(id, -1), "item": it.duplicate()})
+## ミシンの前（立つ所のそば）で、ミシンの方を向いていて、縫い始められるか
+func machine_near() -> bool:
+	var sew = get_parent().get("sewing")
+	return sew != null and get_parent().get("craft_ui") != null and sew._user_near() and sew.can_sew() \
+			and _facing(sew.machine.global_position) > 0.2
+
+
+## 見ている向きと、at の方向の合い具合（1 で真正面）
+func _facing(at: Vector3) -> float:
+	var d := at - global_position
+	d.y = 0
+	return (-global_basis.z).dot(d.normalized()) if d.length() > 0.01 else 1.0
 
 
 ## 一人称の右手に、持っている物の形を持たせる（雪玉を持っているときは雪玉だけ）

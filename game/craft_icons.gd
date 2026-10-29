@@ -37,6 +37,14 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			Icons.arrow(ci, Vector2(0, 12), Vector2(0, 28), Icons.THREAD, a, 2.0)
 		"hand":
 			Icons.mitten(ci, Vector2(0, 2), 0.0, tint, a, true, 1.5)
+		"shopkeeper":   # 売り子のおじさんの顔: 紺のとんがり帽、紙の顔、丸眼鏡、綿のひげ
+			var indigo := Color(0.20, 0.25, 0.46)
+			Icons.patch(ci, PackedVector2Array([Vector2(-20, -6), Vector2(4, -30), Vector2(14, -24), Vector2(20, -6)]), indigo, a, false)
+			Icons.patch(ci, Icons.rr(-26, -10, 52, 7, 3), indigo.lightened(0.15), a, false)
+			Icons.patch(ci, Icons.ell(Vector2(0, 4), 14, 13, 18), Color(0.93, 0.84, 0.70), a, false)
+			Icons.patch(ci, PackedVector2Array([Vector2(-15, 6), Vector2(15, 6), Vector2(10, 22), Vector2(0, 30), Vector2(-10, 22)]), Color(0.97, 0.96, 0.93), a, false)
+			for s in [-1.0, 1.0]:
+				ci.draw_arc(Icons._o + Vector2(6 * s, 2) * Icons._s, 5.0 * Icons._s, 0, TAU, 14, Color(0.16, 0.14, 0.13, a), maxf(1.2 * Icons._s, 1.0), true)
 
 
 ## 持ち物・品物の絵を center に size px で

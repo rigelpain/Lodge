@@ -5,6 +5,10 @@ extends CanvasLayer
 ##   売り台（おじさんに F）: 上の段に型紙 4 枚、下の段に布 6 色。どれも絵と、値段のボタンの数。
 ##     品物を押して選び、右の買うボタン（ボタン → 手袋）で買う。足りない品物は薄く、買えないときは買うボタンが震える。
 ##     閉じるのは右上の × の縫い目か、F か Esc
+##   ミシンの画面（ミシンの前で F か T）: 上に型紙の枠と布の枠、その右にできるソリ（広げた姿がくるくる回る）と縫うボタン。
+##     下に自分の持ち物が並び、押すと型紙は型紙の枠、布は布の枠に入る（枠を押すと外す）。開いたときは、手に持っている物か
+##     最初の型紙・布が入っている。足りない枠は破線の空き枠で、おじさん（売り台の絵）を指す矢印が出る。
+##     縫うボタンで、型紙と布をいっしょに使って 7 つの場面が始まる（片方だけ使われることはない）
 ## 出来事は craft.gd へ送る（いまはすぐ配られる。通信ではホストが確かめる）。
 
 const Icons := preload("res://hud_icons.gd")
@@ -16,6 +20,11 @@ var main: Node3D
 var craft: Node
 var player: Node3D
 var shop_open := false
+var machine_open := false
+var _pick := {"pattern": -1, "fabric": -1}   # ミシンの画面で枠に入れた持ち物の番号
+var _bag_rects: Array = []   # ミシンの画面の持ち物の札
+var _slot_rects := {}        # "pattern" / "fabric" → 枠
+var _sew_rect := Rect2()
 var _view: View
 var _sel := -1               # 売り台で選んでいる品物（_goods の番号）
 var _hover := -1
@@ -53,15 +62,26 @@ func _who() -> int:
 	return int(player.get("id")) if player else -1
 
 
-func open_shop() -> void:
-	if shop_open or player == null:
-		return
-	shop_open = true
-	_sel = -1
+func _open_panel() -> void:
 	_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	player.menu_open = true
 	player.set("shopping", true)
+
+
+func _close_panel() -> void:
+	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	player.menu_open = false
+	player.set("shopping", false)
+
+
+func open_shop() -> void:
+	if shop_open or machine_open or player == null:
+		return
+	shop_open = true
+	_sel = -1
+	_open_panel()
 	var sk = main.get("shopkeeper")
 	if sk:
 		sk.shop_open = true
@@ -72,10 +92,7 @@ func close_shop() -> void:
 	if not shop_open:
 		return
 	shop_open = false
-	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-	player.menu_open = false
-	player.set("shopping", false)
+	_close_panel()
 	var sk = main.get("shopkeeper")
 	if sk:
 		sk.shop_open = false
@@ -105,7 +122,63 @@ func _on_craft(ev: Dictionary) -> void:
 					sk.sold()
 
 
+## ミシンの画面を開く。手に持っている物か、最初の型紙・布を枠に入れておく
+func open_machine() -> void:
+	if shop_open or machine_open or player == null:
+		return
+	machine_open = true
+	_pick = {"pattern": -1, "fabric": -1}
+	var bag: Array = craft.bag(_who())
+	var held: int = craft.hands.get(_who(), -1)
+	for kind in ["pattern", "fabric"]:
+		if held >= 0 and held < bag.size() and bag[held].kind == kind:
+			_pick[kind] = held
+			continue
+		for i in bag.size():
+			if bag[i].kind == kind:
+				_pick[kind] = i
+				break
+	_open_panel()
+
+
+func close_machine() -> void:
+	if not machine_open:
+		return
+	machine_open = false
+	_close_panel()
+
+
+## 持ち物の i 番を枠に入れる（同じ物なら外す）
+func pick(i: int) -> void:
+	var bag: Array = craft.bag(_who())
+	if i < 0 or i >= bag.size() or not bag[i].kind in ["pattern", "fabric"]:
+		_shake = 1.0
+		return
+	var kind: String = bag[i].kind
+	_pick[kind] = -1 if _pick[kind] == i else i
+
+
+## 縫う: 枠の型紙と布をいっしょに使って、ミシンを動かす。そろっていなければ縫うボタンが震える
+func sew() -> bool:
+	var bag: Array = craft.bag(_who())
+	var ps: int = _pick.pattern
+	var fs: int = _pick.fabric
+	if ps < 0 or fs < 0 or ps >= bag.size() or fs >= bag.size():
+		_shake = 1.0
+		return false
+	var ok: bool = craft.send({"kind": "sew", "who": _who(), "pattern": bag[ps].duplicate(), "fabric": bag[fs].duplicate(),
+			"pattern_slot": ps, "fabric_slot": fs})
+	if ok:
+		close_machine()
+	else:
+		_shake = 1.0
+	return ok
+
+
 func _input(e: InputEvent) -> void:
+	if machine_open:
+		_machine_input(e)
+		return
 	if not shop_open:
 		return
 	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode in [KEY_ESCAPE, KEY_F]:
@@ -126,6 +199,33 @@ func _input(e: InputEvent) -> void:
 				_sel = i
 
 
+func _machine_input(e: InputEvent) -> void:
+	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode in [KEY_ESCAPE, KEY_F, KEY_T]:
+		close_machine()
+		get_viewport().set_input_as_handled()
+	elif e is InputEventMouseMotion:
+		_hover = -1
+		for i in _bag_rects.size():
+			if (_bag_rects[i] as Rect2).has_point(e.position):
+				_hover = i
+		_hover_btn = "sew" if _sew_rect.has_point(e.position) else ("close" if _close_rect.has_point(e.position) else "")
+	elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+		get_viewport().set_input_as_handled()
+		if _close_rect.has_point(e.position):
+			close_machine()
+		elif _sew_rect.has_point(e.position):
+			sew()
+		else:
+			for kind in _slot_rects:
+				if (_slot_rects[kind] as Rect2).has_point(e.position):
+					_pick[kind] = -1
+					return
+			for i in _bag_rects.size():
+				if (_bag_rects[i] as Rect2).has_point(e.position):
+					pick(i)
+					return
+
+
 func _hit(p: Vector2) -> int:
 	for i in _rects.size():
 		if (_rects[i] as Rect2).has_point(p):
@@ -141,7 +241,7 @@ func select(i: int) -> void:
 func _process(dt: float) -> void:
 	if craft == null or player == null:
 		return
-	var show: bool = shop_open or not craft.bag(_who()).is_empty()
+	var show: bool = shop_open or machine_open or not craft.bag(_who()).is_empty()
 	_bar_a = move_toward(_bar_a, 1.0 if show else 0.0, dt * 4.0)
 	_shake = maxf(0.0, _shake - dt * 2.5)
 	_coin_pop = maxf(0.0, _coin_pop - dt * 2.5)
@@ -157,6 +257,8 @@ class View extends Control:
 		var u: float = ui.ui()
 		if ui.shop_open:
 			_draw_shop(u)
+		if ui.machine_open:
+			_draw_machine(u)
 		if ui._bar_a > 0.01:
 			_draw_bar(u, ui._bar_a)
 
@@ -175,6 +277,9 @@ class View extends Control:
 		var y := size.y - 20.0 * u - cell
 		Icons.screen()
 		Icons.patch(self, Icons.rr(x0 - 12.0 * u, y - 10.0 * u, w + 24.0 * u, cell + 20.0 * u, 16.0 * u), Icons.PAPER, 0.85 * a, false)
+		if not bag.is_empty():   # 持ち替えの案内: Z（と、ホイール・二本指スクロール）
+			Icons.keycap(self, "Z", Vector2(x0 - 44.0 * u, y + cell * 0.32), 30.0 * u, a)
+			Icons.icon(self, "mouse_wheel", Vector2(x0 - 44.0 * u, y + cell * 0.86), 34.0 * u, a)
 		for i in n:
 			var slot := i - 1
 			var r := Rect2(x0 + i * (cell + gap), y, cell, cell)
@@ -278,6 +383,108 @@ class View extends Control:
 		Icons.arrow(self, Vector2(-1, -2), Vector2(9, -2), Icons.CAP, 1.0, 2.2)
 		Icons.mitten(self, Vector2(17, 0), 0.4, Icons.CAP, 1.0, true, 0.9)
 		# 右上: 閉じる（× の縫い目）
+		var xs := 46.0 * u
+		var xc := Vector2(r.end.x - 34.0 * u, r.position.y + 34.0 * u)
+		ui._close_rect = Rect2(xc - Vector2(xs, xs) / 2.0, Vector2(xs, xs))
+		Icons.screen()
+		Icons.patch(self, Icons.circ(xc, xs * 0.5 * (1.08 if ui._hover_btn == "close" else 1.0), 20), Icons.PAPER, 1.0, false)
+		Icons._o = xc
+		Icons._s = xs / 64.0
+		Icons.thread(self, PackedVector2Array([Vector2(-12, -12), Vector2(12, 12)]), Icons.THREAD, 4.0, 1.0)
+		Icons.thread(self, PackedVector2Array([Vector2(12, -12), Vector2(-12, 12)]), Icons.THREAD, 4.0, 1.0)
+
+	## ミシンの画面
+	func _draw_machine(u: float) -> void:
+		var craft: Node = ui.craft
+		var bag: Array = craft.bag(ui._who())
+		var w := 1040.0 * u
+		var h := 600.0 * u
+		var r := Rect2(size.x / 2.0 - w / 2.0, size.y * 0.44 - h / 2.0, w, h)
+		draw_rect(Rect2(Vector2.ZERO, size), Color(0.10, 0.08, 0.16, 0.25))
+		Icons.screen()
+		Icons.patch(self, Icons.rr(r.position.x, r.position.y, w, h, 22.0 * u), Color(0.20, 0.25, 0.46), 0.98, false)   # ミシンの紺のフェルト
+		Icons.dashes(self, Icons.rr(r.position.x + 10 * u, r.position.y + 10 * u, w - 20 * u, h - 20 * u, 16.0 * u), Icons.CAP, 2.0 * u, 8.0 * u, 5.0 * u, 0.8, true)
+		# 上の段: 型紙の枠 ＋ 布の枠 → できるソリ、縫うボタン
+		var cw := 190.0 * u
+		var ch := 230.0 * u
+		var top := r.position.y + 40.0 * u
+		var shop_ic := Vector2.ZERO
+		var slots := {}
+		for k in 2:
+			var kind: String = ["pattern", "fabric"][k]
+			var cr := Rect2(r.position.x + 40.0 * u + k * (cw + 70.0 * u), top, cw, ch)
+			slots[kind] = cr
+			var i: int = ui._pick[kind]
+			Icons.screen()
+			if i >= 0 and i < bag.size():
+				Icons.patch(self, Icons.rr(cr.position.x, cr.position.y, cw, ch, 14.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+				CraftIcons.item(self, bag[i], cr.get_center(), cw * 0.8, 1.0)
+			else:
+				# 空き枠: 破線と薄い絵。持ち物に無ければ、おじさん（売り台）を指す矢印
+				Icons.dashes(self, Icons.rr(cr.position.x, cr.position.y, cw, ch, 14.0 * u), Icons.CAP, 3.0 * u, 9.0 * u, 6.0 * u, 0.9, true)
+				CraftIcons.item(self, {"kind": kind, "sled": "mid", "fabric": "cream"}, cr.get_center(), cw * 0.7, 0.25)
+				var have := false
+				for it in bag:
+					have = have or it.kind == kind
+				if not have:
+					var ic := Vector2(cr.get_center().x, cr.end.y + 84.0 * u)
+					Icons._o = Vector2.ZERO
+					Icons._s = 1.0
+					Icons.arrow(self, Vector2(cr.get_center().x, cr.end.y + 6.0 * u), ic - Vector2(0, 46.0 * u), Icons.MUSTARD, 1.0, 4.0 * u)
+					Icons.patch(self, Icons.circ(ic, 44.0 * u, 24), Icons.PAPER, 1.0, true, Icons.PAPER_EDGE)
+					Icons.icon(self, "shopkeeper", ic + Vector2(-12.0 * u, 0), 62.0 * u, 1.0)
+					Icons.icon(self, "shop", ic + Vector2(20.0 * u, 8.0 * u), 40.0 * u, 1.0)
+					shop_ic = ic
+			if k == 0:   # ＋ の縫い目
+				var pc := Vector2(cr.end.x + 35.0 * u, cr.get_center().y)
+				Icons._o = pc
+				Icons._s = u
+				Icons.thread(self, PackedVector2Array([Vector2(-14, 0), Vector2(14, 0)]), Icons.CAP, 4.0, 1.0)
+				Icons.thread(self, PackedVector2Array([Vector2(0, -14), Vector2(0, 14)]), Icons.CAP, 4.0, 1.0)
+		ui._slot_rects = slots
+		# できるソリ: 型紙と布がそろうと、広げた姿が布の色でくるくる回る
+		var res := Rect2((slots["fabric"] as Rect2).end.x + 70.0 * u, top, 230.0 * u, ch)
+		Icons.screen()
+		Icons.chevron(self, Vector2(res.position.x - 36.0 * u, res.get_center().y), 26.0 * u, Icons.CAP, 1.0, 0.0, 4.0 * u)
+		var ps: int = ui._pick.pattern
+		var fs: int = ui._pick.fabric
+		var ready := ps >= 0 and fs >= 0 and ps < bag.size() and fs < bag.size()
+		if ready:
+			Icons.patch(self, Icons.rr(res.position.x, res.position.y, res.size.x, res.size.y, 14.0 * u), Color(0.86, 0.90, 0.97), 1.0, true, Icons.PAPER_EDGE)
+			var tw := res.size.x * 0.92
+			draw_texture_rect(preload("res://sled_tags.gd").turntable(bag[ps].sled, bag[fs].fabric),
+					Rect2(res.get_center() - Vector2(tw, tw) / 2.0, Vector2(tw, tw)), false)
+		else:
+			Icons.dashes(self, Icons.rr(res.position.x, res.position.y, res.size.x, res.size.y, 14.0 * u), Icons.CAP, 3.0 * u, 9.0 * u, 6.0 * u, 0.5, true)
+		# 縫うボタン（針と赤い糸）
+		var shake: float = sin(ui._shake * 40.0) * 10.0 * u * ui._shake
+		var bs := 150.0 * u
+		var bc := Vector2(r.end.x - 40.0 * u - bs / 2.0 + shake, res.get_center().y)
+		ui._sew_rect = Rect2(bc - Vector2(bs, bs) / 2.0, Vector2(bs, bs))
+		var big := 1.06 if ui._hover_btn == "sew" else 1.0
+		Icons.screen()
+		Icons.patch(self, Icons.circ(bc, bs * 0.5 * big, 28), Icons.RED if ready else Icons.RED.lerp(Icons.PAPER_EDGE, 0.6), 1.0, true, Icons.CAP)
+		Icons.patch(self, Icons.circ(bc, bs * 0.36 * big, 24), Icons.CAP, 1.0, false)
+		Icons.icon(self, "needle", bc, bs * 0.62 * big, 1.0)
+		# 下の段: 自分の持ち物
+		var rects: Array = []
+		var bw := 104.0 * u
+		var by := r.end.y - 40.0 * u - 120.0 * u
+		var x0 := r.position.x + 40.0 * u
+		for i in bag.size():
+			var it: Dictionary = bag[i]
+			var usable: bool = it.kind in ["pattern", "fabric"]
+			var picked: bool = ui._pick.get(it.kind, -1) == i
+			var card := Rect2(x0 + i * (bw + 14.0 * u), by - (8.0 * u if picked else (4.0 * u if ui._hover == i else 0.0)), bw, 120.0 * u)
+			rects.append(card)
+			Icons.screen()
+			Icons.patch(self, Icons.rr(card.position.x, card.position.y, bw, card.size.y, 12.0 * u), Icons.CAP, 1.0 if usable else 0.55, true, Icons.PAPER_EDGE)
+			CraftIcons.item(self, it, card.get_center(), bw * 0.82, 1.0 if usable else 0.35)
+			if picked:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, bw + 8 * u, card.size.y + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
+		ui._bag_rects = rects
+		# 右上: 閉じる
 		var xs := 46.0 * u
 		var xc := Vector2(r.end.x - 34.0 * u, r.position.y + 34.0 * u)
 		ui._close_rect = Rect2(xc - Vector2(xs, xs) / 2.0, Vector2(xs, xs))

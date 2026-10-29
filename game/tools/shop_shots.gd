@@ -75,6 +75,15 @@ func _run() -> void:
 	await _shot("pick_pattern")
 	_say("型紙を買う: %s" % ui.buy())
 	await _wait(0.4)
+	# 布がまだないときのミシンの画面: 布の枠が空いて、おじさん（売り台）を指す矢印
+	ui.close_shop()
+	ui.open_machine()
+	await _wait(0.3)
+	await _shot("machine_missing")
+	_say("布がないと縫えない: %s" % (not ui.sew()))
+	ui.close_machine()
+	ui.open_shop()
+	await _wait(0.3)
 	ui.select(4 + ["red", "navy", "mustard", "holly", "cream", "plum"].find(fabric))
 	await _wait(0.2)
 	_say("布を買う: %s" % ui.buy())
@@ -92,15 +101,30 @@ func _run() -> void:
 	var watch := m.to_global(stand_l + Vector3(-0.5, 0.05, -0.9))   # 立つ所の少し手前（ミシンの台と針が見える）
 	_stand(watch, work, -0.2)
 	await _wait(1.0)
-	craft.send({"kind": "hand", "who": who, "slot": 0})   # 手に型紙
-	await _wait(0.3)
-	await _shot("hold_pattern")
-	_say("型紙をセット: %s" % p.load_machine(sew))
-	await _wait(0.4)
-	craft.send({"kind": "hand", "who": who, "slot": 0})   # 手に布（型紙が抜けて 0 番）
-	await _wait(0.3)
-	await _shot("set_pattern")
-	_say("布をセット: %s" % p.load_machine(sew))
+	# トラックパッドの二本指スクロールで持ち替える（Mac ではホイールでなく、これで届く）
+	var held0: int = craft.hands.get(who, -1)
+	var pan := InputEventPanGesture.new()
+	pan.delta = Vector2(0, 2.0)
+	Input.parse_input_event(pan)
+	await _wait(0.2)
+	_say("二本指スクロールで持ち替え: %d → %d" % [held0, craft.hands.get(who, -1)])
+	var zk := InputEventKey.new()
+	zk.physical_keycode = KEY_Z
+	zk.pressed = true
+	Input.parse_input_event(zk)
+	await _wait(0.2)
+	_say("Z で持ち替え: → %d" % craft.hands.get(who, -1))
+	await _shot("hold_switch")
+	# ミシンの画面: F で開き、型紙と布が枠に入っているのを見て、縫うボタン
+	var fk := InputEventKey.new()
+	fk.physical_keycode = KEY_F
+	fk.pressed = true
+	Input.parse_input_event(fk)
+	await _wait(0.5)
+	_say("ミシンの画面: %s 枠 %s" % [ui.machine_open, ui._pick])
+	await _shot("machine_open")
+	_say("縫う: %s" % ui.sew())
+	_say("持ち物 %s（型紙も布も使った）" % [craft.bag(who)])
 	# ---- 縫う: 場面ごとに
 	var seen := {}
 	var t0 := Time.get_ticks_msec()
