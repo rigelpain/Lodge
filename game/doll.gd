@@ -850,7 +850,7 @@ func _make_breath() -> void:
 		mat.set_shader_parameter("sun_dir", -(sun[0] as Node3D).global_basis.z)
 	quad.material = mat
 	_breath.mesh = quad
-	_breath.layers = 1   # 息は誰の画面にも映す
+	_breath.layers = 1 | layers   # 息は誰の画面にも映す（自分の息は、自分の体の層にも入れて右下の小窓に映す）
 	_breath.position = MOUTH[kind]
 	att.add_child(_breath)
 	_breaths.append(_breath)

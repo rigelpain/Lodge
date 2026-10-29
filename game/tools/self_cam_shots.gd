@@ -12,6 +12,7 @@ extends SceneTree
 ##   snow    しゃがんで雪玉を作り、振りかぶる
 ##   held    買った布を手に持つ
 ##   lodge   ロッジの中
+## --pets: 連れの動物（companions.gd）も出す
 ## --fps=秒: 撮らずに、その秒数だけ画面を描き、平均の fps とコマの長さを出す（--scene と一緒に。小窓を切って比べるのは --no-selfcam）
 
 var args := {}
@@ -73,6 +74,10 @@ func _process(dt: float) -> bool:
 	if not _set and t > 0.6:
 		_set = true
 		p.set_third(false)
+		if args.has("pets"):   # 連れの動物（頭の小鳥と子狐）。main.gd ではまだ出していないので、確かめ用にここで出す
+			var pets = load("res://companions.gd").new()
+			pets.host = p
+			main.add_child(pets)
 		main.settings.set_open(false)
 		p.menu_open = false
 		if main.self_cam: main.self_cam.set_shown(true)   # 保存してある設定に関わらず出す（設定は書き換えない）
@@ -178,7 +183,9 @@ func _process(dt: float) -> bool:
 	if t > float(args.get("at", "4")):
 		var out: String = args.get("out", "/tmp/self_cam.png")
 		root.get_texture().get_image().save_png(out)
+		if args.has("raw") and main.self_cam:   # 小窓の、刺繍にする前の絵
+			main.self_cam.vp.get_texture().get_image().save_png(out.get_basename() + "_raw.png")
 		var sc = main.self_cam
-		print("保存: ", out, "  mode=", p.mode, "  カメラ-見る所=", sc.cam.global_position - sc._aim, " 上下=", sc._extent(), " 人形=", p.doll.global_position.y, " 距離=", sc._dist, " 収まる距離=", sc._fit, " ずれ=", sc._side)
+		print("保存: ", out, "  mode=", p.mode, "  カメラ-見る所=", sc.cam.global_position - sc._aim, " 上下=", sc._extent(), " 人形=", p.doll.global_position.y, " 収まる距離=", sc._fit)
 		return true
 	return false

@@ -141,6 +141,7 @@ func _make_kit() -> void:
 	add_child(_kit)
 	_kit.top_level = true
 	_kit.scale = Vector3.ONE * KIT_SCALE
+	_layers(_kit, 1 | (1 << 5))   # 誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す
 	_kit_head = _kit.find_child("head", true, false)
 	_kit_tail = _kit.find_child("tail", true, false)
 	_kit.global_position = _heel()
