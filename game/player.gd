@@ -485,18 +485,26 @@ func rope_hand() -> Vector3:
 func _place_camera(dt: float, bob: float, working: bool) -> void:
 	var eye_y := 1.55 + (bob * 0.02 if working else 0.0)
 	_drag_k = move_toward(_drag_k, 1.0 if mode == Mode.GRIP and sled.is_dragged(self) else 0.0, dt * 4.0)
-	var jolt := 0.0   # 引きずられているときの雪のでこぼこ（コマごとに変わる小さな揺れ。視点の揺れを切ると弱く）
+	# 引きずられているときの体勢の崩れ（人形と同じコマで刻む）: 雪のでこぼこ（コマごと）、左右のよろけ（ゆっくり）、
+	# ときどき膝ががくっと抜けて沈む。視点の揺れを切ると弱く
+	var jolt := 0.0
+	var reel := 0.0
+	var dip := 0.0
 	if _drag_k > 0.0:
-		jolt = (0.012 if Doll.frame_index() % 2 == 0 else -0.012) * _drag_k * (1.0 if bob_enabled else 0.3)
+		var f := Doll.frame_index()
+		var calm := 1.0 if bob_enabled else 0.3
+		jolt = (0.015 if f % 2 == 0 else -0.015) * _drag_k * calm
+		reel = sin(f * 0.55) * 0.09 * _drag_k * calm
+		dip = (0.1 if f % 14 < 3 else 0.0) * _drag_k * calm
 	if not third:
-		var eye := Vector3(0, eye_y - 0.22 * _drag_k + jolt, -0.25 * _drag_k)
+		var eye := Vector3(0, eye_y - 0.3 * _drag_k - dip + jolt, -0.35 * _drag_k)
 		if mode == Mode.RIDE:
 			# 乗っているときは、座った人形の目の所（席や人形が変わっても合う）。ソリが傾けば一緒に傾く。
 			# 乗り降りは同じ lerp で、すっと立ち上がる・腰を下ろす
 			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * doll.eye_point(true))
 		eye.y += _cam_em.z
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
-		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.12 * _drag_k, -1.5, 1.4), _cam_em.y, _cam_roll + jolt * 2.0)
+		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0)
 		return
 	# 三人称: 頭の少し上を中心に、後ろ上から見下ろす。地面に潜らない
 	var pivot := Vector3(0, 1.6, 0)
@@ -525,6 +533,10 @@ func _pose_hands(dt: float) -> void:
 				# 縁を握る。押すと腕が少し伸びる。引きずられていると、腕がソリへ引っぱられて伸びきる
 				var reach := -0.5 - (0.06 if pushing else 0.0) - 0.12 * _drag_k
 				target = Vector3(0.17 * s, -0.22 + (bob * 0.015 if pushing else 0.0) - 0.05 * _drag_k, reach)
+				if s < 0 and _drag_k > 0.5:
+					# 引きずられている: 左手はソリを離して宙をかく（画面の左上へ大きく輪を描いて出入りする）
+					var sw := fi * 0.9
+					target = Vector3(-0.42 - 0.1 * cos(sw), 0.05 + 0.18 * sin(sw), -0.5 + 0.08 * cos(sw * 0.5))
 			Mode.ROPE:
 				# 右手で紐を握り、左手は振る
 				if s > 0:
