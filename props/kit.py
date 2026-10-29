@@ -561,7 +561,7 @@ def group_of(role):
     """軽い形の組（Godot の素材 1 つ＝描画 1 回）。糸は焼くだけ（離れて垂れた糸は felt の組に形を残す）"""
     if role.startswith("thread"):
         return None
-    if role in ("glass", "snow") or role in GLOW or role == "felt_heat":
+    if role in ("glass", "snow") or role in GLOW or role == "felt_heat" or role in C.SHINES:
         return role
     if role.startswith(FIRE):
         return "fire"
@@ -740,7 +740,7 @@ def prepare(r):
     for g, (src, hs) in groups.items():
         low = _join_world(src, "prop_%s_%s" % (r.name, g))
         _decimate(low, max(120, int(budget * tris[g] / total)))
-        if g in ("glass", "snow"):   # 焼かない: 役割と色だけ（Godot が透明な素材・雪の素材にする）
+        if g in ("glass", "snow") or g in C.SHINES:   # 焼かない: 役割と色だけ（Godot が透明な素材・雪の素材・光る素材にする）
             low.data.materials.append(src[0].active_material)
             _flat(low, g)
         else:

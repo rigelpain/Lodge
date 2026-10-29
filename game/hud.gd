@@ -41,6 +41,9 @@ var _spd_spin := 0.0          # ボビンを回した角度
 var _spd_dist := 0.0          # 滑った長さ (m)。下の端の縫い目が、これだけ流れる
 var _spd_knots: Array = []    # ご褒美の結び目を結んだときの _spd_dist
 var _spd_color := Icons.RED   # 乗っているソリのメインカラー（糸の色のもと）
+var _spd_brass: Array = []    # この滑りで縫い込まれた真鍮のボタン（縫い込んだときの _spd_dist）。いちばん速い所を超えた印（snow_buttons.gd の ride_mark）
+var _reel := 0.0              # 滑り終わって、縫い目の糸を巻き取っている残り (s)。巻き取られた糸はボタンに変わって財布へ飛ぶ（craft_ui.gd）
+const REEL_T := 1.6
 var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
 var _flow := 0.0
@@ -91,6 +94,9 @@ func _ready() -> void:
 	_view.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS   # 刺繍枠の絵を縮めて描く
 	_view.z_index = 10   # 板の印刷（重なりの順に z_index を使う）より上に。Esc の札が名札の下に隠れないように
 	add_child(_view)
+	var sbn = main.get("snow_buttons") if main else null
+	if sbn:
+		sbn.happened.connect(_on_buttons)
 	if main and not main.args.has("flat-hud"):
 		plates = Plates.new()
 		add_child(plates)
@@ -315,6 +321,12 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			_hint("sew", ["T"], "needle", sew.global_position + Vector3.UP * 2.2)
 		elif p.machine_near():
 			_hint("set", ["F"], "set", sew.global_position + Vector3.UP * 2.2)
+	# 雪に縫い留めたボタン（snow_buttons.gd）: 近くで向いていれば、F で裁ちばさみ
+	var sbn = main.get("snow_buttons")
+	if sbn and not p.rooted():
+		var nb = sbn.reachable(p)
+		if nb != null:
+			_hint("shears", ["F"], "shears", nb.at + Vector3.UP * 0.7)
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
@@ -434,6 +446,12 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		_tag_view.scale = Vector2(maxf(fp[0], 0.01), 1.0)
 		_tag_view.queue_redraw()
 	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
+	if _reel > 0.0:   # 巻き取っているあいだは出しておく
+		_reel = maxf(0.0, _reel - dt)
+		on = true
+		_spd_spin -= dt * 18.0   # ボビンが逆に回って糸を巻き取る
+		if _reel <= 0.0:
+			_spd_brass.clear()
 	on = on and allowed and not menu
 	_spd_a = move_toward(_spd_a, 1.0 if on else 0.0, dt * (3.0 if on else 1.2))
 	_spd = lerpf(_spd, speed, minf(1.0, dt * 8.0))
@@ -456,6 +474,30 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 				_spd_marks[m] = true
 				_cheer()
 	_spd_knots = _spd_knots.filter(func(d): return _spd_dist - d < 60.0)
+	if not on and _spd_a <= 0.0:
+		_spd_brass.clear()
+
+
+## 滑った距離と速さのボタン（snow_buttons.gd）。自分が乗っているソリのことだけ:
+##   ride_mark いちばん速い所を超えた → 縫い目に真鍮のボタンが一つ縫い込まれ、ボビンが跳ねる
+##   ride_pay  一回の滑りが終わった → 縫い目の糸がくるくる巻き取られる（REEL_T 秒）。そのあいだ、ボタンが糸巻きからぽんぽん財布へ飛ぶ
+func _on_buttons(ev: Dictionary) -> void:
+	var p = main.player if main else null
+	if p == null or not is_instance_valid(p.sled) or String(p.sled.name) != String(ev.get("sled", "")):
+		return
+	match ev.kind:
+		"ride_mark":
+			if p.mode == Player.Mode.RIDE:
+				_spd_brass.append(_spd_dist)
+				_spd_pop = 1.0
+		"ride_pay":
+			if int(p.id) in ev.gives and p.mode == Player.Mode.RIDE:
+				_reel = REEL_T
+
+
+## 巻き取りの進み 0〜1（巻き取っていなければ 0）
+func reel_k() -> float:
+	return 1.0 - _reel / REEL_T if _reel > 0.0 else 0.0
 
 
 ## ご褒美: ボビンがぽんと跳ね、糸がぱっと広がり、縫い目に小さな結び目ができる（speedo.gd が描く）
@@ -659,7 +701,8 @@ class View extends Control:
 		Icons.printing = part != "" and hud.plates != null
 		if part == "ribbon":
 			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
-			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false)
+			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false,
+					hud._spd_brass, hud.reel_k())
 			Icons.printing = false
 			return
 		if part.begins_with("tagback:"):   # 束の後ろの札（名札の柄だけ。中の窓は無地）
@@ -823,7 +866,7 @@ class View extends Control:
 			if hud.plates == null:   # 平らなとき: リボンは糸巻きから吊るして揺れる。ボビンは小刻みに
 				var rb: Rect2 = g.ribbon
 				draw_set_transform_matrix(Icons.wind_xform(Vector2(rb.get_center().x, rb.position.y), 6.0, 0.05, 0.05, 1.5 * u))
-				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e)
+				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e, true, hud._spd_brass, hud.reel_k())
 			draw_set_transform_matrix(Icons.wind_xform(g.c, 4.0, 0.0, 0.03, 2.0 * u))
 			Speedo.draw_spool(self, g, k, hud._spd_spin, hud._spd_color, hud.spd_best, hud._spd_pop, e, hud.plates == null)
 			draw_set_transform_matrix(Transform2D.IDENTITY)

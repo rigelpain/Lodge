@@ -25,6 +25,7 @@
 | [build_misc.py](build_misc.py) | 乾かす物干し、入口まわり、自動販売機、壁と窓の飾り |
 | [build_kitchen.py](build_kitchen.py) | 厨房の作業台と、卓に載せる調理の道具（アイロン台・プレス機・乾燥機）とペレットの入れ物 |
 | [build_lantern.py](build_lantern.py) | 持ち歩くランタン（装備）: 木の手提げ（標準）と和紙の提灯 |
+| [build_snow_button.py](build_snow_button.py) | お金のボタン 4 段（木・真鍮・白蝶貝・螺鈿。斜面の雪に縫い留める。× の糸はゲームで描く）と、糸を切る裁ちばさみ。光る素材（brass・pearl・lacquer・shell・steel）は焼かずに書き出し、Godot の `look.gd` の `shine` が光らせる |
 | [build_scenes.py](build_scenes.py) | 書き出した glb を組み合わせた場面（暖炉の前・こたつ・食堂・厨房）。Godot の場面も書き出す |
 | [stitches.md](stitches.md) | 滑りあとの縫い目の見本帳（作ったものと、これから作る候補） |
 | `renders/` | 描いた画像 |

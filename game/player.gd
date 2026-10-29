@@ -92,6 +92,7 @@ var _point_on: Node3D = null # 指した物（ソリや人）。動いても指�
 var _point_local := Vector3.ZERO
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
+var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
 var voice_pitch := 1.0       # 声の高さ（人ごとに少し変える）
 var voice_size := 1          # 声の大きさ（sound/wav/voice_*_01 ふつう・02 高い・03 低い）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
@@ -311,6 +312,13 @@ func _unhandled_input(e: InputEvent) -> void:
 					return
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
+					return
+				var sb = get_parent().get("snow_buttons")
+				if mode == Mode.WALK and sb and sb.reachable(self) != null and sb.request_cut(id):
+					busy_until = Doll.frame_index() + 1 + sb.SHEAR_END   # 雪のボタンの糸を、裁ちばさみでちょきん
+					var hud = get_parent().get("hud")
+					if hud:
+						hud.learn("shears")
 					return
 				match mode:
 					Mode.GRIP, Mode.ROPE:
@@ -996,6 +1004,8 @@ func emote(kind: String) -> void:
 
 ## その場でする身ぶりの途中か（歩けない、つかめない）
 func rooted() -> bool:
+	if Doll.frame_index() < busy_until:   # 裁ちばさみで糸を切っているあいだ
+		return true
 	if _em.is_empty():
 		return false
 	var spec: Dictionary = Emotes.KINDS.get(_em.kind, {})

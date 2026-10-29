@@ -98,6 +98,7 @@ var parked := true             # ふもとに止めてある（最初と R で�
 var dragged := {}              # 引きずられている人 → 引きずられた距離 (m)
 var _pushed_by := {}           # このコマ押した人（引きずりの判定用。押している人は引きずられない）
 var _pushed_now := {}
+var helped := {}               # 押した・紐で引いた人 → その時刻（_trail_now）。雪のボタンを、乗らずに手伝った人にも分ける（snow_buttons.gd）
 # ---- 乗って滑るときの、乗っている一人ひとりの力（調整する値。乗る人の数だけ足し合わさる）
 # 乗って下っているあいだは、乗っている人の重さ（RIDER_MASS）もソリと一緒に動く重さに入る。
 # 人の力は「ソリ＋乗る人」の重さで分け合うので、重いソリほど一人の力では動きにくく、そろえると効く
@@ -285,6 +286,7 @@ func push(dir: Vector3, at: Vector3, who: Node3D = null) -> void:
 	parked = false
 	if who:
 		_pushed_now[who] = true
+		helped[who] = _trail_now
 	var f: Vector3 = dir.normalized() * PUSH_FORCE * min(1.0, dir.length())
 	f *= 1.0 - smoothstep(PUSH_FADE.x, PUSH_FADE.y, linear_velocity.dot(dir.normalized()))
 	# 力は手が触れている所にそのままかける。どう動くかは滑り木と重力が決める
@@ -364,6 +366,8 @@ func pull_rope(hand: Vector3) -> float:
 		dir.y = 0
 		apply_force(dir.normalized() * min(over * ROPE_K, 600.0), anchor - global_position)
 		_push_count += 1
+		if rope_holder:
+			helped[rope_holder] = _trail_now
 	return over
 
 

@@ -725,3 +725,72 @@ void fragment() {
 	ALBEDO = mix(vec3(1.0), shade, k);
 }
 """
+
+
+## 光る素材（props の役割 brass・pearl・lacquer・shell・steel。お金のボタンと裁ちばさみ）。
+## 真鍮と鋼は金属のつや。白蝶貝と貝の小片（螺鈿）は、見る向きで虹色に変わる（真珠層の薄膜）。漆は黒く深いつや（上塗り）。
+## 白蝶貝と貝の小片は少し自分で光り、雪の上で遠くからも分かる
+const SHINES := ["brass", "pearl", "lacquer", "shell", "steel"]
+const SHINE_SPEC := {   # 色, 金属, 粗さ, 虹色, 自分で光る, 上塗り
+	"brass": [Color(0.80, 0.60, 0.24), 1.0, 0.28, 0.0, 0.06, 0.0],
+	"steel": [Color(0.66, 0.68, 0.71), 0.95, 0.24, 0.0, 0.0, 0.0],
+	"lacquer": [Color(0.025, 0.018, 0.02), 0.0, 0.1, 0.0, 0.0, 1.0],
+	"pearl": [Color(0.93, 0.92, 0.90), 0.0, 0.22, 0.4, 0.12, 0.5],
+	"shell": [Color(0.86, 0.90, 0.93), 0.0, 0.14, 0.95, 0.45, 0.0],
+}
+const SHINE_SHADER := """
+shader_type spatial;
+render_mode diffuse_burley, specular_schlick_ggx;
+uniform vec3 base : source_color;
+uniform float metal = 0.0;
+uniform float rough = 0.3;
+uniform float iri = 0.0;      // 虹色の強さ
+uniform float glow = 0.0;     // 自分で光る強さ
+uniform float coat = 0.0;     // 上塗りのつや
+varying vec3 wpos;
+
+void vertex() {
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
+
+vec3 rainbow(float h) {
+	return 0.5 + 0.5 * cos(6.28318 * (h + vec3(0.0, 0.33, 0.67)));
+}
+
+void fragment() {
+	float nv = clamp(dot(NORMAL, VIEW), 0.0, 1.0);
+	// 薄膜の色: 見る向き（nv）と、真珠層の細かな波（場所）で色相がずれる
+	float h = nv * 1.7 + sin(wpos.x * 23.0 + wpos.z * 17.0) * 0.16 + sin(wpos.x * 61.0 - wpos.z * 47.0) * 0.07;
+	vec3 film = rainbow(h);
+	vec3 col = mix(base, base * 0.5 + film * 0.62, iri * (0.4 + 0.6 * (1.0 - nv)));
+	ALBEDO = col;
+	METALLIC = metal;
+	ROUGHNESS = rough;
+	SPECULAR = 0.5 + 0.3 * coat;
+	CLEARCOAT = coat;
+	CLEARCOAT_ROUGHNESS = 0.06;
+	EMISSION = col * glow * (0.5 + 0.5 * (1.0 - nv));
+}
+"""
+static var _shines := {}
+static var _shine_sh: Shader
+
+
+static func shine(role: String) -> ShaderMaterial:
+	if _shines.has(role):
+		return _shines[role]
+	if _shine_sh == null:
+		_shine_sh = Shader.new()
+		_shine_sh.code = SHINE_SHADER
+	var sp: Array = SHINE_SPEC.get(role, SHINE_SPEC["steel"])
+	var m := ShaderMaterial.new()
+	m.shader = _shine_sh
+	m.resource_name = role
+	m.set_shader_parameter("base", sp[0])
+	m.set_shader_parameter("metal", sp[1])
+	m.set_shader_parameter("rough", sp[2])
+	m.set_shader_parameter("iri", sp[3])
+	m.set_shader_parameter("glow", sp[4])
+	m.set_shader_parameter("coat", sp[5])
+	_shines[role] = m
+	return m

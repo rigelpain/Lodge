@@ -8,6 +8,8 @@ extends RefCounted
 ##   縫い目     リボンの上を下へ縫い進む（滑った長さの分だけ流れる）。速いほど太く・濃く・目が長く、10 m/s の先は 2 列
 ##   色         糸の色が、ソリのメインカラーから明るい山吹へ少しずつ変わる
 ## ご褒美（今日いちばん・節目の速さを超えた瞬間）: ボビンがぽんと跳ね、糸がぱっと広がり、縫い目に小さな結び目ができて流れていく。
+## 滑った距離と速さのボタン（snow_buttons.gd）: いちばん速い所を超えると、縫い目に真鍮のボタンが一つ縫い込まれて流れていく。
+## 止まると、縫い目の糸が下の端から巻き取られていき（reel）、ボビンが逆に回る。巻き取った糸はボタンに変わって財布へ飛ぶ（craft_ui.gd）。
 ## 立体の板を使うとき（hud_plates.gd）は、ボビンは Blender の glb、リボンは厚みのある板で、縫い目はリボンの板に重ねる。
 ## 案の見比べ（糸巻き・巻尺・フェルトのメーター）は design/hud/speedo-ideas.png。
 
@@ -90,11 +92,15 @@ static func draw_spool(ci: CanvasItem, g: Dictionary, k: float, spin: float, bas
 
 
 ## リボンと、その上を下へ縫い進む縫い目・結び目・流れる糸・舞う切れはし。ribbon が true ならリボンの地も描く（平らなとき）
-static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, dist: float, base: Color, knots: Array, a: float, ribbon := true) -> void:
+static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, dist: float, base: Color, knots: Array, a: float, ribbon := true,
+		brass := [], reel := 0.0) -> void:
 	var u: float = g.u
 	var x: float = g.x
 	var y0: float = g.y0
 	var y1: float = g.y1
+	var y1_full := y1
+	if reel > 0.0:   # 巻き取り: 縫い目の下の端が、上（ボビン）へ上がっていく
+		y1 = lerpf(y1, y0, ease(reel, 0.6))
 	var col := thread_color(base, k)
 	Icons.screen()
 	if ribbon:
@@ -125,6 +131,13 @@ static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, 
 			ci.draw_circle(Vector2(x, ky) + Vector2(0.8, 1.2) * u, 6.0 * u, Color(Icons.SHADOW, 0.25 * a))
 			ci.draw_circle(Vector2(x, ky), 6.0 * u, Color(col.darkened(0.15), a * (1.0 - f * 0.5)))
 			ci.draw_arc(Vector2(x, ky), 3.6 * u, 0.3, 4.2, 10, Color(col.lightened(0.4), a * (1.0 - f * 0.5)), 1.2 * u, true)
+	# 縫い込まれた真鍮のボタン: 縫い目と一緒に下へ流れていく（巻き取りでは、下の端に追われて上へ）
+	for bd in brass:
+		var by: float = minf(y0 + (dist - float(bd)) * STITCH_PX * u, y1)
+		if by > y0 - 4.0 * u and by <= y1_full:
+			Icons._o = Vector2(x, maxf(by, y0))
+			Icons._s = 1.0
+			preload("res://craft_icons.gd").money(ci, Vector2.ZERO, 9.0 * u, "brass", a, spin * 0.2)
 	# 縫い目の横を下へ流れる糸（速いほど長く、波が細かい）
 	var len := (y1 - y0) * clampf(0.2 + 0.8 * k, 0.2, 1.0)
 	var tail := PackedVector2Array()

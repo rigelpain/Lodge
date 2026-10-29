@@ -15,6 +15,10 @@ extends CanvasLayer
 ##     自分のソリ・米袋の名札も替わる（保存して、次に起動しても同じ）。
 ##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
+##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: 取った所からボタンが画面を飛んで財布へ入り、
+##     財布がぽんと跳ねる。飛ぶボタンは、増えた分を段ごとに分けた 1 枚ずつ（真鍮・白蝶貝・螺鈿は光る）。滑ってもらった分は、
+##     速さの表示の糸巻きから、ぽんぽんと続けて飛ぶ。持ち物の列が出ていなければ、画面の下のまんなかに財布だけを少しのあいだ出す
+##   財布は段ごとの山（左から螺鈿・白蝶貝・真鍮・木）。両替はひとりでに（木が 10 枚になると真鍮 1 枚）
 ## 出来事は craft.gd へ送る（いまはすぐ配られる。通信ではホストが確かめる）。
 
 const Icons := preload("res://hud_icons.gd")
@@ -45,6 +49,14 @@ var _hover_btn := ""         # "buy" "close"
 var _shake := 0.0
 var _pop := {}               # 持ち物の番号 → 跳ねの残り
 var _coin_pop := 0.0
+var _flies: Array = []       # 財布へ飛んでいるボタン 1 枚ずつ {from（画面の px）, t（0→1）, look（段）, v（値打ち）}
+var _pending := 0            # 飛んでいて、まだ財布に描かない値打ち（木のボタンの何個分）
+var _tier_at := {}           # 段 → 財布のその段の山の、次の 1 枚が載る所（画面の px。描くときに決まる）
+var _shine_t := 0.0          # お金のボタンの光の時計
+var _purse_a := 0.0          # 財布だけの札の濃さ
+var _purse_hold := 0.0       # 財布だけの札を出しておく残りの秒
+var _wallet_at := Vector2.ZERO   # 財布の、次のボタンが載る所（画面の px。描くときに決まる）
+const FLY_T := 0.75          # 財布まで飛ぶ秒
 var _bar_a := 0.0
 var _goods: Array = []       # 売る品物の並び
 var _rects: Array = []       # 品物の札の場所（画面の px）
@@ -126,6 +138,26 @@ func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != _who():
 		return
 	match ev.kind:
+		"earn":
+			# 3D のボタンがぽんと跳ね上がったところ（少しあと、少し上）から飛び出す
+			var at: Variant = ev.get("at", Vector3.INF)
+			if at is Vector3 and at != Vector3.INF:
+				at += Vector3.UP * 1.4
+			var spool: bool = ev.get("from", "") == "spool"
+			var from := _screen_of(at)
+			var hud = main.get("hud") if main else null
+			if spool and hud and hud.get("_reel") != null and (hud._reel > 0.0 or hud._spd_a > 0.1):   # 速さの表示の糸巻きから
+				from = preload("res://speedo.gd").layout(hud.speedo_box_now(), 0.0).c
+			var list: Array = Craft.pieces(int(ev.n))
+			if list.size() > 24:   # 多すぎるときは大きい段だけ飛ばし、残りはまとめて財布へ
+				list = list.slice(0, 24)
+			var flown := 0
+			for k in list.size():
+				var v: int = {"raden": 1000, "pearl": 100, "brass": 10, "wood": 1}[list[k]]
+				flown += v
+				_flies.append({"from": from, "t": -0.45 - k * (0.16 if spool else 0.07), "look": list[k], "v": v})
+			_pending += flown
+			_purse_hold = 3.5
 		"buy", "fold":
 			_pop[int(ev.slot)] = 1.0
 			_coin_pop = 1.0 if ev.kind == "buy" else _coin_pop
@@ -136,6 +168,16 @@ func _on_craft(ev: Dictionary) -> void:
 
 
 ## ミシンの画面を開く。手に持っている物か、最初の型紙・布を枠に入れておく
+## 世界の点が画面のどこに見えるか。見えなければ、画面の上の方のまんなかから
+func _screen_of(p: Variant) -> Vector2:
+	var cam := get_viewport().get_camera_3d()
+	if p is Vector3 and p != Vector3.INF and cam and not cam.is_position_behind(p):
+		var at := cam.unproject_position(p)
+		if Rect2(Vector2.ZERO, _view.size).grow(-24.0).has_point(at):
+			return at
+	return Vector2(_view.size.x * 0.5, _view.size.y * 0.3)
+
+
 func open_machine() -> void:
 	if shop_open or machine_open or gear_open or player == null:
 		return
@@ -362,6 +404,16 @@ func _process(dt: float) -> void:
 	_bar_a = move_toward(_bar_a, 1.0 if show else 0.0, dt * 4.0)
 	_shake = maxf(0.0, _shake - dt * 2.5)
 	_coin_pop = maxf(0.0, _coin_pop - dt * 2.5)
+	for f in _flies.duplicate():
+		f.t += dt / FLY_T
+		if f.t >= 1.0:   # 財布に入った: ぽんと跳ねる
+			_flies.erase(f)
+			_pending -= int(f.v)
+			_coin_pop = 1.0
+	_purse_hold = maxf(0.0, _purse_hold - dt)
+	_shine_t += dt
+	var purse: bool = (_purse_hold > 0.0 or not _flies.is_empty()) and _bar_a < 0.5
+	_purse_a = move_toward(_purse_a, 1.0 if purse else 0.0, dt * 4.0)
 	for k in _pop.keys():
 		_pop[k] = maxf(0.0, _pop[k] - dt * 2.5)
 	_view.queue_redraw()
@@ -380,6 +432,9 @@ class View extends Control:
 			_draw_gear_screen(u)
 		if ui._bar_a > 0.01:   # 操作のための表示なので、風では揺らさない（2026-10-29 代表）
 			_draw_bar(u, ui._bar_a)
+		if ui._purse_a > 0.01 or (not ui._flies.is_empty() and ui._bar_a < 0.5):
+			_draw_purse(u, ui._purse_a)
+		_draw_flies(u)
 		_draw_gear(u)
 
 	## 帯の装備の札（2026-10-29 代表「米袋は刺繍小窓の上においてほしい」）: 右下の刺繍の小窓の真上に、左から
@@ -433,7 +488,8 @@ class View extends Control:
 		var cell := 66.0 * u
 		var gap := 8.0 * u
 		var n := bag.size() + 1
-		var wallet_w := 96.0 * u
+		var coins: int = craft.wallet(who) - ui._pending
+		var wallet_w := maxf(96.0 * u, _coins_w(coins, 9.0 * u) + 16.0 * u)
 		var w := n * cell + (n - 1) * gap + 24.0 * u + wallet_w
 		var x0 := size.x / 2.0 - w / 2.0
 		var y := size.y - 20.0 * u - cell
@@ -461,17 +517,68 @@ class View extends Control:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(r.position.x - 3.0 * u, r.position.y - 3.0 * u, cell + 6.0 * u, cell + 6.0 * u, 12.0 * u), Icons.RED, 2.4 * u, 6.0 * u, 3.5 * u, a, true)
 				Icons.chevron(self, Vector2(c.x, r.position.y - 12.0 * u), 14.0 * u, Icons.RED, a, PI / 2, 2.6 * u)
-		# 財布: ボタンを数だけ、4 個ずつの山に
-		var coins: int = craft.wallet(who)
+		# 財布: ボタンを数だけ、山に積む
 		var wx := x0 + n * (cell + gap) + 16.0 * u
-		var cr := 8.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI))
-		for i in coins:
-			var col := i / 4
-			var row := i % 4
-			var p := Vector2(wx + col * cr * 2.3 + cr, y + cell - cr - row * cr * 0.9 - 4.0 * u)
+		_coins(wx, y + cell - 4.0 * u, coins, 9.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI)), a)
+
+	## 財布のボタンを、左 x0・下 y から、段ごとの山に積んで描く（左から螺鈿・白蝶貝・真鍮・木。どの段も 9 枚までなので 1 山。
+	## 螺鈿だけは 10 枚ごとに山を足す）。木の山は 0 枚でも場所を取る（飛んでくるボタンの行き先）。
+	## 段ごとの次の 1 枚が載る所を ui._tier_at に、木の山のそれを ui._wallet_at に入れる
+	func _coins(x0: float, y: float, coins: int, cr: float, a: float) -> void:
+		var sp := Craft.split(coins)
+		var col := 0
+		var dy := cr * 0.55
+		for m in Craft.MONEY:
+			var look: String = m[1]
+			var c: int = sp[look]
+			if c == 0 and look != "wood":
+				ui._tier_at[look] = Vector2(x0 + col * cr * 2.3 + cr, y - cr)
+				continue
+			for i in c + 1:
+				var p := Vector2(x0 + (col + i / 10) * cr * 2.3 + cr, y - cr - (i % 10) * dy)
+				if i == c:
+					ui._tier_at[look] = p
+					break
+				Icons._o = p
+				Icons._s = 1.0
+				CraftIcons.money(self, Vector2.ZERO, cr, look, a, ui._shine_t + i * 0.7)
+			col += maxi(1, ceili(c / 10.0))
+		ui._wallet_at = ui._tier_at.get("wood", Vector2(x0, y))
+
+	func _coins_w(coins: int, cr: float) -> float:
+		var sp := Craft.split(coins)
+		var cols := 0
+		for m in Craft.MONEY:
+			var c: int = sp[m[1]]
+			if c > 0 or m[1] == "wood":
+				cols += maxi(1, ceili(c / 10.0))
+		return cols * cr * 2.3
+
+	## 財布だけの札（持ち物の列が出ていないとき、ボタンが入ったあいだ）: 画面の下のまんなかに、紙の札と財布
+	func _draw_purse(u: float, a: float) -> void:
+		var coins: int = ui.craft.wallet(ui._who()) - ui._pending
+		var cr := 12.0 * u
+		var w := _coins_w(coins, cr) + 28.0 * u
+		var h := 9.0 * cr * 0.55 + cr * 2.6
+		var x0 := size.x / 2.0 - w / 2.0
+		var y1 := size.y - 22.0 * u
+		Icons.screen()
+		Icons.patch(self, Icons.rr(x0, y1 - h, w, h, 14.0 * u), Icons.PAPER, 0.85 * a, true, Icons.PAPER_EDGE)
+		_coins(x0 + 14.0 * u, y1 - 8.0 * u, coins, cr * (1.0 + 0.3 * sin(ui._coin_pop * PI)), a)
+
+	## 財布へ飛んでいるボタン: 取った所から弧を描いて財布の次の場所へ
+	func _draw_flies(u: float) -> void:
+		for f in ui._flies:
+			if f.t < 0.0:
+				continue
+			var t: float = clampf(f.t, 0.0, 1.0)
+			var e := t * t * (3.0 - 2.0 * t)
+			var to: Vector2 = ui._tier_at.get(f.look, ui._wallet_at)
+			var p: Vector2 = (f.from as Vector2).lerp(to, e) + Vector2(0, -sin(t * PI) * 110.0 * u)
+			var r := lerpf(24.0, 12.0, e) * u * (1.0 + 0.25 * sin(minf(t * 4.0, 1.0) * PI))   # 出た瞬間にぽんとふくらむ
 			Icons._o = p
 			Icons._s = 1.0
-			CraftIcons.coin(self, Vector2.ZERO, cr, a)
+			CraftIcons.money(self, Vector2.ZERO, r, f.look, 1.0, ui._shine_t)
 
 	## 売り台
 	func _draw_shop(u: float) -> void:
@@ -521,12 +628,8 @@ class View extends Control:
 		Icons.screen()
 		Icons.patch(self, Icons.rr(rx, r.position.y + 40.0 * u, rw, 250.0 * u, 14.0 * u), Icons.PAPER, 0.95, true, Icons.PAPER_EDGE)
 		var cr := 13.0 * u * (1.0 + 0.2 * sin(ui._coin_pop * PI))
-		for i in coins:
-			var col := i % 5
-			var row := i / 5
-			Icons._o = Vector2(rx + rw / 2.0 + (col - 2) * cr * 2.3, r.position.y + 230.0 * u - row * cr * 2.2)
-			Icons._s = 1.0
-			CraftIcons.coin(self, Vector2.ZERO, cr, 1.0)
+		var ww := _coins_w(coins, cr)
+		_coins(rx + rw / 2.0 - ww / 2.0, r.position.y + 250.0 * u, coins, cr, 1.0)
 		if ui._sel >= 0:   # 選んだ品物の値段のぶんを、上に赤い糸で示す
 			var need := Craft.price(ui._goods[ui._sel])
 			var short := need > coins

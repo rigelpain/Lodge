@@ -21,6 +21,8 @@ extends Node
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
+##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
+##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
 ## GEARS に種類を足し、_gear_lists に持ち物の配列の入れ物を足す
 ## 米袋は全員が最初から 1 つ（標準）持つ。米袋の型紙と布で縫った米袋は、持ち物でなく装備の枠に入り、選ばれる
@@ -35,6 +37,9 @@ const Fabrics := preload("res://fabrics.gd")
 
 ## お金はまだ決めていない（design/facilities.md）。仮にボタンをお金にし、最初に START_BUTTONS 個持たせる
 const START_BUTTONS := 12
+## お金のボタンの 4 段（2026-10-30 代表）。財布の中はいままでどおり「木のボタンの何個分」で持ち、見せるときに段ごとに分ける（両替はひとりでに）。
+## 大きい段から: 螺鈿 1000・白蝶貝 100・真鍮 10・木 1。絵は craft_icons.gd の money、斜面のボタンは snow_buttons.gd の TIERS
+const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 const PATTERN_PRICE := {"sack": 1, "small": 2, "mid": 3, "large": 5}   # 型紙の値段（ボタンの数）
 const FABRIC_PRICE := 1
 const PATTERNS := ["sack", "small", "mid", "large"]
@@ -145,6 +150,25 @@ func held(who: int) -> Dictionary:
 ## 畳んで持てるのは一人用のソリだけ（2026-10-29 代表）。いまは米袋
 static func foldable(kind: String) -> bool:
 	return Sled.KINDS.get(kind, {}).get("seats", [0, 0]).size() <= 1
+
+
+## n を段ごとに分けた数 {"raden": 螺鈿の数, "pearl": …, "brass": …, "wood": …}（いちばん少ない枚数になるように）
+static func split(n: int) -> Dictionary:
+	var out := {}
+	for m in MONEY:
+		out[m[1]] = n / int(m[0])
+		n = n % int(m[0])
+	return out
+
+
+## n を、ボタン 1 枚ずつの段の名前の並びにする（大きい段から）。13 → ["brass", "wood", "wood", "wood"]
+static func pieces(n: int) -> Array:
+	var out := []
+	var sp := split(n)
+	for m in MONEY:
+		for i in int(sp[m[1]]):
+			out.append(m[1])
+	return out
 
 
 static func price(item: Dictionary) -> int:
@@ -290,6 +314,10 @@ func _apply(ev: Dictionary) -> bool:
 			if lantern(who).is_empty():
 				return false
 			lamps[who] = bool(ev.on)
+		"earn":
+			if int(ev.get("n", 0)) <= 0:
+				return false
+			wallets[who] += int(ev.n)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):
