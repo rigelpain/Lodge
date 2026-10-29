@@ -128,7 +128,7 @@ func _update_people(dt: float, sled: RigidBody3D, p: Node3D) -> void:
 	if sled.rope_holder and not who.has(sled.rope_holder):
 		who.append(sled.rope_holder)
 	for w in who:
-		var strong: bool = (w.pushing or w.pulling) if w == p else others_push > 0
+		var strong: bool = ((w.pushing or w.pulling) if w == p else others_push > 0) or sled.is_dragged(w)
 		list.append([w, "stand", _color_of(w), strong])
 	for w in sled.riders:
 		list.append([w, "sit", _color_of(w), true])
@@ -183,6 +183,10 @@ func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var key := func(k: Key) -> bool: return Input.is_physical_key_pressed(k)
 	match mode:
 		Player.Mode.GRIP:
+			if sled.is_dragged(p):
+				# 引きずられている間は押せない（踏ん張るのはひとりでに）。出すのは手を離す、だけ
+				_hint("letgo", ["F"], "release")
+				return
 			_count_work("push", dt, p.pushing, 2.0)
 			_hint("push", ["W"], "push")
 			_hint("ride", ["E"], "ride")

@@ -43,6 +43,7 @@ var act := Act.WALK
 var facing := Vector3.ZERO   # 体の向き（世界、水平）。ZERO なら持ち主の前
 var gaze := Vector3.INF      # 見ている所（世界）
 var effort := false
+var dragged := false         # ソリに引きずられている（足を前へ突っ張り、体はソリへ引かれて前に傾く）
 var airborne := false
 var waving := false
 var point := Vector3.INF     # 腕を伸ばして指す所（世界）。gaze が決まっていなければ、そこを見る
@@ -451,6 +452,8 @@ func _pose() -> void:
 	var stride := maxf(_speed / CADENCE, 0.5) / _scale
 	var leg := absf(_head_of(_id("thigh.R")).y - _head_of(_id("foot.R")).y) if _id("foot.R") >= 0 else 0.5
 	var amp := asin(clampf(stride / (4.0 * maxf(leg, 0.1)), 0.0, 0.7)) if _speed > 0.25 else 0.0
+	if dragged and act == Act.PUSH:
+		amp = 0.0   # 引きずられているときは歩かない（足は雪をすべる）
 	var ph := _phase
 	var bend := 0.0
 	var X := Vector3.RIGHT
@@ -509,6 +512,17 @@ func _pose() -> void:
 					_turn_axis("thigh.L", X, 0.15 * k)
 					_turn_axis("thigh.R", X, -0.15 * k)
 				bend = 0.45
+				if dragged:
+					# 引きずられている: 片足を前へ突っ張り、かかとで雪をすべる。体はソリに引かれて前へ。
+					# 雪のでこぼこで 2 コマごとに小さく揺れる
+					var j := 0.05 if (_frame / 2) % 2 == 0 else -0.05
+					_turn_axis("thigh.L", X, 0.55 + j)
+					_turn_axis("shin.L", X, -0.05)
+					_turn_axis("thigh.R", X, 0.1 - j)
+					_turn_axis("shin.R", X, -0.35)
+					_turn_axis("chest", Z, j * 0.6)
+					_turn_axis("hips", X, -0.3)   # 体ごとソリへ引かれて前へ
+					bend = 0.6 + j
 			elif act == Act.ROPE:
 				if rope_hand != Vector3.INF:
 					_hold[1] = [self, to_local(rope_hand)]
