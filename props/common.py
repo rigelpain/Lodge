@@ -31,6 +31,7 @@ HEX = {
     "felt_broth_shio": "E6D5A6", "felt_pink": "E59AA8", "felt_nori": "2C3A2E", "felt_rice": "FAF6EC",
     "felt_orange": "E58A2E", "felt_curry": "A8642A", "felt_konnyaku": "8C8780", "felt_daikon": "E3CDA0",
     "felt_tea": "8BA35A", "felt_purple": "7A3E5C", "felt_tan": "C8925A", "yarn_cream": "EFE6D2", "wood_light": "D2B07E", "knit_drum": "8E8A84", "snow": "F6F7FA", "cotton": "FBFAF6", "trunk": "6B4A30",
+    "brass": "C99A3E", "pearl": "EEEAE2", "lacquer": "141012", "shell": "D8E4E6", "steel": "A9ADB2",
     "felt_stone": "726A60", "felt_stone2": "66727A", "thread_dark": "5E5850", "tree_a": "3E6B4F", "tree_b": "4F7A45", "tree_c": "2F5A55", "tree_d": "6E8A4A",
 }
 
@@ -315,6 +316,7 @@ def patchwork(role, cols, size=0.11):
     return n
 
 
+SHINES = ("brass", "pearl", "lacquer", "shell", "steel")   # 焼かない光る素材（kit.group_of・game/look.gd の shine）
 LODGE_ROLES = ("quilt", "floor", "paper", "glass", "fire", "tatami", "stone")   # ロッジの素材をそのまま使う
 
 
@@ -350,6 +352,16 @@ def make_mat(role):
         mx.inputs[6].default_value = tuple(c * 0.62 for c in LM.lin(hexcol)[:3]) + (1,)
     elif role == "wood_bent":
         n = bent_wood(role, hexcol)
+    elif role in SHINES:   # 光る素材（真鍮・白蝶貝・漆・貝の小片・鋼）。書き出しでは焼かず、Godot が look.gd の shine で光らせる
+        n = LM.N(role)
+        n.set("Base Color", LM.lin(hexcol))
+        n.set("Metallic", 1.0 if role in ("brass", "steel") else 0.0)
+        n.set("Roughness", {"brass": 0.25, "steel": 0.22, "lacquer": 0.08, "pearl": 0.2, "shell": 0.12}[role])
+        if role in ("pearl", "shell"):   # 真珠層: 薄膜の虹色
+            n.set("Thin Film Thickness", 520.0 if role == "pearl" else 650.0)
+            n.set("Thin Film IOR", 1.5)
+        if role == "lacquer":
+            n.set("Coat Weight", 1.0)
     elif role == "button":
         n = LM.wood(role, hexcol, along="X", scale=30.0)
     elif role == "hemp":

@@ -216,6 +216,9 @@ static func material_for(src: Material) -> Material:
 			else str(base.albedo_texture.get_instance_id())) if baked else role
 	if _mats.has(key):
 		return _mats[key]
+	if role in Look.SHINES:   # 焼いていない光る素材（お金のボタン・裁ちばさみ）
+		_mats[key] = Look.shine(role)
+		return _mats[key]
 	var col := base.albedo_color if base else Color.WHITE
 	var m := StandardMaterial3D.new()
 	m.resource_name = role

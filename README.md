@@ -36,7 +36,7 @@ WASD で歩き、マウスで見回す。ソリに向かって W で押す。E �
 /Applications/Godot.app/Contents/MacOS/Godot --path game --resolution 1280x720 -s res://tools/ride_shots.gd -- --bots=0 --no-sound --dir="$PWD/design/ride-wind"
 ```
 
-斜面の雪には、大きな木のボタンが糸で「×」に縫い留められて、ばらばらに散らばっている。乗っているソリの滑り木で上を通ると糸が切れて、ボタン（お金）が乗っていた全員の財布に入る。押して手伝った人にも少し届く。空からひらひら降ってきて縫い付き、時間がたつと雪に埋もれる（`game/snow_buttons.gd`。`--no-buttons` で出さない。絵と決まりは [design/snow-buttons](design/snow-buttons/README.md)）。
+斜面の雪には、大きなボタンが糸で「×」に縫い留められて、ばらばらに散らばっている。お金はボタンで、木 1・真鍮 10・白蝶貝 100・螺鈿 1000 の 4 段（光り方と穴の数で見分ける）。乗っているソリの滑り木で上を通ると糸が切れて、ボタンが乗っていた全員の財布に入る。押して手伝った人にも少し届く。歩いて近づき F で、裁ちばさみで切っても取れる（切った人だけに入る）。乗って滑った長さと速さでもボタンがもらえる（止まると速さの表示の糸が巻き取られてボタンに変わる）。空からひらひら降ってきて縫い付き、時間がたつと雪に埋もれる（`game/snow_buttons.gd`。`--no-buttons` で出さない。絵と決まりは [design/snow-buttons](design/snow-buttons/README.md)）。
 
 ロッジの中の大きなミシンは、前に立つと針が持ち上がり、T で縫う（7 つの場面の動きの試作。`game/sewing_machine.gd`）。Y でコマ撮り（12 fps、既定）／なめらか、H で仲間を足踏みに呼ぶと速く縫える。`--spawn=sew` でミシンの前から始まる。ミシンの横の売り子のおじさんに F で型紙と布を買い、ミシンの前で F（か T）でミシンの画面を開いて型紙と布を選んで縫うと、広げた実寸のソリが縫い上がる。G で折り紙のように畳んで持ち、手に持って左クリックで広げて置ける（ホイール・トラックパッドの二本指スクロール・Z で手に持つ物を替える。`--spawn=shop` でおじさんの前から。絵と操作は [design/sled-shop](design/sled-shop/README.md)）。絵と感想は [design/sewing-motion](design/sewing-motion/README.md)。場面ごとの絵を撮るには:
 

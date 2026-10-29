@@ -37,6 +37,9 @@ const Fabrics := preload("res://fabrics.gd")
 
 ## お金はまだ決めていない（design/facilities.md）。仮にボタンをお金にし、最初に START_BUTTONS 個持たせる
 const START_BUTTONS := 12
+## お金のボタンの 4 段（2026-10-30 代表）。財布の中はいままでどおり「木のボタンの何個分」で持ち、見せるときに段ごとに分ける（両替はひとりでに）。
+## 大きい段から: 螺鈿 1000・白蝶貝 100・真鍮 10・木 1。絵は craft_icons.gd の money、斜面のボタンは snow_buttons.gd の TIERS
+const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 const PATTERN_PRICE := {"sack": 1, "small": 2, "mid": 3, "large": 5}   # 型紙の値段（ボタンの数）
 const FABRIC_PRICE := 1
 const PATTERNS := ["sack", "small", "mid", "large"]
@@ -147,6 +150,25 @@ func held(who: int) -> Dictionary:
 ## 畳んで持てるのは一人用のソリだけ（2026-10-29 代表）。いまは米袋
 static func foldable(kind: String) -> bool:
 	return Sled.KINDS.get(kind, {}).get("seats", [0, 0]).size() <= 1
+
+
+## n を段ごとに分けた数 {"raden": 螺鈿の数, "pearl": …, "brass": …, "wood": …}（いちばん少ない枚数になるように）
+static func split(n: int) -> Dictionary:
+	var out := {}
+	for m in MONEY:
+		out[m[1]] = n / int(m[0])
+		n = n % int(m[0])
+	return out
+
+
+## n を、ボタン 1 枚ずつの段の名前の並びにする（大きい段から）。13 → ["brass", "wood", "wood", "wood"]
+static func pieces(n: int) -> Array:
+	var out := []
+	var sp := split(n)
+	for m in MONEY:
+		for i in int(sp[m[1]]):
+			out.append(m[1])
+	return out
 
 
 static func price(item: Dictionary) -> int:

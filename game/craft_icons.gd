@@ -3,7 +3,10 @@ extends RefCounted
 ## 文字を使わずに描く。どの絵も 64 × 64 の箱（中心が原点、y は下向き）。
 ##   品物: 型紙（クラフト紙に、ソリの形の切り取り線。大きいソリほど形が大きい）、布（たたんだ布の束）、
 ##         畳んだソリ（折り紙の包み。布の色に、折り目の線）
-##   値段: 木のボタン（お金の代わり。いまは仮）を数だけ並べる
+##   お金: 4 段のボタン（money。木 1・真鍮 10・白蝶貝 100・螺鈿 1000）。値段は段ごとに分けて並べる（craft.gd の split）。
+##         文字は使わず、色・光り方・穴の数で見分ける（木は茶色で穴 2 つ、真鍮は金色でふちに刻みと光、白蝶貝は白に虹色、
+##         螺鈿は漆黒に貝の小片の虹色）
+##   案内の絵: shears（雪のボタンの糸を、裁ちばさみで切る）
 ##   案内の絵: shop（売り子）、fold（畳む）、unfold（広げる）、set（ミシンにセット）
 ## 看板（shopkeeper.gd）と売り台・持ち物の列（craft_ui.gd）が使う。
 
@@ -37,6 +40,9 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			Icons.arrow(ci, Vector2(0, 12), Vector2(0, 28), Icons.THREAD, a, 2.0)
 		"hand":
 			Icons.mitten(ci, Vector2(0, 2), 0.0, tint, a, true, 1.5)
+		"shears":   # 雪に縫い留めたボタンと、その糸を切る裁ちばさみ
+			coin(ci, Vector2(-8, 12), 13.0, a)
+			_shears(ci, Vector2(8, -6), a)
 		"sack":   # 米袋（口を麻ひもで縛った、クラフト紙の袋に赤い帯）
 			rice_sack(ci, Vector2(0, 2), 1.0, KRAFT, Color("B8402E"), a)
 		"gear":   # 装備の画面: 背負いかばん（2026-10-29 代表「Iのインベントリは別でカードつくってバックか装備のアイコンが良い」）
@@ -191,29 +197,111 @@ static func backpack(ci: CanvasItem, c: Vector2, sc: float, a := 1.0) -> void:
 		Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(x, 2), Vector2(x, 22)]), 0.0, c, sc), felt.darkened(0.3), 1.4, 0.8 * a)
 
 
-## 木のボタン（お金）。c と r は絵の座標
+## 木のボタン（1）。c と r は絵の座標。茶色、穴 2 つに糸を 2 本渡す、つやなし
 static func coin(ci: CanvasItem, c: Vector2, r: float, a := 1.0, col := COIN) -> void:
 	Icons.patch(ci, Icons.circ(c, r, 18), col, a, false)
 	ci.draw_arc(Icons._o + c * Icons._s, r * 0.72 * Icons._s, 0, TAU, 18, Color(col.darkened(0.3), 0.7 * a), maxf(0.8 * Icons._s, 1.0), true)
+	for k in 2:
+		var h := c + Vector2(r * 0.3 * (1 if k == 0 else -1), 0)
+		ci.draw_circle(Icons._o + h * Icons._s, maxf(r * 0.15 * Icons._s, 0.8), Color(Icons.SHADOW, 0.75 * a))
+	if r * Icons._s > 5.0:   # 穴に通した糸（2 本）
+		for dy in [-0.09, 0.09]:
+			Icons.thread(ci, PackedVector2Array([c + Vector2(-r * 0.3, r * dy), c + Vector2(r * 0.3, r * dy)]), Icons.CAP, 0.45 * r / 7.0, a)
+
+
+const BRASS := Color(0.86, 0.66, 0.26)
+const PEARL := Color(0.95, 0.94, 0.91)
+const LACQUER := Color(0.07, 0.05, 0.06)
+
+## お金のボタン（look: wood・brass・pearl・raden）。c と r は絵の座標。t は光の時計（きらっと光る向きが回る）
+static func money(ci: CanvasItem, c: Vector2, r: float, look: String, a := 1.0, t := 0.0) -> void:
+	var o := Icons._o + c * Icons._s
+	var rr := r * Icons._s
+	match look:
+		"wood":
+			coin(ci, c, r, a)
+		"brass":   # 金色、ふちに刻み、穴 4 つ、きらっと光る
+			var rim := PackedVector2Array()
+			for k in 40:
+				var ang := TAU * k / 40
+				rim.append(c + Vector2(cos(ang), sin(ang)) * r * (1.0 if k % 2 == 0 else 0.9))
+			Icons.patch(ci, rim, BRASS, a, false)
+			ci.draw_circle(o, rr * 0.78, Color(BRASS.lightened(0.12), a))
+			ci.draw_arc(o, rr * 0.62, 0, TAU, 20, Color(BRASS.darkened(0.3), 0.7 * a), maxf(0.8 * Icons._s, 1.0), true)
+			_holes4(ci, o, rr, Color(0.35, 0.22, 0.05, 0.8 * a))
+			ci.draw_arc(o, rr * 0.72, -2.4 + t, -1.5 + t, 8, Color(1, 0.97, 0.85, 0.85 * a), maxf(rr * 0.14, 1.0), true)   # 光の筋
+			_glint(ci, o + Vector2(rr * 0.45, -rr * 0.5), rr * 0.5, Color(1.0, 0.95, 0.75, a))
+		"pearl":   # 白く薄い、穴 4 つ、見る向きで虹色
+			Icons.patch(ci, Icons.circ(c, r, 22), PEARL, a, false)
+			for k in 3:   # 虹色のにじみ（色の弧がゆっくり回る）
+				var hue := fposmod(t * 0.08 + k * 0.33, 1.0)
+				ci.draw_arc(o, rr * (0.5 + 0.13 * k), t * 0.5 + k * 2.1, t * 0.5 + k * 2.1 + 1.6, 12, Color.from_hsv(hue, 0.3, 1.0, 0.55 * a), maxf(rr * 0.13, 1.0), true)
+			ci.draw_arc(o, rr * 0.92, 0, TAU, 22, Color(0.75, 0.75, 0.78, 0.7 * a), maxf(0.7 * Icons._s, 1.0), true)
+			_holes4(ci, o, rr * 0.85, Color(0.55, 0.55, 0.6, 0.8 * a))
+			_glint(ci, o + Vector2(-rr * 0.4, -rr * 0.45), rr * 0.45, Color(1, 1, 1, a))
+		"raden":   # 漆黒に、貝の小片が花の形に虹色にきらめく。穴 4 つを金の輪で
+			Icons.patch(ci, Icons.circ(c, r, 22), LACQUER, a, false)
+			for k in 6:
+				for j in 2:
+					var ang := TAU * k / 6 + j * 0.12
+					var p := o + Vector2(cos(ang), sin(ang)) * rr * (0.5 + 0.22 * j)
+					var hue := fposmod(t * 0.1 + k * 0.17 + j * 0.3, 1.0)
+					var sz := rr * (0.13 - 0.03 * j)
+					ci.draw_colored_polygon(PackedVector2Array([p + Vector2(0, -sz), p + Vector2(sz, 0), p + Vector2(0, sz * 0.8), p + Vector2(-sz * 0.9, 0)]),
+							Color.from_hsv(hue, 0.4, 1.0, 0.95 * a))
+			_holes4(ci, o, rr * 0.7, Color(BRASS, a))
+			ci.draw_arc(o, rr * 0.97, 0, TAU, 22, Color(0.3, 0.25, 0.28, a), maxf(0.8 * Icons._s, 1.0), true)
+			_glint(ci, o + Vector2(rr * 0.42, -rr * 0.48), rr * 0.55, Color.from_hsv(fposmod(t * 0.15, 1.0), 0.35, 1.0, a))
+
+
+## 穴 4 つ（画面の px）
+static func _holes4(ci: CanvasItem, o: Vector2, rr: float, col: Color) -> void:
 	for k in 4:
-		var h := c + Vector2(cos(TAU * k / 4 + PI / 4), sin(TAU * k / 4 + PI / 4)) * r * 0.3
-		ci.draw_circle(Icons._o + h * Icons._s, maxf(r * 0.12 * Icons._s, 0.8), Color(Icons.SHADOW, 0.75 * a))
-	if r * Icons._s > 5.0:   # 穴に通した糸の十字
-		Icons.thread(ci, PackedVector2Array([c + Vector2(-r * 0.21, -r * 0.21), c + Vector2(r * 0.21, r * 0.21)]), Icons.CAP, 0.5 * r / 7.0, a)
-		Icons.thread(ci, PackedVector2Array([c + Vector2(r * 0.21, -r * 0.21), c + Vector2(-r * 0.21, r * 0.21)]), Icons.CAP, 0.5 * r / 7.0, a)
+		var h := o + Vector2(cos(TAU * k / 4 + PI / 4), sin(TAU * k / 4 + PI / 4)) * rr * 0.26
+		ci.draw_circle(h, maxf(rr * 0.09, 0.8), col)
 
 
-## 値段: n 個のボタンを並べる（3 個ずつの段）。center は画面の px、r はボタンの半径（px）
+## きらっ: 4 本の細い光の筋（画面の px）
+static func _glint(ci: CanvasItem, p: Vector2, len: float, col: Color) -> void:
+	if len < 2.0:
+		return
+	for d in [Vector2(1, 0), Vector2(0, 1)]:
+		ci.draw_line(p - d * len, p + d * len, col, maxf(len * 0.14, 1.0), true)
+	for d in [Vector2(1, 1), Vector2(1, -1)]:
+		ci.draw_line(p - d * len * 0.4, p + d * len * 0.4, Color(col, col.a * 0.7), maxf(len * 0.09, 1.0), true)
+
+
+## 裁ちばさみ（絵の座標）: 開いた 2 枚の刃と、黒い持ち手の輪
+static func _shears(ci: CanvasItem, c: Vector2, a: float) -> void:
+	var steel := Color(0.78, 0.8, 0.84)
+	for side in [-1.0, 1.0]:
+		var tip := c + Vector2(side * 9.0, -20.0)
+		var pv := c + Vector2(0, 2)
+		Icons.patch(ci, Icons.xf(PackedVector2Array([pv + Vector2(-2, 0), tip, pv + Vector2(2, 0)]), 0.0, Vector2.ZERO, 1.0), steel, a, false)
+		var ring := c + Vector2(-side * 8.0, 14.0)
+		Icons.thread(ci, PackedVector2Array([pv, ring + Vector2(side * 2.0, -4.0)]), Color(0.1, 0.08, 0.1), 2.6, a)
+		Icons.patch(ci, Icons.circ(ring, 5.5, 14), Color(0.1, 0.08, 0.1), a, false)
+		Icons.patch(ci, Icons.circ(ring, 3.0, 12), Icons.CAP, a, false)
+	Icons.patch(ci, Icons.circ(c + Vector2(0, 2), 2.0, 10), BRASS, a, false)
+
+
+## 値段: 段ごとに分けたボタンを並べる（大きい段から、3 個ずつの段）。center は画面の px、r はボタンの半径（px）。
+## col は木のボタンの色（足りないときの赤など）
 static func price(ci: CanvasItem, center: Vector2, n: int, r: float, a := 1.0, col := COIN) -> void:
-	var per := 3 if n > 3 else n
-	var rows := ceili(n / 3.0)
-	for i in n:
+	var list: Array = preload("res://craft.gd").pieces(n)
+	var m := list.size()
+	var per := 3 if m > 3 else m
+	var rows := ceili(m / 3.0)
+	for i in m:
 		var row := i / 3
-		var in_row := mini(per, n - row * 3)
+		var in_row := mini(per, m - row * 3)
 		var x := (i % 3 - (in_row - 1) / 2.0) * r * 2.2
 		var y := (row - (rows - 1) / 2.0) * r * 2.1
 		_at(center + Vector2(x, y), 64.0)
-		coin(ci, Vector2.ZERO, r, a, col)
+		if list[i] == "wood":
+			coin(ci, Vector2.ZERO, r, a, col)
+		else:
+			money(ci, Vector2.ZERO, r, list[i], a)
 
 
 ## 型紙: クラフト紙の 1 枚に、ソリを上から見た形の切り取り線（破線）。紙の大きさは同じで、ソリの形が大きさで変わる

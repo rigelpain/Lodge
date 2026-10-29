@@ -10,11 +10,21 @@ extends Node3D
 ##   高い所から長く滑るほど通れる所に出やすい（_pick_spot）。時間がたつと雪に埋もれて消える。滑りあと（sled.gd）と同じく、
 ##   吹きだまりのまとまりと一つずつのばらつきで、まばらに消える。
 ## 風: ゆるく留まっているので、風でふわっとめくれ上がったり、ころころ転がったりして、糸に引かれて戻る（見た目だけ）。
+## お金の 4 段（TIERS）: 木 1・真鍮 10・白蝶貝 100・螺鈿 1000。降るのはほとんど木、たまに真鍮、まれに白蝶貝、ごくまれに螺鈿。
+##   色・光り方・穴の数・大きさ・音で見分ける。光るボタンは、遠くからも分かるよう、上で星がきらっとまたたく（画面での大きさが一定）。
+## 歩いて裁ちばさみで取る: 歩いて近づき F（player.gd）で、はさみを出してちょきんと切る（12 fps）。そのあいだは動けず、
+##   取ったボタンは切った人だけに入る。ソリで通るほうが、たくさん・速く取れる。
+## 滑った距離と速さでも: 一回の滑り（乗って滑り出してから止まるまで）の長さで木のボタン、いちばん速い所（RIDE_BRASS）を
+##   超えるたびに真鍮のボタンが一つ。速さの表示（speedo.gd）の縫い目に縫い込まれ、止まると糸が巻き取られてボタンに変わる（hud.gd）。
+##   分け方は雪のボタンと同じ。
 ##
 ## 出来事（craft.gd・emotes.gd と同じ形。中身は数・文字・Vector3 だけ）。ホストが決めて配る:
-##   drop   {id, at, up, yaw, color, end}            ボタンが降る（frame から降り始める。end は埋もれきるコマ）
-##   snip   {id, sled, at}                           ソリ（名前）が、ボタン id の糸を切った
+##   drop   {id, tier, at, up, yaw, color, end}      ボタンが降る（tier は TIERS の番号）（frame から降り始める。end は埋もれきるコマ）
+##   snip   {id, sled, by, at}                       ソリ（名前）が、ボタン id の糸を切った（by は、はさみで切った人の番号。ソリなら -1）
 ##   share  {id, gives: {番号: 数}, parts: {番号: 端数}, at}  切ったボタンを分ける。数はそのあと craft の earn で財布へ
+##   shear  {id, who}                                歩いてきた人が裁ちばさみを出した（frame + SHEAR_CUT コマで snip。snip の by に人の番号）
+##   ride_mark {sled, speed}                         滑っているソリが、いちばん速い所 speed を超えた（真鍮が縫い込まれる）
+##   ride_pay  {sled, dist, wood, brass, gives: {番号: 数}}  一回の滑りが終わった。滑った長さ（m）と、木と真鍮の数
 ## いまは一人の画面の中だけ: send() がすぐ _apply() して配る。通信を入れたら、当たりの判定（_physics_process）と
 ## 置き場所選び・分け方はホストだけがして、ほかの人は出来事を受けて見た目を動かす（風の揺れは各自の画面だけ）。
 
@@ -25,9 +35,19 @@ const Look := preload("res://look.gd")
 const Props := preload("res://props.gd")
 const Rope := preload("res://sled_rope.gd")
 
-const BUTTON_GLB := "res://props/snow_button/snow_button.glb"
-const R := 0.25                # ボタンの半径 (m。glb)
-const THICK := 0.058           # ボタンの厚み (m)
+const GLB_DIR := "res://props/snow_button/"
+const R := 0.25                # 木のボタンの半径 (m。glb)
+const THICK := 0.058           # 木のボタンの厚み (m)
+## お金のボタンの 4 段（2026-10-30 代表）。財布（craft.gd）の中は「木の何個分」で持ち、見せるときに段ごとに分ける（craft.gd の split）。
+## value 値打ち、glb 形、r 半径、thick 厚み、chance 斜面に降るボタンのうちの割合、spark 遠くからも分かるまたたきの色（なしは光らない）
+const TIERS := [
+	{"value": 1, "look": "wood", "glb": "snow_button", "r": 0.25, "thick": 0.058, "chance": 0.9, "spark": null},
+	{"value": 10, "look": "brass", "glb": "snow_button_brass", "r": 0.21, "thick": 0.047, "chance": 0.085, "spark": Color(1.0, 0.82, 0.42)},
+	{"value": 100, "look": "pearl", "glb": "snow_button_pearl", "r": 0.19, "thick": 0.026, "chance": 0.013, "spark": Color(0.94, 0.97, 1.0)},
+	{"value": 1000, "look": "raden", "glb": "snow_button_raden", "r": 0.23, "thick": 0.056, "chance": 0.002, "spark": Color(0.7, 1.0, 0.95)},
+]
+const SPARK_EVERY := Vector2(1.0, 2.6)   # またたきの間 (s)。値打ちが高いほど短い
+const SPARK_PX := 0.0016                 # またたきの星の、画面での大きさ（Sprite3D の fixed_size）
 
 # ---- 出し方（調整する値）
 const MAX_BUTTONS := 14              # 斜面に同時に出ているボタンの数
@@ -50,7 +70,16 @@ const TRAFFIC_HALF := 600.0          # 滑った跡が半分に薄れるまで (
 # ---- 取る
 const HIT := 0.12              # 滑り木がボタンの縁からこれだけ外を通っても切れる (m)
 const MIN_SPEED := 2.0         # これより遅いソリでは切れない (m/s)
-const VALUE := 1               # 乗っていた一人ひとりに入るボタンの数
+# ---- 歩いて裁ちばさみで取る
+const SHEAR_REACH := 1.8       # ボタンまでこれより近く、向いていれば取れる (m)
+const SHEAR_CUT := 8           # はさみを出してから、糸が切れるまで（コマ）。2 回目のちょきんは 10 コマ目
+const SHEAR_END := 15          # はさみをしまい終わるまで（コマ）。このあいだは動けない
+# ---- 滑った距離と速さ（一回の滑りごと）。斜面のボタンを拾うほうが多くもらえるくらいに
+const RIDE_M_PER_WOOD := 12.0  # これだけ滑るごとに木のボタン 1 つ (m)
+const RIDE_MIN := 15.0         # これより短い滑りは数えない (m)
+const RIDE_MAX_WOOD := 18      # 一回の滑りの木のボタンの上限
+const RIDE_BRASS := [10.0, 13.0]     # この速さ (m/s) を超えるたびに真鍮のボタン 1 つ（一回の滑りで一度ずつ）
+const RIDE_STOP_T := 1.0       # 0.5 m/s より遅いのがこれだけ続いたら、滑り終わり (s)
 const HELPER_SHARE := 1.0 / 3.0   # 押して手伝ったけれど乗らなかった人に届く割合
 const HELP_WINDOW := 120.0     # 滑る前のこの秒のうちに押した人を、手伝った人にする（ソリの時計 sled._trail_now）
 
@@ -82,7 +111,9 @@ var auto := true                # 自分で降らせる（確かめの台本は 
 var gust_override := -1.0       # 確かめ用: 0〜1 なら、風の強さをこれに固定する
 var buttons := {}               # 番号 → Btn
 var crumbs := {}                # 人の番号 → ためている端数（手伝った人の分）
-var stats := {"snip": 0}        # 確かめ用の数
+var stats := {"snip": 0, "value": 0}   # 確かめ用の数（切った数と、その値打ちの合計）
+var _shears: Array = []         # 動いている裁ちばさみ {node, a, b, btn, who, f0}
+var _cuts: Array = []           # ホスト: はさみで切る予定 {id, who, at}
 var _next_id := 1
 var _drop_t := FIRST_DROP
 var _burst := FIRST_BURST
@@ -100,6 +131,11 @@ var _last_frame := -1
 
 class Btn:
 	var id: int
+	var tier := 0               # TIERS の番号
+	var thick := THICK
+	var spark: Sprite3D         # 光るボタンのまたたき
+	var next_spark := 0.0
+	var spark0 := -99
 	var r := R
 	var at: Vector3             # 雪の上の置き場（世界）
 	var up: Vector3
@@ -154,10 +190,19 @@ func _apply(ev: Dictionary) -> void:
 			buttons[int(ev.id)] = _make_button(ev)
 		"snip":
 			var b: Btn = buttons.get(int(ev.id))
-			if b == null or b.state != "rest":
+			if b == null or not b.state in ["rest", "shear"]:
 				return
-			var sled := world.get_node_or_null(String(ev.sled)) if world else null
-			_pop(b, int(ev.frame), sled)
+			var to: Node3D = _person(int(ev.get("by", -1))) if int(ev.get("by", -1)) >= 0 else null
+			if to == null and world:
+				to = world.get_node_or_null(String(ev.sled))
+			_pop(b, int(ev.frame), to)
+		"shear":
+			var b: Btn = buttons.get(int(ev.id))
+			var who := _person(int(ev.who))
+			if b == null or who == null:
+				return
+			b.state = "shear"
+			_start_shears(b, who, int(ev.frame))
 		"share":
 			pass   # 財布へは craft.gd の earn。ここは見た目だけ（いまはなし。HUD は earn を聞く）
 	happened.emit(ev)
@@ -180,6 +225,7 @@ func _physics_process(dt: float) -> void:
 				if p != Vector3.INF:
 					drop_at(p)
 	_check_hits()
+	_do_cuts()
 
 
 func _live() -> int:
@@ -192,7 +238,7 @@ func _live() -> int:
 
 ## ボタンを降らせる（ホスト）。p は雪の上の点（xz だけ使う。高さと向きはここで決める）。番号を返す
 ## instant: 確かめ用。降ってくる動きを飛ばして、もう縫い付いた所から始める
-func drop_at(p: Vector3, color_i := -1, instant := false) -> int:
+func drop_at(p: Vector3, color_i := -1, instant := false, tier := -1) -> int:
 	var id := _next_id
 	_next_id += 1
 	var f0 := Doll.frame_index() + 1
@@ -202,9 +248,22 @@ func drop_at(p: Vector3, color_i := -1, instant := false) -> int:
 	var life := LIFE * maxf(0.2, 1.0 + LIFE_PATCH * clampf(_life_noise.get_noise_2d(at.x, at.z) * 1.6, -1.0, 1.0)
 			+ LIFE_SCATTER * _rng.randf_range(-1.0, 1.0))
 	var c: String = COLORS[_rng.randi() % COLORS.size() if color_i < 0 else color_i]
-	send({"kind": "drop", "id": id, "at": at, "up": _normal(at), "yaw": _rng.randf() * TAU, "color": c,
+	if tier < 0:
+		tier = pick_tier(_rng.randf())
+	send({"kind": "drop", "id": id, "tier": tier, "at": at, "up": _normal(at), "yaw": _rng.randf() * TAU, "color": c,
 			"end": f0 + FALL_FRAMES + SEW_FRAMES + int(life * Doll.FPS), "frame": f0})
 	return id
+
+
+## 段を選ぶ: x は 0〜1 の乱数。ほとんど木、たまに真鍮、まれに白蝶貝、ごくまれに螺鈿
+static func pick_tier(x: float) -> int:
+	for i in range(TIERS.size() - 1, 0, -1):
+		var above := 0.0
+		for j in range(i, TIERS.size()):
+			above += float(TIERS[j].chance)
+		if x > 1.0 - above:
+			return i
+	return 0
 
 
 ## 雪の上の高さ（見た目の雪面）
@@ -294,21 +353,39 @@ func _track_runs(dt: float) -> void:
 			_traffic[c] *= pow(fade, 60.0)
 			if _traffic[c] < 0.002:
 				_traffic.erase(c)
+	# 一回の滑り: 乗っている人がいて、押されて登っているのでなく、1.5 m/s より速くなったら始まり、
+	# 0.5 m/s より遅いのが RIDE_STOP_T 続くか、誰も乗らなくなったら終わり
 	for s in get_tree().get_nodes_in_group("sleds"):
 		var sled := s as RigidBody3D
-		var riding: bool = not sled.riders.is_empty() and sled.linear_velocity.length() > 2.0 and sled.linear_velocity.y < 0.3
+		var v := sled.linear_velocity.length()
+		var riding: bool = not sled.riders.is_empty() and not (sled.pushers > 0 and sled.linear_velocity.y > 0.05)
 		var run: Dictionary = _runs.get(sled, {})
-		if riding:
-			if run.is_empty():
-				run = {"top": sled.global_position.y, "cells": {}}
+		if run.is_empty():
+			if riding and v > 1.5:
+				run = {"top": sled.global_position.y, "cells": {}, "dist": 0.0, "best": 0.0, "marks": [], "riders": {}, "slow": 0.0}
 				_runs[sled] = run
-			run.cells[_cell(sled.global_position)] = true
-		elif not run.is_empty() and sled.linear_velocity.length() < 0.5:
+			continue
+		if riding:
+			var hv := Vector2(sled.linear_velocity.x, sled.linear_velocity.z).length()
+			run.dist += hv * dt
+			run.best = maxf(run.best, v)
+			for r in sled.riders:
+				var rid = r.get("id")
+				run.riders[rid if rid != null else -1] = true
+			if v > 2.0:
+				run.cells[_cell(sled.global_position)] = true
+			for m in RIDE_BRASS:
+				if v >= m and not m in run.marks:
+					run.marks.append(m)
+					send({"kind": "ride_mark", "sled": String(sled.name), "speed": m})
+		run.slow = run.slow + dt if (v < 0.5 or not riding) else 0.0
+		if run.slow >= RIDE_STOP_T:
 			var drop := (float(run.top) - sled.global_position.y) / maxf(1.0, world.height(0.0, 0.0))
 			if drop > 0.05:
 				for c in run.cells:
 					_traffic[c] = _traffic.get(c, 0.0) + drop
 			_runs.erase(sled)
+			_ride_pay(sled, run)
 	for s in _runs.keys():
 		if not is_instance_valid(s):
 			_runs.erase(s)
@@ -352,18 +429,33 @@ func _under_runner(b: Btn, segs: Array) -> bool:
 
 
 func _snip(sled: RigidBody3D, b: Btn) -> void:
-	send({"kind": "snip", "id": b.id, "sled": String(sled.name), "at": b.at})
+	send({"kind": "snip", "id": b.id, "sled": String(sled.name), "by": -1, "at": b.at})
 	stats.snip += 1
-	_share(sled, b.id, VALUE, b.at)
+	stats.value += int(TIERS[b.tier].value)
+	_share(sled, b.id, int(TIERS[b.tier].value), b.at)
 
 
 ## 切ったボタンを分ける: 乗っていた全員に n、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
 func _share(sled: RigidBody3D, id_: int, n: int, at: Vector3) -> void:
+	var gives := _gives(sled, sled.riders.map(func(r): return r.get("id")), n)
+	send({"kind": "share", "id": id_, "gives": gives.gives, "parts": gives.parts, "at": at})
+	_pay(gives.gives, at)
+
+
+## 財布へ（craft.gd の earn）。from: "spool" なら、画面では速さの表示の糸巻きから飛ぶ
+func _pay(gives: Dictionary, at: Vector3, from := "") -> void:
+	var craft: Node = world.get("craft") if world else null
+	if craft:
+		for who in gives:
+			craft.send({"kind": "earn", "who": who, "n": gives[who], "at": at, "from": from})
+
+
+## 分け方: 乗っていた人（番号の配列）に n ずつ、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
+func _gives(sled: RigidBody3D, rider_ids: Array, n: int) -> Dictionary:
 	var gives := {}
 	var parts := {}
 	var riders := []
-	for r in sled.riders:
-		var id = r.get("id")
+	for id in rider_ids:
 		if id != null and int(id) >= 0:
 			riders.append(int(id))
 			gives[int(id)] = n
@@ -380,11 +472,82 @@ func _share(sled: RigidBody3D, id_: int, n: int, at: Vector3) -> void:
 		parts[int(id)] = crumbs[int(id)]
 		if whole > 0:
 			gives[int(id)] = whole
-	send({"kind": "share", "id": id_, "gives": gives, "parts": parts, "at": at})
-	var craft: Node = world.get("craft") if world else null
-	if craft:
-		for who in gives:
-			craft.send({"kind": "earn", "who": who, "n": gives[who], "at": at})
+	return {"gives": gives, "parts": parts}
+
+
+# ================================================================ ホスト: 歩いて裁ちばさみで取る
+
+## 人の番号から、その人（emotes.gd の登録）
+func _person(id: int) -> Node3D:
+	var hub: Node = world.get_node_or_null("Emotes") if world else null
+	return hub.who_of(id) if hub and id >= 0 else null
+
+
+## 人 p が歩いてはさみで取れるボタン（いちばん近いもの。なければ null）: 近く、向いていて、休んでいる
+func reachable(p: Node3D) -> Btn:
+	var best: Btn = null
+	var bd := SHEAR_REACH
+	var fwd := -p.global_basis.z
+	fwd.y = 0
+	for b in buttons.values():
+		if b.state != "rest":
+			continue
+		var d: Vector3 = b.at - p.global_position
+		if absf(d.y) > 1.3:
+			continue
+		d.y = 0
+		var l := d.length()
+		if l < bd and (l < 0.5 or fwd.normalized().dot(d / l) > 0.3):
+			bd = l
+			best = b
+	return best
+
+
+## 歩いてきた人 who（番号）が F を押した（player.gd）。取れるボタンがあれば、はさみを出す。断られたら false
+func request_cut(who: int) -> bool:
+	var p := _person(who)
+	var b := reachable(p) if p else null
+	if b == null:
+		return false
+	var f := Doll.frame_index() + 1
+	send({"kind": "shear", "id": b.id, "who": who, "frame": f})
+	_cuts.append({"id": b.id, "who": who, "at": f + SHEAR_CUT})
+	return true
+
+
+## はさみで切る予定のコマが来たら、糸を切って、切った人だけに分ける
+func _do_cuts() -> void:
+	var f := Doll.frame_index()
+	for c in _cuts.duplicate():
+		if f < int(c.at):
+			continue
+		_cuts.erase(c)
+		var b: Btn = buttons.get(int(c.id))
+		if b == null or b.state != "shear":
+			continue
+		var v := int(TIERS[b.tier].value)
+		send({"kind": "snip", "id": b.id, "sled": "", "by": int(c.who), "at": b.at, "frame": f})
+		stats.snip += 1
+		stats.value += v
+		send({"kind": "share", "id": b.id, "gives": {int(c.who): v}, "parts": {}, "at": b.at})
+		_pay({int(c.who): v}, b.at)
+
+
+# ================================================================ ホスト: 滑った距離と速さ
+
+## 一回の滑り（乗って滑り出してから止まるまで）の長さと速さを数え、終わったら分ける
+func _ride_pay(sled: RigidBody3D, run: Dictionary) -> void:
+	var dist: float = run.dist
+	if dist < RIDE_MIN:
+		return
+	var wood := mini(floori(dist / RIDE_M_PER_WOOD), RIDE_MAX_WOOD)
+	var brass: int = run.marks.size()
+	var n := wood + 10 * brass
+	if n <= 0:
+		return
+	var g := _gives(sled, run.riders.keys(), n)
+	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": wood, "brass": brass, "gives": g.gives})
+	_pay(g.gives, sled.global_position, "spool")
 
 
 # ================================================================ 見た目
@@ -406,11 +569,23 @@ func _make_button(ev: Dictionary) -> Btn:
 	var bs := Basis(Quaternion(Vector3.UP, b.up.normalized())) * Basis(Vector3.UP, b.yaw)
 	b.root.transform = Transform3D(bs, b.at)
 	add_child(b.root)
-	b.body = Props.make(BUTTON_GLB)
+	b.tier = clampi(int(ev.get("tier", 0)), 0, TIERS.size() - 1)
+	var spec: Dictionary = TIERS[b.tier]
+	b.r = spec.r
+	b.thick = spec.thick
+	b.body = Props.make(GLB_DIR + String(spec.glb) + ".glb")
 	b.root.add_child(b.body)
+	var marks := []
 	for k in 4:
 		var h := b.body.find_child("hole_%d" % k, true, false) as Node3D
-		b.holes.append(h.position if h else Vector3(cos(PI / 4 + PI / 2 * k), 0.7, sin(PI / 4 + PI / 2 * k)) * b.r * 0.3)
+		if h:
+			marks.append(h.position)
+	if marks.size() == 2:
+		# 穴 2 つ: 糸は 2 つの穴のあいだを 2 回渡る（少しずらした 2 本）。× の組（0 と 2、1 と 3）に合わせて並べる
+		var side: Vector3 = (marks[1] - marks[0]).cross(Vector3.UP).normalized() * 0.009
+		marks = [marks[0] + side, marks[0] - side, marks[1] + side, marks[1] - side]
+	for k in 4:
+		b.holes.append(marks[k] if k < marks.size() else Vector3(cos(PI / 4 + PI / 2 * k), 0.7, sin(PI / 4 + PI / 2 * k)) * b.r * 0.3)
 	for k in 4:
 		var hp: Vector3 = b.holes[k]
 		b.anchors.append(Vector3(hp.x * 1.25, -0.01, hp.z * 1.25))
@@ -435,8 +610,64 @@ func _make_button(ev: Dictionary) -> Btn:
 	b.lid.material_override = _lid_mat()
 	b.lid.visible = false
 	b.root.add_child(b.lid)
+	if spec.spark != null:
+		b.spark = Sprite3D.new()
+		b.spark.texture = _spark_tex()
+		b.spark.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		b.spark.fixed_size = true
+		b.spark.pixel_size = SPARK_PX
+		b.spark.shaded = false
+		b.spark.double_sided = true
+		b.spark.alpha_cut = SpriteBase3D.ALPHA_CUT_DISABLED
+		b.spark.modulate = Color(spec.spark, 0.0)
+		b.spark.position = Vector3(0, b.thick + 0.06, 0)
+		b.spark.render_priority = 2
+		b.body.add_child(b.spark)
+		b.next_spark = float(b.sd % 100) / 100.0
 	b.root.visible = false
 	return b
+
+
+static var _spark: ImageTexture
+
+## またたきの星: 4 本の細い光の筋と、まんなかのにじみ（白。色は modulate）
+static func _spark_tex() -> ImageTexture:
+	if _spark:
+		return _spark
+	var n := 64
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in n:
+		for x in n:
+			var p := Vector2(x - n / 2.0 + 0.5, y - n / 2.0 + 0.5) / (n / 2.0)
+			var core := exp(-p.length_squared() * 18.0)
+			var ray := exp(-absf(p.x) * 22.0) * maxf(0.0, 1.0 - absf(p.y)) + exp(-absf(p.y) * 22.0) * maxf(0.0, 1.0 - absf(p.x))
+			var diag := Vector2(p.x + p.y, p.x - p.y) * 0.7071
+			ray += 0.35 * (exp(-absf(diag.x) * 30.0) * maxf(0.0, 1.0 - absf(diag.y) * 1.6) + exp(-absf(diag.y) * 30.0) * maxf(0.0, 1.0 - absf(diag.x) * 1.6))
+			img.set_pixel(x, y, Color(1, 1, 1, clampf(core + ray * 0.9, 0.0, 1.0)))
+	_spark = ImageTexture.create_from_image(img)
+	return _spark
+
+
+## またたき（12 コマ）: いつもは小さく薄く光り、ときどき大きくきらっと（4 コマ）。螺鈿は色が虹色に移る
+func _twinkle(b: Btn, f: int, bury: float) -> void:
+	if b.spark == null:
+		return
+	b.next_spark -= 1.0 / Doll.FPS
+	if b.next_spark <= 0.0:
+		b.spark0 = f
+		var k := 1.0 - 0.3 * (b.tier - 1)
+		b.next_spark = lerpf(SPARK_EVERY.x, SPARK_EVERY.y, float((b.sd + f) % 100) / 100.0) * k
+	var shape: Array = [1.0, 1.7, 1.25, 0.7]
+	var j := f - b.spark0
+	var big: float = shape[j] if j >= 0 and j < shape.size() else 0.0
+	var col: Color = TIERS[b.tier].spark
+	if b.tier == 3:
+		col = Color.from_hsv(fposmod(f * 0.07 + b.sd * 0.01, 1.0), 0.45, 1.0)
+	var a := (0.45 + 0.55 * minf(big, 1.0)) * (1.0 - bury)
+	b.spark.modulate = Color(col, a)
+	var sc := (0.55 + big * 0.9) * (1.0 - 0.5 * bury)
+	b.spark.scale = Vector3.ONE * sc
+	b.spark.rotation.z = big * 0.3 + (f % 4) * 0.04
 
 
 func _thread_mat(c: Color) -> StandardMaterial3D:
@@ -467,6 +698,7 @@ func _process(_dt: float) -> void:
 	_last_frame = f
 	if not stepped:
 		return
+	_update_shears(f)
 	for id in buttons.keys():
 		var b: Btn = buttons[id]
 		_update_button(b, f, t)
@@ -508,6 +740,11 @@ func _update_button(b: Btn, f: int, t: float) -> void:
 		"pop":
 			_pose_pop(b, f)
 			_draw_thread(b, f, t)
+			_twinkle(b, f, 0.0)
+			return
+		"shear":   # はさみが来るのを待つ（風でめくれず、じっと）
+			_draw_thread(b, f, t)
+			_twinkle(b, f, 0.0)
 			return
 	if b.state in ["sew", "rest"]:
 		# 埋もれる
@@ -518,6 +755,7 @@ func _update_button(b: Btn, f: int, t: float) -> void:
 		var bury := clampf(float(f - (b.end_f - b.bury_f)) / b.bury_f, 0.0, 1.0)
 		_pose_rest(b, f, t, bury)
 		_draw_thread(b, f, t, bury)
+		_twinkle(b, f, bury)
 
 
 ## 降ってくる: 木の葉のように左右へ揺れ、揺れに合わせて傾きながら、ゆっくり落ちる
@@ -562,7 +800,7 @@ func _pose_rest(b: Btn, f: int, t: float, bury: float) -> void:
 		lift = flut * 0.035
 	b.psi = psi
 	b.body.transform = _flip(b, wd, psi, lift)
-	b.body.position -= Vector3.UP * bury * THICK * 1.4
+	b.body.position -= Vector3.UP * bury * b.thick * 1.4
 	b.lid.visible = bury > 0.0
 	if bury > 0.0:
 		b.lid.scale = Vector3(1.0, smoothstep(0.0, 1.0, bury) * 1.0 + 0.02, 1.0) * lerpf(0.6, 1.0, bury)
@@ -625,9 +863,9 @@ func _flip(b: Btn, wd: Vector3, psi: float, lift: float) -> Transform3D:
 	var p := psi - 180.0 * n
 	var base := Transform3D()
 	if n == 1:
-		var piv0 := wd * b.r + Vector3.UP * THICK * 0.5
+		var piv0 := wd * b.r + Vector3.UP * b.thick * 0.5
 		base = Transform3D(Basis(ax, PI), piv0 - Basis(ax, PI) * piv0)
-	var piv := wd * (b.r + 2.0 * b.r * n) + Vector3.UP * THICK * 0.5
+	var piv := wd * (b.r + 2.0 * b.r * n) + Vector3.UP * b.thick * 0.5
 	var rot := Basis(ax, deg_to_rad(p))
 	var tr := Transform3D(rot, piv - rot * piv) * base
 	tr.origin += Vector3.UP * lift
@@ -669,7 +907,8 @@ func _pop(b: Btn, f: int, sled: Node3D) -> void:
 	b.cut_bits = true
 	_audio("snap", b.at, f)
 	_audio("pop", b.at, f + 1)
-	_confetti(b.at + b.up * 0.15)
+	_audio("take", b.at, f + 2, b.tier)
+	_confetti(b.at + b.up * 0.15, b.tier)
 	# 切れた糸の残りは、しばらく雪に残って消える
 	get_tree().create_timer(4.0).timeout.connect(func() -> void:
 		if is_instance_valid(b.thread):
@@ -828,10 +1067,10 @@ static func _tube(m: ImmediateMesh, pts: PackedVector3Array, rad: float) -> void
 # ---------------------------------------------------------------- 粒と音
 
 ## 小さな紙吹雪: 色とりどりの紙の切れはしが、ぱっと舞って、ひらひら落ちる
-func _confetti(at: Vector3) -> void:
+func _confetti(at: Vector3, tier := 0) -> void:
 	var p := CPUParticles3D.new()
 	p.one_shot = true
-	p.amount = 22
+	p.amount = 22 + 14 * tier   # 値打ちが高いほど多く
 	p.lifetime = 1.8
 	p.explosiveness = 0.95
 	p.local_coords = false
@@ -896,7 +1135,62 @@ func _puff(at: Vector3, up: Vector3, size: float) -> void:
 	get_tree().create_timer(1.5).timeout.connect(p.queue_free)
 
 
-func _audio(what: String, at: Vector3, f: int) -> void:
+func _audio(what: String, at: Vector3, f: int, tier := 0) -> void:
 	var a: Node = world.get_node_or_null("Audio") if world else null
 	if a and a.has_method("button"):
-		a.button(what, at, f)
+		a.button(what, at, f, tier)
+
+
+# ---------------------------------------------------------------- 裁ちばさみ
+
+## はさみの開き（度）と、手もと（0）からボタン（1）までの位置の並び（コマごと）。8 と 10 コマ目で「ちょきん」
+const SHEAR_OPEN := [0, 0, 0, 14, 28, 38, 40, 12, 0, 26, 0, 0, 0, 0, 0]
+const SHEAR_GO := [0.0, 0.0, 0.0, 0.35, 0.7, 0.92, 1.0, 1.0, 1.0, 1.0, 1.0, 0.7, 0.35, 0.0, 0.0]
+const SHEAR_SCALE := [0.3, 1.15, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.45]
+const SHEAR_SIZE := 1.7        # はさみの大きさ（glb の 0.46 m に掛ける。人形の手に持たせて、遠くからも読めるように）
+
+
+func _start_shears(b: Btn, who: Node3D, f0: int) -> void:
+	var n := Node3D.new()
+	n.name = "Shears"
+	var ha := Props.make(GLB_DIR + "shears_a.glb")
+	var hb := Props.make(GLB_DIR + "shears_b.glb")
+	n.add_child(ha)
+	n.add_child(hb)
+	n.visible = false
+	add_child(n)
+	_shears.append({"node": n, "a": ha, "b": hb, "btn": b, "who": who, "f0": f0})
+	_audio("swish", who.global_position + Vector3.UP, f0)
+	_audio("shears", b.at, f0 + SHEAR_CUT)
+	_audio("shears", b.at, f0 + SHEAR_CUT + 2)
+
+
+## はさみを動かす（12 コマ）: 手から出て、ボタンの糸へ伸び、開いて、ちょきん、ちょきん。戻ってしまう
+func _update_shears(f: int) -> void:
+	for s in _shears.duplicate():
+		var k: int = f - int(s.f0)
+		var n: Node3D = s.node
+		var who: Node3D = s.who
+		var b: Btn = s.btn
+		if k >= SHEAR_OPEN.size() or not is_instance_valid(who):
+			n.queue_free()
+			_shears.erase(s)
+			continue
+		if k < 0:
+			continue
+		n.visible = true
+		var fwd := -who.global_basis.z
+		fwd.y = 0
+		fwd = fwd.normalized()
+		var right := fwd.cross(Vector3.UP)
+		var hand := who.global_position + Vector3.UP * 1.0 + fwd * 0.35 + right * 0.2
+		var to: Vector3 = b.at + b.up * (b.thick + 0.05) - (b.at - who.global_position).normalized() * 0.12
+		to.y = maxf(to.y, b.at.y + b.thick + 0.04)
+		var p := hand.lerp(to, float(SHEAR_GO[k]))
+		var dir := (to - hand).normalized() if hand.distance_to(to) > 0.05 else fwd
+		if float(SHEAR_GO[k]) > 0.5:
+			dir = (dir * Vector3(1, 0.4, 1)).normalized()   # 糸に近づいたら、刃を寝かせてすべり込ませる
+		n.global_transform = Transform3D(Basis.looking_at(dir, Vector3.UP).scaled(Vector3.ONE * float(SHEAR_SCALE[k]) * SHEAR_SIZE), p)
+		var op := deg_to_rad(float(SHEAR_OPEN[k])) * 0.5
+		(s.a as Node3D).rotation.y = -op
+		(s.b as Node3D).rotation.y = op

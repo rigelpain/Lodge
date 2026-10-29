@@ -9,7 +9,11 @@ extends SceneTree
 ##   roll   強い風で、ころころ 2 回転がって糸に引かれて戻る様子を、コマ撮りの 1 コマごとに並べた 1 枚
 ##   fall   空からひらひら降ってきて、雪に着き、糸がするっと縫い付く様子を、2 コマおきに並べた 1 枚
 ##   snip   中のソリ（乗る人 1 人）がばらばらのボタンの上を滑り、滑り木で糸が切れてボタンがぽんと跳ね、ソリへ飛んでいくまでを、1 コマごとに並べた 1 枚
-##   hud    （--no-player なしで）財布にボタンが 1 個ずつ 2 回入る。画面の下で財布がぽんと増えるまでを並べた 1 枚
+##   hud    （--no-player なしで）財布にボタンが入る（木 1・真鍮 10・白蝶貝 100・螺鈿 1000 を順に）。
+##   tiers  お金の 4 段（木・真鍮・白蝶貝・螺鈿）を横に並べ、近くからと、遠く（ふもとの登り口）から。遠くは光るまたたきの確かめ
+##   shears （--no-player なしで）歩いて近づいたときの案内（F と裁ちばさみのワッペン）と、裁ちばさみで切る動き（1 コマごと）
+##   ride   （--no-player なしで）頂上から乗って滑り、止まったときに速さの表示の糸が巻き取られ、ボタンが財布へ飛ぶまで。
+##          途中で真鍮の縫い込み（ride_mark）を 1 つ、確かめのために出す画面の下で財布がぽんと増えるまでを並べた 1 枚
 ## 並べた 1 枚は <dir>/<case>_sheet.png、1 枚ずつは <dir>/<case>_<名前>.png。
 
 const DUMMY_SRC := """extends Node3D
@@ -121,6 +125,12 @@ func _run() -> void:
 			await _case_snip()
 		"hud":
 			await _case_hud()
+		"tiers":
+			await _case_tiers()
+		"shears":
+			await _case_shears()
+		"ride":
+			await _case_ride()
 	quit()
 
 
@@ -228,14 +238,92 @@ func _case_hud() -> void:
 		main.hud.visible = true
 	await _wait_frames(30)
 	var at: Vector3 = p.cam.global_position - p.cam.global_basis.z * 6.0 + Vector3.UP * -1.0
-	main.craft.send({"kind": "earn", "who": p.id, "n": 1, "at": at})
 	var imgs: Array[Image] = []
+	var k := 0
+	for n in [1, 10, 100, 1000]:
+		main.craft.send({"kind": "earn", "who": p.id, "n": n, "at": at + Vector3(k - 1.5, 0, 0)})
+		k += 1
+		for i in 3:
+			await _wait_frames(8)
+			imgs.append(await _grab())
+	_sheet(imgs, 4, 480)
+
+
+func _case_tiers() -> void:
+	sb.gust_override = 0.3
+	for t in 4:
+		sb.drop_at(Vector3(-1.5 + t * 1.0, 0, 14.0), 0, false, t)
+	await _wait_steps(34 + 12 + 6)
+	_look(_snow(0, 14) + Vector3(0.4, 1.6, -2.4), _snow(0, 14) + Vector3(0, 0.05, 0.2), 45.0)
+	await _wait_steps(1)
+	_save(await _grab(), "close")
+	var imgs: Array[Image] = []
+	_look(_snow(2, 40) + Vector3.UP * 1.6, _snow(0, 14) + Vector3.UP * 0.5, 60.0)
 	for i in 6:
-		await _wait_frames(4)
+		await _wait_steps(3)
 		imgs.append(await _grab())
-	await _wait_frames(30)
-	main.craft.send({"kind": "earn", "who": p.id, "n": 1, "at": at + Vector3(2, 0, 0)})
-	for i in 6:
+	_save(imgs[0], "far")
+	_sheet(imgs, 3)
+
+
+func _case_shears() -> void:
+	var p = main.player
+	if p == null:
+		return
+	var id: int = sb.drop_at(Vector3(0, 0, 14.0), 0, false, 1)
+	await _wait_steps(34 + 12 + 4)
+	var b = sb.button(id)
+	p.global_position = b.at + Vector3(0, 0.2, -1.3)
+	p.rotation.y = PI
+	p._pitch = -0.6
+	if main.hud:
+		main.hud.visible = true
+	await _wait_frames(40)
+	_save(await _grab(), "hint")
+	if main.hud:
+		main.hud.visible = false
+	_look(b.at + Vector3(-2.6, 1.3, -0.4), b.at + Vector3(0, 0.55, -0.6), 45.0)
+	sb.request_cut(p.id)
+	p.busy_until = preload("res://doll.gd").frame_index() + 1 + sb.SHEAR_END
+	var imgs: Array[Image] = []
+	for i in 24:
+		await _wait_steps(1)
+		imgs.append(await _grab())
+	_sheet(imgs, 6, 360)
+
+
+func _case_ride() -> void:
+	var p = main.player
+	if p == null:
+		return
+	if main.hud:
+		main.hud.visible = true
+	var sled: RigidBody3D = main.sled
+	var at := Vector3(0, main.height(0, 3.0) + 0.6, 3.0)
+	sled.reset_to(at)
+	sled.global_transform = Transform3D(Basis(Vector3.UP, PI), at)
+	p.global_position = at + Vector3(1.2, 0.3, 0)
+	p.get_on()
+	p.rotation.y = PI
+	p._pitch = -0.1
+	sled.linear_velocity = Vector3(0, 0, 2.0)
+	var paid := [false]
+	sb.happened.connect(func(ev: Dictionary) -> void:
+		if ev.kind == "ride_pay":
+			paid[0] = true)
+	var marked := false
+	var imgs: Array[Image] = []
+	while not paid[0]:
+		await process_frame
+		if main.settings and main.settings.is_open:
+			main.settings.set_open(false)
+			p.menu_open = false
+		if not marked and sled.global_position.z > 22.0:
+			marked = true   # 確かめのため: いちばん速い所を超えたことにして、真鍮を縫い込む
+			sb.send({"kind": "ride_mark", "sled": String(sled.name), "speed": 10.0})
+			await _wait_frames(6)
+			imgs.append(await _grab())
+	for i in 11:
+		imgs.append(await _grab())
 		await _wait_frames(5)
-		imgs.append(await _grab())
 	_sheet(imgs, 4, 480)
