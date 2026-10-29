@@ -1245,7 +1245,8 @@ func _kicked() -> void:
 
 
 ## 米袋に乗ったまま F: そばに別のソリがあれば、米袋から降りてそのソリにしがみつく。
-## 速く下っていれば、そのまま「引きずられて止める」に入る。米袋はその場に残る（N で呼び戻す・しまう）
+## 速く下っていれば、そのまま「引きずられて止める」に入る。米袋は自動で帯に戻す（craft.gd の sack_in。装備なので
+## 空の米袋を坂に残さない。2026-10-29 店のセッションと決めた）
 func catch_from_sack() -> bool:
 	var sack := sled
 	if sack == null or sack.kind != "sack":
@@ -1268,4 +1269,6 @@ func catch_from_sack() -> bool:
 	global_position = at
 	sled = best
 	grab()
+	if craft:
+		craft.send({"kind": "sack_in", "who": id})   # 降りたあとなので、乗っている人はいない
 	return mode == Mode.GRIP
