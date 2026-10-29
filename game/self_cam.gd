@@ -37,6 +37,7 @@ var player: CharacterBody3D
 var cam: Camera3D
 var vp: SubViewport
 var hidden := false
+var plain_frame := false      # true なら、木の輪とねじは描かない（hud_plates.gd の立体の刺繍枠を重ねる）。赤い糸の縁取りだけ
 
 var _frame: Control
 var _mat: ShaderMaterial
@@ -430,6 +431,9 @@ class Frame extends Control:
 		var c := size / 2.0
 		var r := size.x / 2.0
 		Icons.screen()
+		if sc.plain_frame:
+			Icons.dashes(self, Icons.circ(c, r - 7.0 * u, 72), Icons.RED, 1.8 * u, 6.0 * u, 4.0 * u, 0.95, true)
+			return
 		# 落ち影（輪の外側だけ。窓の絵の上には重ねない）
 		draw_arc(c + Vector2(1.5, 3.0) * u, r + 5.5 * u, 0.0, TAU, 64, Color(Icons.SHADOW, 0.22), 11.0 * u, true)
 		# 外の輪（木）: 濃い縁、木の面、明るい筋

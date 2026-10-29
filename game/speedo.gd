@@ -30,13 +30,21 @@ static func thread_color(base: Color, k: float) -> Color:
 
 ## box（画面の px）の中に描く。k は盛り上がり（level_of）、spin は回した角度、dist は滑った長さ (m)、
 ## base はソリのメインカラー、best は今日いちばんの速さ、pop は跳ね（1→0）、knots は結び目を結んだときの dist、a は薄さ
+## ボビンの真ん中と半径（画面の px）。跳ねると上がって少しふくらむ
+static func spool_at(box: Rect2, pop: float) -> Array:
+	var u := box.size.y / 160.0
+	var hop := sin(pop * PI)
+	return [Vector2(box.end.x - 70.0 * u, box.position.y + 66.0 * u - hop * 18.0 * u), 54.0 * u * (1.0 + 0.12 * hop)]
+
+
+## spool が false なら、ボビンの本体は描かない（hud_plates.gd の立体のボビンを使うとき）
 static func draw(ci: CanvasItem, box: Rect2, speed: float, k: float, spin: float, dist: float, base: Color, best: float,
-		pop: float, knots: Array, a: float) -> void:
+		pop: float, knots: Array, a: float, spool := true) -> void:
 	var u := box.size.y / 160.0
 	var col := thread_color(base, k)
-	var hop := sin(pop * PI)
-	var r := 54.0 * u * (1.0 + 0.12 * hop)
-	var c := Vector2(box.end.x - 70.0 * u, box.position.y + 66.0 * u - hop * 18.0 * u)
+	var sa := spool_at(box, pop)
+	var c: Vector2 = sa[0]
+	var r: float = sa[1]
 	# ---- 下の端の縫い目（糸の行き先）。滑った長さだけ左へ流れる
 	var y_st := box.end.y - 12.0 * u
 	var x_needle := c.x - r * 0.9
@@ -93,6 +101,28 @@ static func draw(ci: CanvasItem, box: Rect2, speed: float, k: float, spin: float
 			Icons.thread(ci, PackedVector2Array([c + d * r0, c + d * (r0 + 14.0 * u * pop)]), col, 2.0 * u, a * pop)
 	# ---- ボビン（正面から: 木の端の板、巻いた糸の縁、三つ穴が回る。速いと穴がぶれて残像になる）
 	Icons.screen()
+	if spool:
+		_spool(ci, c, r, col, k, spin, a)
+	# 回る勢いの弧（速いほど長く、重なる）
+	for j in int(1 + 2.5 * minf(k, 2.0)):
+		var sweep := 0.5 + 1.2 * minf(k, 2.0) - j * 0.2
+		var rr := r + (8.0 + j * 6.0) * u
+		var st := -PI / 2.0 + j * 1.9
+		ci.draw_arc(c, rr, st, st + sweep, 18, Color(Icons.THREAD, (0.55 - j * 0.12) * a), 2.0 * u, true)
+	if not spool and k > 0.2:   # 立体のボビンの上に、穴の通り道のぶれの輪だけ重ねる
+		ci.draw_arc(c, r * 0.34, 0, TAU, 32, Color(0.32, 0.22, 0.14, 0.16 * a * minf(k, 1.0)), r * 0.16, true)
+	# 今日いちばんの印: ボビンのまわりの、その速さの角度に赤い待ち針（数字の代わりの目印）
+	if best > 1.0:
+		var ba := -PI / 2.0 + TAU * clampf(best / TOP, 0.0, 1.0)
+		var bd := Vector2(cos(ba), sin(ba))
+		var bp := c + bd * (r + 4.0 * u)
+		Icons.thread(ci, PackedVector2Array([bp, bp + bd * 12.0 * u]), Color(0.7, 0.72, 0.76), 1.4 * u, a)
+		ci.draw_circle(bp + bd * 13.0 * u, 3.6 * u, Color(Icons.RED, a))
+
+
+## 平らなボビン（木の端の板、巻いた糸の縁、三つ穴。速いと穴がぶれて残像になる）
+static func _spool(ci: CanvasItem, c: Vector2, r: float, col: Color, k: float, spin: float, a: float) -> void:
+	var u := r / 54.0
 	Icons.patch(ci, Icons.circ(c, r, 32), WOOD, a, false)
 	Icons.patch(ci, Icons.circ(c, r * 0.82, 28), col, a, false)
 	for i in 3:   # 巻いた糸の筋
@@ -109,19 +139,6 @@ static func draw(ci: CanvasItem, box: Rect2, speed: float, k: float, spin: float
 	if blur > 0.2:   # 速いと、穴の通り道が輪のぶれになって見える
 		ci.draw_arc(c, r * 0.28, 0, TAU, 32, Color(0.32, 0.22, 0.14, 0.18 * a * minf(blur, 1.0)), r * 0.16, true)
 	ci.draw_circle(c, r * 0.07, Color(0.25, 0.17, 0.11, a))
-	# 回る勢いの弧（速いほど長く、重なる）
-	for j in int(1 + 2.5 * minf(k, 2.0)):
-		var sweep := 0.5 + 1.2 * minf(k, 2.0) - j * 0.2
-		var rr := r + (8.0 + j * 6.0) * u
-		var st := -PI / 2.0 + j * 1.9
-		ci.draw_arc(c, rr, st, st + sweep, 18, Color(Icons.THREAD, (0.55 - j * 0.12) * a), 2.0 * u, true)
-	# 今日いちばんの印: ボビンのまわりの、その速さの角度に赤い待ち針（数字の代わりの目印）
-	if best > 1.0:
-		var ba := -PI / 2.0 + TAU * clampf(best / TOP, 0.0, 1.0)
-		var bd := Vector2(cos(ba), sin(ba))
-		var bp := c + bd * (r + 4.0 * u)
-		Icons.thread(ci, PackedVector2Array([bp, bp + bd * 12.0 * u]), Color(0.7, 0.72, 0.76), 1.4 * u, a)
-		ci.draw_circle(bp + bd * 13.0 * u, 3.6 * u, Color(Icons.RED, a))
 
 
 ## 視界の左右の端の縫い目（速さの線）: 目の高さの少し下から、画面の下の角へ向かう 2 本の縫い目が、滑る速さで外へ縫い流れる。
