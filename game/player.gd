@@ -343,6 +343,52 @@ func get_off() -> void:
 	velocity = Vector3.ZERO
 
 
+# ---------------------------------------------------------------- 米袋で足で漕ぐ・追いついて止める
+
+const CATCH_REACH := 2.4     # 米袋に乗ったまま F でつかめる、ほかのソリのつかみ所までの距離 (m)
+var _kick_side := 1
+
+## 蹴れた: 足を交互に出し（人形のコマ）、足もとに雪の粉、蹴る音
+func _kicked() -> void:
+	_kick_side = -_kick_side
+	doll.kick(_kick_side)
+	var foot: Vector3 = sled.to_global(seat + Vector3(0.15 * _kick_side, -seat.y, 0.2))
+	preload("res://snowball.gd").splat_at(get_parent(), foot + Vector3.UP * 0.05, Vector3.UP, true)
+	var au := get_parent().get_node_or_null("Audio")
+	if au and au.has_method("kick"):
+		au.kick(self)
+
+
+## 米袋に乗ったまま F: そばに別のソリがあれば、米袋から降りてそのソリにしがみつく。
+## 速く下っていれば、そのまま「引きずられて止める」に入る。米袋は自動で帯に戻す（craft.gd の sack_in。装備なので
+## 空の米袋を坂に残さない。2026-10-29 店のセッションと決めた）
+func catch_from_sack() -> bool:
+	var sack := sled
+	if sack == null or sack.kind != "sack":
+		return false
+	var best: RigidBody3D = null
+	var best_d := CATCH_REACH
+	for s in get_tree().get_nodes_in_group("sleds"):
+		var rb := s as RigidBody3D
+		if rb == null or rb == sack or not rb.visible:
+			continue
+		var gp: Array = rb.grip_point_near(global_position)
+		var d := global_position.distance_to(rb.to_global(gp[0]))
+		if d < best_d:
+			best = rb
+			best_d = d
+	if best == null:
+		return false
+	var at := global_position
+	get_off()
+	global_position = at
+	sled = best
+	grab()
+	if craft:
+		craft.send({"kind": "sack_in", "who": id})   # 降りたあとなので、乗っている人はいない
+	return mode == Mode.GRIP
+
+
 func _key(k: Key) -> float:
 	return 1.0 if Input.is_physical_key_pressed(k) else 0.0
 
@@ -1227,48 +1273,3 @@ static func held_shape(it: Dictionary) -> Node3D:
 	root.rotation.x = 0.5
 	return root
 
-
-# ---------------------------------------------------------------- 米袋で足で漕ぐ・追いついて止める
-
-const CATCH_REACH := 2.4     # 米袋に乗ったまま F でつかめる、ほかのソリのつかみ所までの距離 (m)
-var _kick_side := 1
-
-## 蹴れた: 足を交互に出し（人形のコマ）、足もとに雪の粉、蹴る音
-func _kicked() -> void:
-	_kick_side = -_kick_side
-	doll.kick(_kick_side)
-	var foot: Vector3 = sled.to_global(seat + Vector3(0.15 * _kick_side, -seat.y, 0.2))
-	preload("res://snowball.gd").splat_at(get_parent(), foot + Vector3.UP * 0.05, Vector3.UP, true)
-	var au := get_parent().get_node_or_null("Audio")
-	if au and au.has_method("kick"):
-		au.kick(self)
-
-
-## 米袋に乗ったまま F: そばに別のソリがあれば、米袋から降りてそのソリにしがみつく。
-## 速く下っていれば、そのまま「引きずられて止める」に入る。米袋は自動で帯に戻す（craft.gd の sack_in。装備なので
-## 空の米袋を坂に残さない。2026-10-29 店のセッションと決めた）
-func catch_from_sack() -> bool:
-	var sack := sled
-	if sack == null or sack.kind != "sack":
-		return false
-	var best: RigidBody3D = null
-	var best_d := CATCH_REACH
-	for s in get_tree().get_nodes_in_group("sleds"):
-		var rb := s as RigidBody3D
-		if rb == null or rb == sack or not rb.visible:
-			continue
-		var gp: Array = rb.grip_point_near(global_position)
-		var d := global_position.distance_to(rb.to_global(gp[0]))
-		if d < best_d:
-			best = rb
-			best_d = d
-	if best == null:
-		return false
-	var at := global_position
-	get_off()
-	global_position = at
-	sled = best
-	grab()
-	if craft:
-		craft.send({"kind": "sack_in", "who": id})   # 降りたあとなので、乗っている人はいない
-	return mode == Mode.GRIP
