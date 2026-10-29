@@ -394,15 +394,39 @@ func lean(steer: float, forward: bool, back: bool = false) -> void:
 	_n_back += 1 if back else 0
 
 
+## 乗っている人が進めようとする向き（地面に沿う。n は雪面の上）。雪をかく（W）のも、米袋を漕ぐ（Space）のも、この向きへ。
+## 滑っていれば、いま滑っている向きへ（2026-10-30 代表「後ろ向きでも効かせる」）:
+##   ソリの軸に沿って滑っている（前か後ろ。滑り木があるのでたいていそう）なら、軸の前か後ろのうち滑っている側。前向きはこれまでと同じ向き
+##   軸から大きく外れて滑っている（横向き・くるくる回っている）なら、速度の水平の向き
+## ほとんど動いていなければ（GO_DIR_SPEED まで）、ソリの前の向き。
+## 登る向きの分を消す（雪かき）・登りでは蹴れない（漕ぎ）の決まりは、呼ぶ側がこの向きで確かめる
+const GO_DIR_SPEED := 0.3
+const GO_AXIS_COS := 0.8   # 滑る向きとソリの軸のなす角の cos がこれより大きければ、軸に沿って滑っているとみなす（約 37° まで）
+
+
+func go_dir(n: Vector3) -> Vector3:
+	var fwd := -global_basis.z
+	fwd.y = 0
+	fwd = fwd.normalized()
+	var hv := Vector3(linear_velocity.x, 0, linear_velocity.z)
+	var d := -global_basis.z   # ソリの前（前向きは、これまでと同じ向き）
+	if hv.length() > GO_DIR_SPEED:
+		var c := hv.normalized().dot(fwd)
+		if absf(c) > GO_AXIS_COS:
+			d *= signf(c)   # 軸に沿って、前か後ろの滑っている側
+		else:
+			d = hv          # 横向き・回りながら: 滑っている向き
+	return (d - n * d.dot(n)).normalized()
+
+
 ## 乗っている人が足で雪を蹴る（Space を押すたび）。蹴れたら true
 func kick(who: Node3D) -> bool:
 	var K: Dictionary = KINDS[kind]
 	if K.get("kick", 0.0) <= 0.0 or not riders.has(who) or linear_velocity.length() < KICK_MIN_SPEED:
 		return false
 	var n := _ground_normal()
-	var f := -global_basis.z
-	f = (f - n * f.dot(n)).normalized()   # 地面に沿った前
-	var slope := 0.0                        # 前の向きの下り（sin）。登りなら負
+	var f := go_dir(n)                     # 地面に沿った、いま滑っている向き（後ろ向き・横向きでも）
+	var slope := 0.0                        # 進む向きの下り（sin）。登りなら負
 	slope = -f.y
 	if slope < -0.02:
 		return false                        # 登りでは蹴っても進まない
@@ -927,7 +951,7 @@ func _physics_process(dt: float) -> void:
 	# 頂上などで、乗ったまま前傾すると手で雪をかいて動き出す。
 	# 雪をかく力は坂を登る向きには効かない（平らな所と下りでだけ進む）。乗って W で登ると、降りて押すより速くなるため
 	if riding and _n_fwd > 0 and speed < 1.5:
-		var f := (fwd - n * fwd.dot(n)).normalized()            # 地面に沿った前
+		var f := go_dir(n)                                      # 地面に沿った、いま滑っている向き（ほとんど止まっていれば前）
 		var down := Vector3.DOWN - n * Vector3.DOWN.dot(n)      # 地面に沿った下り
 		if down.length() > 0.01:
 			down = down.normalized()
