@@ -57,13 +57,10 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 			_fabric(ci, Vector2.ZERO, 1.0, Fabrics.color(it.get("fabric", "red")), a)
 		"folded":
 			_folded(ci, Vector2.ZERO, it.get("sled", "mid"), Fabrics.color(it.get("fabric", "red")), a)
-			# 包みに付けた名札。窓に、広げた姿がくるくる回る
+			# 包みの面に貼った名札（手に持った包みと同じ並び）。窓に、広げた姿がくるくる回る
 			var Tags := preload("res://sled_tags.gd")
-			var tr := Rect2(center + Vector2(-size * 0.02, -size * 0.56), Vector2(size * 0.62, size * 0.4))
-			Tags.draw_tag(ci, tr, int(it.get("tag", 0)), a, false)
-			var tw := tr.size.y * 0.86
-			ci.draw_texture_rect(Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")),
-					Rect2(Vector2(tr.end.x - tw - tr.size.y * 0.1, tr.position.y + (tr.size.y - tw) / 2.0), Vector2(tw, tw)), false, Color(1, 1, 1, a))
+			Tags.draw_on_packet(ci, center + Vector2(0, size * 0.02), size * 0.86, int(it.get("tag", 0)),
+					Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")), a)
 		_:
 			Icons.mitten(ci, Vector2(0, 2), 0.0, Icons.RED, a, true, 1.5)
 
@@ -148,7 +145,6 @@ static func _folded(ci: CanvasItem, c: Vector2, kind: String, col: Color, a: flo
 	Icons.dashes(ci, Icons.xf(PackedVector2Array([Vector2(-20, 0), Vector2(20, 0)]), PI / 4, c, k), crease, 1.0, 2.5, 2.0, a)
 	Icons.dashes(ci, Icons.xf(PackedVector2Array([Vector2(0, -20), Vector2(0, 20)]), PI / 4, c, k), crease, 1.0, 2.5, 2.0, a)
 	Icons.patch(ci, Icons.xf(PackedVector2Array([Vector2(-20, -20), Vector2(20, -20), Vector2(0, 0)]), PI / 4, c, k), col.darkened(0.12), a, false)
-	Icons.sled_side(ci, c + Vector2(0, 2) * k, 0.55 * k, a)
 
 
 ## 畳む・広げるの絵: 大きな四角が半分に折れる（矢印つき）

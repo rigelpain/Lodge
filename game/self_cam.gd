@@ -414,6 +414,14 @@ func _sync_held() -> void:
 			_held = att
 	if _held:
 		_held.visible = not doll.holding_ball and not doll._ball.visible
+		if it.get("kind") == "folded" and _held.get_child_count() > 0:
+			# 畳んだソリの包みは、名札を貼った面を人形の前へ向ける（小窓・ほかの人から見える）
+			var f: Vector3 = -player.global_basis.z
+			f.y = 0
+			f = f.normalized()
+			var b := Basis(f.cross(Vector3.DOWN), f, Vector3.DOWN).rotated(f.cross(Vector3.UP).normalized(), -0.3)
+			var shape: Node3D = _held.get_child(0)
+			shape.global_transform = Transform3D(b.scaled(Vector3.ONE * 2.0), _held.global_position + f * 0.1 + Vector3.UP * 0.05)
 
 
 ## 刺繍枠の丸窓
