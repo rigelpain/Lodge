@@ -14,6 +14,9 @@ button_chari_01..08   財布にボタンが入る 1 粒（2026-10-30 代表「�
                       ボタンが財布の山に当たって重なる、硬く軽い音: 当たるカッと、すぐ跳ねて落ち着くチッ（2 つの粒、15〜35 ms あけて）。
                       ゲームでは、入るボタンの数だけ 50〜75 ms ごとに続けて鳴らし（audio.gd の coin）、チャリチャリチャリ…にする。
                       8 つは当たる高さ・間・響きを少しずつ変えてある（機械的に聞こえないように）
+button_stitch_01..03  滑っている最中、速さの表示の糸の上にボタンが縫い付いて積もる（2026-10-30 代表「滑り降りている最中もスタックする
+                      報酬のコインの音はしてほしい」）: 糸が通るぷつっと、ボタンが前のボタンの上に落ち着くころん（木の小さな当たり 2 つ）
+button_glint_01       真鍮が縫い付いたときに重ねる、きらっ（高く短い澄んだ粒が駆け上がる）
 滑り終わって、もらったボタンが全部財布に入ったときの締めくくり（2026-10-30 代表「滑り終わったあとに手元に入ってくるお金の音がしないのが悲しい」）:
 button_reward_01      少し（〜5 枚）: 木のボタンが手の中でまとまる、ちゃりっ
 button_reward_02      ふつう（6〜12 枚）: もう少し多く重なって、ちゃりん
@@ -150,6 +153,26 @@ def chari(rng):
     return fade(out, 0.0002, 0.03)
 
 
+def stitch_on(rng):
+    out = np.zeros(n_of(0.3))
+    n = n_of(0.03)
+    pierce = bp(rng.standard_normal(n), 1800, 6000, 2) * exp_decay(n, 0.0025)   # 糸が通るぷつっ
+    place(out, pierce * 0.7, 0.0)
+    f0 = rng.uniform(700, 900)
+    place(out, wood(rng, n_of(0.16), f0, 0.03) * 0.9, 0.03)                      # ころん: 落ちて
+    place(out, wood(rng, n_of(0.12), f0 * 1.12, 0.018) * 0.45, 0.03 + rng.uniform(0.05, 0.07))   # 小さく転がって止まる
+    return fade(out, 0.0003, 0.05)
+
+
+def glint(rng):
+    out = np.zeros(n_of(0.6))
+    for i, f in enumerate([2637.0, 3136.0, 3951.0, 5274.0]):
+        place(out, ting(rng, n_of(0.45), f * rng.uniform(0.99, 1.01), 0.12, (1.0, 2.76, 5.4, 8.9)) * (0.7 - 0.1 * i), 0.03 * i)
+    n = n_of(0.3)
+    place(out, bp(rng.standard_normal(n), 6000, 12000, 2) * ar(n, 0.01, 0.25, 2.0) * 0.08, 0.0)
+    return fade(out, 0.0005, 0.12)
+
+
 def clink_cluster(rng, count, spread, f_lo=900.0, f_hi=1500.0):
     """何枚ものボタンが手の中で触れ合う: 木のコッを、少しずつずらして重ねる（だんだん弱く）"""
     out = np.zeros(n_of(spread + 0.3))
@@ -187,3 +210,6 @@ if __name__ == "__main__":
         write(f"button_reward_{i + 1:02d}.wav", reward(np.random.default_rng(1570 + i), i), -3)
     for i in range(8):
         write(f"button_chari_{i + 1:02d}.wav", chari(np.random.default_rng(1580 + i)), -4)
+    for i in range(3):
+        write(f"button_stitch_{i + 1:02d}.wav", stitch_on(np.random.default_rng(1590 + i)), -4)
+    write("button_glint_01.wav", glint(np.random.default_rng(1595)), -5)

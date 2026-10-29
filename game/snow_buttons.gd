@@ -28,8 +28,11 @@ extends Node3D
 ##   shear  {id, who}                                歩いてきた人が裁ちばさみを出した（frame + SHEAR_CUT コマで snip。snip の by に人の番号）
 ##   ride_mark {sled, look, speed}                   滑っているソリに、ボタンが一つ縫い込まれた（look: "wood" は RIDE_M_PER_WOOD 滑るごと、
 ##                                                   "brass" はいちばん速い所 speed を超えたとき）
-##   ride_pay  {sled, dist, wood, brass, sewn, gives: {番号: 数}}  一回の滑りが終わった。滑った長さ（m）と、木と真鍮の数。
-##                                                   sewn は縫い込んだ順のボタンの並び（"wood"・"brass"）
+##   ride_pay  {sled, dist, wood, brass, sewn, gives: {番号: 数}}  一回の滑りが終わった（まとめ）。滑った長さ（m）と、木と真鍮の数。
+##                                                   sewn は縫い込んだ順のボタンの並び（"wood"・"brass"）。gives は手伝った人の分
+##   ride_pay_one {sled, who, sewn, n, left}         乗っていた一人に、その人が乗ってから縫い込まれた分（sewn、n はその値打ち）を入れる。
+##                                                   止まったとき（left = false）か、途中で降りたとき（E で降りる・米袋をしまう・
+##                                                   落とされる。left = true）。ほかの人の分は、それぞれ降りたときか止まったとき
 ## いまは一人の画面の中だけ: send() がすぐ _apply() して配る。通信を入れたら、当たりの判定（_physics_process）と
 ## 置き場所選び・分け方はホストだけがして、ほかの人は出来事を受けて見た目を動かす（風の揺れは各自の画面だけ）。
 
@@ -370,16 +373,26 @@ func _track_runs(dt: float) -> void:
 		if run.is_empty():
 			if riding and v > 1.5:
 				run = {"top": sled.global_position.y, "cells": {}, "dist": 0.0, "best": 0.0, "marks": [], "riders": {}, "slow": 0.0,
-						"wood": 0, "sewn": []}
+						"wood": 0, "sewn": [], "on": {}, "name": String(sled.name)}
 				_runs[sled] = run
-			continue
+			else:
+				continue
+		# 乗っている人の出入り: 降りた人には、乗ってから縫い込まれた分をすぐ入れる。乗った人は、いまの所から数える
+		var now_ids := {}
+		for r in sled.riders:
+			var rid = r.get("id")
+			now_ids[int(rid) if rid != null else -1] = true
+		for id in run.on.keys():
+			if not now_ids.has(id):
+				_rider_pay(run, id, sled.global_position, true)
+		for id in now_ids:
+			if not run.on.has(id):
+				run.on[id] = run.sewn.size()
+				run.riders[id] = true
 		if riding:
 			var hv := Vector2(sled.linear_velocity.x, sled.linear_velocity.z).length()
 			run.dist += hv * dt
 			run.best = maxf(run.best, v)
-			for r in sled.riders:
-				var rid = r.get("id")
-				run.riders[rid if rid != null else -1] = true
 			if v > 2.0:
 				run.cells[_cell(sled.global_position)] = true
 			for m in RIDE_BRASS:
@@ -400,8 +413,27 @@ func _track_runs(dt: float) -> void:
 			_runs.erase(sled)
 			_ride_pay(sled, run)
 	for s in _runs.keys():
-		if not is_instance_valid(s):
+		if not is_instance_valid(s):   # 米袋をしまった（ソリが消えた）: 乗っていた人の分を入れる
+			var run: Dictionary = _runs[s]
+			for id in run.on.keys():
+				_rider_pay(run, id, Vector3.INF, true)
 			_runs.erase(s)
+
+
+## 乗っていた一人 id に、乗ってから縫い込まれた分を入れる（降りた・止まった）。番号のない人（確かめの人形）には入れない
+func _rider_pay(run: Dictionary, id: int, at: Vector3, left: bool) -> void:
+	var from: int = run.on.get(id, 0)
+	run.on.erase(id)
+	if id < 0:
+		return
+	var pieces: Array = run.sewn.slice(from)
+	var n := 0
+	for look in pieces:
+		n += 10 if look == "brass" else 1
+	if n <= 0:
+		return
+	send({"kind": "ride_pay_one", "sled": String(run.name), "who": id, "sewn": pieces, "n": n, "left": left})
+	_pay({id: n}, at, "spool", pieces, n)
 
 
 # ================================================================ ホスト: 取る
@@ -559,8 +591,11 @@ func _do_cuts() -> void:
 
 # ================================================================ ホスト: 滑った距離と速さ
 
-## 一回の滑り（乗って滑り出してから止まるまで）の長さと速さを数え、終わったら分ける
+## 一回の滑り（乗って滑り出してから止まるまで）が終わった: まだ乗っている人に、それぞれ乗ってから縫い込まれた分を入れ、
+## 押して手伝ったけれど乗らなかった人に、滑り全体の分の HELPER_SHARE を入れる
 func _ride_pay(sled: RigidBody3D, run: Dictionary) -> void:
+	for id in run.on.keys():
+		_rider_pay(run, id, sled.global_position, false)
 	var dist: float = run.dist
 	var wood: int = run.wood
 	var brass: int = run.marks.size()
@@ -568,8 +603,12 @@ func _ride_pay(sled: RigidBody3D, run: Dictionary) -> void:
 	if n <= 0:
 		return
 	var g := _gives(sled, run.riders.keys(), n)
-	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": wood, "brass": brass, "sewn": run.sewn, "gives": g.gives})
-	_pay(g.gives, sled.global_position, "spool", run.sewn, n)
+	var helpers := {}
+	for who in g.gives:
+		if not run.riders.has(who):
+			helpers[who] = g.gives[who]
+	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": wood, "brass": brass, "sewn": run.sewn, "gives": helpers})
+	_pay(helpers, sled.global_position)
 
 
 # ================================================================ 見た目

@@ -47,6 +47,7 @@ var _spd_sewn: Array = []
 var _reel := 0.0              # 滑り終わって、縫い目の糸を巻き取っている残り (s)。糸の上のボタンは財布へ飛ぶ（craft_ui.gd）
 var _reel_t := 1.6            # この巻き取りの長さ (s)。ボタンが多いほど長い
 var _ride_seen := -99.0       # 最後に乗っていた時刻（止まってすぐ降りても、巻き取りを見せる）
+var _ride_sled := ""          # 最後に乗っていたソリの名前（米袋をしまってソリが消えても、自分の分の出来事を見分ける）
 const REEL_T := 1.6
 var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
@@ -430,6 +431,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 	var speed := 0.0
 	if p and p.mode == Player.Mode.RIDE and is_instance_valid(p.sled):
 		_ride_seen = _clock_now()
+		_ride_sled = String(p.sled.name)
 		speed = p.sled.linear_velocity.length()
 		# 1 m/s より遅いのが 1.2 秒続いたら止まったとみなして消す（ふもとでじりじり進むあいだは出さない）
 		_spd_slow = 0.0 if speed > 1.0 else _spd_slow + dt
@@ -492,7 +494,8 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 ##   ride_pay  一回の滑りが終わった → 縫い目の糸がくるくる巻き取られる。そのあいだ、糸の上のボタンが上から順にぽんぽん財布へ飛ぶ
 func _on_buttons(ev: Dictionary) -> void:
 	var p = main.player if main else null
-	if p == null or not is_instance_valid(p.sled) or String(p.sled.name) != String(ev.get("sled", "")):
+	# 自分が乗っている（か、さっきまで乗っていた）ソリのことだけ。米袋をしまうとソリは消えるので、名前で覚えておいた方と比べる
+	if p == null or _ride_sled == "" or _ride_sled != String(ev.get("sled", "")):
 		return
 	match ev.kind:
 		"ride_mark":
@@ -501,9 +504,12 @@ func _on_buttons(ev: Dictionary) -> void:
 				_spd_sewn.append({"d": _spd_dist, "look": look, "claimed": false, "off": false})
 				if look != "wood":
 					_spd_pop = 1.0
-		"ride_pay":
-			# 乗っていた（止まってすぐ降りた人も）: 糸を巻き取って、糸の上のボタンを財布へ
-			if int(p.id) in ev.gives and (p.mode == Player.Mode.RIDE or _clock_now() - _ride_seen < 3.0):
+				var audio = main.get_node_or_null("Audio")
+				if audio:
+					audio.stitch(look)   # 糸に縫い付いて積もる、ぷつっ・ころん（真鍮は、きらっ）
+		"ride_pay_one":
+			# 自分の分（止まったとき・途中で降りたとき）: 糸を巻き取って、糸の上のボタンを財布へ
+			if int(ev.who) == int(p.id):
 				_reel_t = maxf(REEL_T, 1.1 + ev.get("sewn", []).size() * 0.065)
 				_reel = _reel_t
 
