@@ -85,6 +85,9 @@ var craft: Node              # 工房の配り役（main.gd の Craft）。財�
 var shopping := false        # 売り台が開いている（craft_ui.gd）。歩かない
 var _held_fp: Node3D         # 一人称の右手に持った物の形
 var _held_key := ""
+const HELD_TILT := 0.12      # 畳んだソリの包みの名札の面を、まっすぐより少し上へ傾ける (rad)
+const HELD_TURN := 0.0     # 少し内へ回す (rad)
+const HELD_SCALE := 1.25     # 一人称で持つ包みの大きさ
 var _unfold_up := Vector3.UP # 広げる所の床の傾き（unfold_spot が決める）
 var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
 var _pan_acc := 0.0          # 二本指スクロールのたまった量
@@ -627,6 +630,7 @@ func _pose_hands(dt: float) -> void:
 	_ball_fp.visible = grow > 0.0
 	_ball_fp.scale = Vector3.ONE * maxf(grow, 0.01)
 	_place_held_fp(grow > 0.0)
+	_face_held_fp()
 	_place_shapes_fp(em)
 
 
@@ -1186,6 +1190,17 @@ func _place_held_fp(ball: bool) -> void:
 	for mi in _held_fp.find_children("*", "MeshInstance3D", true, false):
 		(mi as MeshInstance3D).layers = 1 << 2
 	right.add_child(_held_fp)
+	_held_fp.set_meta("folded", it.get("kind") == "folded")
+
+
+## 畳んだソリの包みは、名札を貼った面を自分（カメラ）へ向けて、手の少し上・内側に持つ（毎コマ）
+func _face_held_fp() -> void:
+	if _held_fp == null or not _held_fp.get_meta("folded", false):
+		return
+	var hand: Node3D = _held_fp.get_parent()
+	var at := cam.to_local(hand.global_position) + Vector3(-0.1, 0.1, -0.02)
+	var b := cam.global_basis.orthonormalized() * Basis(Vector3.RIGHT, PI / 2 - HELD_TILT) * Basis(Vector3.UP, HELD_TURN)
+	_held_fp.global_transform = Transform3D(b.scaled(Vector3.ONE * HELD_SCALE), cam.to_global(at))
 
 
 ## 手に持った物の小さな形（一人称の右手と、確かめ用）
@@ -1208,13 +1223,15 @@ static func held_shape(it: Dictionary) -> Node3D:
 		"fabric":    # たたんだ布の束
 			bm.size = Vector3(0.14, 0.035, 0.1)
 			mi.material_override = Look.felt(preload("res://fabrics.gd").color(it.get("fabric", "red")), 6.0)
-		"folded":    # 折り紙の包み。名札には、広げた姿がくるくる回る図
-			bm.size = Vector3(0.11, 0.045, 0.11)
+		"folded":    # 折り紙の包み。上（+Y）の面に名札を貼り、窓に広げた姿がくるくる回る。名札の面を見る人へ向けるのは呼ぶ側
+			bm.size = Vector3(0.13, 0.04, 0.13)
 			mi.material_override = Look.felt(preload("res://fabrics.gd").color(it.get("fabric", "red")), 6.0)
 			mi.rotation.y = PI / 4
 			var Tags := preload("res://sled_tags.gd")
-			var tg := Tags.hang(root, Vector3(0.05, 0.03, -0.02), int(it.get("tag", 0)), 0.12, Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")))
-			tg.rotation = Vector3(-0.6, 0.3, 0)
+			Tags.patch_on(root, 0.02, int(it.get("tag", 0)), 0.15, Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")))
+			mi.mesh = bm
+			root.add_child(mi)
+			return root
 	mi.mesh = bm
 	root.add_child(mi)
 	root.rotation.x = 0.5

@@ -275,6 +275,70 @@ class Turntable extends SubViewport:
 
 # ---- 3D のタグ（吊るす） -------------------------------------------------------------------
 
+## 畳んだソリの包みの面に、名札を平らに貼る（吊るすと包みに隠れるので）。parent の +Y の面に載せ、絵の下は +Z。
+## 左右の端を紙テープで留め、窓に広げた姿がくるくる回る。面に埋もれないよう少し浮かせる。w は名札の幅 (m)
+static func patch_on(parent: Node3D, top: float, idx: int, w: float, turn: Texture2D, layers := 1) -> Node3D:
+	var root := Node3D.new()
+	root.name = "TagPatch"
+	root.position = Vector3(0, top + 0.003, 0)
+	parent.add_child(root)
+	var h := w * TEX_SIZE.y / TEX_SIZE.x
+	var face := _flat(root, Vector2(w, h), texture(idx), false, layers)
+	face.position.y = 0.0
+	if turn:   # 窓（右寄り）
+		var win := _flat(root, Vector2.ONE * h * 0.74, turn, true, layers)
+		win.position = Vector3(w * 0.2, 0.0015, 0.0)
+	# 紙テープ: 左上と右下の角に斜めに
+	var tape := StandardMaterial3D.new()
+	tape.albedo_color = Color(0.93, 0.86, 0.68, 0.85)
+	tape.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	tape.roughness = 0.9
+	for s in [-1.0, 1.0]:
+		var t := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(w * 0.3, 0.001, h * 0.22)
+		t.mesh = bm
+		t.material_override = tape
+		t.layers = layers
+		t.position = Vector3(s * w * 0.46, 0.003, -s * h * 0.42)
+		t.rotation.y = 0.6
+		root.add_child(t)
+	return root
+
+
+static func _flat(parent: Node3D, sz: Vector2, tex: Texture2D, unshaded: bool, layers: int) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = sz
+	mi.mesh = q
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = tex
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	m.roughness = 1.0
+	if unshaded:
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = m
+	mi.layers = layers
+	mi.rotation.x = -PI / 2   # 面は +Y、絵の上は -Z
+	parent.add_child(mi)
+	return mi
+
+
+## 畳んだソリの包みの絵に、名札を貼った形で描く（持ち物の列・売り台。3D の patch_on と同じ並び）。c と w は画面の px
+static func draw_on_packet(ci: CanvasItem, c: Vector2, w: float, idx: int, turn: Texture2D, a := 1.0) -> void:
+	var h := w * TEX_SIZE.y / TEX_SIZE.x * 0.82
+	var r := Rect2(c - Vector2(w, h) / 2.0, Vector2(w, h))
+	draw_tag(ci, r, idx, a, false)
+	var tw := h * 0.74
+	ci.draw_texture_rect(turn, Rect2(Vector2(c.x + w * 0.2 - tw / 2.0, c.y - tw / 2.0), Vector2(tw, tw)), false, Color(1, 1, 1, a))
+	for s in [-1.0, 1.0]:
+		var tc := c + Vector2(s * w * 0.46, -s * h * 0.42)
+		var tape := Icons.xf(Icons.rr(-w * 0.15, -h * 0.11, w * 0.3, h * 0.22, 1.0), -0.6, tc, 1.0)
+		Icons._o = Vector2.ZERO
+		Icons._s = 1.0
+		ci.draw_colored_polygon(tape, Color(0.93, 0.86, 0.68, 0.85 * a))
+
+
 ## 小さなタグを parent の at から糸で吊るす。turn があれば、タグの窓に回る図も貼る（畳んだソリ）。layers は映す層
 static func hang(parent: Node3D, at: Vector3, idx: int, w := 0.16, turn: Texture2D = null, layers := 1) -> Node3D:
 	var root := Node3D.new()
