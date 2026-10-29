@@ -33,6 +33,12 @@ const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.
 ## 頭のいちばん上（glb の座標、人形の大きさのまま）。雪玉の当たりの背丈と、ハイタッチの手の高さに
 const TOP := {"kasa": 1.372, "origami": 1.49, "news": 0.955}
 const BALL_R := 0.075        # 雪玉の半径 (m)
+const BALL_BACK := 4         # 投げてから、次の雪玉が帯の袋から右手に出るコマ
+## 雪玉入れ: 帯の前に並べた、口の開いたフェルトの小さな袋（1 つに雪玉 1 つ）。帯の高さと、体のまわりの半径（glb の座標、人形の大きさのまま）
+const POCKET_BELT := {"kasa": Vector2(0.6, 0.2), "origami": Vector2(0.8, 0.21), "news": Vector2(0.34, 0.23)}
+## 袋の並ぶ向き（真正面から左回り、度）。右の前から左の脇へ、この順に詰める。数えられるよう、前から見て重ならない
+const POCKET_ANGLES := [-44.0, -18.0, 8.0, 34.0, 60.0]
+const POCKET_BALL := 0.62    # 袋の雪玉の大きさ（手の雪玉に比べて）
 ## 米袋の動きのコマ数（12 コマ／秒）。乗る・降りるは押した瞬間に済んでいて、見た目だけがこのコマで追いつく
 ## （乗り込みの途中でも滑り出せる。足で蹴ると、残りを飛ばしてすぐ座る）
 ##   out: 0 右手を帯へ / 1 引き抜いて胸の前で両手に / 2 ばさっと前へ広げて落とす / 3 しゃがむ / 4 腰を下ろす（ぽふっ） / 5〜 座って紐を握る
@@ -75,6 +81,7 @@ var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標�
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
 var lean := Vector2.ZERO     # 乗っているときの体重移動（x 右、y 前）
 var holding_ball := false    # 右手に雪玉を持っている
+var pouch_balls := 0         # 帯の袋の雪玉の数（持ち主が毎フレーム入れる）
 var emote := {}              # いまの身ぶり（emotes.gd の出来事）。終わると空になる
 var crouch := false          # しゃがんでいる（持ち主が毎フレーム入れる）
 var hand_shapes := ["", ""]  # 掲げている手の高さ [右手, 左手]（"high" 高い手のひら、"low" 低い手のひら、"" は下ろす）
@@ -108,6 +115,8 @@ var _rng := RandomNumberGenerator.new()
 var _scale := 1.0
 var _long: CPUParticles3D    # B の長い息・おーい（_streams["long"]）
 var _ball: Node3D            # 右手の雪玉
+var _pockets: Array[Node3D] = []        # 帯の雪玉入れの袋（雪玉がなければ隠す）
+var _pocket_balls: Array[Node3D] = []   # 袋の中の雪玉
 var _shapes := {}            # 手の形のアップリケ: 形 → {1: 右手, -1: 左手}
 var _palm_goal := {}         # 側 → [形, 手形の置き所（人形の座標）]。コマで決め、腕はその手首へ伸ばす
 var _hands_frame := 0        # 手の形を変えたコマ（ぽんと出る大きさに）
@@ -143,6 +152,7 @@ func _ready() -> void:
 	_order.sort_custom(func(a, b): return depth.call(a) < depth.call(b))
 	_make_breath()
 	_make_ball()
+	_make_pouch()
 	_make_roll()
 	_lantern = Lantern.new(self)
 	add_child(_lantern)
@@ -718,10 +728,11 @@ func _pose() -> void:
 	var ball_k: float = 0.0
 	if em[0] == "make_ball" and em[1] >= 4:
 		ball_k = clampf((em[1] - 4) / 12.0, 0.0, 1.0) * 0.6 + 0.4
-	elif holding_ball:
-		ball_k = 1.0
+	elif holding_ball and not (em[0] == "throw" and em[1] < BALL_BACK):
+		ball_k = 1.0   # 投げたあとは、次の雪玉を袋から出すまで少し空く
 	_ball.visible = ball_k > 0.0
 	_ball.scale = Vector3.ONE * maxf(ball_k, 0.01)
+	_place_pouch(em)
 	_place_roll()
 	# 帯のランタン: 歩みで前後に揺れ、速さの変わり目で振られる（人形の向きの座標で、x 右・y 前）
 	var acc := (_vel - _lantern_v) * FPS
@@ -1349,6 +1360,76 @@ func _make_ball() -> void:
 	pivot.add_child(m)
 	_ball = pivot
 	_ball.visible = false
+
+
+## 帯の雪玉入れ: 帯の前に、口の開いた藍のフェルトの小さな袋を 5 つ並べ、持っている数だけ雪玉が上からのぞく
+## （文字なしで数が分かる。空の袋で、あといくつ持てるかも分かる。ほかの人からも、右下の自分の小窓からも見える）。
+## 雪玉を一つも持っていなければ、袋ごと隠す
+func _make_pouch() -> void:
+	var hips := _id("hips")
+	if hips < 0:
+		return
+	var at := BoneAttachment3D.new()
+	at.bone_name = "hips"
+	skel.add_child(at)
+	var belt: Vector2 = POCKET_BELT.get(kind, POCKET_BELT["kasa"])
+	var to_hips := skel.get_bone_global_rest(hips).affine_inverse()
+	var felt := Look.felt(Color(0.16, 0.21, 0.38), 6.0)   # 藍のフェルト（白い雪玉が映える）
+	felt.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var thread := Look.felt(Color(0.62, 0.5, 0.34), 4.0)   # 口の縁の、麻ひもの縫い目（雪玉と見分けやすく）
+	var cm := CylinderMesh.new()   # 口が少し広い、浅い袋
+	cm.top_radius = 0.044
+	cm.bottom_radius = 0.034
+	cm.height = 0.05
+	cm.radial_segments = 7
+	cm.rings = 1
+	cm.cap_top = false
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.041
+	tm.outer_radius = 0.048
+	tm.rings = 8
+	tm.ring_segments = 4
+	for a in POCKET_ANGLES:
+		var r := deg_to_rad(a)
+		var pos := Vector3(-sin(r) * belt.y, belt.x, -cos(r) * belt.y)   # 正面は -z、左は -x
+		var pocket := Node3D.new()
+		pocket.transform = Transform3D(Basis(Vector3.UP, r), to_hips * pos)
+		at.add_child(pocket)
+		var inner := Node3D.new()   # ここから下は m で
+		inner.scale = Vector3.ONE / _scale
+		pocket.add_child(inner)
+		var bag := MeshInstance3D.new()
+		bag.mesh = cm
+		bag.material_override = felt
+		bag.layers = layers
+		inner.add_child(bag)
+		var rim := MeshInstance3D.new()
+		rim.mesh = tm
+		rim.material_override = thread
+		rim.position.y = 0.025
+		rim.layers = layers
+		inner.add_child(rim)
+		var b := MeshInstance3D.new()
+		b.mesh = ball_mesh()
+		b.material_override = ball_material()
+		b.scale = Vector3.ONE * POCKET_BALL
+		b.position = Vector3(0, 0.038, 0)
+		b.layers = layers
+		inner.add_child(b)
+		pocket.visible = false
+		_pockets.append(pocket)
+		_pocket_balls.append(b)
+
+
+## 雪玉入れをコマごとに。投げた直後は、次に手に持つ分がまだ袋にある（数が飛ばないよう）
+func _place_pouch(em: Array) -> void:
+	var n := pouch_balls
+	if holding_ball and em[0] == "throw" and em[1] < BALL_BACK:
+		n += 1
+	var show := n > 0 or holding_ball
+	for i in _pockets.size():
+		_pockets[i].visible = show
+		_pocket_balls[i].visible = i < n
 
 
 # ---------------------------------------------------------------- 米袋を出す・しまう
