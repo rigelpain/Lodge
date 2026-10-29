@@ -7,6 +7,8 @@ extends SceneTree
 ## 頂上のすぐ下に、ふもと（+z）へ向けてソリを置き、W を押したまま（前傾）で滑り出す。
 ## 1 秒ごとに速さ・風の強さ・fps を出し、終わりに滑っている間の平均と最も重いコマを出す。
 ## 360° 映像と文字は撮らない（風が流れる画面の端を見るため）。
+## 滑るときの視野角の確かめ: --sled=sack|small|mid|large（main.gd の引数）で大きさを変え、--mash=回/秒 で
+## 乗っているあいだ Space を連打する（米袋の足漕ぎ）。いちばん速かった所を 4_top に撮り、撮るたびに足した視野角を出す。
 
 var args := {}
 var main: Node3D
@@ -19,6 +21,9 @@ var _log_t := 0.0
 var _ft_sum := 0.0
 var _ft_n := 0
 var _ft_max := 0.0
+var _top_img: Image
+var _top_grab := 0.0
+var _mash_t := 0.0
 
 
 func _initialize() -> void:
@@ -42,7 +47,8 @@ func _shot(name: String) -> void:
 	var path := "%s/%s%s.png" % [args.get("dir", "/tmp/ride_shots"), name, ("_" + tag) if tag != "" else ""]
 	root.get_texture().get_image().save_png(path)
 	var w = main.ride_wind
-	print("撮影: %s 速さ=%.1f 風=%.2f" % [path, main.sled.linear_velocity.length(), w.level if w else 0.0])
+	var p = main.player
+	print("撮影: %s 速さ=%.1f 風=%.2f 視野角=%.1f°（足した分 %.1f°）" % [path, main.sled.linear_velocity.length(), w.level if w else 0.0, p.cam.fov, p.ride_fov])
 
 
 func _process(dt: float) -> bool:
@@ -78,6 +84,10 @@ func _process(dt: float) -> bool:
 		p.global_position = at + Vector3(1.2, 0.3, 0)
 		p.get_on()
 		p.set_third(args.has("third"))   # 保存してある設定が三人称でも、一人称で撮る（--third で三人称）
+		p.base_fov = float(args.get("fov", "75"))   # 保存してある視野角によらず、既定の 75° で撮る（--fov= で変える）
+		p.ride_fov_enabled = not args.has("no-ride-fov")
+		p.cam_dist = float(args.get("cam-dist", "3.4"))   # 三人称のカメラの距離も既定で
+		p.cam_height = 0.6
 		p.rotation.y = PI
 		p._pitch = float(args.get("pitch", "-0.1"))
 		var ev := InputEventKey.new()
@@ -104,13 +114,34 @@ func _process(dt: float) -> bool:
 	if speed > float(args.get("fast", "8.5")):
 		_shot("2_fast")
 	var w = main.ride_wind
-	if _taken.has("1_slow") and speed < 1.0 and rt > 6.0 and (w == null or w.level < 0.02):   # 風が消えきってから
+	if _taken.has("1_slow") and speed < 1.0 and rt > 6.0 and (w == null or w.level < 0.02) and p.ride_fov < 0.3:   # 風が消え、画角が戻ってから
 		_shot("3_stopped")
+	# いちばん速い所: 速さが伸びるたびに（0.2 秒おきに）画面を取っておき、終わりに書く
+	_top_grab -= dt
+	if speed >= _top_speed and _top_grab <= 0.0 and speed > 2.0:
+		_top_grab = 0.2
+		_top_img = root.get_texture().get_image()
+		_top_img.set_meta("info", "速さ=%.1f 風=%.2f 視野角=%.1f°（足した分 %.1f°）" % [speed, w.level if w else 0.0, p.cam.fov, p.ride_fov])
+	# --mash=回/秒: 乗っているあいだ Space を連打する（米袋の足漕ぎ）
+	if args.has("mash") and p.mode == p.Mode.RIDE and not _taken.has("3_stopped"):
+		_mash_t -= dt
+		if _mash_t <= 0.0:
+			_mash_t = 1.0 / float(args["mash"])
+			for down in [true, false]:
+				var ev := InputEventKey.new()
+				ev.physical_keycode = KEY_SPACE
+				ev.pressed = down
+				Input.parse_input_event(ev)
 	_log_t += dt
 	if _log_t >= 1.0:
 		_log_t = 0.0
-		print("t=%.0f 速さ=%.1f 高さ=%.1f 風=%.2f fps=%d" % [rt, speed, sled.global_position.y, w.level if w else 0.0, Engine.get_frames_per_second()])
+		print("t=%.0f 速さ=%.1f 高さ=%.1f 風=%.2f 足した視野角=%.1f° fps=%d" % [rt, speed, sled.global_position.y, w.level if w else 0.0, p.ride_fov, Engine.get_frames_per_second()])
 	if rt > float(args.get("secs", "40")) or _taken.has("3_stopped"):
+		if _top_img:
+			var tag: String = args.get("tag", "")
+			var path := "%s/4_top%s.png" % [args.get("dir", "/tmp/ride_shots"), ("_" + tag) if tag != "" else ""]
+			_top_img.save_png(path)
+			print("撮影: %s %s" % [path, _top_img.get_meta("info")])
 		print("最高の速さ=%.1f m/s　滑っている間 平均 %.1f ms（%.0f fps）最も重いコマ %.1f ms" % [_top_speed, 1000.0 * _ft_sum / maxi(_ft_n, 1), _ft_n / maxf(_ft_sum, 0.001), 1000.0 * _ft_max])
 		quit()
 	return false
