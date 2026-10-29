@@ -87,7 +87,7 @@ func _process(dt: float) -> bool:
 		p.base_fov = float(args.get("fov", "75"))   # 保存してある視野角によらず、既定の 75° で撮る（--fov= で変える）
 		p.ride_fov_enabled = not args.has("no-ride-fov")
 		p.cam_dist = float(args.get("cam-dist", "3.4"))   # 三人称のカメラの距離も既定で
-		p.cam_height = 0.6
+		p.cam_frame = -0.2
 		p.rotation.y = PI
 		p._pitch = float(args.get("pitch", "-0.1"))
 		var ev := InputEventKey.new()

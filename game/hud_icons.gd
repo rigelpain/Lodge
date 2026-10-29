@@ -20,7 +20,7 @@ const LEG := Color(0.28, 0.27, 0.32)
 
 const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "lean_l", "lean_r", "brake",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
-	"cam_dist", "cam_height", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
+	"cam_dist", "cam_frame", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "mouse_pinch", "mouse_pan", "back"]
 
 ## HUD の物が受ける風（hud.gd が毎コマ入れる。0〜1.6 ほど）。設定「HUD が風で揺れる」を切ると 0、「視点の揺れ」を切ると小さく
 static var wind := 0.0
@@ -281,7 +281,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"hourglass": _hourglass(ci, a)
 		"cam_dist": _cam_dist(ci, a, tint)
 		"tag_stack": _tag_stack(ci, a)
-		"cam_height": _cam_height(ci, a, tint)
+		"cam_frame": _cam_frame(ci, a, tint)
 		"view": _view(ci, a, tint)
 		"pip_cycle": _pip(ci, a, false)
 		"pip_off": _pip(ci, a, true)
@@ -290,6 +290,8 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"mouse_l": mouse(ci, Vector2.ZERO, a, "left")
 		"mouse_move": _mouse_move(ci, a)
 		"mouse_wheel": _mouse_wheel(ci, a)
+		"mouse_pinch": _pinch(ci, a)
+		"mouse_pan": _pan(ci, a)
 		"back": _back(ci, a)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
@@ -805,12 +807,14 @@ static func _cam_dist(ci: CanvasItem, a: float, col: Color) -> void:
 	arrow(ci, Vector2(-14, 8), Vector2(-30, 8), THREAD, a, 1.8)
 
 
-## 三人称のカメラの高さ: 後ろ姿の人形と、上下に動くカメラ
-static func _cam_height(ci: CanvasItem, a: float, col: Color) -> void:
-	doll(ci, Vector2(12, 28), col, "back", a, 0.95)
-	_camera(ci, Vector2(-14, -2), a, 0.9)
-	arrow(ci, Vector2(-26, -2), Vector2(-26, -26), THREAD, a, 1.8)
-	arrow(ci, Vector2(-26, -2), Vector2(-26, 22), THREAD, a, 1.8)
+## 三人称の人形の画面の高さ: 画面の枠の中の後ろ姿の人形と、その目の高さの線を上下に動かす矢印
+static func _cam_frame(ci: CanvasItem, a: float, col: Color) -> void:
+	patch(ci, rr(-22, -26, 38, 52, 5), Color(0.80, 0.88, 0.98), a, false)          # 画面（空）
+	patch(ci, rr(-22, 6, 38, 20, 4), SNOW, a, false)                                  # 雪
+	doll(ci, Vector2(-3, 22), col, "back", a, 0.62)
+	dashes(ci, PackedVector2Array([Vector2(-21, 6), Vector2(15, 6)]), RED, 1.4, 3.0, 2.0, a)   # 目の高さの線
+	arrow(ci, Vector2(24, 4), Vector2(24, -22), THREAD, a, 1.8)
+	arrow(ci, Vector2(24, 8), Vector2(24, 28), THREAD, a, 1.8)
 
 
 static func _zoom(ci: CanvasItem, a: float) -> void:
@@ -855,6 +859,23 @@ static func _mouse_move(ci: CanvasItem, a: float) -> void:
 	arrow(ci, Vector2(14, 0), Vector2(28, 0), THREAD, a, 1.8)
 	arrow(ci, Vector2(0, -19), Vector2(0, -30), THREAD, a, 1.8)
 	arrow(ci, Vector2(0, 19), Vector2(0, 30), THREAD, a, 1.8)
+
+
+## トラックパッドのピンチ: 板の上の 2 本の指先と、開く・閉じる斜めの矢印
+static func _pinch(ci: CanvasItem, a: float) -> void:
+	patch(ci, rr(-20, -16, 40, 32, 5), CAP, a, true, THREAD.lightened(0.3))
+	for s: float in [-1.0, 1.0]:
+		ci.draw_circle(_o + Vector2(5 * s, 4 * s) * _s, 4.2 * _s, Color(RED, a))
+		arrow(ci, Vector2(9 * s, 7 * s), Vector2(17 * s, 13 * s), THREAD, a, 1.6)
+
+
+## トラックパッドの二本指スクロール: 板の上の並んだ 2 本の指先と、上下の矢印
+static func _pan(ci: CanvasItem, a: float) -> void:
+	patch(ci, rr(-20, -16, 40, 32, 5), CAP, a, true, THREAD.lightened(0.3))
+	for s: float in [-1.0, 1.0]:
+		ci.draw_circle(_o + Vector2(5 * s - 4, 0) * _s, 4.2 * _s, Color(RED, a))
+	arrow(ci, Vector2(10, -3), Vector2(10, -13), THREAD, a, 1.6)
+	arrow(ci, Vector2(10, 3), Vector2(10, 13), THREAD, a, 1.6)
 
 
 static func _mouse_wheel(ci: CanvasItem, a: float) -> void:
