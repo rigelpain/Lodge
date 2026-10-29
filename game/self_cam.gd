@@ -97,7 +97,12 @@ func _ready() -> void:
 ## 環境光は本体と同じ。背景だけ麻布の色にし、その明るさは本体の光の当たり方（日なた・日かげ・夜・屋内）に合わせる（_sync_env）。
 ## 背景の色のままの所は縫わずに布の地として見せる。空・SSAO・照り返し・にじみ・霧は描かないので軽い
 func _fabric_env() -> Environment:
-	var e: Environment = main.env.duplicate() if main and main.env else Environment.new()   # 空の資源は共有（環境光が時刻で変わる）
+	var e: Environment = main.env.duplicate() if main and main.env else Environment.new()
+	# 空（Sky）は複製して別にする。空の素材（時刻で色が変わる）は共有のまま。
+	# 同じ Sky を本体と小窓の二つの環境で使うと、日の出・日の入りで空の色が変わるたびに、空の映り込み（環境光のもと）を
+	# 二つの環境が代わる代わる計算し直し、本体の画面全体の明るさが 0.1〜0.2 秒ごとに上下してちらついた
+	if e.sky:
+		e.sky = e.sky.duplicate()
 	e.background_mode = Environment.BG_COLOR
 	e.background_color = LINEN
 	e.ssao_enabled = false
