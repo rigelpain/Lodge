@@ -97,7 +97,7 @@ func _ready() -> void:
 	_prev.resize(n)
 	# 紐の長さは結び先のあいだから決める（small・large の glb の手すりにもそのまま合う）
 	var span := _ties[0].distance_to(_ties[1])
-	var bridle_len := span + BRIDLE_SPARE
+	var bridle_len := span + float(sled.KINDS.get(sled.kind, {}).get("rope_spare", BRIDLE_SPARE))   # 米袋は短く（袋の幅の内に収める）
 	var bl := bridle_len / BRIDLE_SEG
 	for i in BRIDLE_SEG:
 		_link(i, i + 1, bl)
@@ -211,9 +211,17 @@ func _lay_out() -> void:
 	var fwd := -sled.global_basis.z
 	fwd.y = 0
 	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
+	# 両端を結ぶ紐を前へたわませて置く（米袋の短い紐では、その長さに合った浅さで）
+	var total := 0.0
+	for i in BRIDLE_SEG:
+		total += _rest[i]
+	var span := l.distance_to(r)
+	var bulge := 0.8
+	if sled.KINDS.get(sled.kind, {}).has("rope_spare"):
+		bulge = minf(0.8, sqrt(maxf(total * total - span * span, 0.0)) * 0.5)
 	for i in BRIDLE_SEG + 1:
 		var t := float(i) / BRIDLE_SEG
-		_pos[i] = l.lerp(r, t) + fwd * sin(PI * t) * 0.8
+		_pos[i] = l.lerp(r, t) + fwd * sin(PI * t) * bulge
 	for k in PULL_SEG:
 		_pos[BRIDLE_SEG + 1 + k] = _pos[_mid] + fwd * _rest[BRIDLE_SEG + k] * (k + 1)
 	for i in _pos.size():
@@ -302,6 +310,17 @@ func _physics_process(dt: float) -> void:
 ## ソリの台の中（手すりより後ろ）に入った点を、近い方の縁（前か左右）へ出す
 func _out_of_sled(p: Vector3, inv: Transform3D) -> Vector3:
 	var q := inv * p
+	if sled.KINDS.get(sled.kind, {}).has("rope_spare"):
+		# 米袋: 袋の大きさの箱（手すりも滑り木もない）。前の左右の耳の紐は、袋の前の縁より前へ出す
+		var hx: float = sled.HALF.x + 0.02
+		var z0: float = -sled.HALF.y - 0.02
+		if q.y > 0.3 or q.y < -0.1 or abs(q.x) > hx or q.z < z0 or q.z > sled.HALF.y:
+			return p
+		if q.z - z0 < hx - abs(q.x):
+			q.z = z0
+		else:
+			q.x = signf(q.x) * hx
+		return sled.global_transform * q
 	# 滑り木の前の反り（x = ±0.6、中心 y 0.32・z -1.2、外の半径 0.32）には上から載る
 	if abs(abs(q.x) - 0.6) < 0.05 and q.z < -1.2 and q.y > 0.32:
 		var c := Vector2(q.y - 0.32, q.z + 1.2)

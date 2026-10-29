@@ -55,14 +55,18 @@ static func dress(root: Node) -> void:
 ## 主な色の差し替え（ソリのメインカラーなど）。焼いた色の画像のうち、色相が key に近く鮮やかな所だけを to の色へ移す。
 ## 明るさと鮮やかさは key に対する比で移すので、影・縫い目・暗い握り（felt_red_dark）は to の暗い色になる。
 ## ほかの色（金・緑・生成り・クラフト紙・木）はそのまま。素材は material_for と同じ組み方（写真の細部を 3 方向から、ふちの毛羽）を
-## シェーダーで組み直したもの。2 回目からは色だけ変える
-static func recolor(root: Node, key: Color, to: Color) -> void:
+## シェーダーで組み直したもの。2 回目からは色だけ変える。
+## whole（米袋）: 色相で選ぶのでなく、地（クラフト紙）ごと to にし、印刷（赤い丸・「米」・稲穂・帯）と縫い目は
+## 地の上で読める 1 色（ink。地が暗ければ生成りの白抜き、明るければ地の色の濃い色）にする。口のテープは生成りのまま
+static func recolor(root: Node, key: Color, to: Color, whole := false) -> void:
+	var ink := Color("EFE6D2") if to.get_luminance() < 0.5 else to.darkened(0.6)
 	for node in root.find_children("*", "MeshInstance3D", true, false):
 		var mi: MeshInstance3D = node
 		for i in mi.mesh.get_surface_count():
 			var m := mi.get_surface_override_material(i)
 			if m is ShaderMaterial and m.has_meta("recolor"):
 				m.set_shader_parameter("to", to)
+				m.set_shader_parameter("ink", ink)
 				continue
 			var b := m as StandardMaterial3D
 			if b == null or b.albedo_texture == null or family(b.resource_name)[0] in ["wood"]:
@@ -81,6 +85,8 @@ static func recolor(root: Node, key: Color, to: Color) -> void:
 			r.set_shader_parameter("rim_tint", b.rim_tint)
 			r.set_shader_parameter("key", key)
 			r.set_shader_parameter("to", to)
+			r.set_shader_parameter("whole", whole)
+			r.set_shader_parameter("ink", ink)
 			mi.set_surface_override_material(i, r)
 
 
@@ -110,6 +116,8 @@ uniform vec3 key : source_color;    // 焼いてある主な色
 uniform vec3 to : source_color;     // 差し替える色
 uniform float hue_width = 0.04;     // key の色相から、これだけ離れた色まで差し替える（0〜1 の色相環で）
 uniform float min_sat = 0.3;        // これより鮮やかでない色（生成り・白・灰）は差し替えない
+uniform bool whole = false;         // 米袋: 地ごと to にし、印刷は ink に（recolor の説明）
+uniform vec3 ink : source_color;
 
 varying vec3 v_tri_w;
 varying vec3 v_tri_p;
@@ -139,6 +147,23 @@ vec3 recolor(vec3 c) {
 	return mix(c, hsv2rgb(vec3(t.x, sat, val)), w);
 }
 
+// 米袋の焼いた色（sRGB の色相環で、クラフト紙は色相 0.1・鮮やかさ 0.25〜0.55、金の印刷は同じ色相でもっと鮮やか、
+// 赤は 0〜0.05、緑は 0.2〜0.3、口のテープは淡い）を、地・テープ・印刷に分けて塗り直す
+vec3 paint_whole(vec3 c) {
+	vec3 h = rgb2hsv(pow(c, vec3(1.0 / 2.2)));
+	float dh = abs(h.x - 0.1);
+	dh = min(dh, 1.0 - dh);
+	float ground = (1.0 - smoothstep(0.03, 0.05, dh)) * smoothstep(0.16, 0.24, h.y) * (1.0 - smoothstep(0.54, 0.62, h.y))
+			* smoothstep(0.38, 0.5, h.z);
+	float tape = (1.0 - smoothstep(0.14, 0.22, h.y)) * smoothstep(0.72, 0.84, h.z);
+	float printed = clamp(1.0 - ground - tape, 0.0, 1.0);
+	float shade = pow(clamp(h.z / 0.8, 0.0, 1.25), 2.2);   // 地の明るさのむら（しわ・影）を残す
+	vec3 g = to * shade;
+	vec3 tp = mix(c, to, 0.15);
+	vec3 p = ink * pow(clamp(h.z / 0.72, 0.55, 1.15), 2.2);
+	return g * ground + tp * tape + p * printed;
+}
+
 vec4 triplanar(sampler2D s, vec3 p, vec3 w) {
 	return texture(s, p.zy * vec2(-1.0, 1.0)) * w.x + texture(s, p.xz) * w.y + texture(s, p.xy) * w.z;
 }
@@ -151,7 +176,7 @@ void vertex() {
 
 void fragment() {
 	vec4 d = triplanar(detail_albedo, v_tri_p, v_tri_w);
-	vec3 a = recolor(texture(albedo_tex, UV).rgb);
+	vec3 a = whole ? paint_whole(texture(albedo_tex, UV).rgb) : recolor(texture(albedo_tex, UV).rgb);
 	ALBEDO = mix(a, a * d.rgb, d.a);   // 写真の細部の明暗をかけ算（StandardMaterial3D の BLEND_MODE_MUL と同じ）
 	NORMAL_MAP = mix(texture(normal_tex, UV).rgb, triplanar(detail_normal, v_tri_p, v_tri_w).rgb, d.a);
 	ROUGHNESS = roughness;
