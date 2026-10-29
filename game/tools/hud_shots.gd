@@ -19,6 +19,7 @@ var args := {}
 var main: Node3D
 var t := 0.0
 var _set := false
+var _mash_n := -1
 
 
 func _initialize() -> void:
@@ -80,12 +81,14 @@ func _process(dt: float) -> bool:
 				p.rotation.y = sled.global_rotation.y
 				p._pitch = -0.15
 			"ride":
-				_place_sled(9.0, PI)
+				_place_sled(float(args.get("from", "9")), PI)
 				p.global_position = sled.global_position + sled.global_basis.x * 1.2 + Vector3.UP * 0.3
 				p.get_on()
 				p.rotation.y = sled.global_rotation.y
 				p._pitch = -0.2
-				sled.linear_velocity = -sled.global_basis.z * 4.0
+				sled.linear_velocity = -sled.global_basis.z * float(args.get("v0", "4"))
+				if args.has("best"):   # 今日いちばんの速さを、前にこれだけ出したことにする（超えると紙吹雪）
+					main.hud.spd_best = float(args["best"])
 			"people":
 				p.global_position = sled.to_global(Vector3(5.0, 0, 3.5)) + Vector3.UP * 0.3
 			"lodge":
@@ -129,10 +132,19 @@ func _process(dt: float) -> bool:
 			_face(p, bots[0].global_position + Vector3.UP * 1.2, -0.05)
 	if _set and scene == "ride":
 		p.rotation.y = sled.global_rotation.y
+		# --mash=回: 乗っているあいだ、1 秒にこの回数 Space を押す（米袋の足漕ぎ）
+		if args.has("mash") and p.mode == p.Mode.RIDE:
+			var n := int(t * float(args["mash"]))
+			if n != _mash_n:
+				_mash_n = n
+				_key(KEY_SPACE, true)
+				_key(KEY_SPACE, false)
+		if args.has("log-speed") and int(t * 2.0) != int((t - dt) * 2.0):
+			print("t=%.1f 速さ=%.1f 表示=%.2f いちばん=%.1f" % [t, sled.linear_velocity.length(), main.hud._spd_a, main.hud.spd_best])
 	if t > float(args.get("at", "4")):
 		var out: String = args.get("out", "/tmp/hud.png")
 		root.get_texture().get_image().save_png(out)
 		if p.get("ring"): print("輪: ", p.ring.visible, " ", p.ring.scale, " ", p.menu_open)
-		print("保存: ", out, "  案内: ", main.hud.uses, "  押している人: ", sled.pushers)
+		print("保存: ", out, "  案内: ", main.hud.uses, "  押している人: ", sled.pushers, "  速さ: %.1f" % sled.linear_velocity.length())
 		return true
 	return false

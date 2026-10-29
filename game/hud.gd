@@ -10,6 +10,7 @@ extends CanvasLayer
 ## 絵は hud_icons.gd。ミシン（main.sewing）とエモート（main.emotes）は、あればその案内も出す。
 
 const Icons := preload("res://hud_icons.gd")
+const Speedo := preload("res://speedo.gd")
 const SledTags := preload("res://sled_tags.gd")
 const Player := preload("res://player.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
@@ -24,6 +25,15 @@ var hints_on := true
 var uses := {}                # 案内 → した回数（そのプレイの間だけ）
 
 var _view: Control
+# 乗って滑っているときの速さ（糸巻き。speedo.gd）
+var spd_best := 0.0           # 今日いちばんの速さ（このプレイの間）
+var _spd := 0.0               # 表示している速さ（なめらかに追う）
+var _spd_a := 0.0
+var _spd_phase := 0.0
+var _spd_pop := 0.0
+var _spd_slow := 9.0          # 遅いのが続いている長さ (s)
+var _spd_marks := {}          # この滑りで、もう弾んだ節目（"best"・10 m/s など）
+var _confetti: Array = []     # 紙吹雪 [位置, 速さ, 角度, 回る速さ, 色, 残り]
 var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
 var _flow := 0.0
@@ -125,6 +135,7 @@ func _process(dt: float) -> void:
 	_layout_bottom()
 	if debug_on:
 		_dbg = _debug_values(sled, p)
+	_update_speedo(dt, p, menu)
 	_view.queue_redraw()
 
 
@@ -338,6 +349,71 @@ func _badge_w(h: Dictionary, sz: float) -> float:
 	return Icons.badge_w(h.keys, sz)
 
 
+## 乗って滑っているときだけ、糸巻きの速さの表示を出す。止まるとふわっと消える。
+## 今日いちばんの速さを超えた瞬間と、10 m/s を超えた瞬間に、数字が弾んで紙吹雪が散る（一回の滑りで一度ずつ）
+func _update_speedo(dt: float, p: Node, menu: bool) -> void:
+	var on := false
+	var speed := 0.0
+	if p and p.mode == Player.Mode.RIDE and is_instance_valid(p.sled):
+		speed = p.sled.linear_velocity.length()
+		# 1 m/s より遅いのが 1.2 秒続いたら止まったとみなして消す（ふもとでじりじり進むあいだは出さない）
+		_spd_slow = 0.0 if speed > 1.0 else _spd_slow + dt
+		on = _spd_slow < 1.2
+	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
+	on = on and allowed and not menu
+	_spd_a = move_toward(_spd_a, 1.0 if on else 0.0, dt * (3.0 if on else 1.2))
+	_spd = lerpf(_spd, speed, minf(1.0, dt * 8.0))
+	_spd_phase += dt * _spd * 1.3
+	_spd_pop = maxf(0.0, _spd_pop - dt * 2.2)
+	if not on:
+		if _spd_a <= 0.0:
+			_spd_marks.clear()
+	else:
+		if speed > spd_best + 0.2 and speed > 4.0:
+			if spd_best > 0.0 and not _spd_marks.has("best"):
+				_spd_marks["best"] = true
+				_cheer(18)
+			spd_best = speed
+		for m in [10.0, 13.0, 15.0]:
+			if speed >= m and not _spd_marks.has(m):
+				_spd_marks[m] = true
+				_cheer(10)
+	for c in _confetti:
+		c[1].y += 520.0 * dt * ui()
+		c[1] *= 0.985
+		c[0] += c[1] * dt
+		c[2] += c[3] * dt
+		c[5] -= dt
+	_confetti = _confetti.filter(func(c): return c[5] > 0.0)
+
+
+func _cheer(n: int) -> void:
+	_spd_pop = 1.0
+	var r := speedo_box()
+	var from := Vector2(r.position.x + r.size.x * 0.78, r.position.y + r.size.y * 0.45)
+	var cols := [Icons.RED, Icons.MUSTARD, Icons.NAVY, Icons.PAPER, Color(0.45, 0.68, 0.48)]
+	var u := ui()
+	for i in n:
+		var ang := randf_range(-PI * 0.95, -PI * 0.05)
+		var v := Vector2(cos(ang), sin(ang)) * randf_range(220.0, 520.0) * u
+		_confetti.append([from + Vector2(randf_range(-20, 20), randf_range(-10, 10)) * u, v, randf() * TAU, randf_range(-9.0, 9.0),
+			cols[i % cols.size()], randf_range(0.9, 1.5)])
+
+
+## 速さの表示の置き場（画面の px）: 下の端の右寄り。右下の小窓（自分の姿）と日時計の左に、下の縁をそろえて置く。
+## 上の右には 360° 映像があり、下のまんなかには案内のワッペンと持ち物の列があるので、その間の空いた所
+func speedo_box() -> Rect2:
+	var u := ui()
+	var vs := _view.size
+	var w := 440.0 * u
+	var h := 160.0 * u
+	var right := vs.x - 14.0 * u - 104.0 * u   # 日時計のぶん
+	var sc = main.get("self_cam")
+	if sc and is_instance_valid(sc) and not sc.get("hidden"):
+		right -= (236.0 + 18.0) * u          # 小窓のぶん（self_cam.gd の DIAM と MARGIN）
+	return Rect2(right - w, vs.y - h - 6.0 * u, w, h)
+
+
 ## 確かめ用の札に出す値: 押している人数・ソリの高さ（頂上まで）・速さ・fps・いまの状態・覚えた案内の数
 func _debug_values(sled: RigidBody3D, p: Node) -> Dictionary:
 	var known_n := 0
@@ -380,6 +456,8 @@ class View extends Control:
 			var e := ease(h.a, 0.5)
 			Icons.badge(self, h.keys, h.icon, at + Vector2(0, (1.0 - e) * 10.0 * u), sz, e)
 		_draw_pip_back(u)
+		if hud._spd_a > 0.01 or not hud._confetti.is_empty():
+			_draw_speedo(u)
 		if hud.debug_on and not hud._dbg.is_empty():
 			_draw_debug(u)
 		if hud.main.settings and hud.main.settings.is_open:
@@ -751,6 +829,19 @@ class View extends Control:
 			draw_circle(tip, 3.8 * u, Color(pin[2], al))
 			if dist > 0.0:
 				_tape(tip, (tip - bc).normalized(), dist, u, al)
+
+	## 乗って滑っているときの速さ（糸巻き）と紙吹雪
+	func _draw_speedo(u: float) -> void:
+		var e := ease(hud._spd_a, 0.6)
+		if e > 0.01:
+			var r: Rect2 = hud.speedo_box()
+			r.position.y += (1.0 - e) * 24.0 * u   # 下からふわっと上がってくる
+			Speedo.draw(self, "bobbin", r, hud._spd, Speedo.level_of(hud._spd), hud._spd_phase, hud.spd_best, hud._spd_pop, e)
+		for c in hud._confetti:
+			var t := Transform2D(c[2], c[0])
+			var s := 8.0 * u
+			var pts := PackedVector2Array([t * Vector2(-s, -s * 0.6), t * Vector2(s, -s * 0.6), t * Vector2(s, s * 0.6), t * Vector2(-s, s * 0.6)])
+			draw_colored_polygon(pts, Color(c[4], clampf(c[5] * 2.0, 0.0, 1.0)))
 
 	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。
 	## 段ごとに絵と数字: 人の形（押している人数）、丘（ソリの高さ／頂上）、風（速さ）、砂時計（fps）、いまの状態の絵と、

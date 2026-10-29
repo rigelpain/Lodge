@@ -30,6 +30,7 @@ const ITEMS := [
 	["vol_sfx", "音量: 効果音", "float", 0.05, [0.0, 1.0, 0.01]],
 	["vol_voice", "音量: ボイス", "float", 0.05, [0.0, 1.0, 0.01]],
 	["hints", "操作の手引き（近づいたときのアイコン）", "bool", true, null],
+	["speedo", "滑る速さの表示（糸巻き）", "bool", true, null],
 	["hud_debug", "確かめ用の数字（fps・高さ）", "bool", false, null],
 	["menu_scale", "メニューの大きさ", "float", 1.0, [0.7, 1.6, 0.05]],
 	["hud_scale", "HUD の大きさ", "float", 1.0, [0.7, 1.6, 0.05]],
