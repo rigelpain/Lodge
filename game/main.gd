@@ -209,7 +209,7 @@ func _ready() -> void:
 	hud.main = self
 	hud.debug_on = args.has("hud-debug") or settings.values.get("hud_debug", false)
 	hud.hints_on = settings.values.get("hints", true)
-	hud.compass_dist = args.get("compass", "number")   # 確かめ用: --compass=knots で距離を結び目の数に
+	hud.compass_style = args.get("compass", "cushion")   # 確かめ用: --compass=yarn|glass で方位磁針の形を替える
 	add_child(hud)
 
 	if player:
