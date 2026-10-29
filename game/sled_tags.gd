@@ -36,12 +36,58 @@ static var _tags := {}                 # 柄の番号 → ViewportTexture
 static var _turns := {}                # "kind|fabric" → Turntable
 
 
+## 自分の名札の部品（装備の画面で組み合わせる）。名札の柄は、DESIGNS の番号（int。0 はロッジの名札）か、
+## 部品の番号の辞書 {shape, paper, edge, string, motif}（自分の名札）。-1 は名札なし
+const SHAPES := ["cut", "round", "pinked", "ticket", "flag", "scallop", "hex"]
+const PAPERS := [Color(0.96, 0.93, 0.86), Color(0.86, 0.72, 0.52), Color(0.80, 0.88, 0.95), Color(0.97, 0.88, 0.80),
+	Color(0.30, 0.38, 0.62), Color(0.95, 0.80, 0.82), Color(0.88, 0.84, 0.50), Color(0.36, 0.42, 0.33), Color(0.47, 0.30, 0.45),
+	Color(0.80, 0.24, 0.20), Color(0.80, 0.90, 0.86), Color(0.55, 0.38, 0.22)]
+const THREADS := [Color(0.20, 0.25, 0.42), Color(0.80, 0.24, 0.20), Color(0.95, 0.92, 0.84), Color(0.88, 0.66, 0.20),
+	Color(0.25, 0.45, 0.30), Color(0.62, 0.28, 0.38), Color(0.45, 0.30, 0.18), Color(0.25, 0.45, 0.42)]
+const MOTIFS := ["none", "snow", "star", "pine", "heart", "dots", "stripe", "mitten"]
+const PARTS := ["shape", "paper", "edge", "string", "motif"]
+
+
 static func count() -> int:
 	return DESIGNS.size()
 
 
-static func design(i: int) -> Dictionary:
-	return DESIGNS[posmod(i, DESIGNS.size())]
+## 部品ごとの選べる数
+static func part_count(part: String) -> int:
+	match part:
+		"shape": return SHAPES.size()
+		"paper": return PAPERS.size()
+		"motif": return MOTIFS.size()
+	return THREADS.size()
+
+
+## 名札の柄を、描くための辞書 {shape, paper, edge, string, motif, ink} にする
+static func design(d) -> Dictionary:
+	if d is Dictionary:
+		var paper: Color = PAPERS[posmod(int(d.get("paper", 0)), PAPERS.size())]
+		var edge: Color = THREADS[posmod(int(d.get("edge", 0)), THREADS.size())]
+		var ink := edge
+		if absf(edge.get_luminance() - paper.get_luminance()) < 0.25:   # 判子は紙の上で読める色に
+			ink = Color(0.98, 0.96, 0.92) if paper.get_luminance() < 0.5 else Color(0.20, 0.25, 0.42)
+		return {"shape": SHAPES[posmod(int(d.get("shape", 0)), SHAPES.size())], "paper": paper, "edge": edge,
+			"string": THREADS[posmod(int(d.get("string", 1)), THREADS.size())], "motif": MOTIFS[posmod(int(d.get("motif", 0)), MOTIFS.size())],
+			"ink": ink}
+	return DESIGNS[posmod(int(d), DESIGNS.size())]
+
+
+## 名札があるか（-1 は名札なし）
+static func has_tag(d) -> bool:
+	return d is Dictionary or int(d) >= 0
+
+
+## 人の番号から決める、はじめの自分の名札（装備の画面で変えられる）
+static func default_design(who: int) -> Dictionary:
+	return {"shape": posmod(who, SHAPES.size()), "paper": posmod(who * 5 + 1, PAPERS.size()), "edge": posmod(who * 3, THREADS.size()),
+		"string": posmod(who * 3 + 1, THREADS.size()), "motif": posmod(who * 2 + 1, MOTIFS.size())}
+
+
+static func _key(d) -> String:
+	return str(d) if d is Dictionary else str(posmod(int(d), DESIGNS.size()))
 
 
 # ---- 形 ------------------------------------------------------------------------------
@@ -114,7 +160,7 @@ static func _along(pts: PackedVector2Array, d: float) -> Vector2:
 
 
 ## タグを描く（画面の px の rect）。穴と糸の輪も。stamp で右下に判子
-static func draw_tag(ci: CanvasItem, r: Rect2, idx: int, a := 1.0, stamp := true) -> void:
+static func draw_tag(ci: CanvasItem, r: Rect2, idx, a := 1.0, stamp := true) -> void:
 	var d := design(idx)
 	Icons._o = Vector2.ZERO
 	Icons._s = 1.0
@@ -186,9 +232,9 @@ static func _root() -> Node:
 
 
 ## 吊るすタグの絵（柄ごとに 1 枚を描いて使い回す）
-static func texture(idx: int) -> Texture2D:
-	idx = posmod(idx, DESIGNS.size())
-	if not _tags.has(idx):
+static func texture(idx) -> Texture2D:
+	var key := _key(idx)
+	if not _tags.has(key):
 		var vp := SubViewport.new()
 		vp.size = TEX_SIZE
 		vp.transparent_bg = true
@@ -198,8 +244,8 @@ static func texture(idx: int) -> Texture2D:
 		c.size = Vector2(TEX_SIZE)
 		vp.add_child(c)
 		_root().add_child.call_deferred(vp)
-		_tags[idx] = vp.get_texture()
-	return _tags[idx]
+		_tags[key] = vp.get_texture()
+	return _tags[key]
 
 
 ## 畳んだソリの、広げた姿がくるくる回る図（大きさと布の色ごとに 1 つを使い回す）
@@ -215,7 +261,7 @@ static func turntable(kind: String, fabric: String) -> Texture2D:
 
 
 class TagFace extends Control:
-	var idx := 0
+	var idx: Variant = 0
 
 	func _draw() -> void:
 		var pad := Vector2(10, 12)
@@ -277,7 +323,7 @@ class Turntable extends SubViewport:
 
 ## 畳んだソリの包みの面に、名札を平らに貼る（吊るすと包みに隠れるので）。parent の +Y の面に載せ、絵の下は +Z。
 ## 左右の端を紙テープで留め、窓に広げた姿がくるくる回る。面に埋もれないよう少し浮かせる。w は名札の幅 (m)
-static func patch_on(parent: Node3D, top: float, idx: int, w: float, turn: Texture2D, layers := 1) -> Node3D:
+static func patch_on(parent: Node3D, top: float, idx, w: float, turn: Texture2D, layers := 1) -> Node3D:
 	var root := Node3D.new()
 	root.name = "TagPatch"
 	root.position = Vector3(0, top + 0.003, 0)
@@ -325,7 +371,7 @@ static func _flat(parent: Node3D, sz: Vector2, tex: Texture2D, unshaded: bool, l
 
 
 ## 畳んだソリの包みの絵に、名札を貼った形で描く（持ち物の列・売り台。3D の patch_on と同じ並び）。c と w は画面の px
-static func draw_on_packet(ci: CanvasItem, c: Vector2, w: float, idx: int, turn: Texture2D, a := 1.0) -> void:
+static func draw_on_packet(ci: CanvasItem, c: Vector2, w: float, idx, turn: Texture2D, a := 1.0) -> void:
 	var h := w * TEX_SIZE.y / TEX_SIZE.x * 0.82
 	var r := Rect2(c - Vector2(w, h) / 2.0, Vector2(w, h))
 	draw_tag(ci, r, idx, a, false)
@@ -340,7 +386,7 @@ static func draw_on_packet(ci: CanvasItem, c: Vector2, w: float, idx: int, turn:
 
 
 ## 小さなタグを parent の at から糸で吊るす。turn があれば、タグの窓に回る図も貼る（畳んだソリ）。layers は映す層
-static func hang(parent: Node3D, at: Vector3, idx: int, w := 0.16, turn: Texture2D = null, layers := 1) -> Node3D:
+static func hang(parent: Node3D, at: Vector3, idx, w := 0.16, turn: Texture2D = null, layers := 1) -> Node3D:
 	var root := Node3D.new()
 	root.name = "Tag"
 	root.position = at

@@ -162,6 +162,7 @@ func _ready() -> void:
 	if craft and id >= 0:
 		craft.join(id)
 		craft.happened.connect(_on_craft)
+		_load_tag()
 	last_sled = sled
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -1269,7 +1270,7 @@ static func held_shape(it: Dictionary) -> Node3D:
 			mi.material_override = Look.felt(preload("res://fabrics.gd").color(it.get("fabric", "red")), 6.0)
 			mi.rotation.y = PI / 4
 			var Tags := preload("res://sled_tags.gd")
-			Tags.patch_on(root, 0.02, int(it.get("tag", 0)), 0.15, Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")))
+			Tags.patch_on(root, 0.02, it.get("tag", 0), 0.15, Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")))
 			mi.mesh = bm
 			root.add_child(mi)
 			return root
@@ -1319,3 +1320,27 @@ func summon_sack() -> bool:
 	sled = gs
 	get_on()
 	return mode == Mode.RIDE
+
+
+# ---------------------------------------------------------------- 自分の名札（sled_tags.gd の部品。装備の画面で決める）
+
+const TAG_FILE := "user://my_tag.cfg"
+
+## 保存してある自分の名札を読む（なければ、人の番号から決めたはじめの名札のまま）
+func _load_tag() -> void:
+	var cf := ConfigFile.new()
+	if cf.load(TAG_FILE) != OK:
+		return
+	var d := {}
+	for part in preload("res://sled_tags.gd").PARTS:
+		d[part] = int(cf.get_value("tag", part, 0))
+	craft.send({"kind": "tag_design", "who": id, "design": d})
+
+
+## 自分の名札を保存する（装備の画面で変えたとき。次に起動しても同じ名札）
+func save_tag() -> void:
+	var cf := ConfigFile.new()
+	var d: Dictionary = craft.tag_designs.get(id, {})
+	for part in d:
+		cf.set_value("tag", part, d[part])
+	cf.save(TAG_FILE)
