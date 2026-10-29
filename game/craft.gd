@@ -26,6 +26,9 @@ const START_BUTTONS := 12
 const PATTERN_PRICE := {"sack": 1, "small": 2, "mid": 3, "large": 5}   # 型紙の値段（ボタンの数）
 const FABRIC_PRICE := 1
 const PATTERNS := ["sack", "small", "mid", "large"]
+## ロッジの中から外へ運び出せないソリ（tools/carry_out_check.gd で確かめた。大は西の通路の家具と壁に当たる）。
+## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
+const OUT_FRONT := ["large"]
 const SLOTS := 8               # 持ち物に入る数
 const FOLD_FRAMES := 30        # 畳む動きの長さ（コマ。12 コマで 1 秒）
 const UNFOLD_FRAMES := 30      # 広げる動きの長さ
@@ -60,6 +63,11 @@ func held(who: int) -> Dictionary:
 	var i: int = hands.get(who, -1)
 	var b := bag(who)
 	return b[i] if i >= 0 and i < b.size() else {}
+
+
+## 畳んで持てるのは一人用のソリだけ（2026-10-29 代表）。いまは米袋
+static func foldable(kind: String) -> bool:
+	return Sled.KINDS.get(kind, {}).get("seats", [0, 0]).size() <= 1
 
 
 static func price(item: Dictionary) -> int:
@@ -108,10 +116,20 @@ func _apply(ev: Dictionary) -> bool:
 			hands[who] = -1
 		"sewn":
 			ev["tag"] = 1 + (_next_sled - 1) % (preload("res://sled_tags.gd").count() - 1)   # 名札の柄は順に（0 は最初のソリ）
-			ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, 0, Vector3.UP, ev.tag)
+			if ev.sled in OUT_FRONT and world and world.has_method("delivery_spot"):
+				# 運び出せない大きさ: ロッジの前に、空から包みが落ちて開いて出てくる
+				var spot: Transform3D = world.delivery_spot(ev.sled)
+				ev["at"] = spot.origin
+				ev["yaw"] = spot.basis.get_euler().y
+				ev["outside"] = true
+				ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, Vector3.UP, ev.tag)
+				ev["item"] = {"kind": "folded", "sled": ev.sled, "fabric": ev.fabric, "tag": ev.tag}
+				_origami(ev, true, Transform3D(Basis(Vector3.UP, ev.yaw), ev.at), false)
+			else:
+				ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, 0, Vector3.UP, ev.tag)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
-			if s == null or not is_instance_valid(s) or bags[who].size() >= SLOTS or not _free(s):
+			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):
 				return false
 			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag}
 			ev["at"] = s.global_position
@@ -143,14 +161,14 @@ func _take(who: int, slot: int, item: Dictionary) -> bool:
 
 
 ## 畳む・広げる動き（origami.gd）を、ソリの所に置く
-func _origami(ev: Dictionary, unfolding: bool, at: Transform3D) -> void:
+func _origami(ev: Dictionary, unfolding: bool, at: Transform3D, from_who := true) -> void:
 	var o: Node3D = load("res://origami.gd").new()
 	o.kind = ev.item.sled
 	o.fabric = ev.item.fabric
 	o.unfolding = unfolding
 	o.start = int(ev.frame)
 	var hub: Node = world.get_node_or_null("Emotes") if world else null
-	o.who = hub.who_of(int(ev.who)) if hub else null
+	o.who = hub.who_of(int(ev.who)) if hub and from_who else null   # いなければ、包みは空から落ちてくる
 	o.name = "Origami"
 	o.transform = Transform3D(at.basis.orthonormalized(), at.origin)   # 置く先（main）は原点にある
 	(world if world else get_parent()).add_child(o)

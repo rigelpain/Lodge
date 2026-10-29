@@ -644,9 +644,10 @@ func _move_real() -> void:
 	var pitch := 0.0
 	var grow := first * _ease_back(clampf(t / 0.25, 0.0, 1.0))
 	var sq := 1.0
+	var full := 1.0 if not _real.sled in preload("res://craft.gd").OUT_FRONT else first   # 外に出るソリは、ここでは 1 m のまま
 	if t >= 0.25 and t < 0.85:
 		var u := (t - 0.25) / 0.6
-		grow = lerpf(first, 1.0, _ease_back(u))
+		grow = lerpf(first, full, _ease_back(u))
 		p = s0.lerp(land, u * u * (3.0 - 2.0 * u))
 		p.y = lerpf(s0.y, o.y, u * u) + 0.3 * sin(u * PI)
 		pitch = -0.35 * sin(u * PI)
@@ -654,7 +655,7 @@ func _move_real() -> void:
 		if not _landed:
 			_landed = true
 			_fx2("sew_pop", -3.0, 0.5)
-		grow = 1.0
+		grow = full
 		p = land
 		sq = 1.0 - 0.15 * exp(-(t - 0.85) * 8.0) * cos((t - 0.85) * 26.0)
 	_prod_pos = p
