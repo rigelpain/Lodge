@@ -10,6 +10,10 @@ button_take_brass_01  10    真鍮: チン（小さな鈴のような、金属�
 button_take_pearl_01  100   白蝶貝: シャラン（薄い貝の板が触れ合う、細かく高い音が下りていく）
 button_take_raden_01  1000  螺鈿: いちばん特別な音。低くやわらかい鐘のポーンに、貝のきらめきが上っていき、最後に澄んだ二つの音
 shears_01..02         裁ちばさみでちょきん: シャキン（刃がすれ合って、刃先が合わさる）
+button_chari_01..08   財布にボタンが入る 1 粒（2026-10-30 代表「手元に入ってくるときのお金の音、連続でチャリチャリってなってほしい」）。
+                      ボタンが財布の山に当たって重なる、硬く軽い音: 当たるカッと、すぐ跳ねて落ち着くチッ（2 つの粒、15〜35 ms あけて）。
+                      ゲームでは、入るボタンの数だけ 50〜75 ms ごとに続けて鳴らし（audio.gd の coin）、チャリチャリチャリ…にする。
+                      8 つは当たる高さ・間・響きを少しずつ変えてある（機械的に聞こえないように）
 滑り終わって、もらったボタンが全部財布に入ったときの締めくくり（2026-10-30 代表「滑り終わったあとに手元に入ってくるお金の音がしないのが悲しい」）:
 button_reward_01      少し（〜5 枚）: 木のボタンが手の中でまとまる、ちゃりっ
 button_reward_02      ふつう（6〜12 枚）: もう少し多く重なって、ちゃりん
@@ -134,6 +138,18 @@ def shears(rng):
     return fade(out, 0.0005, 0.05)
 
 
+def chari(rng):
+    """財布の山にボタンが当たって重なる 1 粒: 硬い当たり（木のボタンどうし）と、跳ねて落ち着く小さな当たり"""
+    out = np.zeros(n_of(0.14))
+    for j, (gain, at) in enumerate([(1.0, 0.0), (rng.uniform(0.35, 0.6), rng.uniform(0.015, 0.035))]):
+        n = n_of(0.05)
+        click = bp(rng.standard_normal(n), 2200, 7500, 2) * exp_decay(n, rng.uniform(0.0012, 0.002))
+        body = modes(n, np.array([1.0, 2.4, 4.1]) * rng.uniform(1500, 2300), [0.009, 0.006, 0.004], [1.0, 0.5, 0.25], rng)
+        ring = modes(n, np.array([1.0, 1.7]) * rng.uniform(3200, 4200), [0.02, 0.012], [1.0, 0.4], rng) * 0.25
+        place(out, (click * 0.9 + body * 0.6 + ring) * gain, at)
+    return fade(out, 0.0002, 0.03)
+
+
 def clink_cluster(rng, count, spread, f_lo=900.0, f_hi=1500.0):
     """何枚ものボタンが手の中で触れ合う: 木のコッを、少しずつずらして重ねる（だんだん弱く）"""
     out = np.zeros(n_of(spread + 0.3))
@@ -169,3 +185,5 @@ if __name__ == "__main__":
         write(f"shears_{i + 1:02d}.wav", shears(np.random.default_rng(1560 + i)), -5)
     for i in range(3):
         write(f"button_reward_{i + 1:02d}.wav", reward(np.random.default_rng(1570 + i), i), -3)
+    for i in range(8):
+        write(f"button_chari_{i + 1:02d}.wav", chari(np.random.default_rng(1580 + i)), -4)

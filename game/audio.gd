@@ -472,30 +472,39 @@ func sack(who: Node3D, what: String) -> void:
 
 
 ## お金のボタンが財布に入った瞬間の音（craft_ui.gd が、飛んでいったボタンが財布に着くたびに呼ぶ）。自分の耳元で鳴らす。
-## look: "wood" コッ・"brass" チン・"pearl" シャラン・"raden" 螺鈿の特別な音。
-## たくさん続けて入るときは、前の音から COIN_GAP 秒は空けて鳴らす（重なりすぎず、ぽろぽろと数が分かるように）
-const COIN_GAP := 0.09
-const COIN_SOUNDS := {"wood": ["button_take_wood", -1.0], "brass": ["button_take_brass", 0.0], "pearl": ["button_take_pearl", 0.0],
-		"raden": ["button_take_raden", 2.0]}
-var _coin_at := 0.0   # 次の取得音を鳴らせる時刻（_clock）
+## 1 枚ごとに、ボタンが財布の山に当たって重なる硬く軽い「チャリ」（button_chari、8 つから選ぶ）。続けて入るときは
+## COIN_GAP のあいだ（少しずつばらつかせる）で続けて鳴らし、チャリチャリチャリ…と小気味よく連なる（2026-10-30 代表）。
+## 真鍮・白蝶貝・螺鈿は、そのチャリに素材の音（チン・シャラン・螺鈿の特別な音）を重ねて、連打の中で光らせる
+const COIN_GAP := Vector2(0.05, 0.075)
+const COIN_SHINE := {"brass": ["button_take_brass", -3.0], "pearl": ["button_take_pearl", -2.0], "raden": ["button_take_raden", 1.0]}
+var _coin_at := 0.0   # 次のチャリを鳴らせる時刻（_clock）
 
 
-## step: 続けて入る何枚目か（0 から）。続くほど少しずつ音が上がる（ぽろぽろ、と上っていく）
+## step: 続けて入る何枚目か（0 から）。続くほど、ほんの少しずつ音が上がる
 func coin(look: String, step := 0) -> void:
-	var spec: Array = COIN_SOUNDS.get(look, COIN_SOUNDS["wood"])
 	var wait := maxf(0.0, _coin_at - _clock)
-	_coin_at = _clock + wait + COIN_GAP
+	_coin_at = _clock + wait + rng.randf_range(COIN_GAP.x, COIN_GAP.y)
 	if wait > 0.0:
 		await get_tree().create_timer(wait).timeout
-	var s := _wav("%s_01" % spec[0])
+	var s := _pick("button_chari", 8)
 	if s == null:
 		return
-	_note(spec[0], true, Vector3.ZERO)
+	_note("button_chari", true, Vector3.ZERO)
 	var p := AudioStreamPlayer.new()
 	p.bus = "Self"
 	add_child(p)
-	_shot2(p, s, spec[1], (1.0 + 0.035 * mini(step, 12)) * rng.randf_range(0.98, 1.02))
+	_shot2(p, s, rng.randf_range(-3.0, -1.0), (1.0 + 0.012 * mini(step, 16)) * rng.randf_range(0.92, 1.08))
 	p.finished.connect(p.queue_free)
+	if COIN_SHINE.has(look):   # 上の素材: 連打の中で光る
+		var spec: Array = COIN_SHINE[look]
+		var t := _wav("%s_01" % spec[0])
+		if t:
+			_note(spec[0], true, Vector3.ZERO)
+			var q := AudioStreamPlayer.new()
+			q.bus = "Self"
+			add_child(q)
+			_shot2(q, t, spec[1], rng.randf_range(0.98, 1.03))
+			q.finished.connect(q.queue_free)
 
 
 ## 速さの表示の糸の上のボタンが、ぽんと外れて財布へ飛び出す（ぷつ。小さく高く、耳元で）
@@ -507,7 +516,7 @@ func coin_off() -> void:
 	var p := AudioStreamPlayer.new()
 	p.bus = "Self"
 	add_child(p)
-	_shot2(p, s, -13.0, rng.randf_range(1.3, 1.45))
+	_shot2(p, s, -16.0, rng.randf_range(1.3, 1.45))
 	p.finished.connect(p.queue_free)
 
 

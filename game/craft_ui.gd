@@ -156,7 +156,7 @@ func _on_craft(ev: Dictionary) -> void:
 			if list.size() > 24:   # 多すぎるときは大きい段だけ飛ばし、残りはまとめて財布へ
 				list = list.slice(0, 24)
 			var flown := 0
-			var gap := 0.16 if spool else 0.12
+			var gap := 0.065   # 続けて入る間: 財布でチャリチャリ…と連なる（audio.gd の coin）
 			if on_spool:
 				list.reverse()   # 糸の上の、あとで縫い込んだ（上の）ボタンから順に
 			var batch := 0

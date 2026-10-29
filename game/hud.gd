@@ -504,7 +504,7 @@ func _on_buttons(ev: Dictionary) -> void:
 		"ride_pay":
 			# 乗っていた（止まってすぐ降りた人も）: 糸を巻き取って、糸の上のボタンを財布へ
 			if int(p.id) in ev.gives and (p.mode == Player.Mode.RIDE or _clock_now() - _ride_seen < 3.0):
-				_reel_t = maxf(REEL_T, 0.9 + ev.get("sewn", []).size() * 0.16)
+				_reel_t = maxf(REEL_T, 1.1 + ev.get("sewn", []).size() * 0.065)
 				_reel = _reel_t
 
 
@@ -659,7 +659,9 @@ func _update_plates() -> void:
 			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]), 0.0, 3)
 	if _spd_a > 0.01:   # 速さの表示: 立体のボビンと、縫い目を縫うフェルトのリボンの板（ボビンから吊るす）
 		var g := Speedo.layout(speedo_box_now(), _spd_pop)
-		plates.model("bobbin", "res://props/hud/hud_bobbin.glb", g.c, g.r / 0.5, -_spd_spin, [4.0, 0.0, 0.03, 2.0 * u], _spd_a)
+		# 回る向き: 糸はボビンの左下から下へ出ていくので、左側が下へ動く向き（画面で反時計回り）に回して糸を送り出す。
+		# 平らな絵（speedo.gd の _spool）と同じ向き。板の 3D は +Z まわりの正の角が画面で反時計回り（2026-10-30 代表「糸巻きの回転方向、逆だね？」）
+		plates.model("bobbin", "res://props/hud/hud_bobbin.glb", g.c, g.r / 0.5, _spd_spin, [4.0, 0.0, 0.03, 2.0 * u], _spd_a)
 		var rb: Rect2 = g.ribbon
 		plates.plate("ribbon", _painter.bind("ribbon"), rb, 8.0 * u, 5.0 * u, "felt", Vector2(rb.get_center().x, rb.position.y),
 			[6.0, 0.05, 0.05, 1.5 * u], _spd_a)
