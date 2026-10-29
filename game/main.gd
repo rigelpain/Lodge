@@ -9,6 +9,7 @@ const Look := preload("res://look.gd")
 ##   --log         ソリの高さを1秒ごとに出す
 ##   --no-wind     滑るときの風のエフェクトを出さない（重さを比べる用）
 ##   --cam=x,y,z,tx,ty,tz  --no-player のときのカメラの位置と見る先（ロッジを撮る用）
+##   --hud-debug   画面の左上に確かめ用の数字（押している人数・高さ・速さ・fps）を出す
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
@@ -31,11 +32,12 @@ const Audio := preload("res://audio.gd")
 const RideWind := preload("res://ride_wind.gd")
 const SewingMachine := preload("res://sewing_machine.gd")
 const Emotes := preload("res://emotes.gd")
+const Hud := preload("res://hud.gd")
 
 var sled: RigidBody3D
 var player: CharacterBody3D
 var emotes: Emotes          # 身ぶりと声の配り役（人より先に置く。人が登録する）
-var hud: Label
+var hud: CanvasLayer        # 画面の表示（hud.gd）。文字を使わず、アイコンと形で伝える
 var args := {}
 var elapsed := 0.0
 var log_t := 0.0
@@ -172,13 +174,11 @@ func _ready() -> void:
 
 	call_deferred("_split_pip_layers")   # 全部が置かれたあとで
 
-	hud = Label.new()
-	hud.position = Vector2(16, 12)
-	hud.add_theme_font_size_override("font_size", 18)
-	hud.add_theme_color_override("font_color", Color(0.12, 0.12, 0.12))
-	var layer := CanvasLayer.new()
-	layer.add_child(hud)
-	add_child(layer)
+	hud = Hud.new()
+	hud.main = self
+	hud.debug_on = args.has("hud-debug") or settings.values.get("hud_debug", false)
+	hud.hints_on = settings.values.get("hints", true)
+	add_child(hud)
 
 
 ## 右上のライブ映像: 自分の頭の上に載せた 360° カメラの映像。
@@ -419,7 +419,7 @@ func _process(_dt: float) -> void:
 	for vp in _pip_vps:
 		vp.render_target_update_mode = SubViewport.UPDATE_DISABLED if pip_hidden else SubViewport.UPDATE_ALWAYS
 	var t := int(elapsed)
-	pip_label.text = "    360 LIVE  %02d:%02d%s" % [t / 60, t % 60, "  後ろ" if pip_mode == 0 else ""]
+	pip_label.text = "    360 LIVE  %02d:%02d" % [t / 60, t % 60]   # 後ろ向きのしるしは hud.gd が絵で出す
 
 
 func _make_world() -> void:
@@ -728,19 +728,6 @@ func _physics_process(dt: float) -> void:
 	elapsed += dt
 	var s := sled.global_position
 	var top := Vector2(s.x, s.z).length()
-	var lines := [
-		"押している人: %d　ソリの高さ: %.1f m（頂上 %.0f m）　速さ: %.1f m/s　%d fps" % [sled.pushers, s.y, HILL_H, sled.linear_velocity.length(), Engine.get_frames_per_second()],
-	]
-	if player:
-		if player.prompt != "":
-			lines.append(player.prompt)
-		else:
-			lines.append("WASD 歩く　Shift 走る　Space ジャンプ　F ソリをつかむ（前では紐）　E 乗る　R ソリをふもとへ")
-			lines.append("マウス 見回す　ホイール／ピンチ 視野角　C 一人称／三人称　V 360映像の見せ方　P 360映像を消す　Esc 設定")
-			if sewing and sewing.phase != sewing.Phase.WAIT:   # ミシンの前（原型の操作の案内。ゲームの文字ではない）
-				lines.append("ミシン: T 縫う　Y コマ撮り／なめらか（いま %s）　H 仲間を足踏みに" % ("コマ撮り" if sewing.stepped else "なめらか"))
-			lines.append("Tab 身ぶりの輪（1〜6 でも）　Q 片手／両手　X 右／左　B 息を吐く　左Ctrl しゃがむ（雪面を見て F で雪玉）　左クリック ためて投げる／高い両手で拍手　右クリック 指さす")
-	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）
 	# --sim=rope: 先にソリの前に回って紐を持ち、それから W で歩く（引く確かめ用）
@@ -891,6 +878,10 @@ func _apply_setting(key: String, v) -> void:
 				env.ssil_enabled = v   # 照り返しも同じく重いので一緒に
 		"shadows":
 			if sun_light: sun_light.shadow_enabled = v
+		"hints":
+			if hud: hud.hints_on = v
+		"hud_debug":
+			if hud: hud.debug_on = v or args.has("hud-debug")
 
 
 func _unhandled_input(e: InputEvent) -> void:
