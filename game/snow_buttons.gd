@@ -87,7 +87,6 @@ const SHEAR_CUT := 8           # はさみを出してから、糸が切れる�
 const SHEAR_END := 15          # はさみをしまい終わるまで（コマ）。このあいだは動けない
 # ---- 滑った距離と速さ（一回の滑りごと）。斜面のボタンを拾うほうが多くもらえるくらいに
 const RIDE_M_PER_WOOD := 12.0  # これだけ滑るごとに木のボタン 1 つ (m)
-const RIDE_MAX_WOOD := 18      # 一回の滑りの木のボタンの上限
 const RIDE_BRASS := [10.0, 13.0]     # この速さ (m/s) を超えるたびに真鍮のボタン 1 つ（一回の滑りで一度ずつ）
 const RIDE_STOP_T := 1.0       # 0.5 m/s より遅いのがこれだけ続いたら、滑り終わり (s)
 const HELPER_SHARE := 1.0 / 3.0   # 押して手伝ったけれど乗らなかった人に届く割合
@@ -400,7 +399,9 @@ func _track_runs(dt: float) -> void:
 					run.marks.append(m)
 					run.sewn.append("brass")
 					send({"kind": "ride_mark", "sled": String(sled.name), "look": "brass", "speed": m})
-			while run.wood < mini(floori(run.dist / RIDE_M_PER_WOOD), RIDE_MAX_WOOD):   # RIDE_M_PER_WOOD 滑るごとに木を一つ
+			# RIDE_M_PER_WOOD 滑るごとに木を一つ。上限はない（2026-10-30 まで一回 18 個までだったが、大きな山の長い滑りで取りこぼすのでやめた。
+			# 速さの表示の糸の上では、10 個たまると上の素材に両替して収める。hud.gd）
+			while run.wood < floori(run.dist / RIDE_M_PER_WOOD):
 				run.wood += 1
 				run.sewn.append("wood")
 				send({"kind": "ride_mark", "sled": String(sled.name), "look": "wood", "speed": v})

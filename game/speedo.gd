@@ -96,24 +96,47 @@ const SEWN_R := 8.0   # 糸の上のボタンの半径（1080 のときの px）
 
 
 ## 糸の上のボタンの、画面の場所（sewn の並びと同じ順。外れたものも、外れる前の場所）。縫い込んだときから下へ流れ、
-## 下の端（巻き取り中はその上がっていく端）に着いたら、古いものから下に積もる
+## 下の端（巻き取り中はその上がっていく端）に着いたら、古いものから下に積もる。積もる数が多くて糸の長さに収まらないときは、
+## 間を詰めて、いつでも糸の上に収める（両替で 10 個ずつ上の素材になるので、ふつうは詰めなくても収まる。hud.gd の _exchange）。
+## 両替で縫い縮まっているボタン（mk 0〜1）は、行き先（into）へ寄っていく
 static func sewn_positions(g: Dictionary, dist: float, sewn: Array, reel := 0.0) -> Array:
 	var u: float = g.u
 	var y0: float = g.y0
 	var y1: float = g.y1
 	if reel > 0.0:
 		y1 = lerpf(y1, y0, ease(reel, 0.6))
-	var limit := y1 - SEWN_R * u
-	var out := []
+	var r := SEWN_R * u
+	var flow := []
 	for e in sewn:
-		var y: float = maxf(y0 + (dist - float(e.d)) * STITCH_PX * u, y0)
-		if not e.get("off", false):
+		flow.append(maxf(y0 + (dist - float(e.d)) * STITCH_PX * u, y0))
+	# 何個が下の端に積もるか（ふつうの間で数える）。収まらなければ間を詰める
+	var step := r * 1.15
+	var limit := y1 - r
+	var n := 0
+	for i in sewn.size():
+		if not sewn[i].get("off", false) and float(flow[i]) >= limit:
+			n += 1
+			limit -= step
+	if n > 1:
+		step = minf(step, maxf(y1 - y0 - 2.0 * r, r) / (n - 1))
+	limit = y1 - r
+	var out := []
+	for i in sewn.size():
+		var y: float = flow[i]
+		if not sewn[i].get("off", false):
 			if y >= limit:
 				y = limit
-				limit = maxf(limit - SEWN_R * u * 1.15, y0)
+				limit = maxf(limit - step, y0)
 		else:
 			y = minf(y, limit)
 		out.append(Vector2(g.x, y))
+	for i in sewn.size():   # 両替: 行き先へ、くるくる寄っていく
+		var mk: float = sewn[i].get("mk", -1.0)
+		var into: int = sewn[i].get("into", -1)
+		if mk >= 0.0 and into >= 0 and into < out.size():
+			var e := ease(mk, 0.5)
+			var swirl := Vector2(cos(mk * TAU * 1.5 + i), sin(mk * TAU * 1.5 + i)) * r * 1.4 * sin(mk * PI)
+			out[i] = (out[i] as Vector2).lerp(out[into], e) + swirl
 	return out
 
 
@@ -159,16 +182,26 @@ static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, 
 			ci.draw_arc(Vector2(x, ky), 3.6 * u, 0.3, 4.2, 10, Color(col.lightened(0.4), a * (1.0 - f * 0.5)), 1.2 * u, true)
 	# 縫い込まれたボタン: 縫い目と一緒に下へ流れ、下の端にたまる（巻き取りでは、下の端に追われて上へ）。
 	# 縫い込んだばかりは、ぽんとふくらむ
+	# 両替: 10 個がくるくる縫い縮まって小さくなり、行き先に上の素材がぽんと出て、きらっと光る
 	var ps := sewn_positions(g, dist, sewn, reel)
+	var CI := preload("res://craft_icons.gd")
 	for i in sewn.size():
 		var e: Dictionary = sewn[i]
 		if e.get("off", false):
 			continue
 		var age := (dist - float(e.d)) * STITCH_PX * u / (14.0 * u)   # 縫い込んでから流れた長さ（ボタン 1 つ半ほどで 1）
 		var pop := 1.0 + 0.6 * sin(clampf(age, 0.0, 1.0) * PI) if age < 1.0 else 1.0
+		var mk: float = e.get("mk", -1.0)
+		if mk >= 0.0:
+			pop *= 1.0 - 0.75 * mk
+		var pk: float = e.get("pk", 1.0)
+		if pk < 1.0:
+			pop *= 1.0 + 0.7 * sin(pk * PI)
 		Icons._o = ps[i]
 		Icons._s = 1.0
-		preload("res://craft_icons.gd").money(ci, Vector2.ZERO, SEWN_R * u * pop, String(e.look), a, spin * 0.2 + i)
+		CI.money(ci, Vector2.ZERO, SEWN_R * u * pop, String(e.look), a * (1.0 - 0.4 * maxf(mk, 0.0)), spin * 0.2 + i)
+		if pk < 1.0:
+			CI._glint(ci, ps[i] + Vector2(SEWN_R, -SEWN_R) * u * 0.6, SEWN_R * u * 1.6 * (1.0 - pk * 0.6), Color(1.0, 0.95, 0.75, a * (1.0 - pk)))
 	# 縫い目の横を下へ流れる糸（速いほど長く、波が細かい）
 	var len := (y1 - y0) * clampf(0.2 + 0.8 * k, 0.2, 1.0)
 	var tail := PackedVector2Array()

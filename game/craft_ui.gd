@@ -153,12 +153,15 @@ func _on_craft(ev: Dictionary) -> void:
 			if on_spool:   # 速さの表示の糸巻きから（糸の上に見つからないボタン）
 				from = preload("res://speedo.gd").layout(hud.speedo_box_now(), 0.0).c
 			var list: Array = ev.get("pieces", []).duplicate() if ev.has("pieces") else Craft.pieces(int(ev.n))
+			if on_spool:
+				if hud.sewn_value() == int(ev.n):
+					list = hud.sewn_looks()   # 糸の上のボタン（両替したあと）を、上から順に
+				else:
+					list = Craft.pieces(int(ev.n))   # 糸の上と合わないときは、段ごとに分けて糸巻きから
 			if list.size() > 24:   # 多すぎるときは大きい段だけ飛ばし、残りはまとめて財布へ
 				list = list.slice(0, 24)
 			var flown := 0
 			var gap := 0.065   # 続けて入る間: 財布でチャリチャリ…と連なる（audio.gd の coin）
-			if on_spool:
-				list.reverse()   # 糸の上の、あとで縫い込んだ（上の）ボタンから順に
 			var batch := 0
 			if spool:
 				batch = _next_batch
