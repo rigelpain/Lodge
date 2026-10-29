@@ -21,10 +21,10 @@ const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N 
 ## 米袋は 1 人用で重さ 0（袋は重さを足さない。乗った人の重さだけ）。
 ## 当たりの箱・滑り木・席はこの表が正。glb（props/build_sled.py）はこの寸法に合わせて作る
 const KINDS := {
-	"sack": {"mass": 0.0, "box": Vector3(0.6, 0.15, 1.1), "runner_x": 0.2, "runner_z": 0.4,
+	"sack": {"mass": 1.0, "box": Vector3(0.6, 0.15, 1.1), "runner_x": 0.2, "runner_z": 0.4,
 			"seats": [Vector3(0, 0.15, 0.1)]},
 	"small": {"mass": 15.0, "box": Vector3(0.75, 0.45, 1.6), "runner_x": 0.28, "runner_z": 0.6,
-			"seats": [Vector3(0, 0.35, -0.3), Vector3(0, 0.35, 0.4)]},
+			"seats": [Vector3(0, 0.06, -0.3), Vector3(0, 0.06, 0.4)]},
 	"mid": {"mass": 60.0, "box": Vector3(1.5, 0.45, 2.8), "runner_x": 0.6, "runner_z": 1.1,
 			"seats": [Vector3(0, 0.45, -0.75), Vector3(0, 0.45, 0.15), Vector3(0, 0.45, 1.0)]},
 	"large": {"mass": 220.0, "box": Vector3(2.2, 0.45, 4.8), "runner_x": 0.95, "runner_z": 1.9,
@@ -42,14 +42,14 @@ const DRAG_STOP_SPEED := 0.8   # 引きずられて、ここまで遅くなっ�
 const DRAG_MAX_DIST := 15.0    # 止められないまま、この距離を引きずられると手が離れる (m)
 const DRAG_SLIP_SPEED := 8.0   # これより速いと手がもたない（つかんでもすぐ離れる）(m/s)
 
-const BODY_MIN_MASS := 15.0    # 物理の体の重さの下限 (kg)。米袋（重さ 0）でも揺れずに滑るため。止める計算は表の重さを使う
+const BODY_MIN_MASS := 15.0    # 物理の体の重さの下限 (kg)。米袋（重さ 1 kg）でも揺れずに滑るため。止める計算は表の重さを使う
 const MID_MASS := 60.0         # 滑り木の抵抗・体重移動・雪かきの力はこの重さで決めた値。重さに比べて同じ効きにする
 const PUSH_FADE := Vector2(3.0, 4.0)   # 押されるソリがこの速さ (m/s) を超えると、押す力が弱まって消える（人は走るより速く押せない）
 
 signal slipped(who: Node3D)    # 引きずられて手が離れた
 
 var kind := "mid"              # 置く前に決める（main.gd の --sled=sack|small|mid|large）
-var kind_mass := 60.0          # 表の重さ（米袋は 0）。乗っている人の重さと合わせて止める計算に使う
+var kind_mass := 60.0          # 表の重さ（米袋は 1 kg）。乗っている人の重さと合わせて止める計算に使う
 var _k := 1.0                  # 体の重さ / MID_MASS
 var SEATS: Array = KINDS.mid.seats
 var HALF := Vector2(0.75, 1.4)     # 台の半分の幅と長さ
