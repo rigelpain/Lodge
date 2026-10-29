@@ -21,6 +21,7 @@ var t := 0.0
 var _set := false
 var _mash_n := -1
 var _frame_k := -1
+var _flips := 0
 
 
 func _initialize() -> void:
@@ -102,6 +103,16 @@ func _process(dt: float) -> bool:
 			"ring":
 				p.global_position = sled.to_global(Vector3(5.0, 0, 3.5)) + Vector3.UP * 0.3
 				_key(KEY_TAB, true)
+		# --own=N: 自分の名札を付けたソリを N 台、丘のあちこちに置く（中・小・米袋の順）。--lodge: 最初からあるソリに触ったことにする
+		var craft = main.get("craft")
+		if craft and args.has("own"):
+			var kinds := ["mid", "small", "sack", "large"]
+			for i in int(args["own"]):
+				var z := 12.0 + 14.0 * i
+				var at := Vector3(4.0 - 3.0 * i, main.height(4.0 - 3.0 * i, z) + 0.3, z)
+				craft._place(kinds[i % kinds.size()], "", at, PI, 0, Vector3.UP, craft.tag_designs.get(p.id, 0), false, p.id)
+		if args.has("lodge"):
+			p.last_sled = sled
 		# --tp で三人称に。--cam-dist・--cam-height でカメラの距離と高さ（保存はしない）
 		if args.has("tp"):
 			p.set_third(true)
@@ -131,6 +142,10 @@ func _process(dt: float) -> bool:
 		var bots := main.get_children().filter(func(c): return c != p and c is CharacterBody3D and c.get("doll") != null)
 		if bots.size() > 0:
 			_face(p, bots[0].global_position + Vector3.UP * 1.2, -0.05)
+	if _set and args.has("flip") and t > 1.2 and _flips < int(args["flip"]) and t > 1.2 + _flips * 0.6:   # --flip=K: 右の矢印キーで K 回めくる
+		_flips += 1
+		_key(KEY_RIGHT, true)
+		_key(KEY_RIGHT, false)
 	if _set and args.has("pitch"):   # 見上げる・見下ろす（空や床を背景にして撮る）
 		p._pitch = float(args["pitch"])
 	if _set and scene == "ride":
@@ -161,6 +176,8 @@ func _process(dt: float) -> bool:
 		var out: String = args.get("out", "/tmp/hud.png")
 		root.get_texture().get_image().save_png(out)
 		if p.get("ring"): print("輪: ", p.ring.visible, " ", p.ring.scale, " ", p.menu_open)
+		if main.hud.get("cards") != null:
+			print("札: ", main.hud.cards.size(), " 前=", main.hud._card_key, " 見えている=", main.hud.shown_card().get("key", ""))
 		print("保存: ", out, "  案内: ", main.hud.uses, "  押している人: ", sled.pushers, "  速さ: %.1f" % sled.linear_velocity.length())
 		return true
 	return false

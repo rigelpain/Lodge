@@ -168,7 +168,9 @@ func _wind_xform(pivot: Vector2, wind: Array) -> Transform3D:
 ## 印刷を重ねた板を出す。paint は印刷を描く Control を作る関数（画面と同じ座標で描く）。
 ## rect は板の画面の場所（px）、radius は角の丸み（px）、thick は厚み（px）、kind は素材、pivot は風の支点（画面の px）、
 ## wind は [seed, lean, flutter, jit]（空なら揺らさない）、a は薄さ
-func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float, kind: String, pivot: Vector2, wind: Array, a: float) -> void:
+## tilt は画面の中の傾き（rad）、squash は横の縮み（支点のまわり。めくるとき）、lift はずらし（px）、depth は奥へ下げる量（単位。重ねた札）
+func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float, kind: String, pivot: Vector2, wind: Array, a: float,
+		tilt := 0.0, squash := 1.0, lift := Vector2.ZERO, depth := 0.0, order := 0) -> void:
 	var v: Dictionary = _plates.get(id, {})
 	if v.is_empty():
 		var painter: Control = paint.call()
@@ -188,7 +190,8 @@ func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float
 			sh.queue_free()
 		v.shadows = _make_shadows(vp, v.mesh)
 	# 板: 支点で風に揺れ、板の真ん中を表の面に
-	var base := _wind_xform(pivot, wind)
+	var base := _wind_xform(pivot, wind) * Transform3D(Basis(Vector3.BACK, -tilt).scaled(Vector3(maxf(squash, 0.01), 1, 1)),
+		Vector3(lift.x / PX, -lift.y / PX, -depth))
 	var center := to_w(rect.get_center()) - to_w(pivot)
 	v.node.transform = base * Transform3D(Basis(), center) * Transform3D(shear(), Vector3.ZERO)
 	_place_shadows(v.shadows, base * Transform3D(Basis(), center))
@@ -197,11 +200,13 @@ func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float
 	p.size = _vs()
 	p.pivot_offset = pivot
 	if wind.is_empty():
-		p.rotation = 0.0
-		p.position = Vector2.ZERO
+		p.rotation = tilt
+		p.position = lift
 	else:
-		p.rotation = Icons.wind_angle(wind[0], wind[1], wind[2])
-		p.position = Icons.wind_offset(wind[0], wind[3])
+		p.rotation = Icons.wind_angle(wind[0], wind[1], wind[2]) + tilt
+		p.position = Icons.wind_offset(wind[0], wind[3]) + lift
+	p.scale = Vector2(maxf(squash, 0.01), 1.0)
+	p.z_index = order   # 印刷の重なりの順（重ねた札は、前の札ほど上）
 	p.modulate.a = clampf(a, 0.0, 1.0)
 	(p.material as ShaderMaterial).set_shader_parameter("rect", Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
 	p.queue_redraw()

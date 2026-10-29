@@ -58,6 +58,18 @@ var _meet_n := 0
 var _meeting := false
 var _still_t := 0.0
 var _seen_back := false
+const TAG_K := 1.4            # 名札の大きさ（2026-10-29 代表「名札もっと大きくていい」。HUD の大きさの設定にも合わせて変わる）
+const FLIP_LEN := 0.42        # 札をめくる長さ (s)
+const FLIP_HOLD := 6.0        # 手でめくったあと、遠くのソリの札でも出しておく長さ (s)
+var cards: Array = []         # 名札の束: [{sled, item, design, key}]。自分の名札を付けたソリ（置いた・畳んで持つ・帯の米袋）と、
+                              # 持ち主のいないソリに触ったときはロッジの名札を先頭に（hud.gd の _update_cards）
+var _card := 0                # いま前の札（めくった先）
+var _card_key := ""
+var _shown_key := ""          # めくっている途中で、前に見えている札（半分めくるまでは前の札）
+var _last_key := ""           # 最後に触ったソリの札（変わったら、その札を前へ）
+var _flip := 0.0              # めくりの残り（1→0）
+var _flip_dir := 1
+var _flip_hold := 0.0
 var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
 var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
 
@@ -104,6 +116,15 @@ func _input(e: InputEvent) -> void:
 			learn("gesture")
 
 		return
+	var menu: bool = main.settings != null and main.settings.is_open
+	var cu = main.get("craft_ui")
+	if cu and (cu.get("shop_open") or cu.get("machine_open") or cu.get("gear_open")):
+		menu = true   # 売り台・ミシン・装備の画面を開いているあいだは、めくらない
+	if not menu and e.physical_keycode in [KEY_LEFT, KEY_RIGHT, KEY_UP, KEY_DOWN]:   # 名札の束をめくる（ほかの操作には使っていない）
+		var step := -1 if e.physical_keycode in [KEY_LEFT, KEY_UP] else 1
+		_select(_card + step, true)
+		learn("flip")
+		return
 	match e.physical_keycode:
 		KEY_R: learn("return")
 		KEY_T: learn("sew"); learn("set")
@@ -117,22 +138,15 @@ func _process(dt: float) -> void:
 		return
 	var p: CharacterBody3D = main.player
 	var sled: RigidBody3D = p.sled if p and is_instance_valid(p.sled) else main.sled   # あなたのそばのソリ（案内に使う。縫ったソリも）
-	# 札: 最後に触ったソリ。畳んで持っていれば、その包み
-	_tag_item = {}
-	_tag_sled = main.sled
-	if p:
-		var last = p.get("last_sled")
-		if last != null and is_instance_valid(last) and last.visible:
-			_tag_sled = last
-		elif not (p.get("last_item") as Dictionary).is_empty():
-			_tag_sled = null
-			_tag_item = p.last_item
+	# 札: 名札の束のうち、前に見えている札のソリ（畳んで持っていれば、その包み）
+	_update_cards(dt, p)
+	var cur: Dictionary = shown_card()
+	_tag_sled = cur.get("sled") if cur.get("sled") != null and is_instance_valid(cur.get("sled")) else null
+	_tag_item = cur.get("item", {})
+
 	_update_people(dt, _tag_sled, p)
-	var want_tag := 1.0
-	if p and _tag_sled:
-		var near: bool = p.global_position.distance_to(_tag_sled.global_position) < TAG_NEAR or p.mode != Player.Mode.WALK
-		want_tag = 1.0 if near else 0.0
-	_tag_a = move_toward(_tag_a, want_tag, dt * 2.5)
+	# 名札はいつも出しておく（2026-10-29 代表「タグは消えないようにしてほしい」）。ソリから離れていても、その札のソリの丘と印を出す
+	_tag_a = move_toward(_tag_a, 1.0, dt * 2.5)
 
 	for h in _hints.values():
 		h.on = false
@@ -405,8 +419,10 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 	if _tag_view and not plates:   # 名札: 左の糸の輪を支点に、自由な端（右）が風で持ち上がり、ガタガタ震える
 		var tr: Rect2 = _tag_view.tag_rect(ui())
 		_tag_view.pivot_offset = Vector2(tr.position.x, tr.position.y + tr.size.y * 0.5)
+		var fp := flip_pose()
 		_tag_view.rotation = Icons.wind_angle(1.0, -0.09, 0.05)
-		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui())
+		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui()) + Vector2(0, -16.0 * ui() * fp[1])
+		_tag_view.scale = Vector2(maxf(fp[0], 0.01), 1.0)
 		_tag_view.queue_redraw()
 	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
 	on = on and allowed and not menu
@@ -439,6 +455,101 @@ func _cheer() -> void:
 	_spd_knots.append(_spd_dist)
 
 
+## 名札の束を作る: 自分の名札を付けたソリ（置いてある・畳んで持っている・帯の米袋）。持ち主のいないソリ（最初からあるソリ）に
+## 最後に触ったときは、そのソリの札をロッジの名札として先頭に出す（自分のソリが一台もないときも）。
+## 最後に触ったソリが変わったら、その札が前に来る。手でめくった札は、次に別のソリに触るまでそのまま
+func _update_cards(dt: float, p: Node) -> void:
+	var list: Array = []
+	var craft = main.get("craft")
+	var me: int = int(p.get("id")) if p else -1
+	var mine = craft.tag_designs.get(me, 0) if craft else 0
+	if craft and p:
+		for s in craft.sleds.values():
+			if is_instance_valid(s) and s.visible and int(s.get("owner_id")) == me:
+				list.append({"sled": s, "item": {}, "design": mine, "key": "s%d" % s.get_instance_id()})
+		var bag: Array = craft.bag(me)
+		for i in bag.size():
+			if bag[i] is Dictionary and bag[i].has("sled"):
+				list.append({"sled": null, "item": bag[i], "design": mine, "key": "i%d" % i})
+		var sacks: Array = craft.sacks.get(me, [])
+		var out = craft.sack_out.get(me)
+		for i in sacks.size():
+			if i == int(craft.sack_sel.get(me, 0)) and out != null and is_instance_valid(out):
+				continue   # 出している米袋は、置いてあるソリとして入っている
+			list.append({"sled": null, "item": {"sled": "sack", "fabric": sacks[i].get("fabric", "")}, "design": mine, "key": "k%d" % i})
+	var last = p.get("last_sled") if p else null
+	var lodge: RigidBody3D = null
+	if last != null and is_instance_valid(last) and last.visible and int(last.get("owner_id")) < 0:
+		lodge = last
+	elif list.is_empty() and p == null:
+		lodge = main.sled   # あなたのいない確かめ用の場面
+	if list.is_empty() and lodge == null:   # 自分のソリが 1 台もなく、ほかのソリにも触っていない: 自分の名札だけ（窓は空の丘）
+		list.append({"sled": null, "item": {}, "design": mine, "key": "me", "empty": true})
+	if lodge:
+		var t = lodge.get("tag")
+		list.push_front({"sled": lodge, "item": {}, "design": t if not (t is int and int(t) < 0) else 0, "key": "lodge%d" % lodge.get_instance_id()})
+	cards = list
+	# 最後に触ったソリの札
+	var lk := ""
+	if last != null and is_instance_valid(last) and last.visible:
+		lk = ("lodge%d" if int(last.get("owner_id")) < 0 else "s%d") % last.get_instance_id()
+	elif p and not (p.get("last_item") as Dictionary).is_empty():
+		for c in list:
+			if c.item == p.last_item:
+				lk = c.key
+				break
+	var idx := _index_of(_card_key)
+	_card = idx if idx >= 0 else clampi(_card, 0, maxi(cards.size() - 1, 0))
+	if lk != _last_key:
+		_last_key = lk
+		var li := _index_of(lk)
+		if li >= 0:
+			_select(li, false)
+	if not cards.is_empty():
+		_card_key = cards[_card].key
+	_flip = maxf(0.0, _flip - dt / FLIP_LEN)
+	if _flip < 0.5 or _index_of(_shown_key) < 0:
+		_shown_key = _card_key
+	_flip_hold = maxf(0.0, _flip_hold - dt)
+
+
+func _index_of(key: String) -> int:
+	for i in cards.size():
+		if cards[i].key == key:
+			return i
+	return -1
+
+
+## 札をめくる（manual なら矢印キーで手で。しばらく遠くのソリの札でも出しておく）
+func _select(i: int, manual: bool) -> void:
+	if cards.is_empty():
+		return
+	i = posmod(i, cards.size())
+	if manual:
+		_flip_hold = FLIP_HOLD
+	if i == _card and _card_key == cards[i].key:
+		return
+	_flip_dir = 1 if i > _card or (i == 0 and _card == cards.size() - 1) else -1
+	_shown_key = _card_key
+	_card = i
+	_card_key = cards[i].key
+	_flip = 1.0
+
+
+## 前に見えている札（めくっている途中は、半分まで前の札）
+func shown_card() -> Dictionary:
+	var i := _index_of(_shown_key)
+	if i < 0:
+		i = _card
+	return cards[i] if i < cards.size() else {}
+
+
+## めくる動き（12 コマで刻む）: 札が左の縁を支点に細くなって裏返り、次の札が開く。少し持ち上がる
+func flip_pose() -> Array:
+	var f := floorf((1.0 - _flip) * FLIP_LEN * 12.0) / maxf(FLIP_LEN * 12.0, 1.0) if _flip > 0.0 else 1.0
+	return [absf(cos(f * PI)), sin(f * PI)]   # [横の縮み, 持ち上がり（0〜1）]
+
+
 ## 立体の板を置く: 名札・吊るした札・ワッペン・ボビン・右下の小窓の刺繍枠・持ち物の列。
 ## 風の揺れは、板を支点のまわりに傾ける形でかける（平らな絵のときと同じ値）
 func _update_plates() -> void:
@@ -447,8 +558,15 @@ func _update_plates() -> void:
 	plates.moving = Icons.wind > 0.001 or _spd_a > 0.01
 	if _tag_a > 0.01:
 		var tr: Rect2 = _view.tag_rect(u)
-		plates.plate("tag", _painter.bind("tag"), tr, 12.0 * u, 8.0 * u, "paper", Vector2(tr.position.x, tr.get_center().y),
-			[1.0, -0.09, 0.05, 2.0 * u], _tag_a)
+		var piv := Vector2(tr.position.x, tr.get_center().y)
+		for k in range(1, 3):   # 束の後ろの札（あれば。後ろほど奥へ）
+			if k < cards.size():
+				var bo: Array = _view.back_offset(u, k)
+				plates.plate("tagb%d" % k, _painter.bind("tagback:%d" % k), tr, 12.0 * u, 7.0 * u, "paper", piv,
+					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0], 0.03 * k, 3 - k)
+		var fp := flip_pose()
+		plates.plate("tag", _painter.bind("tag"), tr, 12.0 * u, 8.0 * u, "paper", piv,
+			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]), 0.0, 3)
 	if _spd_a > 0.01:   # 速さの表示: 立体のボビンと、縫い目を縫うフェルトのリボンの板（ボビンから吊るす）
 		var g := Speedo.layout(speedo_box_now(), _spd_pop)
 		plates.model("bobbin", "res://props/hud/hud_bobbin.glb", g.c, g.r / 0.5, -_spd_spin, [4.0, 0.0, 0.03, 2.0 * u], _spd_a)
@@ -479,12 +597,12 @@ func debug_rect(u: float) -> Rect2:
 	return Rect2(18.0 * u, 26.0 * u, 176.0 * u, 30.0 * u + 34.0 * u * 5.0 + 12.0 * u)
 
 
-## 速さの表示の置き場（画面の px）: 画面の左側の縦の帯。左上の確かめ用の札の下から、左下の名札の上のピンクッションの上まで
+## 速さの表示の置き場（画面の px）: 画面の左側の縦の帯。左上の確かめ用の札の下から、左下の名札の束の上まで
 func speedo_box() -> Rect2:
 	var u := ui()
 	var vs := _view.size
 	var top := 26.0 * u + debug_rect(u).size.y + 18.0 * u        # 確かめ用の札の下（出していなくても同じ所）
-	var bottom := vs.y - (146.0 + 18.0) * u - 150.0 * u          # 名札と、その上のピンクッションの上
+	var bottom: float = (_view.tag_rect(u) as Rect2).position.y - 30.0 * u         # 名札（束の後ろの札の縁も）の上
 	return Rect2(22.0 * u, top, 126.0 * u, maxf(bottom - top, 200.0 * u))
 
 
@@ -526,9 +644,20 @@ class View extends Control:
 			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false)
 			Icons.printing = false
 			return
+		if part.begins_with("tagback:"):   # 束の後ろの札（名札の柄だけ。中の窓は無地）
+			var k := int(part.substr(8))
+			var c: Dictionary = hud.cards[posmod(hud._card + k, hud.cards.size())] if not hud.cards.is_empty() else {}
+			if hud._tag_a > 0.01 and not c.is_empty():
+				SledTags.draw_tag(self, tag_rect(u), c.design, hud._tag_a, false, true)
+			Icons.printing = false
+			return
 		if part == "tag":   # 名札だけを描く入れ物（風で、この入れ物ごと傾ける。名札の絵は中で描く向きを自分で変えるので）
 			if hud._tag_a > 0.01:
 				var tr := tag_rect(u)
+				if hud.plates == null:   # 平らなとき: 束の後ろの札の縁を、前の札の後ろにずらして描く
+					for k in range(mini(hud.cards.size() - 1, 2), 0, -1):
+						var c: Dictionary = hud.cards[posmod(hud._card + k, hud.cards.size())]
+						SledTags.draw_tag(self, Rect2(tr.position + back_offset(u, k)[0], tr.size), c.design, hud._tag_a, false, true)
 				_draw_tag(u, hud._tag_a)
 				Icons.flap(self, tr.position + Vector2(tr.size.x, 0), Vector2.LEFT, Vector2.DOWN, 22.0 * u, 1.0)
 			Icons.printing = false
@@ -551,19 +680,20 @@ class View extends Control:
 	## その窓に、いま関わっているソリ（最後に触ったソリ）の丘の断面・印・人の形・糸の矢印を描く（_draw_tag_info）。
 	## 左下の名札の場所（_draw_tag と同じ）
 	func tag_rect(u: float) -> Rect2:
-		var w := 262.0 * u
-		var h := 146.0 * u
+		var w := 262.0 * u * TAG_K
+		var h := 146.0 * u * TAG_K
 		return Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
 
+	## 束の後ろの k 枚目の札（右上へずらし、少し傾ける）
+	func back_offset(u: float, k: int) -> Array:
+		return [Vector2(7.0, -8.0) * u * k, -0.035 * k]
+
 	func _draw_tag(u: float, a: float) -> void:
-		var main: Node3D = hud.main
 		var sled: RigidBody3D = hud._tag_sled
 		var item: Dictionary = hud._tag_item
-		var w := 262.0 * u
-		var h := 146.0 * u
-		var r := Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
-		var craft = main.get("craft")
-		var idx = craft.tag_designs.get(main.player.id, 0) if craft and main.player else 0   # 自分の名札
+		var r := tag_rect(u)
+		var idx = hud.shown_card().get("design", 0)   # その札の名札（自分の名札か、ロッジの名札）
+		u *= TAG_K
 		# 名札の外の影と縁: 雪の白・空の青・ロッジの茶色のどれの上でも、名札の形が浮いて見えるように
 		var pts := SledTags.outline(r, SledTags.design(idx).shape)
 		var halo := Geometry2D.offset_polygon(pts, 1.6 * u, Geometry2D.JOIN_ROUND)
@@ -616,6 +746,8 @@ class View extends Control:
 		Icons.patch(self, PackedVector2Array([lodge + Vector2(-7, 0) * u, lodge + Vector2(7, 0) * u, lodge + Vector2(7, -8) * u,
 			lodge + Vector2(0, -14) * u, lodge + Vector2(-7, -8) * u]), Icons.WOOD, a, false)
 		draw_rect(Rect2(lodge + Vector2(-2.2, -6.5) * u, Vector2(4.4, 4.0) * u), Color(1.0, 0.72, 0.30, a))
+		if hud.shown_card().get("empty", false):   # 自分のソリがまだない: 空の丘だけ
+			return
 		# ソリの印と、ふもとからソリまでの赤い糸（畳んでいれば、持っている人の所）
 		var sp: Vector3 = sled.global_position if sled else (main.player.global_position if main.player else Vector3.ZERO)
 		var sr := clampf(Vector2(sp.x, sp.z).length(), 0.0, PROFILE_R)
@@ -745,7 +877,7 @@ class View extends Control:
 			[["W", "A", "S", "D"], "walk"], [["Shift"], "run"], [["Space"], "jump"], [["mouse_move"], "look"],
 			[["F"], "grab"], [["F"], "rope"], [["E"], "ride"], [["R"], "return"],
 			[["mouse_r"], "point"], [["C"], "view"], [["V"], "pip_cycle"], [["P"], "pip_off"],
-			[["Esc"], "settings"],
+			[["Esc"], "settings"], [["Left", "Right"], "tag_stack"],
 		]
 		# Alt＋ホイール（ピンチ・二本指も）: 一人称は視野角、三人称はカメラの距離。Alt＋Shift＋ホイール（二本指の横）で高さ
 		var pl = hud.main.player
