@@ -209,7 +209,6 @@ func _ready() -> void:
 	hud.main = self
 	hud.debug_on = args.has("hud-debug") or settings.values.get("hud_debug", false)
 	hud.hints_on = settings.values.get("hints", true)
-	hud.compass_style = args.get("compass", "3d")   # 確かめ用: --compass=pillow|cushion|yarn|glass で 2D の方位磁針に替える
 	add_child(hud)
 
 	if player:
