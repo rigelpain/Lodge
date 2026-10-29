@@ -9,6 +9,9 @@
 大きさが場面で変わる板（名札・札・ワッペン・持ち物の列）は Godot で角の丸い板を組み、ここでは形の決まった物だけを作る:
   hud_bobbin   木の糸巻き（ボビン）。正面（-Y、Godot では +Z）に三つ穴の端の板、奥に巻いた糸。半径 0.5
   hud_hoop     刺繍枠。内と外の 2 本の木の輪と、上の真鍮色のねじ。内の半径 1.0
+  hoop.png     本物らしい刺繍枠を正面から撮った絵（--hoop-png。2026-10-29 代表「刺繍小窓の刺繍枠をリアルな木枠にしてほしい。
+               いまなんかぼやぼやしてモチーフが伝わらない」）。曲げ木の平たい帯の内と外の輪、上の 2 枚の木の耳、真鍮のねじとつまみ。
+               3D の場面（半分の解像度）に置くとぼやけるので、絵にして画面の解像度のまま描く（hud.gd）
   hud_eyelet   札の穴のはとめ（真鍮色）。外の半径 0.1
 軸はどれも Blender の Y（Godot の Z、画面の奥行き）。
 """
@@ -22,7 +25,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import kit as K  # noqa: E402
 
-A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）"))])
+A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）")),
+             ("--hoop-png", dict(default="", help="刺繍枠だけを正面から撮って、背景の抜けた PNG にする（HUD の小窓の枠の絵）"))])
 K.setup(A, fiber=3.0, scale=1.0, tris=4000)
 C.HEX.update({"felt_brass": "C9A24A", "thread_bobbin": "D2553A"})
 
@@ -68,6 +72,77 @@ def eyelet(name):
     K.lathe(P, "felt_brass", prof + prof[:1], (0, 0, 0), segs=24, closed=False, rot=(math.pi / 2, "X"))
     P.finish()
 
+
+def hoop_real(name):
+    """本物らしい刺繍枠（正面は -Y）: 曲げ木の平たい帯（奥行きのある薄い板を輪にしたもの）を 2 本、外の輪の上に木の耳 2 枚と、
+    それを締める真鍮のねじ（横の軸・丸いつまみ・反対の六角の頭）。内の輪の内側の半径 1.0"""
+    P = K.Parts(name, kind="hud")
+    D = 0.10            # 帯の奥行き
+    for (r0, t, y) in ((1.0, 0.05, 0.0), (1.052, 0.055, -0.014)):   # 内の輪・外の輪（外は少し手前）。HUD で読めるよう少し太め
+        c = 0.008
+        prof = [(r0, -D / 2 + y + c), (r0 + c, -D / 2 + y), (r0 + t - c, -D / 2 + y), (r0 + t, -D / 2 + y + c),
+                (r0 + t, D / 2 + y - c), (r0 + t - c, D / 2 + y), (r0 + c, D / 2 + y), (r0, D / 2 + y - c)]
+        K.lathe(P, "wood_light", prof + prof[:1], (0, 0, 0), segs=128, closed=False, rot=(math.pi / 2, "X"))
+    # 上の耳: 外の輪の切れ目の両側に立つ 2 枚の木の板（輪から上へ）
+    top = 1.10
+    for sx in (-1, 1):
+        K.pbox(P, "wood_light", (sx * 0.05, -0.014, top + 0.09), (0.036, D / 2, 0.10), n=5.0)
+    # 真鍮のねじ: 耳を横に貫く軸、右に丸いつまみ（縁に刻み）、左に六角の頭
+    zc = top + 0.12
+    K.dowel(P, "felt_brass", (-0.14, -0.014, zc), (0.16, -0.014, zc), 0.02, sides=16)
+    K.disc(P, "felt_brass", (0.19, -0.014, zc), 0.07, 0.045, axis="X", segs=24)
+    for k in range(14):
+        a = 2 * math.pi * k / 14
+        K.box(P, "felt_brass", (0.19, -0.014 + 0.07 * math.cos(a), zc + 0.07 * math.sin(a)), (0.04, 0.014, 0.014))
+    K.disc(P, "felt_brass", (-0.125, -0.014, zc), 0.04, 0.03, axis="X", segs=6)
+    P.finish()
+
+
+def render_hoop_png(path):
+    """刺繍枠だけを正面から、平行に撮る。背景は抜く。光は左上の手前から（HUD の光と同じ向き）"""
+    import bpy
+    C.setup_render("640x640")
+    sc = bpy.context.scene
+    sc.render.film_transparent = True
+    sc.render.image_settings.color_mode = "RGBA"
+    for o in list(bpy.data.objects):
+        if o.type == "LIGHT":
+            bpy.data.objects.remove(o)
+    sun = bpy.data.objects.new("sun", bpy.data.lights.new("sun", "SUN"))
+    sun.data.energy = 3.2
+    sun.data.angle = math.radians(8)
+    sun.rotation_euler = (math.radians(55), math.radians(-25), math.radians(-20))
+    sc.collection.objects.link(sun)
+    fill = bpy.data.objects.new("fill", bpy.data.lights.new("fill", "SUN"))
+    fill.data.energy = 0.8
+    fill.rotation_euler = (math.radians(-60), 0, math.radians(160))
+    sc.collection.objects.link(fill)
+    if sc.world is None:
+        sc.world = bpy.data.worlds.new("w")
+    sc.world.use_nodes = True
+    bg = sc.world.node_tree.nodes.get("Background")
+    if bg:
+        bg.inputs[0].default_value = (0.9, 0.9, 0.92, 1)
+        bg.inputs[1].default_value = 0.6
+    cam = bpy.data.objects.new("cam", bpy.data.cameras.new("cam"))
+    cam.data.type = "ORTHO"
+    cam.data.ortho_scale = 2.8
+    tilt = math.radians(12)   # 少し上から見下ろす（帯の奥行きが見えて、木の輪らしくなる。窓の丸はほぼそのまま）
+    cam.location = (0, -6 * math.cos(tilt), 6 * math.sin(tilt))
+    cam.rotation_euler = (math.radians(90) - tilt, 0, 0)
+    sc.collection.objects.link(cam)
+    sc.camera = cam
+    sc.render.filepath = os.path.abspath(path)
+    bpy.ops.render.render(write_still=True)
+    print("wrote", path)
+
+
+if A.hoop_png:
+    hoop_real("hud_hoop_real")
+    for r, parts in K.made:
+        K.seat_threads([r] + K.descendants(r))
+    render_hoop_png(A.hoop_png)
+    sys.exit(0)
 
 bobbin("hud_bobbin")
 hoop("hud_hoop")

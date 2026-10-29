@@ -20,7 +20,7 @@ const LEG := Color(0.28, 0.27, 0.32)
 
 const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "lean_l", "lean_r", "brake",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
-	"cam_dist", "cam_height", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
+	"cam_dist", "cam_height", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
 
 ## HUD の物が受ける風（hud.gd が毎コマ入れる。0〜1.6 ほど）。設定「HUD が風で揺れる」を切ると 0、「視点の揺れ」を切ると小さく
 static var wind := 0.0
@@ -280,6 +280,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"speed": _speed(ci, a)
 		"hourglass": _hourglass(ci, a)
 		"cam_dist": _cam_dist(ci, a, tint)
+		"tag_stack": _tag_stack(ci, a)
 		"cam_height": _cam_height(ci, a, tint)
 		"view": _view(ci, a, tint)
 		"pip_cycle": _pip(ci, a, false)
@@ -303,6 +304,8 @@ static func keycap_w(key: String, size: float) -> float:
 		w = 40.0
 	elif key == "Space":
 		w = 58.0
+	elif key in ["Left", "Right", "Up", "Down"]:
+		w = 28.0
 	elif key.length() > 1:
 		w = 16.0 + key.length() * 8.0
 	return w * size / 28.0
@@ -318,6 +321,11 @@ static func keycap(ci: CanvasItem, key: String, center: Vector2, size: float, a 
 	# 押す面（少し明るく、手前の縁を残す）
 	var top := rr(-w / 2.0 + 2.5, -12.5, w - 5.0, 22.0, 5.0)
 	ci.draw_colored_polygon(_map(top), Color(1, 1, 1, 0.35 * a))
+	if key in ["Left", "Right", "Up", "Down"]:   # 矢印キー: 刻印の代わりに三角
+		var ang: float = {"Right": 0.0, "Down": PI / 2.0, "Left": PI, "Up": -PI / 2.0}[key]
+		var tri := xf(PackedVector2Array([Vector2(6, 0), Vector2(-4, -6), Vector2(-4, 6)]), ang, Vector2.ZERO)
+		ci.draw_colored_polygon(_map(tri), Color(THREAD, a))
+		return w * _s
 	if key == "Shift":
 		var p := PackedVector2Array([Vector2(0, -8), Vector2(7, 0), Vector2(3, 0), Vector2(3, 6), Vector2(-3, 6), Vector2(-3, 0), Vector2(-7, 0)])
 		var m := _map(p)
@@ -762,6 +770,15 @@ static func _hourglass(ci: CanvasItem, a: float) -> void:
 		patch(ci, rr(-15, y, 30, 4, 1.5), WOOD, a, false)
 	for x: float in [-13.0, 13.0]:
 		thread(ci, PackedVector2Array([Vector2(x, -18), Vector2(x, 18)]), WOOD, 2.0, a)
+
+
+## 名札の束（めくる）: 少しずつずらした 3 枚の札と、めくる弧
+static func _tag_stack(ci: CanvasItem, a: float) -> void:
+	for k in range(2, -1, -1):
+		var o := Vector2(5, -5) * k
+		patch(ci, xf(rr(-20, -12, 36, 24, 4), -0.05 * k, o + Vector2(-4, 6)), PAPER.darkened(0.06 * k), a, k == 0, PAPER_EDGE)
+	patch(ci, xf(rr(-14, -6, 22, 10, 2), 0.0, Vector2(-4, 6)), Color(0.74, 0.83, 0.95), a, false)
+	arc_arrow(ci, Vector2(2, 2), 22.0, -PI * 0.95, -PI * 0.35, THREAD, a, 2.0)
 
 
 ## 小さなフェルトのカメラ（右を向く）
