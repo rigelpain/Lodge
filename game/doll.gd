@@ -3,6 +3,7 @@ extends Node3D
 const Look := preload("res://look.gd")
 const FpHands := preload("res://fp_hands.gd")
 const Palm := preload("res://palm.gd")
+const Lantern := preload("res://lantern.gd")
 ## 人形（person/build_dolls.py で作り、骨を入れて焼いた glb）を骨で動かす。
 ## 3 体: kasa 笠と千代紙の人形 / origami 多面体の折り紙の人 / news 新聞紙と麻布の人形。骨の名前は 3 体で同じ。
 ## 居場所（位置と向き）は毎フレームなめらか。姿勢（骨の向き）は 12 コマ／秒で刻み、コマの間は止める。
@@ -58,6 +59,11 @@ var sack_anim := ""          # 米袋の動き（sack_start が入れる）: "ou
 var _sack_frame := -100      # その動きが始まったコマ
 var belt_sack := false       # 帯に丸めた米袋を下げている（持ち主が毎フレーム入れる）
 var belt_color := Color("B8402E")
+var lantern := ""            # 帯の左に提げたランタンの形（lantern.gd の LOOKS。"" は提げていない。持ち主が毎フレーム入れる）
+var lantern_lit := false     # ランタンが点いている（持ち主が毎フレーム入れる）
+var _lantern: Node3D         # lantern.gd
+var _lantern_v := Vector3.ZERO   # 前のコマの速さ（世界）。ランタンが振られる向きに
+var _vel := Vector3.ZERO
 var _roll: Node3D            # 丸めた米袋（帯か右手）
 var _roll_hip: Node3D
 var _roll_hand: Node3D
@@ -138,6 +144,9 @@ func _ready() -> void:
 	_make_breath()
 	_make_ball()
 	_make_roll()
+	_lantern = Lantern.new(self)
+	add_child(_lantern)
+	_lantern.setup(skel, skel.get_bone_global_rest(_id("hips")), kind, _scale)
 	_shapes = Palm.make_set(Color(FpHands.STYLE.get(kind, FpHands.STYLE["kasa"]).hand), layers)
 	for sh in _shapes:
 		for n in _shapes[sh].values():
@@ -482,6 +491,7 @@ func _physics_process(dt: float) -> void:
 		v = 0.0
 		d = Vector3.ZERO
 	_speed = lerpf(_speed, v, 1.0 - exp(-dt * 8.0))
+	_vel = _vel.lerp(d / dt, 1.0 - exp(-dt * 8.0))
 	_phase += TAU * d.length() / maxf(_speed / CADENCE, 0.5) / _scale
 
 	var fi := frame_index()
@@ -490,6 +500,7 @@ func _physics_process(dt: float) -> void:
 		_pose()
 	_hold_hands()
 	_apply()
+	_lantern.follow(dt, _yaw)
 	_blow_breath(dt)
 	_place_shapes()
 
@@ -712,6 +723,11 @@ func _pose() -> void:
 	_ball.visible = ball_k > 0.0
 	_ball.scale = Vector3.ONE * maxf(ball_k, 0.01)
 	_place_roll()
+	# 帯のランタン: 歩みで前後に揺れ、速さの変わり目で振られる（人形の向きの座標で、x 右・y 前）
+	var acc := (_vel - _lantern_v) * FPS
+	_lantern_v = _vel
+	var fwd := -global_basis.z
+	_lantern.step(_speed, _phase, Vector2(acc.dot(global_basis.x), acc.dot(fwd)), act == Act.RIDE)
 
 	# 声と白い息
 	if _voice > 0:

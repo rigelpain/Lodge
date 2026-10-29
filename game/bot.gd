@@ -48,6 +48,8 @@ var lean_mode := "follow"    # 一緒に乗っているときの体重移動: "f
 var _lean_q: Array = []      # [時刻, あなたの体重移動]（遅れて合わせるため）
 var _lean_now := Vector3.ZERO
 var _clock := 0.0
+var craft: Node              # 工房の配り役（craft.gd）。仲間も帯にランタンを提げ、暗くなると点ける
+var _lamp_t := 0.0           # ランタンを点けるか見直すまで (s)
 
 
 func _ready() -> void:
@@ -70,6 +72,24 @@ func _ready() -> void:
 	if hub:
 		id = hub.join(self)
 		hub.happened.connect(_on_emote)
+	craft = get_parent().get_node_or_null("Craft")
+	if craft and id >= 0:
+		craft.join(id)
+
+
+## 暗くなったらランタンを点け、明るくなったら消す（あなたと同じ lamp の出来事。見直すたびに少しずつ間をずらす）
+func _mind_lamp(dt: float) -> void:
+	_lamp_t -= dt
+	if craft == null or id < 0 or _lamp_t > 0.0:
+		return
+	_lamp_t = randf_range(1.5, 4.0)
+	var dc := get_node_or_null("/root/DayCycle")
+	if dc == null or not dc.has_method("daylight"):
+		return
+	var light: float = dc.daylight()
+	var on: bool = craft.lamp_on(id)
+	if (light < 0.4 and not on) or (light > 0.6 and on):
+		craft.send({"kind": "lamp", "who": id, "on": not on})
 
 
 func let_go() -> void:
@@ -99,6 +119,7 @@ func _uphill(p: Vector3) -> Vector3:
 
 func _physics_process(dt: float) -> void:
 	_update_replies(dt)
+	_mind_lamp(dt)
 	_regrab = maxf(0.0, _regrab - dt)
 	if post != null:
 		_stand_at_post(dt)
@@ -273,6 +294,9 @@ func _pose_doll() -> void:
 		doll.act = Doll.Act.WALK
 	doll.sled = sled
 	doll.lean = Vector2(_lean_now.x, _lean_now.y - _lean_now.z) if state == State.RIDE else Vector2.ZERO
+	if craft:
+		doll.lantern = craft.lantern(id).get("look", "")
+		doll.lantern_lit = craft.lamp_on(id)
 	doll.grip = handle
 	doll.effort = handle != Vector3.INF and sled.pushers > 0
 	doll.dragged = handle != Vector3.INF and sled.is_dragged(self)

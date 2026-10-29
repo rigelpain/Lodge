@@ -979,7 +979,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			settings.set_open(not settings.is_open)
 			if player: player.menu_open = settings.is_open
 			return
-		if e.physical_keycode == KEY_R:
+		if e.physical_keycode == KEY_BACKSPACE:   # R はランタンの点け消し（player.gd）
 			sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
 		elif e.physical_keycode == KEY_P and _pip_layer:
 			# 右上の 360° 映像を消す／出す（消している間は描画もしない）

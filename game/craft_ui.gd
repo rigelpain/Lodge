@@ -13,7 +13,8 @@ extends CanvasLayer
 ##     （標準のクラフト紙と、縫った色違い）が並び、装備しているものに赤い糸の印。押すと装備が入れ替わる（N でそれが出る）。
 ##     まんなかの段は自分の名札: 左に大きく、右に部品（形・紙の色・縁の糸・吊るす糸・判子）の見本の列。押すと名札が替わり、
 ##     自分のソリ・米袋の名札も替わる（保存して、次に起動しても同じ）。
-##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（いまは米袋だけ。服は段を足す）。閉じるのは ×、I、Esc
+##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
+##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
 ## 出来事は craft.gd へ送る（いまはすぐ配られる。通信ではホストが確かめる）。
 
 const Icons := preload("res://hud_icons.gd")
@@ -28,6 +29,8 @@ var shop_open := false
 var machine_open := false
 var gear_open := false
 var _gear_rects: Array = []  # 装備の画面の、持っている米袋の札
+var _lamp_rects: Array = []  # 装備の画面の、持っているランタンの札
+var _lamp_hover := -1
 var _opt_rects: Array = []   # 装備の画面の、名札の部品の見本 [Rect2, 部品, 番号]（部品 "_page" はページの札、"_dice" はおまかせ）
 var tag_page := 0            # 装備の画面で開いている、名札の部品のページ（sled_tags.gd の PAGES）
 var _opt_hover := -1         # 指している見本（_opt_rects の番号）
@@ -200,7 +203,7 @@ func close_gear() -> void:
 	_close_panel()
 
 
-## 持っている米袋の i 番を装備する（確かめ用の入口も兼ねる）
+## 種類 gear の持っている物の i 番を装備する（確かめ用の入口も兼ねる）。ランタンは -1 で外す
 func equip(i: int, gear := "sack") -> bool:
 	return craft.send({"kind": "equip", "who": _who(), "gear": gear, "index": i})
 
@@ -251,6 +254,10 @@ func _gear_input(e: InputEvent) -> void:
 		for i in _gear_rects.size():
 			if (_gear_rects[i] as Rect2).has_point(e.position):
 				_hover = i
+		_lamp_hover = -1
+		for i in _lamp_rects.size():
+			if (_lamp_rects[i] as Rect2).has_point(e.position):
+				_lamp_hover = i
 		_hover_btn = "close" if _close_rect.has_point(e.position) else ""
 		_opt_hover = -1
 		for i in _opt_rects.size():
@@ -264,6 +271,10 @@ func _gear_input(e: InputEvent) -> void:
 		for i in _gear_rects.size():
 			if (_gear_rects[i] as Rect2).has_point(e.position):
 				equip(i)
+				return
+		for i in _lamp_rects.size():
+			if (_lamp_rects[i] as Rect2).has_point(e.position):
+				equip(-1 if i == craft.gear_index(_who(), "lantern") else i, "lantern")   # 提げているのを押すと外す
 				return
 		for o in _opt_rects:
 			if (o[0] as Rect2).has_point(e.position):
@@ -371,51 +382,47 @@ class View extends Control:
 			_draw_bar(u, ui._bar_a)
 		_draw_gear(u)
 
-	## 装備の枠: 帯に下げた米袋。N で出す・しまう、Shift+N で替える。持っている米袋の数だけ点（選んでいるのは赤）
+	## 帯の装備の札（2026-10-29 代表「米袋は刺繍小窓の上においてほしい」）: 右下の刺繍の小窓の真上に、左から
+	##   装備の画面（I・背負いかばん）、米袋（N。持っている米袋の数だけ点、選んでいるのは赤。出していれば破線の形）、
+	##   ランタン（R。点いていれば光の輪。外していれば破線の形）。小窓を消していれば、画面の右下の隅に
 	func _draw_gear(u: float) -> void:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
 		var list: Array = craft.sacks.get(who, [])
 		if list.is_empty() or ui.shop_open or ui.machine_open or ui.gear_open:
 			return
+		var cw := 70.0 * u
+		var ch := 78.0 * u
+		var gap := 10.0 * u
+		var total := cw * 3.0 + gap * 2.0
+		var cx := size.x - 18.0 * u - total / 2.0
+		var bottom := size.y - 18.0 * u
+		var sc = ui.main.get("self_cam") if ui.main else null
+		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
+			var fr: Control = sc._frame
+			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
+			bottom = fr.position.y - 44.0 * u   # 刺繍枠の上のねじ（小窓の縁から 1080 で 30 px ほど飛び出す。PR #48）の上
 		var spec: Dictionary = craft.sack(who)
-		var out: bool = craft.sack_sled(who) != null
-		var w := 156.0 * u
-		var h := 80.0 * u
-		var bag: Array = craft.bag(who)
-		var bar_w := (bag.size() + 1) * 74.0 * u + 24.0 * u + 96.0 * u
-		var right := (size.x / 2.0 - bar_w / 2.0 - 90.0 * u) if ui._bar_a > 0.01 else size.x / 2.0 + w / 2.0
-		var r := Rect2(right - w, size.y - 20.0 * u - h, w, h)
-		Icons.screen()
-		Icons.patch(self, Icons.rr(r.position.x, r.position.y, w, h, 14.0 * u), Icons.PAPER, 0.85, false)
-		# N のキー → 押すとどうなるかの絵。しまっているときは「米袋に座る」、乗っている・出しているときは「丸めて戻す」
-		Icons.keycap(self, "N", Vector2(r.position.x + 24.0 * u, r.position.y + h * 0.5), 28.0 * u, 1.0)
-		Icons.screen()
-		Icons.chevron(self, Vector2(r.position.x + 48.0 * u, r.position.y + h * 0.5), 14.0 * u, Icons.THREAD, 0.8, 0.0, 2.6 * u)
-		var band: Color = CraftIcons.sack_band(spec)
-		var body: Color = CraftIcons.sack_body(spec)
-		var pc := Vector2(r.position.x + 100.0 * u, r.position.y + h * 0.5)
-		if not out:   # 出す: 人が座った米袋
-			Icons._o = pc
-			Icons._s = u * 1.45
-			CraftIcons.sack_flat(self, Vector2(0, 11), 1.0, band, 1.0, body)
-			Icons._o = pc
-			Icons._s = u * 1.45
-			Icons.doll(self, Vector2(-2, 10), Icons.RED, "sit", 1.0, 0.75)
-		else:   # しまう: くるっと丸まる米袋と、回る矢印
-			Icons._o = pc
-			Icons._s = u * 1.3
-			CraftIcons.sack_roll(self, Vector2(0, 2), 1.0, band, 1.0, body)
-			Icons._o = pc
-			Icons._s = u * 1.3
-			Icons.arc_arrow(self, Vector2(0, 2), 20.0, PI * 0.9, PI * 2.1, Icons.THREAD, 0.85, 2.0)
-		# I（装備の画面で米袋を選ぶ）: 右下の隅に小さく薄く
-		Icons.keycap(self, "I", Vector2(r.end.x - 13.0 * u, r.end.y - 13.0 * u), 15.0 * u, 0.45)
-		# 選んでいる米袋の印: 米袋が 2 つ以上あるときだけ
-		if list.size() >= 2:
-			for i in list.size():
-				var dp := Vector2(pc.x - (list.size() - 1) * 4.5 * u + i * 9.0 * u, r.end.y - 6.0 * u)
-				draw_circle(dp, 2.6 * u, Color(Icons.RED if i == int(craft.sack_sel.get(who, 0)) else Icons.PAPER_EDGE, 1.0))
+		var lamp: Dictionary = craft.lantern(who)
+		var cards := [["I", "gear"], ["N", "sack"], ["R", "lamp"]]
+		for i in cards.size():
+			var r := Rect2(cx - total / 2.0 + i * (cw + gap), bottom - ch, cw, ch)
+			Icons.screen()
+			Icons.patch(self, Icons.rr(r.position.x, r.position.y, cw, ch, 12.0 * u), Icons.PAPER, 0.88, true, Icons.PAPER_EDGE)
+			var ic := r.get_center() + Vector2(4.0 * u, 2.0 * u)
+			CraftIcons._at(ic, 58.0 * u)
+			match cards[i][1]:
+				"gear":
+					CraftIcons.backpack(self, Vector2.ZERO, 1.0, 1.0)
+				"sack":
+					CraftIcons.rice_sack(self, Vector2.ZERO, 1.0, CraftIcons.sack_body(spec), CraftIcons.sack_band(spec), 1.0, craft.sack_sled(who) != null)
+					Icons.screen()
+					for k in list.size():
+						var dp := Vector2(ic.x - (list.size() - 1) * 4.5 * u + k * 9.0 * u, r.end.y - 7.0 * u)
+						draw_circle(dp, 2.8 * u, Color(Icons.RED if k == int(craft.sack_sel.get(who, 0)) else Icons.PAPER_EDGE, 1.0))
+				"lamp":
+					CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamp.get("look", "box"), craft.lamp_on(who), 1.0, lamp.is_empty())
+			Icons.keycap(self, cards[i][0], r.position + Vector2(13.0 * u, 13.0 * u), 22.0 * u, 1.0)
 
 	## 持ち物の列
 	func _draw_bar(u: float, a: float) -> void:
@@ -669,16 +676,43 @@ class View extends Control:
 		var lr := Rect2(r.position.x + 30.0 * u, r.position.y + 40.0 * u, lw, h - 80.0 * u)
 		Icons.patch(self, Icons.rr(lr.position.x, lr.position.y, lw, lr.size.y, 16.0 * u), Icons.PAPER, 0.96, true, Icons.PAPER_EDGE)
 		Icons.patch(self, Icons.rr(lr.position.x + 14.0 * u, lr.position.y + 24.0 * u, lw - 28.0 * u, 16.0 * u, 6.0 * u), Icons.WOOD.darkened(0.2), 1.0, true, Icons.CAP)   # 帯
-		if on >= 0 and on < list.size():
+		var lamps: Array = craft.gear_list(who, "lantern")
+		var lamp_on: int = craft.gear_index(who, "lantern")
+		if on >= 0 and on < list.size():   # 帯の右に米袋、左にランタンを下げる（人形と同じ側）
 			var spec: Dictionary = list[on]
-			Icons._o = Vector2(lr.get_center().x, lr.position.y + 96.0 * u)
-			Icons._s = u * 2.2
-			Icons.thread(self, PackedVector2Array([Vector2(-8, -24), Vector2(-8, -10)]), Icons.WOOD, 2.0, 1.0)
-			Icons.thread(self, PackedVector2Array([Vector2(8, -24), Vector2(8, -10)]), Icons.WOOD, 2.0, 1.0)
-			CraftIcons.sack_roll(self, Vector2.ZERO, 1.0, CraftIcons.sack_band(spec), 1.0, CraftIcons.sack_body(spec))
-			var tw := lw * 0.86
-			draw_texture_rect(Tags.turntable("sack", spec.get("fabric", "")), Rect2(Vector2(lr.get_center().x - tw / 2.0, lr.position.y + 150.0 * u), Vector2(tw, tw)), false)
-			Icons.keycap(self, "N", Vector2(lr.get_center().x, lr.end.y - 34.0 * u), 34.0 * u, 1.0)
+			CraftIcons._at(Vector2(lr.position.x + lw * 0.7, lr.position.y + 82.0 * u), 64.0 * u * 1.3)
+			Icons.thread(self, PackedVector2Array([Vector2(0, -36), Vector2(0, -22)]), Icons.WOOD, 2.0, 1.0)
+			CraftIcons.rice_sack(self, Vector2.ZERO, 1.0, CraftIcons.sack_body(spec), CraftIcons.sack_band(spec), 1.0)
+			var tw := lw * 0.6
+			draw_texture_rect(Tags.turntable("sack", spec.get("fabric", "")), Rect2(Vector2(lr.position.x + lw * 0.62 - tw / 2.0, lr.position.y + 128.0 * u), Vector2(tw, tw)), false)
+			Icons.keycap(self, "N", Vector2(lr.position.x + 36.0 * u, lr.position.y + 214.0 * u), 30.0 * u, 1.0)
+		if lamp_on >= 0 and lamp_on < lamps.size():
+			CraftIcons._at(Vector2(lr.position.x + lw * 0.28, lr.position.y + 84.0 * u), 64.0 * u * 1.3)
+			Icons.thread(self, PackedVector2Array([Vector2(0, -36), Vector2(0, -28)]), Icons.WOOD, 2.0, 1.0)
+			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[lamp_on].get("look", "box"), craft.lamp_on(who), 1.0)
+		# 左の下: 持っているランタン。押すと提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
+		var lrects: Array = []
+		var lcw := 104.0 * u
+		var lch := 128.0 * u
+		var ly := lr.position.y + 330.0 * u
+		Icons.screen()
+		Icons.thread(self, PackedVector2Array([Vector2(lr.position.x + 18.0 * u, ly - 18.0 * u), Vector2(lr.end.x - 18.0 * u, ly - 18.0 * u)]), Icons.PAPER_EDGE, 1.5 * u, 0.8)
+		for i in lamps.size():
+			var card := Rect2(lr.position.x + 24.0 * u + (i % 2) * (lcw + 12.0 * u), ly + (i / 2) * (lch + 10.0 * u), lcw, lch)
+			var picked := i == lamp_on
+			if picked or ui._lamp_hover == i:
+				card.position.y -= (8.0 if picked else 4.0) * u
+			lrects.append(card)
+			Icons.screen()
+			Icons.patch(self, Icons.rr(card.position.x, card.position.y, lcw, lch, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+			CraftIcons._at(card.get_center(), lcw * 0.95)
+			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[i].get("look", "box"), picked and craft.lamp_on(who), 1.0)
+			if picked:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, lcw + 8 * u, lch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
+				Icons.chevron(self, Vector2(card.get_center().x, card.position.y - 14.0 * u), 18.0 * u, Icons.RED, 1.0, PI / 2, 3.0 * u)
+		ui._lamp_rects = lrects
+		Icons.keycap(self, "R", Vector2(lr.get_center().x, lr.end.y - 30.0 * u), 30.0 * u, 1.0)
 		# 右上: 持っている米袋
 		var x0 := lr.end.x + 30.0 * u
 		var cw := 128.0 * u
