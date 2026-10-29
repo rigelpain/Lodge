@@ -4,7 +4,7 @@ extends SceneTree
 ## 頂上（3 m）から +z（ふもと）へ向けて置き、2 m/s で押し出して（頂上は平らで、大は乗ったまま雪をかいても動き出さない）、
 ## 乗る人を 1 人と席いっぱいで、あとは何もしない。米袋は、Space の連打（1 秒に 0・6・10 回）も比べる。
 ## 連打は、ふもとの平らな所（高さ 1 m より下）に着いたらやめる（平らな所でも漕げるので、やめないと地図の端まで行く）。
-## 斜面のボタンは置かない。--trace で 2 秒ごとの位置
+## 斜面のボタンは置かない。--trace で 2 秒ごとの位置。--backward で後ろ向き（ソリの前を頂上へ向けたまま、ふもとへ押し出す）
 ## 出すのは、滑った長さ、いちばん速い所、もらえた木と真鍮の数（乗っていた一人ひとりに入る数）。
 
 const DUMMY_SRC := """extends Node3D
@@ -72,7 +72,7 @@ func _physics_process(dt: float) -> bool:
 			return true
 		var q: Array = _queue.pop_front()
 		sled.reset_to(Vector3(0, main.height(0, 3.0) + 0.3, 3.0))
-		sled.rotation.y = PI
+		sled.rotation.y = 0.0 if args.has("backward") else PI
 		sled.parked = false
 		sled.linear_velocity = Vector3(0, 0, 2.0)
 		var rs := []
