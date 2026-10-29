@@ -15,6 +15,8 @@ extends CanvasLayer
 ##     自分のソリ・米袋の名札も替わる（保存して、次に起動しても同じ）。
 ##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
+##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った）: 取った所から木のボタンが画面を飛んで財布へ入り、
+##     財布がぽんと跳ねる。持ち物の列が出ていなければ、画面の下のまんなかに財布だけを少しのあいだ出す
 ## 出来事は craft.gd へ送る（いまはすぐ配られる。通信ではホストが確かめる）。
 
 const Icons := preload("res://hud_icons.gd")
@@ -45,6 +47,12 @@ var _hover_btn := ""         # "buy" "close"
 var _shake := 0.0
 var _pop := {}               # 持ち物の番号 → 跳ねの残り
 var _coin_pop := 0.0
+var _flies: Array = []       # 財布へ飛んでいるボタン {from（画面の px）, t（0→1）, n}
+var _pending := 0            # 飛んでいて、まだ財布に描かないボタンの数
+var _purse_a := 0.0          # 財布だけの札の濃さ
+var _purse_hold := 0.0       # 財布だけの札を出しておく残りの秒
+var _wallet_at := Vector2.ZERO   # 財布の、次のボタンが載る所（画面の px。描くときに決まる）
+const FLY_T := 0.75          # 財布まで飛ぶ秒
 var _bar_a := 0.0
 var _goods: Array = []       # 売る品物の並び
 var _rects: Array = []       # 品物の札の場所（画面の px）
@@ -126,6 +134,14 @@ func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != _who():
 		return
 	match ev.kind:
+		"earn":
+			# 3D のボタンがぽんと跳ね上がったところ（少しあと、少し上）から飛び出す
+			var at: Variant = ev.get("at", Vector3.INF)
+			if at is Vector3 and at != Vector3.INF:
+				at += Vector3.UP * 1.4
+			_flies.append({"from": _screen_of(at), "t": -0.45, "n": int(ev.n)})
+			_pending += int(ev.n)
+			_purse_hold = 3.5
 		"buy", "fold":
 			_pop[int(ev.slot)] = 1.0
 			_coin_pop = 1.0 if ev.kind == "buy" else _coin_pop
@@ -136,6 +152,16 @@ func _on_craft(ev: Dictionary) -> void:
 
 
 ## ミシンの画面を開く。手に持っている物か、最初の型紙・布を枠に入れておく
+## 世界の点が画面のどこに見えるか。見えなければ、画面の上の方のまんなかから
+func _screen_of(p: Variant) -> Vector2:
+	var cam := get_viewport().get_camera_3d()
+	if p is Vector3 and p != Vector3.INF and cam and not cam.is_position_behind(p):
+		var at := cam.unproject_position(p)
+		if Rect2(Vector2.ZERO, _view.size).grow(-24.0).has_point(at):
+			return at
+	return Vector2(_view.size.x * 0.5, _view.size.y * 0.3)
+
+
 func open_machine() -> void:
 	if shop_open or machine_open or gear_open or player == null:
 		return
@@ -362,6 +388,15 @@ func _process(dt: float) -> void:
 	_bar_a = move_toward(_bar_a, 1.0 if show else 0.0, dt * 4.0)
 	_shake = maxf(0.0, _shake - dt * 2.5)
 	_coin_pop = maxf(0.0, _coin_pop - dt * 2.5)
+	for f in _flies.duplicate():
+		f.t += dt / FLY_T
+		if f.t >= 1.0:   # 財布に入った: ぽんと跳ねる
+			_flies.erase(f)
+			_pending -= int(f.n)
+			_coin_pop = 1.0
+	_purse_hold = maxf(0.0, _purse_hold - dt)
+	var purse: bool = (_purse_hold > 0.0 or not _flies.is_empty()) and _bar_a < 0.5
+	_purse_a = move_toward(_purse_a, 1.0 if purse else 0.0, dt * 4.0)
 	for k in _pop.keys():
 		_pop[k] = maxf(0.0, _pop[k] - dt * 2.5)
 	_view.queue_redraw()
@@ -380,6 +415,9 @@ class View extends Control:
 			_draw_gear_screen(u)
 		if ui._bar_a > 0.01:   # 操作のための表示なので、風では揺らさない（2026-10-29 代表）
 			_draw_bar(u, ui._bar_a)
+		if ui._purse_a > 0.01 or (not ui._flies.is_empty() and ui._bar_a < 0.5):
+			_draw_purse(u, ui._purse_a)
+		_draw_flies(u)
 		_draw_gear(u)
 
 	## 帯の装備の札（2026-10-29 代表「米袋は刺繍小窓の上においてほしい」）: 右下の刺繍の小窓の真上に、左から
@@ -433,7 +471,8 @@ class View extends Control:
 		var cell := 66.0 * u
 		var gap := 8.0 * u
 		var n := bag.size() + 1
-		var wallet_w := 96.0 * u
+		var coins: int = craft.wallet(who) - ui._pending
+		var wallet_w := maxf(96.0 * u, _coins_w(coins, 8.0 * u) + 16.0 * u)
 		var w := n * cell + (n - 1) * gap + 24.0 * u + wallet_w
 		var x0 := size.x / 2.0 - w / 2.0
 		var y := size.y - 20.0 * u - cell
@@ -461,17 +500,56 @@ class View extends Control:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(r.position.x - 3.0 * u, r.position.y - 3.0 * u, cell + 6.0 * u, cell + 6.0 * u, 12.0 * u), Icons.RED, 2.4 * u, 6.0 * u, 3.5 * u, a, true)
 				Icons.chevron(self, Vector2(c.x, r.position.y - 12.0 * u), 14.0 * u, Icons.RED, a, PI / 2, 2.6 * u)
-		# 財布: ボタンを数だけ、4 個ずつの山に
-		var coins: int = craft.wallet(who)
+		# 財布: ボタンを数だけ、山に積む
 		var wx := x0 + n * (cell + gap) + 16.0 * u
-		var cr := 8.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI))
-		for i in coins:
-			var col := i / 4
-			var row := i % 4
-			var p := Vector2(wx + col * cr * 2.3 + cr, y + cell - cr - row * cr * 0.9 - 4.0 * u)
+		_coins(wx, y + cell - 4.0 * u, coins, 8.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI)), a)
+
+	## 財布のボタンを、左 x0・下 y から山に積んで描く。少なければ 4 個ずつ、多ければ 10 個ずつ詰めて（糸に通した束のように）。
+	## 次の 1 個が載る所を ui._wallet_at に入れる
+	func _coins(x0: float, y: float, coins: int, cr: float, a: float) -> void:
+		var per := 4 if coins <= 24 else 10
+		var dy := cr * (0.9 if per == 4 else 0.42)
+		for i in coins + 1:
+			var p := Vector2(x0 + (i / per) * cr * 2.3 + cr, y - cr - (i % per) * dy)
+			if i == coins:
+				ui._wallet_at = p
+				break
 			Icons._o = p
 			Icons._s = 1.0
 			CraftIcons.coin(self, Vector2.ZERO, cr, a)
+
+	func _coins_w(coins: int, cr: float) -> float:
+		return maxi(1, ceili(coins / (4.0 if coins <= 24 else 10.0))) * cr * 2.3
+
+	## 財布だけの札（持ち物の列が出ていないとき、ボタンが入ったあいだ）: 画面の下のまんなかに、紙の札と財布
+	func _draw_purse(u: float, a: float) -> void:
+		var coins: int = ui.craft.wallet(ui._who()) - ui._pending
+		var cr := 12.0 * u
+		var w := _coins_w(coins, cr) + 28.0 * u
+		var h := (4.0 if coins <= 24 else 10.0) * cr * (0.9 if coins <= 24 else 0.42) + cr * 2.4
+		var x0 := size.x / 2.0 - w / 2.0
+		var y1 := size.y - 22.0 * u
+		Icons.screen()
+		Icons.patch(self, Icons.rr(x0, y1 - h, w, h, 14.0 * u), Icons.PAPER, 0.85 * a, true, Icons.PAPER_EDGE)
+		_coins(x0 + 14.0 * u, y1 - 8.0 * u, coins, cr * (1.0 + 0.3 * sin(ui._coin_pop * PI)), a)
+
+	## 財布へ飛んでいるボタン: 取った所から弧を描いて財布の次の場所へ
+	func _draw_flies(u: float) -> void:
+		for f in ui._flies:
+			if f.t < 0.0:
+				continue
+			var t: float = clampf(f.t, 0.0, 1.0)
+			var e := t * t * (3.0 - 2.0 * t)
+			var to: Vector2 = ui._wallet_at
+			var p: Vector2 = (f.from as Vector2).lerp(to, e) + Vector2(0, -sin(t * PI) * 110.0 * u)
+			var r := lerpf(24.0, 12.0, e) * u
+			Icons._o = p
+			Icons._s = 1.0
+			CraftIcons.coin(self, Vector2.ZERO, r, 1.0)
+			for k in mini(int(f.n) - 1, 4):   # 何個も入るときは、後ろに続くボタン
+				var q: Vector2 = (f.from as Vector2).lerp(to, maxf(0.0, e - 0.06 * (k + 1))) + Vector2(0, -sin(maxf(0.0, t - 0.06 * (k + 1)) * PI) * 110.0 * u)
+				Icons._o = q
+				CraftIcons.coin(self, Vector2.ZERO, r * 0.8, 0.9)
 
 	## 売り台
 	func _draw_shop(u: float) -> void:

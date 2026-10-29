@@ -15,6 +15,7 @@ const Look := preload("res://look.gd")
 ##   --sled-color=色  ソリのメインカラー（ソリの主なフェルトと滑りあとの糸）。2F5DA8 のような 16 進か、white・navy などの色の名前
 ##   --stitch=名前  滑りあとの縫い目の差し替え（running なみ縫い・zigzag・chain くさり縫い・saddle サドルステッチ）。既定はソリの大きさで決まる
 ##   --trail-fade=fray|bury  滑りあとの消え方（ほつれる・雪に埋もれる）
+##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
@@ -42,6 +43,7 @@ const SelfCam := preload("res://self_cam.gd")
 const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
 const CraftUi := preload("res://craft_ui.gd")
+const SnowButtons := preload("res://snow_buttons.gd")
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がロッジの中の側）と向き
 const SHOP_AT := Vector3(2.0, 0, 1.0)
@@ -65,6 +67,7 @@ var sewing: Node3D            # 大きなミシンの動き（sewing_machine.gd�
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
+var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
 
 
 static func hill(x: float, z: float) -> float:
@@ -130,6 +133,7 @@ func _ready() -> void:
 		sled.main_color = Color.from_string(args["sled-color"], Color(0, 0, 0, 0))
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6 + sled.place_lift(), -3)   # 長いソリが坂に埋まらないように
 	sled.snow_lift = snow_lift
+	sled.name = "Sled"   # 出来事（snow_buttons.gd の snip）は、ソリを名前で指す
 	add_child(sled)
 	if args.has("sled-yaw"):   # 確かめ用: 最初からソリを横や逆に向けておく
 		sled.rotation.y = deg_to_rad(float(args["sled-yaw"]))
@@ -154,6 +158,11 @@ func _ready() -> void:
 		b.lean_mode = args.get("bot-lean", "follow")
 		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
 		add_child(b)
+
+	if not args.has("no-buttons"):
+		snow_buttons = SnowButtons.new()
+		snow_buttons.world = self
+		add_child(snow_buttons)
 
 	# 音（game/audio.gd）。--spawn=lodge でロッジの前から、--spawn=inside で食堂の中から始める（音の確かめ用）
 	if not args.has("no-sound"):   # --no-sound は確かめ用: 音を入れない

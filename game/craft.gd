@@ -21,6 +21,8 @@ extends Node
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
+##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
+##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
 ## GEARS に種類を足し、_gear_lists に持ち物の配列の入れ物を足す
 ## 米袋は全員が最初から 1 つ（標準）持つ。米袋の型紙と布で縫った米袋は、持ち物でなく装備の枠に入り、選ばれる
@@ -290,6 +292,10 @@ func _apply(ev: Dictionary) -> bool:
 			if lantern(who).is_empty():
 				return false
 			lamps[who] = bool(ev.on)
+		"earn":
+			if int(ev.get("n", 0)) <= 0:
+				return false
+			wallets[who] += int(ev.n)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):

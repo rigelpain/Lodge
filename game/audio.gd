@@ -468,6 +468,21 @@ func sack(who: Node3D, what: String) -> void:
 			_emote_sound(ev, 8, "felt_pat", 3, -8.0, rng.randf_range(1.1, 1.2), at, near)
 
 
+## 雪に縫い留められたボタン（snow_buttons.gd が呼ぶ）。frame は出来事のコマ。その場所から鳴らす。
+## what: "snap" 糸がぷつん / "pop" ボタンがぽん / "land" 降ってきて雪にぽふ / "sew" 糸がするっと縫い付く
+func button(what: String, at: Vector3, frame: int) -> void:
+	var ev := {"frame": frame}
+	match what:
+		"snap":
+			_emote_sound(ev, 0, "button_snap", 3, -4.0, rng.randf_range(0.95, 1.08), at, false)
+		"pop":
+			_emote_sound(ev, 0, "button_pop", 3, -2.0, rng.randf_range(0.94, 1.06), at, false)
+		"land":
+			_emote_sound(ev, 0, "button_land", 2, -12.0, rng.randf_range(0.9, 1.1), at, false)
+		"sew":
+			_emote_sound(ev, 0, "button_sew", 1, -14.0, rng.randf_range(0.95, 1.05), at, false)
+
+
 func _play_step(w: Dictionary, s: AudioStreamWAV, db: float, pitch: float, is_player: bool) -> void:
 	if is_player:
 		_shot2(w.step, s, db, pitch)
