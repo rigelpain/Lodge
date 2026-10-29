@@ -64,17 +64,20 @@ const MOTIFS := ["none", "snow", "star", "pine", "heart", "dots", "stripe", "mit
 	"moon", "mountain", "plum", "bird", "acorn", "rabbit"]
 const PRINTS := ["ink", "applique", "embroidery", "cutout", "window"]
 const LAYOUTS := ["corner", "center", "pair", "row", "overlap", "scatter"]
-const PARTS := ["shape", "material", "paper", "pattern", "accent", "stitch", "edge", "string", "deco", "motif", "print", "layout"]
+const PARTS := ["shape", "material", "paper", "pattern", "accent", "stitch", "edge", "string", "deco", "motif", "print", "layout", "cushion"]
 ## 装備の画面のページ: 形と素材 / 模様 / 縁と糸 / 飾りと判子
-const PAGES := [["shape", "material", "paper"], ["pattern", "accent"], ["stitch", "edge", "string"], ["deco", "motif", "print", "layout"]]
+const PAGES := [["shape", "material", "paper"], ["pattern", "accent"], ["stitch", "edge", "string"], ["deco", "motif", "print", "layout", "cushion"]]
 ## 部品ごとの、最初から使える数（前から順に）。それより後ろは、あとで手に入る
 const STARTER := {"shape": 7, "material": 3, "paper": 12, "pattern": 5, "accent": 12, "stitch": 4, "edge": 8, "string": 8,
-	"deco": 3, "motif": 8, "print": 2, "layout": 4}
+	"deco": 3, "motif": 8, "print": 2, "layout": 4, "cushion": 7}
 ## あとで手に入る部品の値の目安（木のボタンの数）。報酬や店で配るときに使う
 const COST := {"shape": 4, "material": 6, "paper": 2, "pattern": 5, "accent": 2, "stitch": 4, "edge": 3, "string": 2,
-	"deco": 5, "motif": 3, "print": 6, "layout": 3}
+	"deco": 5, "motif": 3, "print": 6, "layout": 3, "cushion": 2}
 const DEFAULT := {"shape": 0, "material": 0, "paper": 0, "pattern": 0, "accent": 4, "stitch": 0, "edge": 0, "string": 1,
-	"deco": 0, "motif": 0, "print": 0, "layout": 0}
+	"deco": 0, "motif": 0, "print": 0, "layout": 0, "cushion": 1}
+## 方位磁針のピンクッション（hud.gd の _draw_pillow・pin_cushion_3d.gd）の色。0 は名札の地の色（少し淡く）、ほかは淡い色
+const CUSHIONS := [Color(0, 0, 0, 0), Color(0.96, 0.78, 0.82), Color(0.80, 0.89, 0.97), Color(0.97, 0.93, 0.82),
+	Color(0.80, 0.93, 0.85), Color(0.88, 0.82, 0.95), Color(0.98, 0.94, 0.70)]
 
 
 static func count() -> int:
@@ -93,12 +96,21 @@ static func options(part: String) -> Array:
 		"motif": return MOTIFS
 		"print": return PRINTS
 		"layout": return LAYOUTS
+		"cushion": return CUSHIONS
 	return THREADS
 
 
 ## 部品ごとの選べる数
 static func part_count(part: String) -> int:
 	return options(part).size()
+
+## 方位磁針のピンクッションの色（自分の名札の cushion の部品）
+static func cushion_color(d) -> Color:
+	var i: int = int(d.get("cushion", DEFAULT.cushion)) if d is Dictionary else DEFAULT.cushion
+	i = posmod(i, CUSHIONS.size())
+	if i == 0:
+		return design(d).paper.lerp(Color(1, 1, 1), 0.3)
+	return CUSHIONS[i]
 
 
 ## 最初から使える部品か（でなければ、あとで手に入る部品）
@@ -143,7 +155,7 @@ static func default_design(who: int) -> Dictionary:
 	return {"shape": posmod(who, 7), "material": posmod(who, 3), "paper": paper, "pattern": posmod(who * 2 + 1, 5),
 		"accent": posmod(paper + 4 + posmod(who, 7), 12), "stitch": posmod(who * 3, 4), "edge": posmod(who * 3, 8),
 		"string": posmod(who * 3 + 1, 8), "deco": posmod(who + 1, 3), "motif": posmod(who * 2 + 1, 8), "print": posmod(who, 2),
-		"layout": posmod(who * 3 + 1, 4)}
+		"layout": posmod(who * 3 + 1, 4), "cushion": DEFAULT.cushion}
 
 
 static func _key(d) -> String:
@@ -1151,6 +1163,15 @@ static func swatch(ci: CanvasItem, part: String, i: int, c: Vector2, s: float, b
 				var t := k / 11.0
 				loop.append(c + Vector2(-0.44 + 0.88 * t, 0.24 - sin(t * PI) * 0.56) * s)
 			Icons.thread(ci, loop, d.string, s * 0.1, a)
+		"cushion":   # 方位磁針のピンクッションの色（0 は名札の地の色。破線で印）
+			var cc: Color = cushion_color(dd)
+			Icons.patch(ci, Icons.rr(c.x - s * 0.48, c.y - s * 0.4, s * 0.96, s * 0.8, s * 0.28), cc, a, false)
+			for k in 6:
+				ci.draw_circle(c + Vector2(-0.4 + 0.16 * k, 0.4) * s, s * 0.064, Color(1, 1, 1, 0.95 * a))
+			ci.draw_circle(c + Vector2(0.12, -0.16) * s, s * 0.12, Color(Icons.MUSTARD, a))
+			if i == 0:
+				Icons.screen()
+				Icons.dashes(ci, Icons.rr(c.x - s * 0.32, c.y - s * 0.28, s * 0.64, s * 0.52, s * 0.12), Icons.PAPER_EDGE, s * 0.05, s * 0.12, s * 0.08, a, true)
 		"deco":   # 名札の大きさを見本の 1.6 倍として、飾りが見本の真ん中に来るよう穴の位置をずらす
 			var R := Rect2(Vector2.ZERO, Vector2(s * 1.4, s * 1.6))
 			var h := R.size.y
