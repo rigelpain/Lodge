@@ -34,6 +34,12 @@ const RideWind := preload("res://ride_wind.gd")
 const SewingMachine := preload("res://sewing_machine.gd")
 const Emotes := preload("res://emotes.gd")
 const Hud := preload("res://hud.gd")
+const Craft := preload("res://craft.gd")
+const Shopkeeper := preload("res://shopkeeper.gd")
+
+## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がロッジの中の側）と向き
+const SHOP_AT := Vector3(1.5, 0, 1.8)
+const SHOP_YAW := PI - 0.35
 
 var sled: RigidBody3D
 var player: CharacterBody3D
@@ -50,6 +56,8 @@ var _ft_sum := 0.0
 var _ft_n := 0
 var pip_label: Label
 var sewing: Node3D            # 大きなミシンの動き（sewing_machine.gd）
+var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
+var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 
 
 static func hill(x: float, z: float) -> float:
@@ -99,6 +107,10 @@ func _ready() -> void:
 
 	_make_world()
 	_make_ground()
+	craft = Craft.new()
+	craft.name = "Craft"
+	craft.world = self
+	add_child(craft)
 	if not args.has("no-lodge"):
 		_make_lodge()
 		_furnish_lodge()
@@ -544,12 +556,19 @@ func _furnish_lodge() -> void:
 	put.call("slot_vending_1", "res://props/misc/vending_red.glb", Vector3.ZERO)
 	put.call("slot_vending_2", "res://props/misc/vending_blue.glb", Vector3.ZERO)
 	put.call("slot_vending_3", "res://props/misc/vending_red.glb", Vector3.ZERO)
-	var craft: Node3D = put.call("slot_craft_rental", "res://props/craft_machine.glb", Vector3.ZERO)
-	if craft:   # ミシンの動き（そばで T で縫う。Y でコマ撮り、H で仲間を足踏みに）
+	var machine: Node3D = put.call("slot_craft_rental", "res://props/craft_machine.glb", Vector3.ZERO)
+	if machine:   # ミシンの動き（そばで T で縫う。Y でコマ撮り、H で仲間を足踏みに）
 		sewing = SewingMachine.new()
 		sewing.name = "Sewing"
 		sewing.world = self
-		craft.add_child(sewing)
+		machine.add_child(sewing)
+		# ミシンの横に、型紙と布の売り子（頭の上に品書きの看板）。ミシンの前の貸出のカウンター（塀）は lodge/ で外した
+		shopkeeper = Shopkeeper.new()
+		shopkeeper.name = "Shopkeeper"
+		shopkeeper.world = self
+		shopkeeper.position = SHOP_AT
+		shopkeeper.rotation.y = SHOP_YAW
+		machine.get_parent().add_child(shopkeeper)
 	# 厨房: 巨大なアイロン台・プレス機・乾燥機と、卓上の道具（props/build_scenes.py の kitchen）
 	var kitchen := lodge.find_child("slot_food_kitchen", true, false) as Node3D
 	if kitchen:

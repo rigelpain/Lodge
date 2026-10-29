@@ -49,6 +49,8 @@ const PUSH_FADE := Vector2(3.0, 4.0)   # 押されるソリがこの速さ (m/s)
 signal slipped(who: Node3D)    # 引きずられて手が離れた
 
 var kind := "mid"              # 置く前に決める（main.gd の --sled=sack|small|mid|large）
+var fabric := ""               # 布の色（fabrics.gd の名前）。"" は glb のままの色。ミシンで縫ったソリに付く
+var crafted := false           # ミシンで縫った・広げたソリ（畳んで持てる。craft.gd）
 var kind_mass := 60.0          # 表の重さ（米袋は 1 kg）。乗っている人の重さと合わせて止める計算に使う
 var _k := 1.0                  # 体の重さ / MID_MASS
 var SEATS: Array = KINDS.mid.seats
@@ -93,6 +95,7 @@ var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定�
 
 
 func _ready() -> void:
+	add_to_group("sleds")
 	if not KINDS.has(kind):
 		kind = "mid"
 	var k: Dictionary = KINDS[kind]
@@ -122,7 +125,10 @@ func _ready() -> void:
 	# glb がまだない大きさは、当たりの箱と同じ大きさの仮の箱
 	var glb := "res://props/sled_%s.glb" % kind
 	if ResourceLoader.exists(glb):
-		add_child(Props.make(glb))
+		var look := Props.make(glb)
+		look.name = "Look"
+		preload("res://fabrics.gd").tint(look, kind, fabric)
+		add_child(look)
 	else:
 		var mi := MeshInstance3D.new()
 		var bm := BoxMesh.new()
@@ -250,6 +256,17 @@ func lean(steer: float, forward: bool, back: bool = false) -> void:
 	_steer += steer
 	_lean_fwd = _lean_fwd or forward
 	_lean_back = _lean_back or back
+
+
+## 広げる動きのあいだ（frames コマ）、止めて見た目を隠しておく（craft.gd が折り紙の形を見せる）
+func hold_still(frames: int) -> void:
+	freeze = true
+	visible = false
+	await get_tree().create_timer(frames / 12.0).timeout
+	if is_instance_valid(self):
+		freeze = false
+		visible = true
+		parked = true
 
 
 func reset_to(pos: Vector3) -> void:

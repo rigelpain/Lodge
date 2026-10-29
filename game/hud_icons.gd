@@ -218,6 +218,8 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"back": _back(ci, a)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
+		_:   # 工房の絵（型紙・布・畳む・広げる。craft_icons.gd）
+			preload("res://craft_icons.gd").draw(ci, name, a, tint)
 
 
 ## キーの形のワッペンの幅（px）。size は高さ
