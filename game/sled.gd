@@ -11,7 +11,6 @@ const Snowball := preload("res://snowball.gd")
 
 const PUSH_FORCE := 300.0   # 1人が押す力 (N)。1人でも最も急な所をじりじり登れる
 const CLIMB_DAMP := 3.5     # 登るときの雪の抵抗（押すのをやめるとすぐ止まる。大きいほどじりじり）
-const RIDE_DAMP := 0.12     # 乗って滑るときの減速
 const STAND := 0.6                 # つかむ人が立つ、縁からの距離
 const ROPE_LEN := 3.0
 const ROPE_K := 260.0              # 紐が張ったときの引く力 (N/m)
@@ -23,14 +22,24 @@ const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N 
 ## 当たりの箱・滑り木・席はこの表が正。glb（props/build_sled.py）はこの寸法に合わせて作る。
 ## color はメインカラーの既定（glb に焼いてある主なフェルトの色。米袋は印刷の赤）。main_color で上書きできる。
 ## stitch は滑りあとの縫い目（STITCHES）。重いソリほど太く丈夫な縫い目（2026-10-27 代表が選んだ。props/stitches.md）。stitch_override で差し替えられる
+## 乗って滑るときの手ざわり（2026-10-29 代表「小さければ小さいほど操舵性と加速がよく、最高速度が遅い。重ければ重いほど
+## 操舵性と加速が悪く、最高速度が速い。乗っている人が同じ操作をすると操舵力は強くなる」）。値の意味は design/controls-and-physics.md
+##   drag  底や滑り木が雪をこする抵抗 (N per m/s)。遅いときから効く
+##   push  雪を押しのける・風を受ける抵抗 (N per (m/s)²)。速くなるほど急に増える。重さ（ソリ＋乗る人）に比べて小さいほど最高速度が速い
+##   sink  滑り出しで雪に沈む抵抗（重さに対する割合）。plane (m/s) まで速くなると浮いて消える。滑り木のソリだけ。大きいほど出足が重い
+##   turn  乗っている人一人の体重移動の効きの倍率。曲がりにくさは、ソリの長さと重さ（回りにくさ）から物理で出る
 const KINDS := {
 	"sack": {"mass": 1.0, "box": Vector3(0.6, 0.15, 1.1), "runner_x": 0.2, "runner_z": 0.4, "color": Color("B8402E"), "stitch": "running",
+			"drag": 1.0, "push": 3.3, "sink": 0.0, "plane": 1.0, "turn": 1.0,
 			"seats": [Vector3(0, 0.15, 0.1)]},
 	"small": {"mass": 15.0, "box": Vector3(0.75, 0.45, 1.6), "runner_x": 0.28, "runner_z": 0.6, "color": Color("D2553A"), "stitch": "running",
+			"drag": 1.5, "push": 3.6, "sink": 0.0, "plane": 1.0, "turn": 1.0,
 			"seats": [Vector3(0, 0.06, -0.3), Vector3(0, 0.06, 0.4)]},
 	"mid": {"mass": 60.0, "box": Vector3(1.5, 0.45, 2.8), "runner_x": 0.6, "runner_z": 1.1, "color": Color("D2553A"), "stitch": "chain",
+			"drag": 8.0, "push": 2.5, "sink": 0.02, "plane": 3.0, "turn": 1.0,
 			"seats": [Vector3(0, 0.45, -0.75), Vector3(0, 0.45, 0.15), Vector3(0, 0.45, 1.0)]},
 	"large": {"mass": 220.0, "box": Vector3(2.2, 0.45, 4.8), "runner_x": 0.95, "runner_z": 1.9, "color": Color("D2553A"), "stitch": "saddle",
+			"drag": 12.0, "push": 3.5, "sink": 0.06, "plane": 5.0, "turn": 1.0,
 			"seats": [Vector3(-0.5, 0.55, -1.65), Vector3(0.5, 0.55, -1.65), Vector3(-0.5, 0.55, -0.55), Vector3(0.5, 0.55, -0.55),
 					Vector3(-0.5, 0.55, 0.55), Vector3(0.5, 0.55, 0.55), Vector3(-0.5, 0.55, 1.65), Vector3(0.5, 0.55, 1.65)]},
 }
@@ -81,9 +90,16 @@ var parked := true             # ふもとに止めてある（最初と R で�
 var dragged := {}              # 引きずられている人 → 引きずられた距離 (m)
 var _pushed_by := {}           # このコマ押した人（引きずりの判定用。押している人は引きずられない）
 var _pushed_now := {}
-const LEAN_DIG := 17.5             # 体重をかけた側の滑り木が食い込んで増える抵抗（2026-10-28 に 14 から上げた）
-const SCOOP_FORCE := 120.0         # 乗ったまま前傾して手で雪をかく力 (N)。坂を登る向きには効かない
-const BRAKE_DRAG := 14.0           # 後ろに体重をかけたときの制動（両側）
+# ---- 乗って滑るときの、乗っている一人ひとりの力（調整する値。乗る人の数だけ足し合わさる）
+# 乗って下っているあいだは、乗っている人の重さ（RIDER_MASS）もソリと一緒に動く重さに入る。
+# 人の力は「ソリ＋乗る人」の重さで分け合うので、重いソリほど一人の力では動きにくく、そろえると効く
+const LEAN_DIG := 30.0             # 一人が体重をかけた側の滑り木が食い込んで増える抵抗 (N per m/s)。逆向きの人とは打ち消し合う
+                                   # （2026-10-29 に、乗る人の重さを入れたので 17.5 から合わせ直した。中＋一人の曲がり方は前と同じ）
+const SCOOP_FORCE := 210.0         # 一人が乗ったまま前傾して手で雪をかく力 (N)。坂を登る向きには効かない
+const BRAKE_DRAG := 24.0           # 一人が後ろに体重をかけたときの制動（両側, N per m/s）
+const FWD_LEAN_EASE := 0.6         # 前傾した人の割合 × これだけ、雪をこする抵抗が減る（全員前傾で 0.4 倍）
+const CLIMB_LEAN_DIG := 17.5       # 押されて登っているときの体重移動・後傾（前の作りのまま。登りの手ざわりを変えない）
+const CLIMB_BRAKE_DRAG := 14.0
 const HOLD_FRICTION := 0.45        # 遅いときに働く静止摩擦（重さに対する割合）。丘のどこでも留まり、1人が押せば動き出す
 
 var pushers := 0            # 前のコマで押していた人数（表示用）
@@ -92,9 +108,10 @@ var holders := {}           # つかんでいる人 → つかんだ所（ソリ
 var rope_holder: Node3D = null
 var rope: Node3D            # 引き紐（見た目と、拾える先の位置）
 var _push_count := 0
-var _steer := 0.0           # 乗っている人の左右の体重移動の合計（このコマ）
-var _lean_fwd := false
-var _lean_back := false
+var _steer := 0.0           # 乗っている人の左右の体重移動の合計（このコマ。一人 -1〜1 を足し合わせる。上限なし）
+var _n_fwd := 0             # このコマ前傾した人の数
+var _n_back := 0            # このコマ後傾した人の数
+var steer_now := 0.0        # 前のコマの体重移動の合計（確かめ用・表示用）
 var hold_debug := ""
 
 # 足元の影と、滑り木の跡（ステッチ）
@@ -346,12 +363,13 @@ func dismount(who: Node3D) -> void:
 	riders.erase(who)
 
 
-## 乗っている人の体重移動。steer は -1（左）〜1（右）、forward は前傾、back は後傾。
-## 力を直接かけるのではなく、滑り木の食い込み（抵抗）が変わることで曲がる・止まる
+## 乗っている人の体重移動。乗っている一人ひとりが毎コマ呼ぶ。steer は -1（左）〜1（右）、forward は前傾、back は後傾。
+## 力を直接かけるのではなく、滑り木の食い込み（抵抗）が変わることで曲がる・止まる。
+## 一人ひとりの力は足し合わさる: 全員が同じ向きなら重なって大きく曲がり、逆向きの人がいると打ち消し合う
 func lean(steer: float, forward: bool, back: bool = false) -> void:
-	_steer += steer
-	_lean_fwd = _lean_fwd or forward
-	_lean_back = _lean_back or back
+	_steer += clampf(steer, -1.0, 1.0)
+	_n_fwd += 1 if forward else 0
+	_n_back += 1 if back else 0
 
 
 ## 広げる動きのあいだ（frames コマ）、止めて見た目を隠しておく（craft.gd が折り紙の形を見せる）
@@ -580,6 +598,31 @@ func _ground_normal() -> Vector3:
 	return hit.normal if hit else Vector3.UP
 
 
+## 乗って下っているときの力。ソリと乗っている人は一緒に動くので、重力は同じ加速で、ほかの力（雪の抵抗・沈み・体重移動）は
+## 「体の重さ / ソリと乗る人の重さ」の割合でかける（物理の体はソリの重さだけなので、乗る人の重さぶん効きを弱める）。
+## 雪をこする抵抗（drag）は重さによらないので、重いほど抵抗に負けにくく、最高速度が速い。滑り木のソリは出足で雪に沈む（sink）。
+## 曲がる力は一人ひとりの体重移動の合計。ソリが長く重いほど回りにくい（回りにくさは当たりの箱から物理で出る）
+func _ride_forces(dt: float, fwd: Vector3) -> void:
+	var K: Dictionary = KINDS[kind]
+	var share := mass / load_mass()
+	var n := _ground_normal()
+	var v_t := linear_velocity - n * linear_velocity.dot(n)
+	var vs := v_t.length()
+	if vs > 0.01:
+		var ease := 1.0 - FWD_LEAN_EASE * float(mini(_n_fwd, riders.size())) / riders.size()
+		var sink: float = K.sink * load_mass() * 9.8 * absf(n.y) * (1.0 - smoothstep(0.0, K.plane, vs))
+		var resist: float = (K.drag * vs + K.push * vs * vs) * ease + sink
+		apply_central_force(-v_t / vs * minf(resist * share, vs * mass / dt))
+	for x in [-RUNNER_X, RUNNER_X]:
+		var r := global_basis * Vector3(x, 0, 0)
+		var v_point := linear_velocity + angular_velocity.cross(r)
+		var v_long := v_point.dot(fwd)
+		var c := BRAKE_DRAG * _n_back
+		if _steer * signf(x) > 0.0:
+			c += LEAN_DIG * K.turn * absf(_steer)
+		apply_force(-fwd * v_long * c * share, r)
+
+
 ## 止める力を出している人の数: つかんでいて、このコマ押していない人（押されて登っているときは数えない）
 func _brakers() -> int:
 	if pushers > 0 and linear_velocity.y > -0.1:
@@ -744,9 +787,11 @@ func _physics_process(dt: float) -> void:
 	var riding := riders.size() > 0
 	# 押されて坂を登っている間は、乗っている人がいても登りの雪の抵抗。乗るだけで登りが速くならないように
 	var pushed_up := pushers > 0 and linear_velocity.y > 0.05
+	# 乗って下っている: 雪をこする抵抗・沈み・体重移動は、ソリと乗る人をまとめた重さで動かす（_ride_forces）
+	var descent := riding and not pushed_up
 	# 誰も押していない空のソリは、ずり落ちる雪の抵抗（つかまれていても同じ。止める力はつかんだ人が出す）
-	if riding and not pushed_up:
-		linear_damp = RIDE_DAMP * (0.4 if _lean_fwd else 1.0)
+	if descent:
+		linear_damp = 0.0
 	elif pushers > 0 or parked:
 		linear_damp = CLIMB_DAMP
 	else:
@@ -765,18 +810,22 @@ func _physics_process(dt: float) -> void:
 		apply_force(-slip * mass * slip_k * 0.5, r)
 	# 左右の滑り木の前後方向の抵抗。体重をかけた側が雪に食い込んで抵抗が増え、曲がる。
 	# 後ろに体重をかけると両側が食い込んで止まる
-	var steer: float = clamp(_steer, -1.0, 1.0)
-	for x in [-RUNNER_X, RUNNER_X]:
-		var r := global_basis * Vector3(x, 0, 0)
-		var v_point := linear_velocity + angular_velocity.cross(r)
-		var v_long := v_point.dot(fwd)
-		var c := RUNNER_DRAG
-		if riding:
-			if steer * signf(x) > 0.0:
-				c += LEAN_DIG * abs(steer)
-			if _lean_back:
-				c += BRAKE_DRAG
-		apply_force(-fwd * v_long * c * _k, r)
+	if descent:
+		_ride_forces(dt, fwd)
+	else:
+		# 押して登っているとき（乗っている人がいても）は前の作りのまま。乗る人で登りが速くも遅くもならない
+		var steer: float = clamp(_steer, -1.0, 1.0)
+		for x in [-RUNNER_X, RUNNER_X]:
+			var r := global_basis * Vector3(x, 0, 0)
+			var v_point := linear_velocity + angular_velocity.cross(r)
+			var v_long := v_point.dot(fwd)
+			var c := RUNNER_DRAG
+			if riding:
+				if steer * signf(x) > 0.0:
+					c += CLIMB_LEAN_DIG * abs(steer)
+				if _n_back > 0:
+					c += CLIMB_BRAKE_DRAG
+			apply_force(-fwd * v_long * c * _k, r)
 	# 遅いソリは静止摩擦で坂に留まる。押せばその分だけ動く。
 	# 乗っている人がいても押されていれば効くので、乗る＋一人が押すは、一人で押すのと同じ速さで登る。
 	# 押されていなければ、留める力は「つかんでいる人の止める力」と「空のソリの雪の摩擦」まで。
@@ -809,16 +858,18 @@ func _physics_process(dt: float) -> void:
 		hold_debug = "なし(速さ%.2f 押%d/%d 乗%d 止%d)" % [speed, _push_count, pushers, riders.size(), brakers]
 	# 頂上などで、乗ったまま前傾すると手で雪をかいて動き出す。
 	# 雪をかく力は坂を登る向きには効かない（平らな所と下りでだけ進む）。乗って W で登ると、降りて押すより速くなるため
-	if riding and _lean_fwd and speed < 1.5:
+	if riding and _n_fwd > 0 and speed < 1.5:
 		var f := (fwd - n * fwd.dot(n)).normalized()            # 地面に沿った前
 		var down := Vector3.DOWN - n * Vector3.DOWN.dot(n)      # 地面に沿った下り
 		if down.length() > 0.01:
 			down = down.normalized()
 			f -= down * minf(0.0, f.dot(down))                   # 上りの成分を消す
-		apply_central_force(f * SCOOP_FORCE * _k)
+		# 前傾した人の数だけ雪をかく。力はソリと乗る人をまとめた重さで分け合う（重いソリは出足が重い）
+		apply_central_force(f * SCOOP_FORCE * _n_fwd * mass / load_mass())
+	steer_now = _steer
 	_steer = 0.0
-	_lean_fwd = false
-	_lean_back = false
+	_n_fwd = 0
+	_n_back = 0
 	# 起き上がり: 大きく傾いたら少しずつ戻す
 	var up := global_basis.y
 	if up.y < 0.5:

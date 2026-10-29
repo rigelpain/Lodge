@@ -40,6 +40,7 @@ var cam: Camera3D
 var hands: Array[Node3D] = []
 var doll: Doll               # 自分の体（笠と千代紙の人形）。一人称には映さず、右上の映像と三人称と影に出る
 var mode := Mode.WALK
+var ride_lean := Vector3.ZERO  # 乗っているときの体重移動（x 左右 -1〜1、y 前傾、z 後傾）。一緒に乗った仲間が合わせる
 var seat := Vector3.INF
 var handle := Vector3.INF    # つかんでいる所（ソリの座標）
 var push_dir := Vector3.ZERO # 押す向き（ソリの座標）
@@ -352,7 +353,8 @@ func _physics_process(dt: float) -> void:
 	match mode:
 		Mode.RIDE:
 			global_position = sled.to_global(seat)
-			sled.lean(_key(KEY_D) - _key(KEY_A), Input.is_physical_key_pressed(KEY_W), Input.is_physical_key_pressed(KEY_S))
+			ride_lean = Vector3(_key(KEY_D) - _key(KEY_A), _key(KEY_W), _key(KEY_S))
+			sled.lean(ride_lean.x, ride_lean.y > 0.0, ride_lean.z > 0.0)
 			prompt = "W 前傾　S 後傾で止まる　A/D 体重をかけて曲がる　E 降りる"
 		Mode.GRIP:
 			_grip(dt)
