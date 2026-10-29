@@ -1040,7 +1040,7 @@ func unfold_spot() -> Vector3:
 	var hits := []
 	for o in [0.0, 0.45, -0.45]:
 		var p: Vector3 = center + fwd * o * box.z
-		var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 1.5, p + Vector3.DOWN * 3.0)
+		var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 3.0, p + Vector3.DOWN * 4.0)   # 坂の上の端は足もとより高い
 		q.exclude = [get_rid()]
 		var hit := space.intersect_ray(q)
 		if hit.is_empty():
@@ -1062,9 +1062,19 @@ func unfold_spot() -> Vector3:
 	sq.shape = shape
 	sq.transform = Transform3D(preload("res://craft.gd")._basis(rotation.y, up), at + up * (hy * 0.5 + 0.15))
 	sq.exclude = [get_rid()]
-	if not space.intersect_shape(sq, 1).is_empty():
-		return Vector3.INF
+	for r in space.intersect_shape(sq, 8):
+		if not _is_ground(r.collider):   # 坂の地面に少しかかるのはよい（ソリは地面に置く）
+			return Vector3.INF
 	return at
+
+
+## 外の地面（高さの地図）か
+static func _is_ground(n: Object) -> bool:
+	if n is Node:
+		for c in (n as Node).get_children():
+			if c is CollisionShape3D and (c as CollisionShape3D).shape is HeightMapShape3D:
+				return true
+	return false
 
 
 ## 左クリック: 手に持った畳んだソリを、前の床に広げて置く
