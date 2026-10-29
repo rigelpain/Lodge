@@ -32,6 +32,27 @@ func _initialize() -> void:
 					bad += 1
 					print("崩れ: %s 大きさ %s（%d 点）: %s" % [shape, str(sz * k), pts.size(), why])
 	print("形 %d 種 × 大きさ %d 通り: 崩れ %d / %d" % [shapes.size(), sizes.size() * scales.size(), bad, total])
+	# 左下の札の窓（window_rect）: 名札の縁の内に収まり、穴より右にあり、情報を描けるだけの広さがあるか
+	var wbad := 0
+	for shape in shapes:
+		var line := []
+		for k in scales:
+			var r := Rect2(Vector2(10.3, 7.7), Vector2(262, 146) * k)
+			var win := SledTags.window_rect(r, shape)
+			var pts := SledTags.outline(r, shape)
+			var rest := Geometry2D.clip_polygons(SledTags._window_poly(win), pts)
+			var spill := 0.0
+			for q in rest:
+				spill += absf(SledTags._area(q))
+			var hp := SledTags.hole(r, shape)
+			var fill := minf(win.size.x / (210.0 * k), win.size.y / (120.0 * k))
+			if spill > 0.5 or win.position.x <= hp.x or fill < 0.55:
+				wbad += 1
+				print("窓の崩れ: %s 倍率 %.2f 窓 %s はみ出し %.1f 広さ %.2f" % [shape, k, str(win), spill, fill])
+			line.append("%.2f" % fill)
+		print("窓 %-8s 広さ（210 × 120 の枠に対して）: %s" % [shape, " ".join(line)])
+	bad += wbad
+	print("窓の崩れ %d / %d" % [wbad, shapes.size() * scales.size()])
 	# 模様・素材・縁を全部の形と、小さい・大きい名札で計算する（塗れない欠片は _clip_fill が捨てる。落ちないことを見る）
 	var combos := 0
 	for shape in shapes:

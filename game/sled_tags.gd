@@ -700,13 +700,22 @@ static func _role(d: Dictionary, role: String) -> Color:
 # ---- 描く ------------------------------------------------------------------------------
 
 ## タグを描く（画面の px の rect）。穴と糸の輪も。stamp で判子を押す
-static func draw_tag(ci: CanvasItem, r: Rect2, idx, a := 1.0, stamp := true) -> void:
+## window で、名札の中に無地の窓（window_rect）を敷き、その窓の rect（画面の px）を返す。窓のないときは r を返す
+static func draw_tag(ci: CanvasItem, r: Rect2, idx, a := 1.0, stamp := true, window := false) -> Rect2:
 	var d := design(idx)
 	_face(ci, r.position, r.size, d, a)
 	var R := Rect2(Vector2.ZERO, r.size)
 	var hp := hole(R, d.shape)
 	var h := r.size.y
-	if stamp and d.motif != "none":
+	var wr := r
+	if window:
+		if d.deco in ["tassel", "feather"]:   # 面に垂れる飾りは、窓の下に差し込む（窓の中の絵を隠さない）
+			Icons.screen()
+			ci.draw_set_transform(r.position)
+			_deco(ci, d, R, hp, a)
+		wr = window_rect(r, d.shape)
+		_draw_window(ci, r.position, Rect2(wr.position - r.position, wr.size), d, h, a)
+	if stamp and d.motif != "none" and not window:
 		_stamps(ci, r.position, R, d, hp, a)
 	Icons.screen()
 	ci.draw_set_transform(r.position)
@@ -721,10 +730,113 @@ static func draw_tag(ci: CanvasItem, r: Rect2, idx, a := 1.0, stamp := true) -> 
 		var t := i / 15.0
 		loop.append(hp + Vector2(-t * c * 0.85, sin(t * PI) * -c * 0.38 - t * c * 0.23))
 	Icons.thread(ci, loop, d.string, maxf(1.6, h * 0.012), a)
-	if d.deco != "button":
+	if d.deco != "button" and not (window and d.deco in ["tassel", "feather"]):
 		_deco(ci, d, R, hp, a, loop)
 	Icons.screen()
 	ci.draw_set_transform(Vector2.ZERO)
+	return wr
+
+
+## 窓の地の色（名札の地・柄・素材に関わらず、いつも同じ明るさ。丘の雪・印・人の形が読める）
+const WINDOW := Color(0.97, 0.96, 0.93)
+
+
+## 名札の中の、情報を描く無地の窓（r の中、画面の px）。穴と糸の輪より右の、形の縁の内に収まる角の丸い四角。
+## 楕円・葉・雲・旗の切れ込み・切符の切り欠きなどで縁からはみ出す辺だけを縮める。形と大きさごとに覚えておく
+static func window_rect(r: Rect2, shape: String) -> Rect2:
+	var key := "win|%s|%d|%d" % [shape, roundi(r.size.x * 2.0), roundi(r.size.y * 2.0)]
+	if not _geo.has(key):
+		var R := Rect2(Vector2.ZERO, r.size)
+		var h := R.size.y
+		var c := minf(h * 0.28, 26.0)
+		var m := maxf(2.5, h * 0.075)
+		var x0 := hole(R, shape).x + c * 0.62 + maxf(2.0, h * 0.02)
+		var win := Rect2(x0, m, R.size.x - m - x0, h - m * 2.0)
+		var inner := _inset(outline(R, shape), maxf(2.0, h * 0.04))
+		for it in 160:
+			var out := 0.0
+			var push := {"l": false, "r": false, "t": false, "b": false}
+			for q in Geometry2D.clip_polygons(_window_poly(win), inner):
+				var ar := absf(_area(q))
+				if ar < win.get_area() * 0.0005:
+					continue
+				out += ar
+				var dv := (_centroid(q) - win.get_center()) / (win.size / 2.0)
+				var hx := absf(dv.x) > 0.55
+				var vy := absf(dv.y) > 0.55
+				if not hx and not vy:
+					hx = absf(dv.x) >= absf(dv.y)
+					vy = not hx
+				if hx:
+					push["r" if dv.x > 0.0 else "l"] = true
+				if vy:
+					push["b" if dv.y > 0.0 else "t"] = true
+			if out <= 0.0:
+				break
+			var sx := win.size.x * 0.015
+			var sy := win.size.y * 0.015
+			if push.l:
+				win.position.x += sx
+				win.size.x -= sx
+			if push.r:
+				win.size.x -= sx
+			if push.t:
+				win.position.y += sy
+				win.size.y -= sy
+			if push.b:
+				win.size.y -= sy
+		_geo[key] = win
+	var w: Rect2 = _geo[key]
+	return Rect2(r.position + w.position, w.size)
+
+
+static func _window_poly(win: Rect2) -> PackedVector2Array:
+	return Icons.rr(win.position.x, win.position.y, win.size.x, win.size.y, minf(win.size.x, win.size.y) * 0.12)
+
+
+static func _area(q: PackedVector2Array) -> float:
+	var s := 0.0
+	for i in q.size():
+		s += q[i].cross(q[(i + 1) % q.size()])
+	return s / 2.0
+
+
+static func _centroid(q: PackedVector2Array) -> Vector2:
+	var c := Vector2.ZERO
+	for p in q:
+		c += p
+	return c / maxf(q.size(), 1)
+
+
+## 窓を、名札の素材に合わせた手芸の形で描く（wr は名札の左上からの rect）: 紙・和紙・木は貼った紙のラベル（角を紙テープで留める）、
+## フェルト・布は白い布の当て布（並縫いで縫い付け）、革は縫い付けた窓（二本の並縫い）。地の色はいつも WINDOW
+static func _draw_window(ci: CanvasItem, org: Vector2, wr: Rect2, d: Dictionary, h: float, a: float) -> void:
+	Icons.screen()
+	ci.draw_set_transform(org)
+	var pts := _window_poly(wr)
+	var sh := PackedVector2Array()
+	for p in pts:
+		sh.append(p + Vector2(0.7, 1.2) * maxf(1.0, h / 120.0))
+	ci.draw_colored_polygon(sh, Color(Icons.SHADOW, 0.32 * a))
+	ci.draw_colored_polygon(pts, Color(WINDOW, a))
+	var rim := pts.duplicate()
+	rim.append(pts[0])
+	ci.draw_polyline(rim, Color(WINDOW.darkened(0.3), 0.7 * a), maxf(1.0, h * 0.008), true)
+	var th := _readable(d.edge, WINDOW)
+	var run := [maxf(4.0, h * 0.03), maxf(2.8, h * 0.022), maxf(1.0, h * 0.009)]
+	match d.material:
+		"felt", "cloth":
+			Icons.dashes(ci, _inset(pts, maxf(2.0, h * 0.022)), Color(th, 0.8), run[2], run[0], run[1], a, true)
+		"leather":
+			Icons.dashes(ci, _inset(pts, maxf(2.0, h * 0.02)), Color(th, 0.8), run[2], run[0], run[1], a, true)
+			Icons.dashes(ci, _inset(pts, maxf(3.6, h * 0.045)), Color(th, 0.6), run[2] * 0.8, run[0] * 0.8, run[1], a, true)
+		_:   # 紙テープを左上と右下の角に斜めに
+			var tw := maxf(8.0, h * 0.2)
+			var tt := maxf(3.0, h * 0.07)
+			for k in 2:
+				var at := wr.position + Vector2(tw * 0.2, tt * 0.6) if k == 0 else wr.end - Vector2(tw * 0.2, tt * 0.6)
+				var tape := Icons.xf(PackedVector2Array([Vector2(-tw / 2.0, -tt / 2.0), Vector2(tw / 2.0, -tt / 2.0), Vector2(tw / 2.0, tt / 2.0), Vector2(-tw / 2.0, tt / 2.0)]), -0.6, at)
+				ci.draw_colored_polygon(tape, Color(0.93, 0.86, 0.68, 0.8 * a))
 
 
 ## 名札の面: 下敷き（レース・和紙の毛羽）、素材の面、模様、素材の筋、縁。大きさ sz の名札を、org を左上に zoom 倍で描く。
