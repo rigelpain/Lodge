@@ -85,7 +85,8 @@ var fabric := "":
 		else:
 			main_color = Fabrics.color(v)
 var crafted := false           # ミシンで縫った・広げたソリ（畳んで持てる。craft.gd）
-var tag := 0                   # 名札の柄（sled_tags.gd）。手すりの前の結び目から小さく吊るす
+var tag: Variant = 0           # 名札の柄（sled_tags.gd）。持ち主の名札（辞書）か、ロッジの名札（0）。-1 は名札なし。手すりの前の結び目から小さく吊るす
+var owner_id := -1             # 持ち主の人の番号（縫った人・米袋の人）。-1 は持ち主なし
 var kind_mass := 60.0          # 表の重さ（米袋は 1 kg）。乗っている人の重さと合わせて止める計算に使う
 var _k := 1.0                  # 体の重さ / MID_MASS
 var SEATS: Array = KINDS.mid.seats
@@ -224,8 +225,7 @@ func _ready() -> void:
 	rope = preload("res://sled_rope.gd").new()
 	rope.sled = self
 	add_child(rope)
-	var tg: Node3D = preload("res://sled_tags.gd").hang(self, rope._ties[1] + Vector3(0.02, -0.02, 0), tag, clampf(HALF.x * 0.32, 0.16, 0.26))
-	tg.rotation.y = PI / 2   # 紙の面を外（横）へ向ける
+	retag(tag)
 
 	_make_shadow_and_trail()
 
@@ -421,6 +421,19 @@ func hold_still(frames: int) -> void:
 		freeze = false
 		visible = true
 		parked = true
+
+
+## 名札を付け直す（持ち主が自分の名札のデザインを変えたとき。craft.gd）
+func retag(d) -> void:
+	tag = d
+	var old := get_node_or_null("Tag")
+	if old:
+		old.name = "OldTag"
+		old.queue_free()
+	if rope == null or not preload("res://sled_tags.gd").has_tag(d):
+		return
+	var tg: Node3D = preload("res://sled_tags.gd").hang(self, rope._ties[1] + Vector3(0.02, -0.02, 0), d, clampf(HALF.x * 0.32, 0.16, 0.26))
+	tg.rotation.y = PI / 2   # 紙の面を外（横）へ向ける
 
 
 func reset_to(pos: Vector3) -> void:

@@ -16,6 +16,7 @@ extends Node
 ##   unfold {slot, item, at, yaw, up, id}  畳んだソリを手から前の床に広げて置く（up は床の傾き）
 ##   sack_out  {at, yaw, up}   装備の米袋（いま選んでいるもの）を足もとに出す（2026-10-29 代表: 米袋は装備。持ち物の列は使わない）
 ##   sack_in   {}              出している米袋を、くるっと丸めて帯に戻す
+##   tag_design {design}       自分の名札のデザインを決める（装備の画面）。持ち主の印として、その人のソリ・米袋の名札が替わる
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋だけ。服や名札の柄を足すときは、
 ## GEARS に種類を足し、_gear_lists に持ち物の配列の入れ物を足す
@@ -46,6 +47,7 @@ var hands := {}                # 人の番号 → 手に持つ持ち物の番号
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
 var _next_sled := 1
 const GEARS := ["sack"]        # 装備の種類（装備の画面の並び）
+var tag_designs := {}          # 人の番号 → 自分の名札（sled_tags.gd の部品の辞書）。通信では「誰が」の印として配る
 var sacks := {}                # 人の番号 → 持っている米袋の配列 [{fabric, tag}]（0 番は標準）
 var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
@@ -61,7 +63,8 @@ func join(who: int) -> void:
 	wallets[who] = START_BUTTONS
 	bags[who] = []
 	hands[who] = -1
-	sacks[who] = [{"fabric": "", "tag": 1 + posmod(who - 1, preload("res://sled_tags.gd").count() - 1)}]   # 標準の米袋
+	tag_designs[who] = preload("res://sled_tags.gd").default_design(who)
+	sacks[who] = [{"fabric": "", "tag": 0}]   # 標準の米袋（名札は持ち主の名札）
 	sack_sel[who] = 0
 
 
@@ -155,11 +158,10 @@ func _apply(ev: Dictionary) -> bool:
 			b.remove_at(mini(ps, fs))
 			hands[who] = -1
 		"sewn":
-			ev["tag"] = 1 + (_next_sled - 1) % (preload("res://sled_tags.gd").count() - 1)   # 名札の柄は順に（0 は最初のソリ）
+			ev["tag"] = tag_designs.get(who, 0)   # 持ち主の印: 縫った人の名札
 			if ev.sled == "sack" and sacks.has(who):
 				# 米袋は装備: 床には出さず、装備の枠に入れて、呼び出す米袋にする
-				ev["tag"] = 1 + posmod(int(sacks[who][-1].tag), preload("res://sled_tags.gd").count() - 1)   # 前の米袋の次の柄
-				sacks[who].append({"fabric": ev.fabric, "tag": ev.tag})
+				sacks[who].append({"fabric": ev.fabric, "tag": 0})
 				sack_sel[who] = sacks[who].size() - 1
 				ev["gear"] = true
 			elif ev.sled in OUT_FRONT and world and world.has_method("delivery_spot"):
@@ -168,16 +170,16 @@ func _apply(ev: Dictionary) -> bool:
 				ev["at"] = spot.origin
 				ev["yaw"] = spot.basis.get_euler().y
 				ev["outside"] = true
-				ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, Vector3.UP, ev.tag)
+				ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, Vector3.UP, ev.tag, true, who)
 				ev["item"] = {"kind": "folded", "sled": ev.sled, "fabric": ev.fabric, "tag": ev.tag}
 				_origami(ev, true, Transform3D(Basis(Vector3.UP, ev.yaw), ev.at), false)
 			else:
-				ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, 0, Vector3.UP, ev.tag)
+				ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, 0, Vector3.UP, ev.tag, true, who)
 		"sack_out":
 			var spec := sack(who)
 			if spec.is_empty() or sack_sled(who) != null:
 				return false
-			var gid := _place("sack", spec.fabric, ev.at, ev.yaw, 0, ev.get("up", Vector3.UP), spec.tag, false)
+			var gid := _place("sack", spec.fabric, ev.at, ev.yaw, 0, ev.get("up", Vector3.UP), tag_designs.get(who, 0), false, who)
 			var gs: RigidBody3D = sleds[gid]
 			sleds.erase(gid)   # 装備の米袋は畳むソリの数に入れない
 			gs.crafted = false
@@ -212,6 +214,15 @@ func _apply(ev: Dictionary) -> bool:
 						if d and d.get("sled") == gs:
 							d.set("sled", world.get("sled"))
 			gs.queue_free()
+		"tag_design":
+			var d: Dictionary = {}
+			for part in preload("res://sled_tags.gd").PARTS:
+				d[part] = posmod(int(ev.design.get(part, 0)), preload("res://sled_tags.gd").part_count(part))
+			ev["design"] = d
+			tag_designs[who] = d
+			for s in get_tree().get_nodes_in_group("sleds"):   # その人のソリの名札を付け替える
+				if is_instance_valid(s) and int(s.get("owner_id")) == who:
+					s.retag(d)
 		"equip":
 			var list := gear_list(who, String(ev.get("gear", "")))
 			var i := int(ev.index)
@@ -236,7 +247,7 @@ func _apply(ev: Dictionary) -> bool:
 			if not _take(who, int(ev.slot), ev.item):
 				return false
 			var up: Vector3 = ev.get("up", Vector3.UP)
-			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, int(ev.item.get("tag", 0)))
+			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, tag_designs.get(who, 0), true, who)
 			_origami(ev, true, Transform3D(_basis(ev.yaw, up), ev.at))
 	happened.emit(ev)
 	return true
@@ -273,7 +284,7 @@ func _free(s: Node3D) -> bool:
 
 
 ## 実寸のソリを置く。wait コマのあいだは止めておく（広げる動きのあいだ）
-func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP, tag := 0, room := true) -> int:
+func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP, tag: Variant = 0, room := true, owner_id := -1) -> int:
 	var id := _next_sled
 	_next_sled += 1
 	var s := Sled.new()
@@ -281,6 +292,7 @@ func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up
 	s.fabric = fabric
 	s.crafted = true
 	s.tag = tag
+	s.owner_id = owner_id
 	s.name = "MadeSled%d" % id
 	s.transform = Transform3D(_basis(yaw, up), at + up * 0.08)   # 床に少し浮かせて置く（めり込むと床の下へ押し出される）
 	if world and world.has_method("snow_lift"):

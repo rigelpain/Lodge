@@ -68,7 +68,7 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 			_folded(ci, Vector2.ZERO, it.get("sled", "mid"), Fabrics.color(it.get("fabric", "red")), a)
 			# 包みの面に貼った名札（手に持った包みと同じ並び）。窓に、広げた姿がくるくる回る
 			var Tags := preload("res://sled_tags.gd")
-			Tags.draw_on_packet(ci, center + Vector2(0, size * 0.02), size * 0.86, int(it.get("tag", 0)),
+			Tags.draw_on_packet(ci, center + Vector2(0, size * 0.02), size * 0.86, it.get("tag", 0),
 					Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")), a)
 		_:
 			Icons.mitten(ci, Vector2(0, 2), 0.0, Icons.RED, a, true, 1.5)

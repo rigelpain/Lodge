@@ -11,7 +11,9 @@ extends CanvasLayer
 ##     縫うボタンで、型紙と布をいっしょに使って 7 つの場面が始まる（片方だけ使われることはない）
 ##   装備の画面（I）: 左に、いま装備している米袋（広げた姿がくるくる回る）を帯に下げて見せる。右の上の段に、持っている米袋
 ##     （標準のクラフト紙と、縫った色違い）が並び、装備しているものに赤い糸の印。押すと装備が入れ替わる（N でそれが出る）。
-##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（いまは米袋だけ。服や名札は段を足す）。閉じるのは ×、I、Esc
+##     まんなかの段は自分の名札: 左に大きく、右に部品（形・紙の色・縁の糸・吊るす糸・判子）の見本の列。押すと名札が替わり、
+##     自分のソリ・米袋の名札も替わる（保存して、次に起動しても同じ）。
+##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（いまは米袋だけ。服は段を足す）。閉じるのは ×、I、Esc
 ## 出来事は craft.gd へ送る（いまはすぐ配られる。通信ではホストが確かめる）。
 
 const Icons := preload("res://hud_icons.gd")
@@ -26,6 +28,7 @@ var shop_open := false
 var machine_open := false
 var gear_open := false
 var _gear_rects: Array = []  # 装備の画面の、持っている米袋の札
+var _opt_rects: Array = []   # 装備の画面の、名札の部品の見本 [Rect2, 部品, 番号]
 var _pick := {"pattern": -1, "fabric": -1}   # ミシンの画面で枠に入れた持ち物の番号
 var _bag_rects: Array = []   # ミシンの画面の持ち物の札
 var _slot_rects := {}        # "pattern" / "fabric" → 枠
@@ -200,6 +203,16 @@ func equip(i: int, gear := "sack") -> bool:
 	return craft.send({"kind": "equip", "who": _who(), "gear": gear, "index": i})
 
 
+## 自分の名札の部品を替える（確かめ用の入口も兼ねる）。保存もする
+func set_tag_part(part: String, i: int, save := true) -> bool:
+	var d: Dictionary = craft.tag_designs.get(_who(), {}).duplicate()
+	d[part] = i
+	var ok: bool = craft.send({"kind": "tag_design", "who": _who(), "design": d})
+	if ok and save and player.has_method("save_tag"):
+		player.save_tag()
+	return ok
+
+
 func _gear_input(e: InputEvent) -> void:
 	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode in [KEY_ESCAPE, KEY_I]:
 		close_gear()
@@ -218,6 +231,10 @@ func _gear_input(e: InputEvent) -> void:
 		for i in _gear_rects.size():
 			if (_gear_rects[i] as Rect2).has_point(e.position):
 				equip(i)
+				return
+		for o in _opt_rects:
+			if (o[0] as Rect2).has_point(e.position):
+				set_tag_part(o[1], o[2])
 				return
 
 
@@ -587,7 +604,7 @@ class View extends Control:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
 		var w := 1040.0 * u
-		var h := 600.0 * u
+		var h := 690.0 * u
 		var r := Rect2(size.x / 2.0 - w / 2.0, size.y * 0.44 - h / 2.0, w, h)
 		draw_rect(Rect2(Vector2.ZERO, size), Color(0.10, 0.08, 0.16, 0.25))
 		Icons.screen()
@@ -632,12 +649,54 @@ class View extends Control:
 			var tw := cw * 0.92
 			draw_texture_rect(Tags.turntable("sack", spec.get("fabric", "")), Rect2(Vector2(card.get_center().x - tw / 2.0, card.position.y + 2.0 * u), Vector2(tw, tw)), false)
 			# 名札の柄（小さく）
-			Tags.draw_tag(self, Rect2(card.position.x + 12.0 * u, card.end.y - 36.0 * u, cw - 24.0 * u, 28.0 * u), int(spec.get("tag", 0)), 1.0, false)
+			Tags.draw_tag(self, Rect2(card.position.x + 12.0 * u, card.end.y - 36.0 * u, cw - 24.0 * u, 28.0 * u), craft.tag_designs.get(who, 0), 1.0, false)   # 持ち主の名札
 			if picked:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
 				Icons.chevron(self, Vector2(card.get_center().x, card.position.y - 14.0 * u), 18.0 * u, Icons.RED, 1.0, PI / 2, 3.0 * u)
 		ui._gear_rects = rects
+		# まんなか: 自分の名札（左に大きく）と、部品の見本（押すと替わる）
+		var mine: Dictionary = craft.tag_designs.get(who, {})
+		var md := Tags.design(mine)
+		var ty := r.position.y + 218.0 * u
+		Tags.draw_tag(self, Rect2(x0 + 50.0 * u, ty + 26.0 * u, 210.0 * u, 128.0 * u), mine, 1.0, true)
+		var opts: Array = []
+		var ox := x0 + 286.0 * u
+		var sw := 25.0 * u
+		for row in Tags.PARTS.size():
+			var part: String = Tags.PARTS[row]
+			var oy := ty + row * 42.0 * u
+			for i in Tags.part_count(part):
+				var sr := Rect2(ox + i * (sw + 5.0 * u), oy, sw + 2.0 * u, sw + 6.0 * u)
+				var c := sr.get_center()
+				Icons.screen()
+				match part:
+					"shape":
+						var pts := Tags.outline(Rect2(c - Vector2(14, 9) * u, Vector2(28, 18) * u), Tags.SHAPES[i])
+						Icons.patch(self, pts, md.paper, 1.0, false)
+					"paper":
+						Icons.patch(self, Icons.rr(c.x - 12.0 * u, c.y - 12.0 * u, 24.0 * u, 24.0 * u, 5.0 * u), Tags.PAPERS[i], 1.0, false)
+					"edge":
+						Icons.patch(self, Icons.rr(c.x - 12.0 * u, c.y - 12.0 * u, 24.0 * u, 24.0 * u, 3.0 * u), md.paper, 1.0, false)
+						Icons.dashes(self, Icons.rr(c.x - 9.0 * u, c.y - 9.0 * u, 18.0 * u, 18.0 * u, 2.0 * u), Tags.THREADS[i], 2.0 * u, 4.0 * u, 2.5 * u, 1.0, true)
+					"string":
+						var loop := PackedVector2Array()
+						for k in 12:
+							var t := k / 11.0
+							loop.append(c + Vector2(-11.0 + 22.0 * t, 6.0 - sin(t * PI) * 14.0) * u)
+						Icons.thread(self, loop, Tags.THREADS[i], 2.6 * u, 1.0)
+					"motif":
+						Icons.patch(self, Icons.circ(c, 13.0 * u, 16), md.paper, 1.0, false)
+						if Tags.MOTIFS[i] == "none":
+							Icons.screen()
+							Icons.dashes(self, Icons.circ(c, 8.0 * u, 14), Icons.PAPER_EDGE, 1.4 * u, 3.0 * u, 2.0 * u, 1.0, true)
+						else:
+							Tags.motif(self, Tags.MOTIFS[i], c, 22.0 * u, md.ink, 1.0)
+				if int(mine.get(part, -1)) == i:
+					Icons.screen()
+					Icons.dashes(self, Icons.rr(sr.position.x - 2.0 * u, sr.position.y - 1.0 * u, sr.size.x + 4.0 * u, sr.size.y + 2.0 * u, 6.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
+				opts.append([sr, part, i])
+		ui._opt_rects = opts
 		# 右下: 持ち物（見るだけ）
 		var bag: Array = craft.bag(who)
 		var by := r.end.y - 40.0 * u - 104.0 * u
