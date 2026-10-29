@@ -19,7 +19,7 @@ const SLIP_RESIST := 18.0          # 滑り木の横滑りのしにくさ（前�
 const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N per m/s)
 
 ## 大きさ。大きいほど重く、席が多い（2026-10-29 代表: 小はホームセンターのプラスチックの 1〜2 人用、大はサンタの 8 人乗り）。
-## 米袋は 1 人用で重さ 0（袋は重さを足さない。乗った人の重さだけ）。
+## 米袋は 1 人用で 1 kg（2026-10-29 代表「米袋1kgにしよう」）。小の席は成形ソリの座る面の高さ（glb に合わせた）。
 ## 当たりの箱・滑り木・席はこの表が正。glb（props/build_sled.py）はこの寸法に合わせて作る。
 ## color はメインカラーの既定（glb に焼いてある主なフェルトの色。米袋は印刷の赤）。main_color で上書きできる。
 ## stitch は滑りあとの縫い目（STITCHES）。重いソリほど太く丈夫な縫い目（2026-10-27 代表が選んだ。props/stitches.md）。stitch_override で差し替えられる
@@ -296,7 +296,7 @@ func is_dragged(who: Node3D) -> bool:
 	return dragged.has(who)
 
 
-## 乗っている人も入れた重さ (kg)。米袋に誰も乗っていなければ 0 に近い
+## 乗っている人も入れた重さ (kg)。米袋に誰も乗っていなければ 1 kg
 func load_mass() -> float:
 	return maxf(kind_mass + riders.size() * RIDER_MASS, 1.0)
 
@@ -609,9 +609,82 @@ func _update_drag(dt: float) -> void:
 		elif not _pushed_by.has(who) and _downhill_fast(DRAG_SPEED):
 			dragged[who] = 0.0
 	_update_drag_puffs()
+	_update_heel_stitches()
 
 
 var _puffs := {}   # 引きずられている人 → 足もとの雪の粉
+
+# 引きずられ跡: かかと 2 本の線に、ぐし縫いのギャザー（Look.gather_stitch_mesh）。短いなみ縫いの目と、まわりに寄ったひだ
+const DRAG_TRAIL_N := 400       # 残す目の数（全員ぶん）
+const DRAG_STITCH := 0.12       # 針穴の間隔 (m)。なみ縫いなので、目と目のあいだも同じだけ空く
+const HEEL_X := 0.11            # かかとの、体のまんなかからの横の距離 (m)
+var _drag_trail: MultiMeshInstance3D
+var _drag_i := 0
+var _heels := {}                # 引きずられている人 → {last, dist, on, holes: [左, 右]}
+
+
+## かかとが雪をすべった所に、ぐし縫いの目を置く。速いほど雪が強く寄る（ひだが濃い）
+func _update_heel_stitches() -> void:
+	for who in _heels.keys():
+		if not dragged.has(who) or not is_instance_valid(who):
+			_heels.erase(who)
+	if dragged.is_empty():
+		return
+	if _drag_trail == null:
+		_drag_trail = MultiMeshInstance3D.new()
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.use_custom_data = true
+		mm.mesh = Look.gather_stitch_mesh(Color(0.70, 0.34, 0.30))   # かかとの赤茶の毛糸。滑りあとの青と見分ける
+		mm.instance_count = DRAG_TRAIL_N
+		for i in DRAG_TRAIL_N:
+			mm.set_instance_transform(i, Transform3D(Basis(), Vector3(0, -100, 0)))
+		_drag_trail.multimesh = mm
+		_drag_trail.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_drag_trail.top_level = true
+		add_child(_drag_trail)
+	var v := Vector3(linear_velocity.x, 0, linear_velocity.z)
+	if v.length() < 0.2:
+		return
+	var dir := v.normalized()
+	var side := dir.cross(Vector3.UP)
+	for who in dragged:
+		if not is_instance_valid(who):
+			continue
+		var feet: Vector3 = (who as Node3D).global_position
+		var h: Dictionary = _heels.get(who, {})
+		if h.is_empty():
+			h = {"last": feet, "dist": 0.0, "on": true, "holes": [Vector3.INF, Vector3.INF]}
+			_heels[who] = h
+		h.dist += feet.distance_to(h.last)
+		h.last = feet
+		while h.dist >= DRAG_STITCH:
+			h.dist -= DRAG_STITCH
+			for k in 2:
+				var at: Vector3 = feet + side * (HEEL_X if k == 0 else -HEEL_X) + side * _trail_rng.randf_range(-0.025, 0.025)
+				var hit := _ground_hit(at + Vector3.UP * 0.6)
+				if not hit:
+					h.holes[k] = Vector3.INF
+					continue
+				var nn: Vector3 = hit.normal
+				var hole: Vector3 = hit.position
+				if snow_lift.is_valid():
+					hole.y += snow_lift.call(hole.x, hole.z)
+				var prev: Vector3 = h.holes[k]
+				h.holes[k] = hole
+				if prev == Vector3.INF or not h.on:
+					continue
+				var span := hole - prev
+				var len := span.length()
+				if len < 0.04 or len > 0.4:
+					continue
+				var z := -span / len
+				var y := (nn - z * nn.dot(z)).normalized()
+				_drag_trail.multimesh.set_instance_transform(_drag_i, Transform3D(Basis(y.cross(z), y, z), prev + nn * 0.01))
+				_drag_trail.multimesh.set_instance_custom_data(_drag_i, Color(len, _trail_rng.randf(), _trail_rng.randf_range(0.9, 1.06),
+						clampf(v.length() / 6.0, 0.45, 1.0)))
+				_drag_i = (_drag_i + 1) % DRAG_TRAIL_N
+			h.on = not h.on   # なみ縫い: 目、あき、目、…
 
 
 ## 引きずられている人の足もとから、綿の雪の粉が舞う（足が雪をすべる）。速いほど多い
