@@ -10,7 +10,7 @@ extends Node
 ## 出来事:
 ##   buy    {item}             売り子から買う。item は {kind:"pattern", sled} か {kind:"fabric", fabric}
 ##   hand   {slot}             手に持つ物を替える（-1 は素手）
-##   load   {slot, item}       手に持った型紙か布をミシンにセットする（ミシンが読む）
+##   sew    {pattern, fabric, pattern_slot, fabric_slot}  ミシンの画面で選んだ型紙と布を 1 つずつ使って縫い始める（両方いっしょに使う。ミシンが読む）
 ##   sewn   {sled, fabric, at, yaw, id}  ミシンが縫い上げた。広げた実寸のソリが at に出る
 ##   fold   {id, item}         置いてあるソリを畳んで、持ち物に入れる（畳む動きは origami.gd）。item に名札の柄 tag も入る
 ##   unfold {slot, item, at, yaw, up, id}  畳んだソリを手から前の床に広げて置く（up は床の傾き）
@@ -93,9 +93,19 @@ func _apply(ev: Dictionary) -> bool:
 			ev["slot"] = hands[who]
 		"hand":
 			hands[who] = clampi(int(ev.slot), -1, bags[who].size() - 1)
-		"load":
-			if not _take(who, int(ev.slot), ev.item):
+		"sew":
+			# 型紙と布は両方そろって初めて使う（片方だけ消えることはない）
+			var b: Array = bags[who]
+			var ps := int(ev.pattern_slot)
+			var fs := int(ev.fabric_slot)
+			if ps == fs or ps < 0 or fs < 0 or ps >= b.size() or fs >= b.size() or b[ps] != ev.pattern or b[fs] != ev.fabric \
+					or ev.pattern.get("kind") != "pattern" or ev.fabric.get("kind") != "fabric":
 				return false
+			if world and world.get("sewing") and not world.sewing.can_sew():
+				return false
+			b.remove_at(maxi(ps, fs))
+			b.remove_at(mini(ps, fs))
+			hands[who] = -1
 		"sewn":
 			ev["tag"] = 1 + (_next_sled - 1) % (preload("res://sled_tags.gd").count() - 1)   # 名札の柄は順に（0 は最初のソリ）
 			ev["id"] = _place(ev.sled, ev.fabric, ev.at, ev.yaw, 0, Vector3.UP, ev.tag)
