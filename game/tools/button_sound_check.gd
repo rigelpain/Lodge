@@ -6,7 +6,8 @@ extends SceneTree
 ## 財布に入った出来事（craft の earn）の時刻も並べる。
 ## 途中で降りる: --leave=off（中のソリから、z = --leave-z（既定 34）を過ぎたら E と同じく降りる）、
 ##               --leave=sack（中のソリでなく、帯の米袋を足もとに出して乗り、z を過ぎたら N と同じくしまう）。
-##   降りた瞬間の、糸の上のボタンの数と、自分の分の出来事（ride_pay_one）も出す絵は、滑っている途中・止まる前・巻き取り・財布に入ったあとを
+##   降りた瞬間の、糸の上のボタンの数と、自分の分の出来事（ride_pay_one）も出す
+## 後ろ向き: --backward（ソリ・米袋の前を頂上へ向けたまま、ふもとへ押し出す）。--no-slope でボタンを置かない絵は、滑っている途中・止まる前・巻き取り・財布に入ったあとを
 ## <dir>/sound_<番号>.png と、並べた <dir>/sound_sheet.png。
 
 var args := {}
@@ -56,10 +57,11 @@ func _run() -> void:
 	var leave: String = args.get("leave", "")
 	var sled: RigidBody3D = main.sled
 	var at := Vector3(0, main.height(0, 3.0) + 0.6, 3.0)
-	if leave == "sack":   # 帯の米袋を足もとに出して乗る
+	var yaw := 0.0 if args.has("backward") else PI
+	if leave == "sack" or args.has("sack"):   # 帯の米袋を足もとに出して乗る
 		sled.reset_to(Vector3(30, main.height(30, 60) + 0.6, 60))   # 中のソリはどけておく
 		p.global_position = at + Vector3.UP * 0.2
-		p.rotation.y = PI
+		p.rotation.y = yaw
 		p.toggle_sack()
 		for i in 40:
 			await process_frame
@@ -70,12 +72,12 @@ func _run() -> void:
 			return
 	else:
 		sled.reset_to(at)
-		sled.global_transform = Transform3D(Basis(Vector3.UP, PI), at)
+		sled.global_transform = Transform3D(Basis(Vector3.UP, yaw), at)
 		p.global_position = at + Vector3(1.2, 0.3, 0)
 		p.get_on()
-		p.rotation.y = PI
+		p.rotation.y = yaw
 	p._pitch = -0.1
-	var tiers := [0, 1, 0, 2, 0]
+	var tiers := [] if args.has("no-slope") else [0, 1, 0, 2, 0]
 	for i in tiers.size():
 		sb.drop_at(Vector3(0, 0, 12.0 + i * 6.0), 0, true, tiers[i])
 	var earns: Array = []
@@ -90,7 +92,7 @@ func _run() -> void:
 			paid[0] = _now())
 	audio.log_on = true
 	_t0 = Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
-	sled.linear_velocity = Vector3(0, 0, 2.0 if leave != "sack" else 3.0)
+	sled.linear_velocity = Vector3(0, 0, 2.0 if not (leave == "sack" or args.has("sack")) else 3.0)
 	var left_at := -1.0
 	var shots := {}
 	while true:
