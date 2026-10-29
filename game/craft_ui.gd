@@ -46,7 +46,7 @@ func _ready() -> void:
 
 
 func ui() -> float:
-	return clampf(_view.size.y / 1080.0, 0.6, 2.0)
+	return Icons.ui_scale(_view.size.y)   # 画面の高さ × 設定の「HUD の大きさ」
 
 
 func _who() -> int:

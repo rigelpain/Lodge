@@ -76,6 +76,24 @@
 - 両方の撮影用スクリプトの `main.hud.visible = false` は、そのまま効く（`hud` は CanvasLayer になった）
 - ミシンの案内の高さ（`sew.global_position` の 2.2 m 上）は、入れたあとに撮って合わせる
 
+## 大きさの設定（2026-10-29）
+
+代表の声「Esc でのメニューの大きさ、HUD の大きさを設定できるようにしてほしい」を受けて、設定（Esc）に 2 つのスライダーを足した。どちらも 70〜160%（5% 刻み、既定 100%）で、`user://settings.cfg` に保存して次に起動したときも効く。
+
+- **HUD の大きさ**: 画面の高さによる倍率（1080 で 1）に掛ける。`hud_icons.gd` の `ui_scale()` が一か所で決め、左下の札・近づいたときのワッペン・Esc の操作の札（`hud.gd`）、持ち物の列・売り台（`craft_ui.gd`）、身ぶりの輪（`emote_ring.gd`）、右下の日時計（`daycycle.gd`）がみなこれを使う。新しい画面を足すときも `Icons.ui_scale(画面の高さ)` を使う
+- **メニューの大きさ**: 設定の画面そのもの（文字・スライダー・切り替え）を丸ごと拡げる。画面の高さに入らないときは、中をスクロールする。スライダーを動かしている最中には拡げず、離したときに当てる（手の下でスライダーがずれて値が跳ねないように）
+- Esc の操作の札は設定の画面の左に置き、入らなければ縮める
+- 右上の 360° 映像は HUD の大きさに入れていない（`main.gd` の窓。要るなら別に足す）
+
+| 場面 | 小（70%）・標準（100%）・大（160%） |
+|---|---|
+| ふもと | [scale-base.jpg](hud/scale-base.jpg) |
+| 押している | [scale-push.jpg](hud/scale-push.jpg) |
+| 身ぶりの輪 | [scale-ring.jpg](hud/scale-ring.jpg) |
+| Esc（メニューも同じ倍率） | [scale-menu.jpg](hud/scale-menu.jpg) |
+
+撮り方: `$G --path game --resolution 1600x900 -s res://tools/hud_shots.gd -- --scene=ring --hud-scale=1.6 --menu-scale=1.6 --out=/tmp/a.png`（保存はしない）
+
 ## まだ決めていないこと
 
 - 覚えた案内を、次に遊ぶときまで覚えておくか（いまはそのプレイの間だけ）

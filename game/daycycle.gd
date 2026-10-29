@@ -57,6 +57,8 @@ func _process(dt: float) -> void:
 	_sky_t += dt
 	_apply(_sky_t >= SKY_EVERY)
 	if _dial:
+		_dial.pivot_offset = _dial.size   # 右下の角を動かさずに、HUD とそろえた大きさにする
+		_dial.scale = Vector2.ONE * preload("res://hud_icons.gd").ui_scale(_dial.get_viewport_rect().size.y)
 		_update_ink(dt)
 		_dial.ink = move_toward(_dial.ink, _ink_target, dt * 2.0)
 		_dial.queue_redraw()
