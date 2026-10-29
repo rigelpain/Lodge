@@ -22,6 +22,10 @@ const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "get
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
 	"cam_dist", "cam_height", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
 
+## HUD の物が受ける風（hud.gd が毎コマ入れる。0〜1.6 ほど）。設定「HUD が風で揺れる」を切ると 0、「視点の揺れ」を切ると小さく
+static var wind := 0.0
+static var wind_t := 0.0        # 揺れの時計 (s)
+static var wind_stepped := true # 12 コマ／秒に刻む（人形と同じコマ撮り）。false でなめらか（見比べ用）
 static var user_scale := 1.0   # 設定の「HUD の大きさ」（settings.gd が入れる）
 static var _felt: ImageTexture
 static var _o := Vector2.ZERO   # いま描いている絵の中心（画面）
@@ -32,6 +36,61 @@ static var _s := 1.0            # 1 単位あたりの画面の px
 ## hud.gd・craft_ui.gd・emote_ring.gd・daycycle.gd の表示はみなこれでそろえる
 static func ui_scale(view_h: float) -> float:
 	return clampf(view_h / 1080.0, 0.6, 2.0) * user_scale
+
+
+## 風の揺れの時計: コマ撮りなら 12 コマ／秒に刻んだ時間
+static func _wt() -> float:
+	return floorf(wind_t * 12.0) / 12.0 if wind_stepped else wind_t
+
+
+static func _hash(n: float) -> float:
+	return fposmod(sin(n * 12.9898 + 78.233) * 43758.5453, 1.0) * 2.0 - 1.0
+
+
+## ガタガタの小刻み（-1〜1）。コマ撮りではコマごとに跳び、なめらかではコマの間をつなぐ
+static func _jolt(seed: float) -> float:
+	var f := wind_t * 12.0
+	var n := floorf(f)
+	if wind_stepped:
+		return _hash(n + seed * 31.0)
+	return lerpf(_hash(n + seed * 31.0), _hash(n + 1.0 + seed * 31.0), smoothstep(0.0, 1.0, f - n))
+
+
+## 風を受けた物の傾き (rad): lean だけ後ろへなびき（風が満ちたとき）、flutter の振れでゆらぎ、速いほどガタガタ震える
+static func wind_angle(seed: float, lean: float, flutter: float) -> float:
+	if wind <= 0.001:
+		return 0.0
+	return wind * lean + sin(_wt() * 6.5 + seed) * flutter * wind + _jolt(seed) * flutter * 0.7 * wind * wind
+
+
+## 風を受けた物のずれ (px): 速いほどガタガタ
+static func wind_offset(seed: float, jit: float) -> Vector2:
+	if wind <= 0.001:
+		return Vector2.ZERO
+	return Vector2(_jolt(seed + 0.3), _jolt(seed + 0.7)) * jit * wind * wind
+
+
+## 支点 pivot のまわりに、風で傾けてずらす変換（draw_set_transform_matrix に渡す）
+static func wind_xform(pivot: Vector2, seed: float, lean: float, flutter: float, jit: float) -> Transform2D:
+	if wind <= 0.001:
+		return Transform2D.IDENTITY
+	return Transform2D(0.0, pivot + wind_offset(seed, jit)) * Transform2D(wind_angle(seed, lean, flutter), Vector2.ZERO) * Transform2D(0.0, -pivot)
+
+
+## 貼った物の角が風でぱたぱためくれる: corner は角、e1・e2 はその角から辺に沿って内へ向かう向き（長さ 1）
+static func flap(ci: CanvasItem, corner: Vector2, e1: Vector2, e2: Vector2, size: float, seed: float, col := PAPER) -> void:
+	if wind <= 0.02:
+		return
+	var k := wind * (0.55 + 0.45 * sin(_wt() * 11.0 + seed)) + 0.15 * _jolt(seed + 2.0) * wind
+	var s := size * clampf(k, 0.0, 1.4)
+	if s < 1.0:
+		return
+	var a := corner + e1 * s
+	var b := corner + e2 * s
+	var tip := corner + (e1 + e2) * s * 0.85
+	ci.draw_colored_polygon(PackedVector2Array([corner, a, b]), Color(SHADOW, 0.25))   # めくれた下の影
+	ci.draw_colored_polygon(PackedVector2Array([a, tip, b]), col.darkened(0.08))       # めくれた裏
+	ci.draw_polyline(PackedVector2Array([a, tip, b]), Color(PAPER_EDGE, 0.9), 1.0, true)
 
 
 ## フェルトの毛羽のむら（明るさ 0.86〜1.0 の灰色）。色と掛け合わせて面に貼る

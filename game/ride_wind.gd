@@ -269,6 +269,12 @@ func _fluff_texture() -> Texture2D:
 	return ImageTexture.create_from_image(img)
 
 
+## 速さの盛り上がり（0〜1）: 2 m/s から出て 9 m/s で満ちる。滑るときの風・速さの表示（speedo.gd）・HUD の物の揺れ（hud.gd）が
+## みなこの値で一緒に盛り上がる。速さで視野角を広げるなども、これを使えばそろう
+static func level_of(speed: float) -> float:
+	return smoothstep(SPEED_MIN, SPEED_FULL, speed)
+
+
 func _process(dt: float) -> void:
 	if player == null or sled == null:
 		return
@@ -283,7 +289,7 @@ func _process(dt: float) -> void:
 	var v := sled.linear_velocity
 	var speed := v.length()
 	var riding: bool = player.mode == player.Mode.RIDE and player.sled == sled
-	var want := smoothstep(SPEED_MIN, SPEED_FULL, speed) * strength * (0.55 if calm else 1.0) if riding else 0.0
+	var want := level_of(speed) * strength * (0.55 if calm else 1.0) if riding else 0.0
 	level = move_toward(level, want, dt * (1.2 if want > level else 2.5))
 	var on := level > 0.01
 	for p in _flows:

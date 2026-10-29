@@ -10,6 +10,8 @@ extends CanvasLayer
 ## 絵は hud_icons.gd。ミシン（main.sewing）とエモート（main.emotes）は、あればその案内も出す。
 
 const Icons := preload("res://hud_icons.gd")
+const Speedo := preload("res://speedo.gd")
+const RideWind := preload("res://ride_wind.gd")
 const SledTags := preload("res://sled_tags.gd")
 const Player := preload("res://player.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
@@ -24,6 +26,19 @@ var hints_on := true
 var uses := {}                # 案内 → した回数（そのプレイの間だけ）
 
 var _view: Control
+var _tag_view: Control
+# 乗って滑っているときの速さ（糸巻き。speedo.gd）
+var spd_best := 0.0           # 今日いちばんの速さ（このプレイの間）
+var _spd := 0.0               # 表示している速さ（なめらかに追う）
+var _spd_a := 0.0
+var _spd_pop := 0.0
+var _spd_slow := 9.0          # 遅いのが続いている長さ (s)
+var _wind := 0.0              # HUD の物が受ける風（設定を掛ける前）。速さの盛り上がりを追い、止まるとふわっと戻る
+var _spd_marks := {}          # この滑りで、もう弾んだ節目（"best"・10 m/s など）
+var _spd_spin := 0.0          # ボビンを回した角度
+var _spd_dist := 0.0          # 滑った長さ (m)。下の端の縫い目が、これだけ流れる
+var _spd_knots: Array = []    # ご褒美の結び目を結んだときの _spd_dist
+var _spd_color := Icons.RED   # 乗っているソリのメインカラー（糸の色のもと）
 var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
 var _flow := 0.0
@@ -47,6 +62,13 @@ var _tag_item := {}           # 畳んで持っていれば、その持ち物（
 
 func _ready() -> void:
 	layer = 3
+	_tag_view = View.new()   # 左下の名札（風で入れ物ごと傾ける）。ほかの表示より下に
+	_tag_view.hud = self
+	_tag_view.part = "tag"
+	_tag_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_tag_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_tag_view.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	add_child(_tag_view)
 	_view = View.new()
 	_view.hud = self
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -116,6 +138,7 @@ func _process(dt: float) -> void:
 	_layout_bottom()
 	if debug_on:
 		_dbg = _debug_values(sled, p)
+	_update_speedo(dt, p, menu)
 	_view.queue_redraw()
 
 
@@ -329,6 +352,75 @@ func _badge_w(h: Dictionary, sz: float) -> float:
 	return Icons.badge_w(h.keys, sz)
 
 
+## 乗って滑っているときだけ、糸巻きの速さの表示を出す。止まるとふわっと消える。
+## 今日いちばんの速さを超えた瞬間と、10・13・15 m/s を超えた瞬間に、ボビンが跳ねて糸が広がり、結び目ができる（一回の滑りで一度ずつ）
+func _update_speedo(dt: float, p: Node, menu: bool) -> void:
+	var on := false
+	var speed := 0.0
+	if p and p.mode == Player.Mode.RIDE and is_instance_valid(p.sled):
+		speed = p.sled.linear_velocity.length()
+		# 1 m/s より遅いのが 1.2 秒続いたら止まったとみなして消す（ふもとでじりじり進むあいだは出さない）
+		_spd_slow = 0.0 if speed > 1.0 else _spd_slow + dt
+		on = _spd_slow < 1.2
+	# HUD の物が受ける風: 乗って滑っているあいだ、速さの盛り上がり（風・速さの表示と同じ値）を追う
+	var want_wind := minf(Speedo.level_of(speed), 1.3) if p and p.mode == Player.Mode.RIDE else 0.0   # 読めなくなるほどは揺らさない
+	_wind = move_toward(_wind, want_wind, dt * (2.5 if want_wind > _wind else 0.8))
+	var vals: Dictionary = main.settings.values if main.settings else {}
+	var calm := 0.0 if not vals.get("hud_wind", true) else (0.2 if not vals.get("bob", true) else 1.0)
+	Icons.wind = _wind * calm
+	Icons.wind_t += dt
+	Icons.wind_stepped = main.args.get("hud-shake", "step") != "smooth"
+	if _tag_view:   # 名札: 左の糸の輪を支点に、自由な端（右）が風で持ち上がり、ガタガタ震える
+		var tr: Rect2 = _tag_view.tag_rect(ui())
+		_tag_view.pivot_offset = Vector2(tr.position.x, tr.position.y + tr.size.y * 0.5)
+		_tag_view.rotation = Icons.wind_angle(1.0, -0.09, 0.05)
+		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui())
+		_tag_view.queue_redraw()
+	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
+	on = on and allowed and not menu
+	_spd_a = move_toward(_spd_a, 1.0 if on else 0.0, dt * (3.0 if on else 1.2))
+	_spd = lerpf(_spd, speed, minf(1.0, dt * 8.0))
+	_spd_spin += dt * _spd * 2.0
+	_spd_dist += dt * _spd
+	if p and is_instance_valid(p.sled) and p.sled.has_method("color"):
+		_spd_color = p.sled.color()
+	_spd_pop = maxf(0.0, _spd_pop - dt * 2.2)
+	if not on:
+		if _spd_a <= 0.0:
+			_spd_marks.clear()
+	else:
+		if speed > spd_best + 0.2 and speed > 4.0:
+			if spd_best > 0.0 and not _spd_marks.has("best"):
+				_spd_marks["best"] = true
+				_cheer()
+			spd_best = speed
+		for m in [10.0, 13.0, 15.0]:
+			if speed >= m and not _spd_marks.has(m):
+				_spd_marks[m] = true
+				_cheer()
+	_spd_knots = _spd_knots.filter(func(d): return _spd_dist - d < 60.0)
+
+
+## ご褒美: ボビンがぽんと跳ね、糸がぱっと広がり、縫い目に小さな結び目ができる（speedo.gd が描く）
+func _cheer() -> void:
+	_spd_pop = 1.0
+	_spd_knots.append(_spd_dist)
+
+
+## 速さの表示の置き場（画面の px）: 下の端の右寄り。右下の小窓（自分の姿）と日時計の左に、下の縁をそろえて置く。
+## 上の右には 360° 映像があり、下のまんなかには案内のワッペンと持ち物の列があるので、その間の空いた所
+func speedo_box() -> Rect2:
+	var u := ui()
+	var vs := _view.size
+	var w := 300.0 * u   # 左の持ち物・装備の枠に、縫い目がかからない幅
+	var h := 160.0 * u
+	var right := vs.x - 14.0 * u - 104.0 * u   # 日時計のぶん
+	var sc = main.get("self_cam")
+	if sc and is_instance_valid(sc) and not sc.get("hidden"):
+		right -= (236.0 + 18.0) * u          # 小窓のぶん（self_cam.gd の DIAM と MARGIN）
+	return Rect2(right - w, vs.y - h - 6.0 * u, w, h)
+
+
 ## 確かめ用の札に出す値: 押している人数・ソリの高さ（頂上まで）・速さ・fps・いまの状態・覚えた案内の数
 func _debug_values(sled: RigidBody3D, p: Node) -> Dictionary:
 	var known_n := 0
@@ -350,11 +442,16 @@ func _debug_values(sled: RigidBody3D, p: Node) -> Dictionary:
 
 class View extends Control:
 	var hud: Node
+	var part := ""      # "tag" なら左下の名札だけを描く
 
 	func _draw() -> void:
 		var u: float = hud.ui()
-		if hud._tag_a > 0.01:
-			_draw_tag(u, hud._tag_a)
+		if part == "tag":   # 名札だけを描く入れ物（風で、この入れ物ごと傾ける。名札の絵は中で描く向きを自分で変えるので）
+			if hud._tag_a > 0.01:
+				var tr := tag_rect(u)
+				_draw_tag(u, hud._tag_a)
+				Icons.flap(self, tr.position + Vector2(tr.size.x, 0), Vector2.LEFT, Vector2.DOWN, 22.0 * u, 1.0)
+			return
 		var cam := get_viewport().get_camera_3d()
 		for id in hud._hints:
 			var h: Dictionary = hud._hints[id]
@@ -368,15 +465,27 @@ class View extends Control:
 				at = cam.unproject_position(h.world)
 				sz = 66.0 * u
 			var e := ease(h.a, 0.5)
-			Icons.badge(self, h.keys, h.icon, at + Vector2(0, (1.0 - e) * 10.0 * u), sz, e)
+			var bc := at + Vector2(0, (1.0 - e) * 10.0 * u)
+			draw_set_transform_matrix(Icons.wind_xform(bc, float(id.hash() % 97), 0.0, 0.03, 2.0 * u))   # 貼ったワッペンは小刻みに震える
+			Icons.badge(self, h.keys, h.icon, bc, sz, e)
+			draw_set_transform_matrix(Transform2D.IDENTITY)
 		_draw_pip_back(u)
+		if hud._spd_a > 0.01:
+			_draw_speedo(u)
 		if hud.debug_on and not hud._dbg.is_empty():
 			_draw_debug(u)
+			draw_set_transform_matrix(Transform2D.IDENTITY)
 		if hud.main.settings and hud.main.settings.is_open:
 			_draw_card(u)
 
 	## 左下の札: 自分の名札（形・色・柄・素材は自分の名札のデザイン）の中に無地の窓を敷き（sled_tags.gd の window_rect）、
 	## その窓に、いま関わっているソリ（最後に触ったソリ）の丘の断面・印・人の形・糸の矢印を描く（_draw_tag_info）。
+	## 左下の名札の場所（_draw_tag と同じ）
+	func tag_rect(u: float) -> Rect2:
+		var w := 262.0 * u
+		var h := 146.0 * u
+		return Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
+
 	func _draw_tag(u: float, a: float) -> void:
 		var main: Node3D = hud.main
 		var sled: RigidBody3D = hud._tag_sled
@@ -485,6 +594,21 @@ class View extends Control:
 			var big: float = 1.0 + 0.5 * hud._chev_pop * float(i == n - 1)
 			Icons.chevron(self, Vector2(px + i * 16.0 * u, py + 6.0 * u), 20.0 * u * big, Icons.THREAD, a * (0.55 + 0.45 * wave), 0.0, 3.0 * u)
 
+	## 乗って滑っているときの速さ（ボビン。数字は出さない）
+	func _draw_speedo(u: float) -> void:
+		var e := ease(hud._spd_a, 0.6)
+		if e > 0.01:
+			var r: Rect2 = hud.speedo_box()
+			r.position.y += (1.0 - e) * 24.0 * u   # 下からふわっと上がってくる
+			draw_set_transform_matrix(Icons.wind_xform(r.get_center(), 4.0, 0.0, 0.025, 2.5 * u))   # ボビンの形が読める程度に、小刻みに
+			var style: String = hud.main.args.get("speedo", "both")   # both: ボビンと左右の縫い目 / seams: 縫い目だけ / bobbin: ボビンだけ
+			if style != "seams":
+				Speedo.draw(self, r, hud._spd, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud.spd_best,
+					hud._spd_pop, hud._spd_knots, e)
+			draw_set_transform_matrix(Transform2D.IDENTITY)
+			if style != "bobbin":
+				Speedo.seams(self, size, u, Speedo.level_of(hud._spd), hud._spd_dist, hud._spd_color, e)
+
 	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。
 	## 段ごとに絵と数字: 人の形（押している人数）、丘（ソリの高さ／頂上）、風（速さ）、砂時計（fps）、いまの状態の絵と、
 	## 覚えた案内の数だけの玉止め。地は無地の生成りで、外側に影と藍の縁取り（雪・空・ロッジの中でも読める）
@@ -501,6 +625,8 @@ class View extends Control:
 		Icons.screen()
 		Icons.thread(self, PackedVector2Array([Vector2(hole.x - 10.0 * u, -2.0), hole + Vector2(0, -4.0 * u), Vector2(hole.x + 10.0 * u, -2.0)]),
 			Icons.RED, 1.8 * u, 1.0)
+		# 吊るした札は、はとめを支点に、風で外（左）へなびいて揺れる
+		draw_set_transform_matrix(Icons.wind_xform(hole, 2.0, 0.14, 0.06, 1.5 * u))
 		Icons.paper_tag(self, Rect2(x0, y0, w, h), 10.0 * u, u)
 		draw_circle(hole, 5.0 * u, Icons.PAPER_EDGE)
 		draw_circle(hole, 3.2 * u, Color(0.35, 0.30, 0.28, 0.9))

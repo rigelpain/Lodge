@@ -279,6 +279,10 @@ func width() -> float:
 
 func _process(dt: float) -> void:
 	_layout()
+	# 刺繍枠は、滑っているあいだ風を受けて小刻みに震える（hud.gd が入れる Icons.wind。止まるとふわっと戻る）
+	_frame.pivot_offset = _frame.size * 0.5
+	_frame.rotation = Icons.wind_angle(5.0, 0.0, 0.03)
+	_frame.position += Icons.wind_offset(5.0, 2.5 * ui())
 	var dc := get_node_or_null("/root/DayCycle")
 	if dc and "dial_right" in dc:
 		dc.dial_right = 16.0 + width()
