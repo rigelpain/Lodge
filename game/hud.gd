@@ -46,6 +46,7 @@ var _spd_color := Icons.RED   # 乗っているソリのメインカラー（糸
 var _spd_sewn: Array = []
 var _reel := 0.0              # 滑り終わって、縫い目の糸を巻き取っている残り (s)。糸の上のボタンは財布へ飛ぶ（craft_ui.gd）
 var _reel_t := 1.6            # この巻き取りの長さ (s)。ボタンが多いほど長い
+var _ride_seen := -99.0       # 最後に乗っていた時刻（止まってすぐ降りても、巻き取りを見せる）
 const REEL_T := 1.6
 var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
@@ -428,6 +429,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 	var on := false
 	var speed := 0.0
 	if p and p.mode == Player.Mode.RIDE and is_instance_valid(p.sled):
+		_ride_seen = _clock_now()
 		speed = p.sled.linear_velocity.length()
 		# 1 m/s より遅いのが 1.2 秒続いたら止まったとみなして消す（ふもとでじりじり進むあいだは出さない）
 		_spd_slow = 0.0 if speed > 1.0 else _spd_slow + dt
@@ -449,6 +451,10 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		_tag_view.scale = Vector2(maxf(fp[0], 0.01), 1.0)
 		_tag_view.queue_redraw()
 	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
+	# 糸の上にボタンがあるあいだは、滑り終わり（snow_buttons.gd の ride_pay。0.5 m/s より遅いのが 1 秒）まで出しておく
+	# （遅くなると先に消えて、糸の上のボタンが見えないまま財布へ飛んでしまうので）
+	if not _spd_sewn.is_empty() and _clock_now() - _ride_seen < 3.0:
+		on = true
 	if _reel > 0.0:   # 巻き取っているあいだは出しておく
 		_reel = maxf(0.0, _reel - dt)
 		on = true
@@ -496,12 +502,17 @@ func _on_buttons(ev: Dictionary) -> void:
 				if look != "wood":
 					_spd_pop = 1.0
 		"ride_pay":
-			if int(p.id) in ev.gives and p.mode == Player.Mode.RIDE:
+			# 乗っていた（止まってすぐ降りた人も）: 糸を巻き取って、糸の上のボタンを財布へ
+			if int(p.id) in ev.gives and (p.mode == Player.Mode.RIDE or _clock_now() - _ride_seen < 3.0):
 				_reel_t = maxf(REEL_T, 0.9 + ev.get("sewn", []).size() * 0.16)
 				_reel = _reel_t
 
 
 ## 巻き取りの進み 0〜1（巻き取っていなければ 0）
+func _clock_now() -> float:
+	return Time.get_ticks_msec() / 1000.0
+
+
 func reel_k() -> float:
 	return 1.0 - _reel / _reel_t if _reel > 0.0 else 0.0
 

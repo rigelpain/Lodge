@@ -480,7 +480,8 @@ const COIN_SOUNDS := {"wood": ["button_take_wood", -1.0], "brass": ["button_take
 var _coin_at := 0.0   # 次の取得音を鳴らせる時刻（_clock）
 
 
-func coin(look: String) -> void:
+## step: 続けて入る何枚目か（0 から）。続くほど少しずつ音が上がる（ぽろぽろ、と上っていく）
+func coin(look: String, step := 0) -> void:
 	var spec: Array = COIN_SOUNDS.get(look, COIN_SOUNDS["wood"])
 	var wait := maxf(0.0, _coin_at - _clock)
 	_coin_at = _clock + wait + COIN_GAP
@@ -493,7 +494,38 @@ func coin(look: String) -> void:
 	var p := AudioStreamPlayer.new()
 	p.bus = "Self"
 	add_child(p)
-	_shot2(p, s, spec[1], rng.randf_range(0.96, 1.05))
+	_shot2(p, s, spec[1], (1.0 + 0.035 * mini(step, 12)) * rng.randf_range(0.98, 1.02))
+	p.finished.connect(p.queue_free)
+
+
+## 速さの表示の糸の上のボタンが、ぽんと外れて財布へ飛び出す（ぷつ。小さく高く、耳元で）
+func coin_off() -> void:
+	var s := _pick("button_snap", 3)
+	if s == null:
+		return
+	_note("button_snap", true, Vector3.ZERO)
+	var p := AudioStreamPlayer.new()
+	p.bus = "Self"
+	add_child(p)
+	_shot2(p, s, -13.0, rng.randf_range(1.3, 1.45))
+	p.finished.connect(p.queue_free)
+
+
+## 滑り終わって、もらったボタンが全部財布に入ったときの締めくくり（ちゃりん）。count 枚、brass は真鍮が混ざったか。
+## 少し（〜5）・ふつう（〜12）・たくさんか真鍮入りで、3 つの大きさ。最後の取得音のすぐあとに、耳元で
+func reward(count: int, brass: bool) -> void:
+	var size := 3 if brass or count > 12 else (2 if count > 5 else 1)
+	var wait := maxf(0.0, _coin_at - _clock) + 0.08
+	_coin_at = _clock + wait + 0.3
+	await get_tree().create_timer(wait).timeout
+	var s := _wav("button_reward_%02d" % size)
+	if s == null:
+		return
+	_note("button_reward_%02d" % size, true, Vector3.ZERO)
+	var p := AudioStreamPlayer.new()
+	p.bus = "Self"
+	add_child(p)
+	_shot2(p, s, [0.0, -1.0, 0.0, 1.0][size], 1.0)
 	p.finished.connect(p.queue_free)
 
 
