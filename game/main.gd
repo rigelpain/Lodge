@@ -10,6 +10,7 @@ const Look := preload("res://look.gd")
 ##   --no-wind     滑るときの風のエフェクトを出さない（重さを比べる用）
 ##   --cam=x,y,z,tx,ty,tz  --no-player のときのカメラの位置と見る先（ロッジを撮る用）
 ##   --hud-debug   画面の左上に確かめ用の数字（押している人数・高さ・速さ・fps）を出す
+##   --sled=KIND   ソリの大きさ（sack 米袋 1 人・small 2 人・mid 3 人（既定）・large 8 人）
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
@@ -103,6 +104,7 @@ func _ready() -> void:
 		_furnish_lodge()
 
 	sled = Sled.new()
+	sled.kind = args.get("sled", "mid")
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
 	sled.snow_lift = snow_lift
 	add_child(sled)

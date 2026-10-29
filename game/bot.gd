@@ -8,11 +8,13 @@ const Palm := preload("res://palm.gd")
 ## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手のひらを掲げると、ソリを離して前まで来て、
 ## 同じ高さで掲げる（高ければハイタッチ、低ければ握手）。片手か両手かもまねる。
 ## 一緒に乗っているとき、あなたが高い両手のひらにしたら一緒に上げる（万歳）。声には同じ声、「ウン？」には「ウン」、拍手には拍手。
-## 雪玉が当たると、のけぞって笑う。
+## 雪玉が当たると、のけぞって笑う。つかんでいたら手を離し、少しして（REGRAB_WAIT）つかみ直しに行く。
+## 速く下るソリをつかむと引きずられ、引きずられている間は押さずに踏ん張る（止める力は sled.gd がまとめてかける）。
 
 enum State { PUSH, WAIT, RIDE }
 
 const SPEED := 2.4
+const REGRAB_WAIT := 1.5     # 雪玉が当たって手を離してから、つかみ直すまで (s)
 const GRAVITY := 9.8
 
 var sled: RigidBody3D
@@ -37,6 +39,7 @@ var _five_with := -1         # ハイタッチをしにいく相手の番号
 var _five_until := 0         # このコマまでに届かなければやめる
 var _five_sent := false      # もう手を上げた（あとは合うまで、相手の前へ寄り続ける）
 var _em := {}
+var _regrab := 0.0           # これが 0 になるまでつかまない
 
 
 func _ready() -> void:
@@ -88,6 +91,7 @@ func _uphill(p: Vector3) -> Vector3:
 
 func _physics_process(dt: float) -> void:
 	_update_replies(dt)
+	_regrab = maxf(0.0, _regrab - dt)
 	if post != null:
 		_stand_at_post(dt)
 		return
@@ -131,15 +135,13 @@ func _physics_process(dt: float) -> void:
 			var steer: float = clamp(err * 2.5 - sled.angular_velocity.y * 0.5, -1.0, 1.0)
 			var ahead: float = max(0.0, cos(err)) if abs(err) < deg_to_rad(60.0) else 0.0
 			var push_dir: Vector3 = fwd * ahead + sled.global_basis.x * steer * 1.2
-			if push_dir.length() > 0.05:
-				sled.push(push_dir.normalized(), global_position + fwd * 0.6 + Vector3.UP * 0.4)
+			if push_dir.length() > 0.05 and not sled.is_dragged(self):
+				sled.push(push_dir.normalized(), global_position + fwd * 0.6 + Vector3.UP * 0.4, self)
 			debug = "err=%.0f° steer=%.2f ahead=%.2f 手=%s" % [rad_to_deg(err), steer, ahead, str(sled.to_local(global_position + fwd * 0.6 + Vector3.UP * 0.4).snapped(Vector3(0.1, 0.1, 0.1)))]
 			var face := s - global_position
 			face.y = 0
 			if face.length() > 0.1:
 				look_at(global_position + face, Vector3.UP)
-			if sled.linear_velocity.length() > 5.0:
-				let_go()
 			_pose_doll()
 			return
 		else:
@@ -174,7 +176,7 @@ func _physics_process(dt: float) -> void:
 			to.y = 0
 			dir = to.normalized() if to.length() > 0.2 else up
 			debug = "持ち場まで%.2f" % (post - global_position).length()
-			if (post - global_position).length() < 0.8:
+			if (post - global_position).length() < 0.8 and _regrab <= 0.0:
 				if sled.take_handle(self, stand_l):
 					handle = stand_l
 					_col.disabled = true
@@ -248,6 +250,7 @@ func _pose_doll() -> void:
 	doll.sled = sled
 	doll.grip = handle
 	doll.effort = handle != Vector3.INF and sled.pushers > 0
+	doll.dragged = handle != Vector3.INF and sled.is_dragged(self)
 	doll.airborne = not is_on_floor() and state != State.RIDE and handle == Vector3.INF
 	# 顔の向き: あなたが指さしたら、指された所を一緒に見る。押していないときは、近くのあなたの顔を見る
 	doll.gaze = Vector3.INF
@@ -277,6 +280,9 @@ func _on_emote(ev: Dictionary) -> void:
 		doll.play(ev)
 		if ev.kind in ["high_five", "shake", "whiff"]:
 			_five_with = -1   # 合った・空振りした。持ち場へ戻る
+		if ev.kind == "hit" and handle != Vector3.INF:
+			let_go()   # びっくりして手を離す
+			_regrab = REGRAB_WAIT
 		if ev.kind == "hit" and randf() < 0.6:
 			_reply(randf_range(0.7, 1.0), {"kind": "wa"})   # 当たっても楽しい
 		return

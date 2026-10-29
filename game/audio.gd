@@ -394,8 +394,18 @@ func _update_walkers(dt: float) -> void:
 		else:
 			pushing = who.handle != Vector3.INF and sled.pushers > 0
 			free = who.handle == Vector3.INF and who.seat == Vector3.INF
+		# 引きずられている: かかとが雪をすべる「ざざざ」。踏ん張りの音を速く、速いほど大きく高く。息も上がる
+		var dragged: bool = who.handle != Vector3.INF and sled.is_dragged(who)
 		var inside := _zone_of(who.global_position) == 2
 		var db_step := -10.0 if is_player else -8.0
+		if dragged:
+			var sv := sled.linear_velocity.length()
+			w.drag_t = w.get("drag_t", 0.0) - dt
+			if w.drag_t <= 0.0:
+				w.drag_t = rng.randf_range(0.09, 0.15)
+				_play_step(w, _pick("step_snow_push", 4), db_step - 4.0 + 4.0 * clampf(sv / 6.0, 0.0, 1.0),
+						rng.randf_range(1.1, 1.25) + 0.02 * sv, is_player)
+			pushing = true
 		if free and speed > 0.5 and who.is_on_floor():
 			w.acc += speed * dt
 			var stride := STRIDE + 0.3 * clampf((speed - 4.0) / 3.0, 0.0, 1.0)

@@ -26,7 +26,7 @@ const JUMP := 4.5
 const GRAVITY := 9.8
 const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
-const LET_GO_SPEED := 5.0    # ソリがこれより速く滑ると手が離れる (m/s)
+const LET_GO_SPEED := 5.0    # 紐を持っていて、ソリがこれより速く滑ると手が離れる (m/s)。縁をつかんでいるときはソリが決める（sled.gd の引きずり）
 
 enum Mode { WALK, GRIP, RIDE, ROPE }
 
@@ -75,6 +75,7 @@ var _exhaling := false      # B を押しているあいだ、息を吐いてい
 var _exhale_t := 0.0
 var _cam_roll := 0.0         # 首をかしげると視点も少し傾く
 var _cam_em := Vector3.ZERO  # 身ぶりで視点に足す（x 上下の向き、y 左右の向き、z 高さ）。なめらかに追う
+var _drag_k := 0.0           # 引きずられている度合い（0→1 になめらかに）。視点が前へ傾き、低く揺れる
 
 
 func _ready() -> void:
@@ -251,6 +252,11 @@ func let_go() -> void:
 			sled.release_handle(self)
 			handle = Vector3.INF
 			_col.disabled = false
+			# 手が離れた: ソリに当たらないよう、つかんでいた縁から少し外へ
+			var out: Vector3 = -(sled.global_basis * push_dir)
+			out.y = 0
+			if out.length() > 0.1:
+				global_position += out.normalized() * 0.4
 		Mode.ROPE:
 			sled.release_rope(self)
 		_:
@@ -316,6 +322,7 @@ func _pose_doll() -> void:
 	doll.sled = sled
 	doll.grip = handle if mode == Mode.GRIP else Vector3.INF
 	doll.effort = pushing or pulling
+	doll.dragged = mode == Mode.GRIP and sled.is_dragged(self)
 	doll.airborne = mode == Mode.WALK and not is_on_floor()
 	doll.facing = (sled.global_basis * push_dir) if mode == Mode.GRIP else Vector3.ZERO
 	doll.gaze = cam.global_position - cam.global_basis.z * 6.0
@@ -450,21 +457,16 @@ func _grip(dt: float) -> void:
 
 	# 視点基準の WASD を、つかんでいる所にかける力の向きにする
 	var input := Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_S) - _key(KEY_W))
-	var fwd: Vector3 = -global_basis.z
-	fwd.y = 0
-	fwd = fwd.normalized()
-	if input.length() > 0.0:
+	var dragged: bool = sled.is_dragged(self)
+	if input.length() > 0.0 and not dragged:
 		var dir := (global_basis * Vector3(input.x, 0, input.y))
 		dir.y = 0
-		sled.push(dir.normalized(), target + Vector3.UP * 0.5)
+		sled.push(dir.normalized(), target + Vector3.UP * 0.5, self)
 		pushing = true
 
-	# 速く滑り出したら手が離れる
-	if sled.linear_velocity.length() > LET_GO_SPEED:
-		let_go()
-		global_position -= fwd * 0.6
+	if dragged:
+		prompt = "引きずられている　踏ん張って止める　F 手を離す"
 		return
-
 	prompt = "力をかけている　F 手を離す　E 乗る" if pushing else "WASD 見ている向きを基準に力をかける　F 手を離す　E 乗る"
 
 
@@ -482,15 +484,19 @@ func rope_hand() -> Vector3:
 
 func _place_camera(dt: float, bob: float, working: bool) -> void:
 	var eye_y := 1.55 + (bob * 0.02 if working else 0.0)
+	_drag_k = move_toward(_drag_k, 1.0 if mode == Mode.GRIP and sled.is_dragged(self) else 0.0, dt * 4.0)
+	var jolt := 0.0   # 引きずられているときの雪のでこぼこ（コマごとに変わる小さな揺れ。視点の揺れを切ると弱く）
+	if _drag_k > 0.0:
+		jolt = (0.012 if Doll.frame_index() % 2 == 0 else -0.012) * _drag_k * (1.0 if bob_enabled else 0.3)
 	if not third:
-		var eye := Vector3(0, eye_y, 0)
+		var eye := Vector3(0, eye_y - 0.22 * _drag_k + jolt, -0.25 * _drag_k)
 		if mode == Mode.RIDE:
 			# 乗っているときは、座った人形の目の所（席や人形が変わっても合う）。ソリが傾けば一緒に傾く。
 			# 乗り降りは同じ lerp で、すっと立ち上がる・腰を下ろす
 			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * doll.eye_point(true))
 		eye.y += _cam_em.z
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
-		cam.rotation = Vector3(clampf(_pitch + _cam_em.x, -1.5, 1.4), _cam_em.y, _cam_roll)
+		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.12 * _drag_k, -1.5, 1.4), _cam_em.y, _cam_roll + jolt * 2.0)
 		return
 	# 三人称: 頭の少し上を中心に、後ろ上から見下ろす。地面に潜らない
 	var pivot := Vector3(0, 1.6, 0)
@@ -516,9 +522,9 @@ func _pose_hands(dt: float) -> void:
 		var target: Vector3
 		match mode:
 			Mode.GRIP:
-				# 縁を握る。押すと腕が少し伸びる
-				var reach := -0.5 - (0.06 if pushing else 0.0)
-				target = Vector3(0.17 * s, -0.22 + (bob * 0.015 if pushing else 0.0), reach)
+				# 縁を握る。押すと腕が少し伸びる。引きずられていると、腕がソリへ引っぱられて伸びきる
+				var reach := -0.5 - (0.06 if pushing else 0.0) - 0.12 * _drag_k
+				target = Vector3(0.17 * s, -0.22 + (bob * 0.015 if pushing else 0.0) - 0.05 * _drag_k, reach)
 			Mode.ROPE:
 				# 右手で紐を握り、左手は振る
 				if s > 0:
@@ -721,6 +727,9 @@ func _on_emote(ev: Dictionary) -> void:
 			holding_ball = false
 		"hit":
 			_winding = false   # びっくりして振りかぶりが解ける（雪玉は持ったまま）
+			# びっくりしてソリの縁や紐から手を離す（乗っている人は降ろさない）。止めるにはもう一度 F
+			if mode == Mode.GRIP or mode == Mode.ROPE:
+				let_go()
 
 
 ## 左クリックを押した: 振りかぶる
