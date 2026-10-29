@@ -41,8 +41,11 @@ var _spd_spin := 0.0          # ボビンを回した角度
 var _spd_dist := 0.0          # 滑った長さ (m)。下の端の縫い目が、これだけ流れる
 var _spd_knots: Array = []    # ご褒美の結び目を結んだときの _spd_dist
 var _spd_color := Icons.RED   # 乗っているソリのメインカラー（糸の色のもと）
-var _spd_brass: Array = []    # この滑りで縫い込まれた真鍮のボタン（縫い込んだときの _spd_dist）。いちばん速い所を超えた印（snow_buttons.gd の ride_mark）
-var _reel := 0.0              # 滑り終わって、縫い目の糸を巻き取っている残り (s)。巻き取られた糸はボタンに変わって財布へ飛ぶ（craft_ui.gd）
+## この滑りで糸の上に縫い込まれたボタン {d（縫い込んだときの _spd_dist）, look（"wood"・"brass"）, claimed（財布へ飛ぶ番が決まった）,
+## off（糸から外れて飛んでいった）}。12 m ごとの木と、いちばん速い所を超えた真鍮（snow_buttons.gd の ride_mark）
+var _spd_sewn: Array = []
+var _reel := 0.0              # 滑り終わって、縫い目の糸を巻き取っている残り (s)。糸の上のボタンは財布へ飛ぶ（craft_ui.gd）
+var _reel_t := 1.6            # この巻き取りの長さ (s)。ボタンが多いほど長い
 const REEL_T := 1.6
 var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
@@ -451,7 +454,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		on = true
 		_spd_spin -= dt * 18.0   # ボビンが逆に回って糸を巻き取る
 		if _reel <= 0.0:
-			_spd_brass.clear()
+			_spd_sewn.clear()
 	on = on and allowed and not menu
 	_spd_a = move_toward(_spd_a, 1.0 if on else 0.0, dt * (3.0 if on else 1.2))
 	_spd = lerpf(_spd, speed, minf(1.0, dt * 8.0))
@@ -474,13 +477,13 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 				_spd_marks[m] = true
 				_cheer()
 	_spd_knots = _spd_knots.filter(func(d): return _spd_dist - d < 60.0)
-	if not on and _spd_a <= 0.0:
-		_spd_brass.clear()
+	if not on and _spd_a <= 0.0 and _reel <= 0.0:
+		_spd_sewn.clear()
 
 
 ## 滑った距離と速さのボタン（snow_buttons.gd）。自分が乗っているソリのことだけ:
-##   ride_mark いちばん速い所を超えた → 縫い目に真鍮のボタンが一つ縫い込まれ、ボビンが跳ねる
-##   ride_pay  一回の滑りが終わった → 縫い目の糸がくるくる巻き取られる（REEL_T 秒）。そのあいだ、ボタンが糸巻きからぽんぽん財布へ飛ぶ
+##   ride_mark 12 m 滑った（木）・いちばん速い所を超えた（真鍮） → 糸の上にボタンが一つ、ぽんと縫い込まれる（真鍮はボビンも跳ねる）
+##   ride_pay  一回の滑りが終わった → 縫い目の糸がくるくる巻き取られる。そのあいだ、糸の上のボタンが上から順にぽんぽん財布へ飛ぶ
 func _on_buttons(ev: Dictionary) -> void:
 	var p = main.player if main else null
 	if p == null or not is_instance_valid(p.sled) or String(p.sled.name) != String(ev.get("sled", "")):
@@ -488,16 +491,41 @@ func _on_buttons(ev: Dictionary) -> void:
 	match ev.kind:
 		"ride_mark":
 			if p.mode == Player.Mode.RIDE:
-				_spd_brass.append(_spd_dist)
-				_spd_pop = 1.0
+				var look := String(ev.get("look", "brass"))
+				_spd_sewn.append({"d": _spd_dist, "look": look, "claimed": false, "off": false})
+				if look != "wood":
+					_spd_pop = 1.0
 		"ride_pay":
 			if int(p.id) in ev.gives and p.mode == Player.Mode.RIDE:
-				_reel = REEL_T
+				_reel_t = maxf(REEL_T, 0.9 + ev.get("sewn", []).size() * 0.16)
+				_reel = _reel_t
 
 
 ## 巻き取りの進み 0〜1（巻き取っていなければ 0）
 func reel_k() -> float:
-	return 1.0 - _reel / REEL_T if _reel > 0.0 else 0.0
+	return 1.0 - _reel / _reel_t if _reel > 0.0 else 0.0
+
+
+## 財布へ飛ばす糸の上のボタンを一つ選ぶ（素材 look の、まだ選ばれていないうち、いちばん上＝あとで縫い込んだもの）。番号（なければ -1）
+func sewn_claim(look: String) -> int:
+	for i in range(_spd_sewn.size() - 1, -1, -1):
+		var e: Dictionary = _spd_sewn[i]
+		if not e.claimed and e.look == look:
+			e.claimed = true
+			return i
+	return -1
+
+
+## 糸の上の i 番のボタンの、画面の場所
+func sewn_screen(i: int) -> Vector2:
+	var ps := Speedo.sewn_positions(Speedo.layout(speedo_box_now(), _spd_pop), _spd_dist, _spd_sewn, reel_k())
+	return ps[i] if i >= 0 and i < ps.size() else Speedo.layout(speedo_box_now(), 0.0).c
+
+
+## 糸の上の i 番のボタンが外れて、財布へ飛んでいった
+func sewn_off(i: int) -> void:
+	if i >= 0 and i < _spd_sewn.size():
+		_spd_sewn[i].off = true
 
 
 ## ご褒美: ボビンがぽんと跳ね、糸がぱっと広がり、縫い目に小さな結び目ができる（speedo.gd が描く）
@@ -702,7 +730,7 @@ class View extends Control:
 		if part == "ribbon":
 			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
 			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false,
-					hud._spd_brass, hud.reel_k())
+					hud._spd_sewn, hud.reel_k())
 			Icons.printing = false
 			return
 		if part.begins_with("tagback:"):   # 束の後ろの札（名札の柄だけ。中の窓は無地）
@@ -866,7 +894,7 @@ class View extends Control:
 			if hud.plates == null:   # 平らなとき: リボンは糸巻きから吊るして揺れる。ボビンは小刻みに
 				var rb: Rect2 = g.ribbon
 				draw_set_transform_matrix(Icons.wind_xform(Vector2(rb.get_center().x, rb.position.y), 6.0, 0.05, 0.05, 1.5 * u))
-				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e, true, hud._spd_brass, hud.reel_k())
+				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e, true, hud._spd_sewn, hud.reel_k())
 			draw_set_transform_matrix(Icons.wind_xform(g.c, 4.0, 0.0, 0.03, 2.0 * u))
 			Speedo.draw_spool(self, g, k, hud._spd_spin, hud._spd_color, hud.spd_best, hud._spd_pop, e, hud.plates == null)
 			draw_set_transform_matrix(Transform2D.IDENTITY)

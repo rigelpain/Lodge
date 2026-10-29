@@ -29,6 +29,9 @@ var bots: Array = []
 var lodge: Node3D
 var rng := RandomNumberGenerator.new()
 var debug := ""
+## 確かめ用: true のあいだ、鳴らした音を played に書きとめる {t（ゲームの秒）, name, near（耳元か）, dist（聞く所からの m）, wind（滑走の風の dB）}
+var log_on := false
+var played: Array = []
 
 var _streams := {}
 var _last_pick := {}
@@ -468,6 +471,32 @@ func sack(who: Node3D, what: String) -> void:
 			_emote_sound(ev, 8, "felt_pat", 3, -8.0, rng.randf_range(1.1, 1.2), at, near)
 
 
+## お金のボタンが財布に入った瞬間の音（craft_ui.gd が、飛んでいったボタンが財布に着くたびに呼ぶ）。自分の耳元で鳴らす。
+## look: "wood" コッ・"brass" チン・"pearl" シャラン・"raden" 螺鈿の特別な音。
+## たくさん続けて入るときは、前の音から COIN_GAP 秒は空けて鳴らす（重なりすぎず、ぽろぽろと数が分かるように）
+const COIN_GAP := 0.09
+const COIN_SOUNDS := {"wood": ["button_take_wood", -1.0], "brass": ["button_take_brass", 0.0], "pearl": ["button_take_pearl", 0.0],
+		"raden": ["button_take_raden", 2.0]}
+var _coin_at := 0.0   # 次の取得音を鳴らせる時刻（_clock）
+
+
+func coin(look: String) -> void:
+	var spec: Array = COIN_SOUNDS.get(look, COIN_SOUNDS["wood"])
+	var wait := maxf(0.0, _coin_at - _clock)
+	_coin_at = _clock + wait + COIN_GAP
+	if wait > 0.0:
+		await get_tree().create_timer(wait).timeout
+	var s := _wav("%s_01" % spec[0])
+	if s == null:
+		return
+	_note(spec[0], true, Vector3.ZERO)
+	var p := AudioStreamPlayer.new()
+	p.bus = "Self"
+	add_child(p)
+	_shot2(p, s, spec[1], rng.randf_range(0.96, 1.05))
+	p.finished.connect(p.queue_free)
+
+
 ## 雪に縫い留められたボタン（snow_buttons.gd が呼ぶ）。frame は出来事のコマ。その場所から鳴らす。
 ## what: "snap" 糸がぷつん / "pop" ボタンがぽん / "land" 降ってきて雪にぽふ / "sew" 糸がするっと縫い付く /
 ##       "take" 取った（tier: 0 木のコッ・1 真鍮のチン・2 白蝶貝のシャラン・3 螺鈿） / "shears" 裁ちばさみのシャキン / "swish" はさみを出す
@@ -698,6 +727,12 @@ func _on_emote(ev: Dictionary) -> void:
 
 
 ## 出来事のコマ + k に、音を 1 つ鳴らす。自分の音は耳元（Self／Voice）、人の音はその場所から
+func _note(name_: String, near: bool, at: Vector3) -> void:
+	if log_on:
+		played.append({"t": Engine.get_physics_frames() / float(Engine.physics_ticks_per_second), "name": name_, "near": near,
+				"dist": 0.0 if near else _listener().distance_to(at), "wind": _wind_rush.volume_db if _wind_rush else -80.0})
+
+
 func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "", fixed := 0) -> void:
 	var tps := Engine.physics_ticks_per_second
 	var tick := (int(ev.frame) + k) * tps / Doll.FPS
@@ -707,6 +742,7 @@ func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, 
 		return
 	if wait > 0.0:
 		await get_tree().create_timer(wait, true, true).timeout
+	_note(name_, near, at)
 	if near:
 		var p := AudioStreamPlayer.new()
 		p.bus = bus if bus != "" else "Self"
