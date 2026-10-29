@@ -507,6 +507,29 @@ func coin(look: String, step := 0) -> void:
 			q.finished.connect(q.queue_free)
 
 
+## 滑っている最中、速さの表示の糸の上にボタンが縫い付いて積もる（hud.gd が呼ぶ）。ぷつっ・ころん。真鍮は、きらっを重ねる。
+## 耳元で、滑走の風に埋もれない大きさ（2026-10-30 代表「滑り降りている最中もスタックする報酬のコインの音はしてほしい」）
+func stitch(look: String) -> void:
+	var s := _pick("button_stitch", 3)
+	if s == null:
+		return
+	_note("button_stitch", true, Vector3.ZERO)
+	var p := AudioStreamPlayer.new()
+	p.bus = "Self"
+	add_child(p)
+	_shot2(p, s, 0.0, rng.randf_range(0.94, 1.06))
+	p.finished.connect(p.queue_free)
+	if look != "wood":
+		var g := _wav("button_glint_01")
+		if g:
+			_note("button_glint", true, Vector3.ZERO)
+			var q := AudioStreamPlayer.new()
+			q.bus = "Self"
+			add_child(q)
+			_shot2(q, g, -1.0, rng.randf_range(0.98, 1.03))
+			q.finished.connect(q.queue_free)
+
+
 ## 速さの表示の糸の上のボタンが、ぽんと外れて財布へ飛び出す（ぷつ。小さく高く、耳元で）
 func coin_off() -> void:
 	var s := _pick("button_snap", 3)

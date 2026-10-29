@@ -3,7 +3,10 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/button_sound_check.gd -- --bots=0 --no-pip --dir=/path/shots
 ## 道の上（x = 0）に、木・真鍮・木・白蝶貝・木のボタンを置く（中は胴の下でも切れる）。
 ## 鳴った音（ボタンの音・はさみの音）を、時刻（滑り出してからの秒）・名前・耳元か・聞く所からの距離・滑走の風の大きさで書き出す。
-## 財布に入った出来事（craft の earn）の時刻も並べる。絵は、滑っている途中・止まる前・巻き取り・財布に入ったあとを
+## 財布に入った出来事（craft の earn）の時刻も並べる。
+## 途中で降りる: --leave=off（中のソリから、z = --leave-z（既定 34）を過ぎたら E と同じく降りる）、
+##               --leave=sack（中のソリでなく、帯の米袋を足もとに出して乗り、z を過ぎたら N と同じくしまう）。
+##   降りた瞬間の、糸の上のボタンの数と、自分の分の出来事（ride_pay_one）も出す絵は、滑っている途中・止まる前・巻き取り・財布に入ったあとを
 ## <dir>/sound_<番号>.png と、並べた <dir>/sound_sheet.png。
 
 var args := {}
@@ -50,13 +53,27 @@ func _run() -> void:
 		return
 	sb.auto = false
 	sb.clear()
+	var leave: String = args.get("leave", "")
 	var sled: RigidBody3D = main.sled
 	var at := Vector3(0, main.height(0, 3.0) + 0.6, 3.0)
-	sled.reset_to(at)
-	sled.global_transform = Transform3D(Basis(Vector3.UP, PI), at)
-	p.global_position = at + Vector3(1.2, 0.3, 0)
-	p.get_on()
-	p.rotation.y = PI
+	if leave == "sack":   # 帯の米袋を足もとに出して乗る
+		sled.reset_to(Vector3(30, main.height(30, 60) + 0.6, 60))   # 中のソリはどけておく
+		p.global_position = at + Vector3.UP * 0.2
+		p.rotation.y = PI
+		p.toggle_sack()
+		for i in 40:
+			await process_frame
+		sled = main.craft.sack_sled(p.id)
+		if sled == null or p.mode != p.Mode.RIDE:
+			print("米袋に乗れなかった")
+			quit()
+			return
+	else:
+		sled.reset_to(at)
+		sled.global_transform = Transform3D(Basis(Vector3.UP, PI), at)
+		p.global_position = at + Vector3(1.2, 0.3, 0)
+		p.get_on()
+		p.rotation.y = PI
 	p._pitch = -0.1
 	var tiers := [0, 1, 0, 2, 0]
 	for i in tiers.size():
@@ -66,19 +83,30 @@ func _run() -> void:
 		if ev.kind == "earn":
 			earns.append("%.2f 秒  財布に入る（earn）%d（%s）" % [_now(), ev.n, ", ".join(preload("res://craft.gd").pieces(int(ev.n)))]))
 	var paid := [-1.0]
+	var mine: Array = []
 	sb.happened.connect(func(ev: Dictionary) -> void:
-		if ev.kind == "ride_pay":
+		if ev.kind == "ride_pay_one" and int(ev.who) == int(p.id):
+			mine.append("%.2f 秒  自分の分（ride_pay_one）%d（%s）%s" % [_now(), ev.n, ", ".join(ev.sewn), "途中で降りた" if ev.left else "止まった"])
 			paid[0] = _now())
 	audio.log_on = true
 	_t0 = Engine.get_physics_frames() / float(Engine.physics_ticks_per_second)
-	sled.linear_velocity = Vector3(0, 0, 2.0)
+	sled.linear_velocity = Vector3(0, 0, 2.0 if leave != "sack" else 3.0)
+	var left_at := -1.0
 	var shots := {}
 	while true:
 		await process_frame
 		if main.settings and main.settings.is_open:
 			main.settings.set_open(false)
 			p.menu_open = false
-		var z := sled.global_position.z
+		var z := sled.global_position.z if is_instance_valid(sled) else 999.0
+		if leave != "" and left_at < 0.0 and z > float(args.get("leave-z", "34")):
+			await _grab()
+			left_at = _now()
+			print("%.2f 秒  降りる（%s）。糸の上のボタン %d 個、速さ %.1f m/s" % [left_at, leave, main.hud._spd_sewn.size(), sled.linear_velocity.length()])
+			if leave == "sack":
+				p.toggle_sack()   # N と同じ: 乗っている米袋から降りて、しまう
+			else:
+				p.get_off()   # E と同じ
 		if z > 26.0 and not shots.has("mid"):
 			shots["mid"] = true
 			await _grab()
@@ -105,7 +133,9 @@ func _run() -> void:
 	print("---- 財布")
 	for e in earns:
 		print(e)
-	print("滑り終わり（ride_pay）: %.2f 秒" % paid[0])
+	print("---- 自分の分")
+	for e in mine:
+		print(e)
 	_sheet()
 	quit()
 
