@@ -43,7 +43,16 @@ var _spd_knots: Array = []    # ご褒美の結び目を結んだときの _spd_
 var _spd_color := Icons.RED   # 乗っているソリのメインカラー（糸の色のもと）
 ## この滑りで糸の上に縫い込まれたボタン {d（縫い込んだときの _spd_dist）, look（"wood"・"brass"）, claimed（財布へ飛ぶ番が決まった）,
 ## off（糸から外れて飛んでいった）}。12 m ごとの木と、いちばん速い所を超えた真鍮（snow_buttons.gd の ride_mark）
+## 両替（2026-10-30 代表「ゲージが木のコインで埋まって獲得できないお金なんかは、真鍮にして場所を空ければいいのに」）:
+## 同じ素材が EXCHANGE_N 個たまると、くるくる縫い縮まって上の素材 1 個に変わり、場所が空く（木 10 → 真鍮、真鍮 10 → 白蝶貝、
+## 白蝶貝 10 → 螺鈿）。値打ちは変えない。変わるときに素材の音（チン など）ときらめき。entry には両替の進み mk（0〜1）・
+## 行き先 into（番号）、変わってできたボタンには出てからの進み pk（0〜1）を入れる（speedo.gd が描く）
 var _spd_sewn: Array = []
+const EXCHANGE_N := 10
+const EXCHANGE_T := 0.5       # 縫い縮まる長さ (s)
+const NEXT_LOOK := {"wood": "brass", "brass": "pearl", "pearl": "raden"}
+const LOOK_VALUE := {"wood": 1, "brass": 10, "pearl": 100, "raden": 1000}
+var _merge_t0 := -1.0         # いま縫い縮まっている両替の始まり（_clock_now。なければ -1）
 var _reel := 0.0              # 滑り終わって、縫い目の糸を巻き取っている残り (s)。糸の上のボタンは財布へ飛ぶ（craft_ui.gd）
 var _reel_t := 1.6            # この巻き取りの長さ (s)。ボタンが多いほど長い
 var _ride_seen := -99.0       # 最後に乗っていた時刻（止まってすぐ降りても、巻き取りを見せる）
@@ -457,6 +466,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 	# （遅くなると先に消えて、糸の上のボタンが見えないまま財布へ飛んでしまうので）
 	if not _spd_sewn.is_empty() and _clock_now() - _ride_seen < 3.0:
 		on = true
+	_exchange()
 	if _reel > 0.0:   # 巻き取っているあいだは出しておく
 		_reel = maxf(0.0, _reel - dt)
 		on = true
@@ -501,7 +511,7 @@ func _on_buttons(ev: Dictionary) -> void:
 		"ride_mark":
 			if p.mode == Player.Mode.RIDE:
 				var look := String(ev.get("look", "brass"))
-				_spd_sewn.append({"d": _spd_dist, "look": look, "claimed": false, "off": false})
+				_spd_sewn.append({"d": _spd_dist, "look": look, "claimed": false, "off": false, "mk": -1.0, "into": -1, "pk": 1.0, "t": -1.0})
 				if look != "wood":
 					_spd_pop = 1.0
 				var audio = main.get_node_or_null("Audio")
@@ -510,7 +520,8 @@ func _on_buttons(ev: Dictionary) -> void:
 		"ride_pay_one":
 			# 自分の分（止まったとき・途中で降りたとき）: 糸を巻き取って、糸の上のボタンを財布へ
 			if int(ev.who) == int(p.id):
-				_reel_t = maxf(REEL_T, 1.1 + ev.get("sewn", []).size() * 0.065)
+				_exchange(true)   # 縫い縮まっている途中なら、すぐ済ませる（財布へ飛ぶボタンを決める前に）
+				_reel_t = maxf(REEL_T, 1.1 + sewn_looks().size() * 0.065)
 				_reel = _reel_t
 
 
@@ -521,6 +532,70 @@ func _clock_now() -> float:
 
 func reel_k() -> float:
 	return 1.0 - _reel / _reel_t if _reel > 0.0 else 0.0
+
+
+## 両替を進める。縫い縮まり中なら進み mk を動かし、済んだら 10 個を上の素材 1 個にする（いちばん古い 1 個の所に）。
+## 縫い縮まっていなければ、同じ素材が EXCHANGE_N 個たまっているか見て始める。now が true なら、残りを全部すぐ済ませる
+## （巻き取りの前。音は鳴らす）。財布へ飛ぶ番が決まったあと（claimed がある）は両替しない
+func _exchange(now := false) -> void:
+	var t := _clock_now()
+	for guard in 12:
+		if _merge_t0 >= 0.0:
+			var k := 1.0 if now else clampf((t - _merge_t0) / EXCHANGE_T, 0.0, 1.0)
+			var group: Array = []
+			for e in _spd_sewn:
+				if e.mk >= 0.0:
+					e.mk = k
+					group.append(e)
+			if k < 1.0:
+				return
+			# 済んだ: 10 個を取り除き、いちばん古い所に上の素材を 1 個
+			var at: int = _spd_sewn.find(group[0])
+			var nl: String = NEXT_LOOK[group[0].look]
+			var d: float = group[0].d
+			for e in group:
+				_spd_sewn.erase(e)
+			_spd_sewn.insert(at, {"d": d, "look": nl, "claimed": false, "off": false, "mk": -1.0, "into": -1, "pk": 0.0, "t": t})
+			_merge_t0 = -1.0
+			var audio = main.get_node_or_null("Audio") if main else null
+			if audio:
+				audio.exchange(nl)   # チン（上の素材の音）ときらっ
+		for e in _spd_sewn:   # 変わってできたボタンの、ぽんとふくらむきらめき
+			if e.t >= 0.0:
+				e.pk = clampf((t - e.t) / 0.6, 0.0, 1.0)
+		if _spd_sewn.any(func(e): return e.claimed):
+			return
+		var started := false
+		for look in NEXT_LOOK:
+			var same: Array = _spd_sewn.filter(func(e): return e.look == look and not e.off and e.mk < 0.0)
+			if same.size() >= EXCHANGE_N:
+				var into: int = _spd_sewn.find(same[0])
+				for e in same.slice(0, EXCHANGE_N):
+					e.mk = 0.0
+					e.into = into
+				_merge_t0 = t
+				started = true
+				break
+		if not started or not now:
+			return
+
+
+## 糸の上の、まだ財布へ飛んでいないボタンの素材の並び（上＝あとで縫い込んだものから）
+func sewn_looks() -> Array:
+	var out := []
+	for i in range(_spd_sewn.size() - 1, -1, -1):
+		var e: Dictionary = _spd_sewn[i]
+		if not e.off and not e.claimed:
+			out.append(e.look)
+	return out
+
+
+## 糸の上の、まだ財布へ飛んでいないボタンの値打ちの合計
+func sewn_value() -> int:
+	var n := 0
+	for look in sewn_looks():
+		n += int(LOOK_VALUE[look])
+	return n
 
 
 ## 財布へ飛ばす糸の上のボタンを一つ選ぶ（素材 look の、まだ選ばれていないうち、いちばん上＝あとで縫い込んだもの）。番号（なければ -1）

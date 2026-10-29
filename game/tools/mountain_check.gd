@@ -35,6 +35,8 @@ func _initialize() -> void:
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
+	if args.has("pay"):   # 滑った距離と速さのボタン（snow_buttons.gd）: 一回の滑りごとの数を出す
+		_hook_pay.call_deferred()
 	_dummy = GDScript.new()
 	_dummy.source_code = DUMMY_SRC
 	_dummy.reload()
@@ -233,3 +235,13 @@ func _mmss(s: float) -> String:
 	if s < 0.0:
 		return "時間切れ"
 	return "%d 分 %02d 秒" % [int(s) / 60, int(s) % 60]
+
+
+func _hook_pay() -> void:
+	await process_frame
+	var sb = main.get("snow_buttons")
+	if sb == null:
+		return
+	sb.happened.connect(func(ev: Dictionary) -> void:
+		if ev.kind == "ride_pay":
+			print("滑った分: %.0f m、木 %d、真鍮 %d、縫い込んだ数 %d" % [float(ev.dist), int(ev.wood), int(ev.brass), ev.sewn.size()]))

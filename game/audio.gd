@@ -530,6 +530,28 @@ func stitch(look: String) -> void:
 			q.finished.connect(q.queue_free)
 
 
+## 速さの表示の糸の上で、同じ素材が 10 個たまって上の素材に両替された（hud.gd が呼ぶ）。look は変わってできた素材。
+## その素材の音（真鍮のチン・白蝶貝のシャラン・螺鈿）を少し小さく、きらっを重ねて、耳元で
+func exchange(look: String) -> void:
+	var spec: Array = COIN_SHINE.get(look, COIN_SHINE["brass"])
+	var s := _wav("%s_01" % spec[0])
+	if s:
+		_note(spec[0], true, Vector3.ZERO)
+		var p := AudioStreamPlayer.new()
+		p.bus = "Self"
+		add_child(p)
+		_shot2(p, s, spec[1] - 1.0, 1.0)
+		p.finished.connect(p.queue_free)
+	var g := _wav("button_glint_01")
+	if g:
+		_note("button_glint", true, Vector3.ZERO)
+		var q := AudioStreamPlayer.new()
+		q.bus = "Self"
+		add_child(q)
+		_shot2(q, g, -3.0, 1.0)
+		q.finished.connect(q.queue_free)
+
+
 ## 速さの表示の糸の上のボタンが、ぽんと外れて財布へ飛び出す（ぷつ。小さく高く、耳元で）
 func coin_off() -> void:
 	var s := _pick("button_snap", 3)
