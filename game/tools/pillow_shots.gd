@@ -44,6 +44,9 @@ func _at(x: float, z: float, lift := 0.15) -> Vector3:
 
 ## 立つ所から、yaw の向きを見る（0 は -z）
 func _look(yaw: float) -> void:
+	if main.settings and main.settings.is_open:
+		main.settings.set_open(false)
+		p.menu_open = false
 	p.rotation.y = yaw
 	p.set("_pitch", -0.1)
 	await _wait(0.35)
@@ -74,7 +77,15 @@ func _run() -> void:
 	for v in [[0.0, "3dai_mae"], [PI * 0.5, "3dai_yoko"], [PI, "3dai_ushiro"]]:
 		await _look(v[0])
 		await _shot(v[1])
+	# 上下: 頂上から見下ろす（ソリは下）と、ふもとから見上げる（1 台目は上）
+	p.global_position = _at(0.0, 2.0)
+	await _look(PI)
+	await _shot("shita")
+	p.global_position = _at(0.0, 44.0)
+	await _look(0.0)
+	await _shot("ue")
 	# 米袋に乗る
+	p.global_position = stand
 	var e := InputEventKey.new()
 	e.physical_keycode = KEY_N
 	e.pressed = true
@@ -93,4 +104,43 @@ func _run() -> void:
 		main.craft_ui.set_tag_part("cushion", i, false)
 		await _wait(0.2)
 		await _shot("iro%d" % i)
+	# 名札の中身: 最初のソリを押す・乗って滑る・離れる
+	main.craft_ui.set_tag_part("cushion", 1, false)
+	var big: RigidBody3D = main.sled
+	p.sled = big
+	p.global_position = big.to_global(Vector3(0, 0.2, big.HALF.y + big.STAND))
+	p.rotation.y = big.rotation.y
+	p.grab()
+	await _key_hold(KEY_W, 2.5)
+	await _shot("osu")
+	p.let_go()
+	big.reset_to(_at(0.0, 10.0, 0.6))
+	big.rotation.y = PI   # ふもと（+z）へ向ける
+	await _wait(0.3)
+	p.global_position = big.global_position + Vector3(1.5, 0.2, 0)
+	p.sled = big
+	p.get_on()
+	big.parked = false
+	big.apply_central_impulse(Vector3(0, 0, 4.0) * big.mass)
+	await _wait(2.0)
+	await _shot("noru_suberu")
+	p.get_off()
+	await _wait(0.3)
+	p.global_position = _at(-30.0, 60.0)
+	await _look(0.0)
+	await _wait(1.5)
+	await _shot("hanareru")
 	quit()
+
+
+func _key_hold(k: Key, t: float) -> void:
+	var e := InputEventKey.new()
+	e.physical_keycode = k
+	e.pressed = true
+	Input.parse_input_event(e)
+	await _wait(t)
+	var r := InputEventKey.new()
+	r.physical_keycode = k
+	r.pressed = false
+	Input.parse_input_event(r)
+	await process_frame

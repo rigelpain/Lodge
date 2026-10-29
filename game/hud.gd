@@ -42,11 +42,15 @@ var _meeting := false
 var _still_t := 0.0
 var _seen_back := false
 var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
-var compass_style := "pillow"  # 方位磁針の形（"pillow" 斜めから見た四角いピンクッション、"cushion" トマトの針山、"yarn" 毛糸玉、"glass" フィルムの玉。--compass=）
+var compass_style := "3d"      # 方位磁針の形（"3d" 3D のピンクッション、2D の "pillow" 四角いピンクッション・"cushion" トマトの針山・"yarn" 毛糸玉・"glass" フィルムの玉。--compass=）
+var pin3d: SubViewport          # 3D のピンクッションと待ち針（pin_cushion_3d.gd）
 var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
 
 
 func _ready() -> void:
+	pin3d = preload("res://pin_cushion_3d.gd").new()
+	pin3d.main = main
+	add_child(pin3d)
 	layer = 3
 	_view = View.new()
 	_view.hud = self
@@ -95,12 +99,27 @@ func _process(dt: float) -> void:
 		return
 	var p: CharacterBody3D = main.player
 	var sled: RigidBody3D = p.sled if p and is_instance_valid(p.sled) else main.sled   # あなたのそばのソリ（案内に使う。縫ったソリも）
-	# 札: 自分の名札に、自分のソリを指す球の方位磁針。いまつかんでいる・乗っているソリにいる人も
+	# 札: 最後に触ったソリ。畳んで持っていれば、その包み
 	_tag_item = {}
-	_tag_sled = sled
+	_tag_sled = main.sled
+	if p:
+		var last = p.get("last_sled")
+		if last != null and is_instance_valid(last) and last.visible:
+			_tag_sled = last
+		elif not (p.get("last_item") as Dictionary).is_empty():
+			_tag_sled = null
+			_tag_item = p.last_item
 	_update_people(dt, _tag_sled, p)
 	var want_tag := 1.0
+	if p and _tag_sled:
+		var near: bool = p.global_position.distance_to(_tag_sled.global_position) < TAG_NEAR or p.mode != Player.Mode.WALK
+		want_tag = 1.0 if near else 0.0
 	_tag_a = move_toward(_tag_a, want_tag, dt * 2.5)
+	# 名札の上の方位磁針（3D のピンクッション）: 自分のソリの方へ待ち針が倒れる
+	if pin3d and p:
+		pin3d.set_color(SledTags.cushion_color(main.craft.tag_designs.get(p.id, 0)) if main.get("craft") else Color(0.96, 0.78, 0.82))
+		pin3d.update_pins(get_viewport().get_camera_3d(), p)
+
 	for h in _hints.values():
 		h.on = false
 	_order.clear()
@@ -346,6 +365,7 @@ class View extends Control:
 		var u: float = hud.ui()
 		if hud._tag_a > 0.01:
 			_draw_tag(u, hud._tag_a)
+		_draw_compass_above(u)
 		var cam := get_viewport().get_camera_3d()
 		for id in hud._hints:
 			var h: Dictionary = hud._hints[id]
@@ -364,34 +384,113 @@ class View extends Control:
 		if hud.main.settings and hud.main.settings.is_open:
 			_draw_card(u)
 
-	## 左下の札: 自分の名札（sled_tags.gd）に載せた、斜め上から見下ろすピンクッションと待ち針の方位磁針（_draw_pillow）。
-	## 自分の名札が付いたソリ（縫ったソリ・出している米袋）の数だけ待ち針が刺さり、そのソリのある水平の向き
-	## （自分の前がクッションの奥、右が右）へ倒れる。玉の色はソリのメインカラー。距離は、玉の先の巻尺のテープの切れはしに小さな数（m）。
-	## 乗っているソリの針は、クッションの上に寝かせる。自分のソリが 1 台も無いときは、クッションは出さず名札だけ。
-	## 右に、いまつかんでいる・乗っているソリにいる人と、押している人の数だけの糸の矢印
+	## 左下の札: 自分の名札（形・色・判子は自分の名札のデザイン）の中に、丘の断面の上をいま関わっているソリ（最後に触ったソリ）の
+	## 印が進み、ふもとからの赤い糸が登った分だけ伸びる。下に、そのソリにいる人の形と、押している人の数だけの糸の矢印。
+	## 名札の上には、自分のソリの方へ待ち針が倒れる 3D のピンクッション（_draw_compass_above。名札が消えていても出る）
 	func _draw_tag(u: float, a: float) -> void:
 		var main: Node3D = hud.main
-		var p = main.player
-		var craft = main.get("craft")
-		var mine = craft.tag_designs.get(p.id, 0) if craft and p else 0
+		var sled: RigidBody3D = hud._tag_sled
+		var item: Dictionary = hud._tag_item
 		var w := 262.0 * u
 		var h := 146.0 * u
 		var r := Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
-		SledTags.draw_tag(self, r, mine, a, false)
-		var bc := Vector2(r.position.x + 112.0 * u, r.position.y + h * 0.5)
-		_draw_compass(bc, 56.0 * u, u, a)
-		if p == null or p.mode == Player.Mode.WALK:
-			return
-		var px := r.position.x + 192.0 * u
-		var py := r.end.y - 14.0 * u - 26.0 * 56.0 * u / 64.0
-		for x in hud._people.slice(0, 3):
-			var pop: float = hud._pop.get(x[0], 0.0)
-			Icons.icon(self, "person" if x[1] == "stand" else "person_sit", Vector2(px, py - 5.0 * u * sin(pop * PI)), 56.0 * u * (1.0 + 0.3 * sin(pop * PI)), a * (1.0 if x[3] else 0.5), x[2])
-			px += 24.0 * u
+		var craft = main.get("craft")
+		var idx = craft.tag_designs.get(main.player.id, 0) if craft and main.player else 0   # 自分の名札
+		SledTags.draw_tag(self, r, idx, a, false)
+		var ink: Color = SledTags.design(idx).edge
+		# 丘の断面（頂上から PROFILE_R までの右半分と、頂上の向こうを少し）
+		var x0 := r.position.x + 44.0 * u
+		var x1 := r.end.x - 14.0 * u
+		var yb := r.position.y + 76.0 * u
+		var yt := r.position.y + 16.0 * u
+		var rmin := -14.0
+		var to_x := func(rr: float) -> float: return lerpf(x0, x1, (rr - rmin) / (PROFILE_R - rmin))
+		var to_y := func(hh: float) -> float: return lerpf(yb, yt, hh / main.HILL_H)
+		var prof := PackedVector2Array()
+		for i in 33:
+			var rr := lerpf(rmin, PROFILE_R, i / 32.0)
+			prof.append(Vector2(to_x.call(rr), to_y.call(main.hill(rr, 0.0))))
+		var mound := prof.duplicate()
+		mound.append(Vector2(x1, yb + 4.0 * u))
+		mound.append(Vector2(x0, yb + 4.0 * u))
 		Icons.screen()
-		for i in mini(hud._n_push, 4):
+		Icons.patch(self, mound, Color(0.90, 0.93, 0.99), a, false)
+		Icons.dashes(self, prof, Icons.THREAD, 1.3 * u, 4.0 * u, 3.0 * u, 0.8 * a)
+		# 頂上の旗とふもとのロッジ
+		var top := Vector2(to_x.call(0.0), to_y.call(main.HILL_H))
+		Icons.thread(self, PackedVector2Array([top, top - Vector2(0, 16) * u]), Icons.WOOD, 1.6 * u, a)
+		Icons.patch(self, PackedVector2Array([top - Vector2(0, 16) * u, top + Vector2(11, -12.5) * u, top - Vector2(0, 9) * u]), Icons.RED, a, false)
+		var lodge := Vector2(x1 - 6.0 * u, yb)
+		Icons.patch(self, PackedVector2Array([lodge + Vector2(-7, 0) * u, lodge + Vector2(7, 0) * u, lodge + Vector2(7, -8) * u,
+			lodge + Vector2(0, -14) * u, lodge + Vector2(-7, -8) * u]), Icons.WOOD, a, false)
+		draw_rect(Rect2(lodge + Vector2(-2.2, -6.5) * u, Vector2(4.4, 4.0) * u), Color(1.0, 0.72, 0.30, a))
+		# ソリの印と、ふもとからソリまでの赤い糸（畳んでいれば、持っている人の所）
+		var sp: Vector3 = sled.global_position if sled else (main.player.global_position if main.player else Vector3.ZERO)
+		var sr := clampf(Vector2(sp.x, sp.z).length(), 0.0, PROFILE_R)
+		var climbed := PackedVector2Array()
+		for i in 25:
+			var rr := lerpf(PROFILE_R, sr, i / 24.0)
+			climbed.append(Vector2(to_x.call(rr), to_y.call(main.hill(rr, 0.0)) - 1.0 * u))
+		Icons.thread(self, climbed, Icons.RED, 2.0 * u, a)
+		var mark := Vector2(to_x.call(sr), to_y.call(main.hill(sr, 0.0)))
+		var slope := atan2(to_y.call(main.hill(sr + 1.0, 0.0)) - to_y.call(main.hill(sr - 1.0, 0.0)), to_x.call(sr + 1.0) - to_x.call(sr - 1.0))
+		Icons._o = mark + Vector2(0, -6.0 * u).rotated(slope)
+		Icons._s = 0.5 * u
+		if sled:
+			Icons.sled_side(self, Vector2.ZERO, 1.0, a, slope, true)   # 前は左（頂上）
+		else:   # 畳んだ包み
+			Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
+		# いまソリにいる人と、押している人の数だけの糸の矢印
+		var px := r.position.x + 52.0 * u
+		var py := r.end.y - 12.0 * u - 26.0 * 70.0 * u / 64.0   # 人形の箱の中心（足もとが札の下の縁の少し上）
+		var ppl: Array = hud._people
+		if ppl.is_empty():
+			Icons.icon(self, "person", Vector2(px, py), 70.0 * u, 0.25 * a, Icons.PAPER_EDGE)
+			px += 30.0 * u
+		for x in ppl:
+			var pop: float = hud._pop.get(x[0], 0.0)
+			var sz := 70.0 * u * (1.0 + 0.35 * sin(pop * PI))
+			var lift := 6.0 * u * sin(pop * PI)
+			Icons.icon(self, "person" if x[1] == "stand" else "person_sit", Vector2(px, py - lift), sz, a * (1.0 if x[3] else 0.5), x[2])
+			px += 30.0 * u
+		if sled == null and not item.is_empty():
+			# 畳んだソリは形がわからないので、広げた姿をくるくる回して見せる（タグの窓）
+			var tw := 62.0 * u
+			var win := Rect2(Vector2(r.end.x - tw - 14.0 * u, r.end.y - tw - 8.0 * u), Vector2(tw, tw))
+			Icons.screen()
+			Icons.patch(self, Icons.rr(win.position.x, win.position.y, tw, tw, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, ink)
+			draw_texture_rect(SledTags.turntable(item.get("sled", "mid"), item.get("fabric", "")), win.grow(-3.0 * u), false, Color(1, 1, 1, a))
+			return
+		Icons.screen()
+		var n: int = mini(hud._n_push, 5)
+		px += 8.0 * u
+		for i in n:
 			var wave := 0.5 + 0.5 * sin((hud._flow - i * 0.3) * TAU)
-			Icons.chevron(self, Vector2(r.position.x + 186.0 * u + i * 14.0 * u, r.position.y + 26.0 * u), 16.0 * u, Icons.THREAD, a * (0.45 + 0.55 * wave), 0.0, 2.6 * u)
+			var big: float = 1.0 + 0.5 * hud._chev_pop * float(i == n - 1)
+			Icons.chevron(self, Vector2(px + i * 16.0 * u, py + 6.0 * u), 20.0 * u * big, Icons.THREAD, a * (0.45 + 0.55 * wave), 0.0, 3.0 * u)
+
+	## 名札の上に、方位磁針（3D のピンクッションと待ち針）。玉の所に距離の巻尺
+	func _draw_compass_above(u: float) -> void:
+		var w := 262.0 * u
+		var h := 146.0 * u
+		var tag := Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
+		if hud.compass_style != "3d":   # 2D の形（--compass=pillow|cushion|yarn|glass）
+			_draw_compass(Vector2(tag.position.x + 110.0 * u, tag.position.y - 62.0 * u), 56.0 * u, u, 1.0)
+			return
+		var pc = hud.pin3d
+		if pc == null or pc.count == 0:
+			return
+		var vs := Vector2(pc.size)
+		var dw := 210.0 * u
+		var dr := Rect2(Vector2(tag.position.x + 6.0 * u, tag.position.y - dw * vs.y / vs.x + 26.0 * u), Vector2(dw, dw * vs.y / vs.x))
+		draw_texture_rect(pc.get_texture(), dr, false)
+		for hp in pc.head_points:
+			if float(hp[1]) <= 0.0:
+				continue
+			var at: Vector2 = dr.position + (hp[0] as Vector2) * dr.size / vs
+			var out := (at - dr.get_center()).normalized()
+			out = (out + Vector2(0, -0.5)).normalized()
+			_tape(at + out * 6.0 * u, out, float(hp[1]), u, 1.0)
 
 	## 自分のソリの向きと距離: [画面での向き（玉の半径 1 で）, 前の度合い（1 真正面、-1 真後ろ）, 色, 距離（0 は乗っている）,
 	## 水平の向き（x 右、y 前。カメラの前と右を水平にした基準の、長さ 1）]
