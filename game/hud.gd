@@ -88,6 +88,8 @@ func _ready() -> void:
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_view.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	_view.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS   # 刺繍枠の絵を縮めて描く
+	_view.z_index = 10   # 板の印刷（重なりの順に z_index を使う）より上に。Esc の札が名札の下に隠れないように
 	add_child(_view)
 	if main and not main.args.has("flat-hud"):
 		plates = Plates.new()
@@ -573,13 +575,22 @@ func _update_plates() -> void:
 		var rb: Rect2 = g.ribbon
 		plates.plate("ribbon", _painter.bind("ribbon"), rb, 8.0 * u, 5.0 * u, "felt", Vector2(rb.get_center().x, rb.position.y),
 			[6.0, 0.05, 0.05, 1.5 * u], _spd_a)
-	var sc = main.get("self_cam")
-	if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
-		sc.plain_frame = true
-		var fr: Control = sc._frame
-		var rr := fr.size.x / 2.0
-		plates.model("hoop", "res://props/hud/hud_hoop.glb", fr.position + fr.size / 2.0, (rr + 3.0 * u) / 1.03, 0.0, [5.0, 0.0, 0.03, 2.5 * u], 1.0)
 	plates.end()
+
+
+var _hoop_tex: ImageTexture
+
+## 刺繍枠の絵（縮めて描くので、ミップマップを作っておく）
+func hoop_texture() -> ImageTexture:
+	if _hoop_tex == null:
+		var t := load("res://props/hud/hoop.png") as Texture2D
+		if t == null:
+			return null
+		var img := t.get_image()
+		img.decompress()
+		img.generate_mipmaps()
+		_hoop_tex = ImageTexture.create_from_image(img)
+	return _hoop_tex
 
 
 ## 板に貼る印刷を描く入れ物（View の part だけを描く）
@@ -667,6 +678,7 @@ class View extends Control:
 			if h.a < 0.02 or not h.get("shown", false):
 				continue
 			Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, ease(h.a, 0.5))   # 操作のための表示なので、平らで、風でも揺らさない
+		_draw_hoop(u)
 		_draw_pip_back(u)
 		if hud._spd_a > 0.01:
 			_draw_speedo(u)
@@ -860,6 +872,26 @@ class View extends Control:
 			draw_circle(c + Vector2(0.6, 1.0) * u, 4.2 * u, Color(Icons.SHADOW, 0.25))
 			draw_circle(c, 4.2 * u, Icons.RED)
 			draw_arc(c, 2.4 * u, 0.4, 4.0, 8, Icons.RED.lightened(0.35), 1.0 * u, true)   # 糸の巻き
+
+	## 右下の小窓の刺繍枠: Blender で本物らしく作って正面から撮った絵（props/build_hud.py の --hoop-png）を、画面の解像度のまま重ねる
+	## （2026-10-29 代表「刺繍小窓の刺繍枠をリアルな木枠にしてほしい。いまなんかぼやぼやしてモチーフが伝わらない」）。
+	## 絵の内の輪の半径は 228.6 px（640 px を 2.8 単位で撮った 1 単位）。窓の縁に少しかぶせる。風では小窓と同じだけ揺れる
+	func _draw_hoop(u: float) -> void:
+		var sc = hud.main.get("self_cam")
+		if sc == null or not is_instance_valid(sc) or sc.get("hidden") or sc.get("_frame") == null:
+			return
+		sc.plain_frame = true   # 小窓の側は、赤い糸の縁取りだけ
+		var fr: Control = sc._frame
+		var c := fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui())   # 小窓のずれを除いた真ん中（揺れは下で同じだけかける）
+		var tex: Texture2D = hud.hoop_texture()
+		if tex == null:
+			return
+		var s := (fr.size.x / 2.0 + 3.0 * u) / 228.6
+		var sz := Vector2(tex.get_width(), tex.get_height()) * s
+		draw_set_transform_matrix(Icons.wind_xform(c, 5.0, 0.0, 0.03, 2.5 * u))
+		draw_texture_rect(tex, Rect2(c - sz / 2.0 + Vector2(3.0, 5.0) * u, sz), false, Color(Icons.SHADOW, 0.32))   # 落ち影
+		draw_texture_rect(tex, Rect2(c - sz / 2.0, sz), false)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
 
 	## 右上の 360° 映像が後ろ向きのしるし（「後ろ」の文字の代わり）
 	func _draw_pip_back(u: float) -> void:
