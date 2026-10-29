@@ -1,8 +1,9 @@
 extends Node
 
 const Look := preload("res://look.gd")
+const Doll := preload("res://doll.gd")
 ## Lodge の音。考え方は design/sound-concept.md。
-## 場にあるものしか鳴らさない。外は響かない。言葉はない。
+## 場にあるものしか鳴らさない。外は響かない。言葉はない（声は言葉にならない「ワ〜」「ウン」「ンーン」だけ）。
 ##
 ## wav は sound/wav/ から実行時に読む（原型なので res:// の外。書き出すときは res:// に写す）。
 ## バス: Outdoor（外。ロッジの中ではこもる）← Speaker（柱の曲）、Wind（風）
@@ -73,6 +74,9 @@ func _ready() -> void:
 	_make_walkers()
 	_make_lodge()
 	_set_zone(0)
+	var hub := world.get_node_or_null("Emotes")
+	if hub:
+		hub.happened.connect(_on_emote)
 
 
 # ---- 読み込み ---------------------------------------------------------------
@@ -566,3 +570,80 @@ func _physics_process(dt: float) -> void:
 		debug = "音: 区域=%d 風=%.0f/%.0f dB 滑り木=%.0f dB 近い柱 %.0f m 遅れ %.0f ms ゲート %.1f" % [
 				_zone, _wind_calm.volume_db, _wind_rush.volume_db, _runner_fast.volume_db,
 				best, near.last_delay * 1000.0, _rush_gate]
+
+
+# ---- 身ぶりと声（emotes.gd の出来事） ------------------------------------------
+# 声は Voice、身ぶりの小さな音は Self（自分）か Outdoor（人の）。人形の姿勢と同じコマで鳴らす
+
+## 身ぶりの何コマ目に、どの音を鳴らすか: [コマ, 名前, 数, 音量 dB, 高さ]
+const EMOTE_SOUNDS := {
+	"wa": [[2, "voice_wa", 3, -4.0, 1.0]],
+	"un": [[0, "voice_un", 3, -5.0, 1.0]],
+	"nn": [[0, "voice_nn", 3, -5.0, 1.0]],
+	"huh": [[2, "voice_unq", 3, -5.0, 1.0]],
+	"hit": [[0, "voice_surprise", 3, -4.0, 1.0]],   # 雪玉が当たって、わっ
+	"whiff": [[2, "swish", 2, -10.0, 1.0]],
+	"throw": [[0, "swish", 2, -8.0, 1.15]],
+	"clap": [[2, "felt_pat", 3, -12.0, 1.3], [6, "felt_pat", 3, -12.0, 1.25], [10, "felt_pat", 3, -12.0, 1.3], [14, "felt_pat", 3, -12.0, 1.2]],
+	"make_ball": [[4, "step_snow", 6, -16.0, 1.7], [6, "step_snow", 6, -17.0, 1.8], [8, "step_snow", 6, -16.0, 1.7], [10, "step_snow", 6, -17.0, 1.8], [12, "step_snow", 6, -16.0, 1.75], [14, "step_snow", 6, -18.0, 1.9]],
+	"breath": [[0, "breath", 4, -22.0, 1.1], [5, "breath", 4, -14.0, 0.6]],
+}
+
+
+func _on_emote(ev: Dictionary) -> void:
+	var hub: Node = world.get_node("Emotes")
+	var who: Node3D = hub.who_of(ev.get("who", -1)) if ev.has("who") else null
+	var is_self: bool = who != null and who == player
+	var pitch: float = who.get("voice_pitch") if who and who.get("voice_pitch") != null else 1.0
+	var size: int = who.get("voice_size") if who and who.get("voice_size") != null else 1
+	match ev.kind:
+		"high_five", "shake":
+			# 二人に配られるので、片方のぶんだけ鳴らす。手が合う所で（握手は低く、そっと握る音）
+			if ev.who < ev.with:
+				var near_self: bool = who == player or hub.who_of(ev.with) == player
+				var at: Vector3 = ev.grips[0][1]
+				if ev.kind == "high_five":
+					_emote_sound(ev, 3, "felt_pat", 3, -2.0 if near_self else -5.0, rng.randf_range(0.95, 1.05), at, near_self)
+				else:
+					_emote_sound(ev, 2, "felt_pat", 3, -9.0 if near_self else -12.0, rng.randf_range(0.72, 0.8), at, near_self)
+			return
+		"hands":
+			# 手の形を掲げる: 袖が切る小さな音（下ろすときは鳴らさない）
+			if ev.hands == "" or who == null:
+				return
+			_emote_sound(ev, 0, "swish", 2, -16.0, rng.randf_range(1.3, 1.5), who.global_position + Vector3.UP * 1.0, is_self)
+			return
+		"splat":
+			_emote_sound(ev, 0, "snow_splat", 3, -6.0, rng.randf_range(0.9, 1.1), ev.point, false)
+			return
+	if who == null or not EMOTE_SOUNDS.has(ev.kind):
+		return
+	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "hit", "breath"]
+	for s in EMOTE_SOUNDS[ev.kind]:
+		var p: float = s[4] * (pitch * rng.randf_range(0.98, 1.02) if voice else rng.randf_range(0.95, 1.05))
+		# 声（voice_*）は人ごとに決まった大きさの 1 つ（01 ふつう・02 高い・03 低い）。ほかの音は毎回選ぶ
+		var fixed: int = size if (s[1] as String).begins_with("voice_") else 0
+		_emote_sound(ev, s[0], s[1], s[2], s[3], p, who.global_position + Vector3.UP * 1.0, is_self, "Voice" if voice else "", fixed)
+
+
+## 出来事のコマ + k に、音を 1 つ鳴らす。自分の音は耳元（Self／Voice）、人の音はその場所から
+func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "", fixed := 0) -> void:
+	var tps := Engine.physics_ticks_per_second
+	var tick := (int(ev.frame) + k) * tps / Doll.FPS
+	var wait := maxf(0.0, float(tick - Engine.get_physics_frames()) / tps)
+	var s := _wav("%s_%02d" % [name_, fixed]) if fixed > 0 else _pick(name_, count)
+	if s == null:
+		return
+	if wait > 0.0:
+		await get_tree().create_timer(wait, true, true).timeout
+	if near:
+		var p := AudioStreamPlayer.new()
+		p.bus = bus if bus != "" else "Self"
+		add_child(p)
+		_shot2(p, s, db - 4.0, pitch)
+		p.finished.connect(p.queue_free)
+	else:
+		var p := _p3(world, bus if bus != "" else "Outdoor", db, 5.0, 45.0)
+		p.global_position = at
+		_shot(p, s, db, pitch)
+		p.finished.connect(p.queue_free)

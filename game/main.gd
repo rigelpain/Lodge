@@ -30,9 +30,11 @@ const Settings := preload("res://settings.gd")
 const Audio := preload("res://audio.gd")
 const RideWind := preload("res://ride_wind.gd")
 const SewingMachine := preload("res://sewing_machine.gd")
+const Emotes := preload("res://emotes.gd")
 
 var sled: RigidBody3D
 var player: CharacterBody3D
+var emotes: Emotes          # 身ぶりと声の配り役（人より先に置く。人が登録する）
 var hud: Label
 var args := {}
 var elapsed := 0.0
@@ -104,6 +106,10 @@ func _ready() -> void:
 	add_child(sled)
 	if args.has("sled-yaw"):   # 確かめ用: 最初からソリを横や逆に向けておく
 		sled.rotation.y = deg_to_rad(float(args["sled-yaw"]))
+
+	emotes = Emotes.new()
+	emotes.name = "Emotes"
+	add_child(emotes)
 
 	if not args.has("no-player"):
 		player = Player.new()
@@ -733,6 +739,7 @@ func _physics_process(dt: float) -> void:
 			lines.append("マウス 見回す　ホイール／ピンチ 視野角　C 一人称／三人称　V 360映像の見せ方　P 360映像を消す　Esc 設定")
 			if sewing and sewing.phase != sewing.Phase.WAIT:   # ミシンの前（原型の操作の案内。ゲームの文字ではない）
 				lines.append("ミシン: T 縫う　Y コマ撮り／なめらか（いま %s）　H 仲間を足踏みに" % ("コマ撮り" if sewing.stepped else "なめらか"))
+			lines.append("Tab 身ぶりの輪（1〜6 でも）　Q 片手／両手　X 右／左　B 息を吐く　左Ctrl しゃがむ（雪面を見て F で雪玉）　左クリック ためて投げる／高い両手で拍手　右クリック 指さす")
 	hud.text = "\n".join(lines)
 
 	# --sim: あなたが W を押し続けたことにする（吸い付き→押すの確かめ用）
