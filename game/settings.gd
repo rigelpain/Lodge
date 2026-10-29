@@ -15,6 +15,7 @@ const ITEMS := [
 	["bob", "視点の揺れ（押す・引くとき）", "bool", true, null],
 	["fov_kick", "押すときに画角が少し広がる", "bool", true, null],
 	["pip", "右上の 360° 映像", "bool", true, null],
+	["selfcam", "右下の自分の姿（前から）", "bool", true, null],
 	["snow", "舞う雪", "bool", true, null],
 	["wind", "風の流れ（滑るとき）", "float", 1.0, [0.0, 1.0, 0.05]],
 	["third", "三人称", "bool", false, null],

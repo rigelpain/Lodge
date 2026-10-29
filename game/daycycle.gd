@@ -21,6 +21,7 @@ var _env: Environment
 var _sky_mat: ShaderMaterial
 var _sky_t := 0.0
 var _dial: Control
+var dial_right := 16.0            # 画面の右の端から日時計までの間（px）。右下の自分の小窓（self_cam.gd）があれば、その左に寄せる
 var _ink_t := 0.0
 var _ink_target := 1.0
 
@@ -57,6 +58,8 @@ func _process(dt: float) -> void:
 	_sky_t += dt
 	_apply(_sky_t >= SKY_EVERY)
 	if _dial:
+		_dial.offset_right = -dial_right
+		_dial.offset_left = -(Dial.R * 2 + 10 + dial_right)
 		_dial.pivot_offset = _dial.size   # 右下の角を動かさずに、HUD とそろえた大きさにする
 		_dial.scale = Vector2.ONE * preload("res://hud_icons.gd").ui_scale(_dial.get_viewport_rect().size.y)
 		_update_ink(dt)
@@ -78,8 +81,8 @@ func _make_dial() -> void:
 	_dial = Dial.new()
 	_dial.cycle = self
 	_dial.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_dial.offset_left = -(Dial.R * 2 + 16 + 10)
-	_dial.offset_right = -16
+	_dial.offset_left = -(Dial.R * 2 + 10 + dial_right)
+	_dial.offset_right = -dial_right
 	_dial.offset_top = -(Dial.R + 16 + 14)
 	_dial.offset_bottom = -12
 	_dial.mouse_filter = Control.MOUSE_FILTER_IGNORE

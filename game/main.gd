@@ -37,6 +37,7 @@ const RideWind := preload("res://ride_wind.gd")
 const SewingMachine := preload("res://sewing_machine.gd")
 const Emotes := preload("res://emotes.gd")
 const Hud := preload("res://hud.gd")
+const SelfCam := preload("res://self_cam.gd")
 const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
 const CraftUi := preload("res://craft_ui.gd")
@@ -178,6 +179,11 @@ func _ready() -> void:
 
 	if player and not args.has("no-pip"):
 		_make_pip()
+	if player and not args.has("no-selfcam"):   # 右下の、自分を前から映す小窓
+		self_cam = SelfCam.new()
+		self_cam.main = self
+		self_cam.player = player
+		add_child(self_cam)
 	if not args.has("no-snow"):
 		_make_snowfall(player if player else self)
 	if player and not args.has("no-wind"):   # 滑るときの風（あなたの画面だけ）
@@ -315,6 +321,7 @@ var env: Environment
 var snowfall: GPUParticles3D
 var ride_wind: Node3D
 var _pip_layer: CanvasLayer
+var self_cam: CanvasLayer
 var pip_frame: PanelContainer
 var pip_mat: ShaderMaterial
 var pip_mode := 0
@@ -906,6 +913,8 @@ func _apply_setting(key: String, v) -> void:
 		"pip":
 			pip_hidden = not v
 			if _pip_layer: _pip_layer.visible = v
+		"selfcam":
+			if self_cam: self_cam.set_shown(v)
 		"snow":
 			if snowfall: snowfall.emitting = v; snowfall.visible = v
 		"third":
