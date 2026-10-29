@@ -20,6 +20,7 @@ var main: Node3D
 var t := 0.0
 var _set := false
 var _mash_n := -1
+var _frame_k := -1
 
 
 func _initialize() -> void:
@@ -141,6 +142,19 @@ func _process(dt: float) -> bool:
 				_key(KEY_SPACE, false)
 		if args.has("log-speed") and int(t * 2.0) != int((t - dt) * 2.0):
 			print("t=%.1f 速さ=%.1f 表示=%.2f いちばん=%.1f" % [t, sled.linear_velocity.length(), main.hud._spd_a, main.hud.spd_best])
+	# --frames=N: --at から --every 秒ごとに N 枚、out の .png の前に _00 の番号を付けて保存する（動きを見る用）
+	if args.has("frames") and t > float(args.get("at", "4")):
+		var n := int(args["frames"])
+		var every := float(args.get("every", "0.0417"))
+		var k := int((t - float(args.get("at", "4"))) / every)
+		if k != _frame_k and k < n:
+			_frame_k = k
+			var base: String = args.get("out", "/tmp/hud.png").trim_suffix(".png")
+			root.get_texture().get_image().save_png("%s_%02d.png" % [base, k])
+		if k >= n:
+			print("保存: %d 枚  速さ: %.1f" % [n, sled.linear_velocity.length()])
+			return true
+		return false
 	if t > float(args.get("at", "4")):
 		var out: String = args.get("out", "/tmp/hud.png")
 		root.get_texture().get_image().save_png(out)

@@ -8,6 +8,7 @@ extends RefCounted
 ## best は今日いちばんの速さ、pop は弾み（1→0）、a は薄さ。数字の単位は文字でなく、小さな風の筋の印。
 
 const Icons := preload("res://hud_icons.gd")
+const RideWind := preload("res://ride_wind.gd")
 const TOP := 16.0            # 目盛りの上限 (m/s)。米袋で蹴って届く上限（sled.gd の KICK_TOP）
 const SPOOL_WOOD := Color(0.78, 0.60, 0.38)
 const TAPE := Color(0.98, 0.80, 0.30)
@@ -23,7 +24,7 @@ static func draw(ci: CanvasItem, style: String, box: Rect2, speed: float, k: flo
 
 ## 盛り上がり: 風と同じく 2 m/s から出て 9 m/s で満ち、その先（米袋の連打など）はさらに少しずつ増える
 static func level_of(speed: float) -> float:
-	return smoothstep(2.0, 9.0, speed) + clampf((speed - 9.0) / 12.0, 0.0, 0.6)
+	return RideWind.level_of(speed) + clampf((speed - RideWind.SPEED_FULL) / 12.0, 0.0, 0.6)
 
 
 ## 速さの数字（大きな刺繍）と、単位の印（小さな風の筋）。at は数字の左の縦のまんなか

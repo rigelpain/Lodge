@@ -367,8 +367,10 @@ class View extends Control:
 			_draw_machine(u)
 		if ui.gear_open:
 			_draw_gear_screen(u)
-		if ui._bar_a > 0.01:
+		if ui._bar_a > 0.01:   # 持ち物の列は、滑っているあいだ風で小刻みに震える（hud.gd が Icons.wind を入れる）
+			draw_set_transform_matrix(Icons.wind_xform(Vector2(size.x / 2.0, size.y - 60.0 * u), 3.0, 0.0, 0.02, 2.0 * u))
 			_draw_bar(u, ui._bar_a)
+			draw_set_transform_matrix(Transform2D.IDENTITY)
 		_draw_gear(u)
 
 	## 装備の枠: 帯に下げた米袋。N で出す・しまう、Shift+N で替える。持っている米袋の数だけ点（選んでいるのは赤）
