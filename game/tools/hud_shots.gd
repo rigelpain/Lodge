@@ -11,7 +11,7 @@ extends SceneTree
 ##   lodge   ロッジの中（札は消える）
 ##   menu    Esc を押したとき（操作の札）
 ##   ring    Tab で身ぶりの輪を出したとき（仲間のそば）
-## --tp で三人称（--cam-dist=m・--cam-height=m でカメラの距離と高さ。保存しない）。
+## --tp で三人称（--cam-dist=m・--cam-frame=-0.75〜0.5 でカメラの距離と人形の画面の高さ。保存しない）。
 ## --hud-scale=0.7〜1.6 と --menu-scale=0.7〜1.6 で、設定の「HUD の大きさ」「メニューの大きさ」を、保存せずに当てて撮る。
 ## main.gd の引数（--bots など）もそのまま効く。
 
@@ -117,7 +117,10 @@ func _process(dt: float) -> bool:
 		if args.has("tp"):
 			p.set_third(true)
 			p.cam_dist = float(args.get("cam-dist", str(p.cam_dist)))
-			p.cam_height = float(args.get("cam-height", str(p.cam_height)))
+			p.cam_frame = float(args.get("cam-frame", str(p.cam_frame)))
+		# --yaw-off=度: 見る向きを、体の向きからこれだけ回す（ソリをつかんだまま横や後ろを見る。顔の向きの確かめ）
+		if args.has("yaw-off"):
+			p.rotation.y += deg_to_rad(float(args["yaw-off"]))
 		# 大きさの設定は、保存してある値に関わらず、引数の値で（保存はしない）
 		if args.has("hud-scale"):
 			preload("res://hud_icons.gd").user_scale = float(args["hud-scale"])
@@ -136,6 +139,9 @@ func _process(dt: float) -> bool:
 	if _set and scene != "menu" and main.settings.is_open:   # 撮るあいだは設定の画面を開かない（窓の切り替えなどで開くことがある）
 		main.settings.set_open(false)
 		p.menu_open = false
+	var cu = main.get("craft_ui")   # 撮るあいだは装備の画面も開かない（窓の切り替えなどで開くことがある）
+	if _set and cu and cu.get("gear_open"):
+		cu.close_gear()
 	if main.hud and not args.has("hud-debug"):
 		main.hud.debug_on = false   # 保存してある「確かめ用の数字」に関わらず消す
 	if _set and (scene == "people" or scene == "ring"):
@@ -178,6 +184,11 @@ func _process(dt: float) -> bool:
 		if p.get("ring"): print("輪: ", p.ring.visible, " ", p.ring.scale, " ", p.menu_open)
 		if main.hud.get("cards") != null:
 			print("札: ", main.hud.cards.size(), " 前=", main.hud._card_key, " 見えている=", main.hud.shown_card().get("key", ""))
+		if args.has("tp"):   # 確かめ用: 人形の見る先が、頭からどこにあるか（カメラの前の向きとの角度）
+			var head: Vector3 = p.global_position + Vector3.UP * 1.6
+			var to: Vector3 = p.doll.gaze - head
+			var fwd: Vector3 = -p.cam.global_basis.z
+			print("見る先: 頭から %.2f m、カメラの前の向きとの角度 %.0f°" % [to.length(), rad_to_deg(to.angle_to(fwd))])
 		print("保存: ", out, "  案内: ", main.hud.uses, "  押している人: ", sled.pushers, "  速さ: %.1f" % sled.linear_velocity.length())
 		return true
 	return false

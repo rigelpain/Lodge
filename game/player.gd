@@ -58,9 +58,14 @@ var prompt := ""             # 画面に出す一言（main.gd が読む）
 var base_fov := 75.0         # ホイールで変える視野角
 var third := false           # C で三人称
 var cam_dist := 3.4          # 三人称: 頭の後ろからカメラまでの距離 (m)。Alt＋ホイール・ピンチ・二本指の縦・設定
-var cam_height := 0.6        # 三人称: 頭より上のカメラの高さ (m)。Alt＋Shift＋ホイール・二本指の横・設定
+var cam_frame := -0.2        # 三人称: 人形の目の高さの線が、画面のどの高さに来るか（まんなかが 0、上の縁が 1、下の縁が -1）。
+                             # 負で人形が画面の下のほうに来て、上が広く見える。カメラの見下ろす角度はマウスの上下のまま
+                             # （2026-10-30 代表「キャラを中心とした角度ではなく、キャラの水平ラインの画面での高さの調整がしたい」）。
+                             # Alt＋Shift＋ホイール・二本指の横・設定
 const CAM_DIST := Vector2(1.4, 9.0)     # 人形の真後ろ近く 〜 ソリ全体が見える遠さ
-const CAM_HEIGHT := Vector2(-0.3, 3.0)  # 肩ごし 〜 見下ろす
+const CAM_FRAME := Vector2(-0.75, 0.5)  # 画面の下のほう 〜 少し上
+const CAM_RISE := 0.4                   # カメラは頭より少し上から見る (m)。見下ろす角度はマウスの上下で変わる
+var _gaze_from := Vector3.INF           # 三人称で、人形の見る先を測る所（頭）。一人称ではカメラ
 var _cam_save_t := -1.0      # ホイールで変えた視野角・カメラを、少し止まってから設定に保存する
 var _cam_free := 0.0         # 三人称のカメラが、当たりで縮められずにいられる距離（いまの値）
 var bob_enabled := true      # 設定: 押す・引くときの視点の揺れ
@@ -215,10 +220,10 @@ func _zoom_fov(d: float) -> void:
 	_cam_save_t = 0.6
 
 
-## 三人称のカメラの距離と高さを変える（ホイール・ピンチ・二本指）。少し止まってから設定に保存する
-func _zoom_cam(d_dist: float, d_height: float) -> void:
+## 三人称のカメラの距離と、人形の画面の高さを変える（ホイール・ピンチ・二本指）。少し止まってから設定に保存する
+func _zoom_cam(d_dist: float, d_frame: float) -> void:
 	cam_dist = clampf(cam_dist + d_dist, CAM_DIST.x, CAM_DIST.y)
-	cam_height = clampf(cam_height + d_height, CAM_HEIGHT.x, CAM_HEIGHT.y)
+	cam_frame = clampf(cam_frame + d_frame, CAM_FRAME.x, CAM_FRAME.y)
 	_cam_save_t = 0.6
 
 
@@ -231,7 +236,7 @@ func _save_cam(dt: float) -> void:
 		if st:
 			st.sync("fov", base_fov)
 			st.sync("cam_dist", cam_dist)
-			st.sync("cam_height", cam_height)
+			st.sync("cam_frame", cam_frame)
 
 
 ## 三人称では自分の体を映し、一人称の手は映さない。滑るときの風（層 5）はどちらでも映す
@@ -257,7 +262,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				cycle_hand(1 if _pan_acc > 0.0 else -1)
 				_pan_acc = 0.0
 		elif third:
-			_zoom_cam(e.delta.y * 0.25, -e.delta.x * 0.1)
+			_zoom_cam(e.delta.y * 0.25, -e.delta.x * 0.03)
 		else:
 			_zoom_fov(e.delta.y * 2.0)
 	elif e is InputEventMagnifyGesture:
@@ -277,7 +282,7 @@ func _unhandled_input(e: InputEvent) -> void:
 				cycle_hand(step)   # 持ち物があれば、ホイールは手に持つ物
 			elif third:
 				if sideways:
-					_zoom_cam(0.0, -0.2 * step)
+					_zoom_cam(0.0, -0.05 * step)   # 上へ回すと、人形が画面の上へ
 				else:
 					_zoom_cam(0.4 * step, 0.0)
 			else:
@@ -543,7 +548,10 @@ func _pose_doll() -> void:
 	doll.dragged = mode == Mode.GRIP and sled.is_dragged(self)
 	doll.airborne = mode == Mode.WALK and not is_on_floor()
 	doll.facing = (sled.global_basis * push_dir) if mode == Mode.GRIP else Vector3.ZERO
-	doll.gaze = cam.global_position - cam.global_basis.z * 6.0
+	# 人形の顔は、カメラの見ている向きの 6 m 先を見る。測る所は、一人称ではカメラ（目）、三人称では頭。
+	# 三人称でカメラから測ると、カメラが 6 m 後ろなら見る先が頭そのものに、9 m なら頭の 3 m 後ろになり、首がねじれていた
+	var from := _gaze_from if third and _gaze_from != Vector3.INF else cam.global_position
+	doll.gaze = from - cam.global_basis.z * 6.0
 	doll.rope_hand = _hand_world() if mode == Mode.ROPE else Vector3.INF
 	doll.lean = Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_W) - _key(KEY_S)) if mode == Mode.RIDE else Vector2.ZERO
 	doll.point_sides = Palm.sides_of(hand)
@@ -741,10 +749,17 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	# 三人称: 頭の少し上を中心に、後ろからカメラの距離と高さで見る。マウスの上下で回り込む。
 	# 頭からカメラへ玉を滑らせて、壁・天井・地面・ソリに当たる手前で止める（埋まらない）。
 	# 当たって縮むときはすぐ、離れて戻るときはゆっくり（壁の向こうが一瞬見えないように）
+	# カメラは頭のまわりをマウスの上下で回り、頭を見る向き（basis）を決める。そのあと、人形の目の高さの線が画面の cam_frame の
+	# 高さに来るよう、カメラを自分の上下の向きに平行にずらす（見下ろす角度は変えない。Camera3D の v_offset と同じ）
 	var pivot := Vector3(0, 1.6, 0)
-	var offset := Vector3(0, cam_height, cam_dist + RIDE_CAM_PUSH * ride_fov / RIDE_FOV_MAX).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
+	var offset := Vector3(0, CAM_RISE, cam_dist + RIDE_CAM_PUSH * ride_fov / RIDE_FOV_MAX).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
 	var pivot_w := to_global(pivot)
-	var want_w := to_global(pivot + offset)
+	_gaze_from = pivot_w
+	var orbit_w := to_global(pivot + offset)
+	var look := Basis.looking_at(pivot_w - orbit_w, Vector3.UP)
+	var reach := (pivot_w - orbit_w).dot(-look.z)
+	var shift := cam_frame * reach * tan(deg_to_rad(cam.fov) / 2.0)
+	var want_w := orbit_w - look.y * shift
 	var floor_y: float = get_parent().height(want_w.x, want_w.z) + 0.4
 	if want_w.y < floor_y:
 		want_w.y = floor_y
@@ -754,8 +769,11 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	var at := pivot_w + ray.normalized() * minf(_cam_free, ray.length())
 	cam.global_position = at if cam.global_position.distance_to(at) > 2.0 or free < _cam_free + 0.01 \
 		else cam.global_position.lerp(at, min(1.0, dt * 10.0))
-	if cam.global_position.distance_to(pivot_w) > 0.05:
-		cam.look_at(pivot_w, Vector3.UP)
+	# 地面や当たりで動かした所から、もう一度頭へ向け直す（ずらした分は除いて向ける。ずらしは縮めた割合だけ残す）
+	var k := minf(_cam_free, ray.length()) / maxf(ray.length(), 0.001)
+	var aim_from := cam.global_position + look.y * shift * k
+	if aim_from.distance_to(pivot_w) > 0.05:
+		cam.global_basis = Basis.looking_at(pivot_w - aim_from, Vector3.UP)
 
 
 ## 乗って滑っている速さから、視野角に足す分を決める。速さは雪のでこぼこで細かく揺れるので、ならしてから使う。

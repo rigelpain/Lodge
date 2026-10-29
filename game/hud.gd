@@ -964,7 +964,7 @@ class View extends Control:
 		# Alt＋ホイール（ピンチ・二本指も）: 一人称は視野角、三人称はカメラの距離。Alt＋Shift＋ホイール（二本指の横）で高さ
 		var pl = hud.main.player
 		if pl and pl.third:
-			rows += [[["Alt", "mouse_wheel"], "cam_dist"], [["Alt", "Shift", "mouse_wheel"], "cam_height"]]
+			rows += [[["Alt", "mouse_wheel"], "cam_dist"], [["Alt", "Shift", "mouse_wheel"], "cam_frame"]]
 		else:
 			rows.append([["Alt", "mouse_wheel"], "zoom"])
 		if hud.main.get("emotes") != null:
