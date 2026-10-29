@@ -10,6 +10,7 @@ config/features=PackedStringArray("4.6")
 [autoload]
 
 DayCycle="*res://daycycle.gd"
+Temperature="*res://temperature.gd"
 
 [display]
 

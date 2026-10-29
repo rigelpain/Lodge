@@ -1,12 +1,17 @@
 extends SceneTree
 ## 白い息を撮る（確かめ用）。ふだんの息・声の息・B の長い息を、吐きはじめから何度か撮る。
 ##   Godot --path game --resolution 960x540 -s res://tools/breath_shots.gd -- --dir=/path [--view=fp|tp|side] [--tag=before]
-##        [--only=normal,voice,long] [--time=10] [--spawn=inside]
+##        [--only=normal,voice,long] [--time=10] [--place=foot|summit|inside|fire]
+## --place: 立つ場所（ふもと・丘の頂上・ロッジの中・暖炉のそば）。--time=23 で夜
+## --move=out|in: ロッジの中から外へ（out）、外から中へ（in）出ながら B で長く吐き、息が気温になじむ様子を撮る
 ## fp 一人称（右下の小窓も写る）、tp 三人称（C）、side 顔の横から（煙の形がいちばん分かる）。
 ## あなたは横を向いて立ち、仲間が 2 m 先でこちらを向く。名前は 息_視点_タグ_秒.png（秒は吐きはじめから）
 ## --fps: 撮らずに、仲間 2 人とあなたが 10 秒息を吐き続けるあいだの fps の平均と最低を出す
 
 const Doll := preload("res://doll.gd")
+const Audio := preload("res://audio.gd")
+const Temperature := preload("res://temperature.gd")
+const MOVE_WHEN := [0.6, 1.2, 2.0, 3.0, 4.2]   # 出入りしてから撮る秒
 const WHEN := [0.4, 0.9, 1.6]   # 吐きはじめから撮る秒
 
 var args := {}
@@ -59,6 +64,10 @@ func _run() -> void:
 		await _fps()
 		quit()
 		return
+	if args.has("move"):
+		await _move()
+		quit()
+		return
 	var view: String = args.get("view", "fp")
 	var dir: String = args.get("dir", "/tmp")
 	DirAccess.make_dir_recursive_absolute(dir)
@@ -79,19 +88,19 @@ func _run() -> void:
 			RenderingServer.force_draw()
 			var path := dir.path_join("%s_%s_%s_%.1f.png" % [kind, view, args.get("tag", "now"), w])
 			root.get_texture().get_image().save_png(path)
-			print("保存: ", path, "  吐いている=", p._exhaling, " 身ぶり=", p.doll.emote_now(), " 長い息=", p.doll._long.emitting if p.doll.get("_long") else "-")
+			var tn := root.get_node_or_null("Temperature")
+			print("保存: ", path.get_file(), "  身ぶり=", p.doll.emote_now(), " 長い息=", p.doll._long.emitting, " 気温=%.1f 見え方=%.2f" % [tn.at(p.doll._long.global_position) if tn else 0.0, p.doll.get("_cold") if p.doll.get("_cold") != null else -1.0], " 口=", p.doll._long.global_position.snapped(Vector3(0.1, 0.1, 0.1)))
 		_key(KEY_B, false)
 		await _frames(200)   # 息が消えるまで
 	quit()
 
 
 ## あなたは横（+x）を向いて立ち、仲間は 2 m 先（あなたの前）でこちらを向く。ロッジの中なら、その場で
-func _stage() -> void:
-	if not args.has("spawn"):
-		var base := Vector3(6.0, 0, 30.0)
-		base.y = main.height(base.x, base.z)
-		p.global_position = base + Vector3.UP * 0.05
-	p.rotation.y = -PI / 2.0
+func _stage(place := "") -> void:
+	if place == "":
+		place = args.get("place", "foot")
+	p.global_position = _place_pos(place)
+	p.rotation.y = _yaw(place)
 	p._pitch = -0.05
 	p.velocity = Vector3.ZERO
 	var fwd: Vector3 = -p.global_basis.z
@@ -99,7 +108,7 @@ func _stage() -> void:
 	for i in bots.size():
 		var b: Node3D = bots[i]
 		var bp: Vector3 = p.global_position + fwd * 2.2 + p.global_basis.x * (0.9 * (i * 2 - 1))
-		if not args.has("spawn"):
+		if place == "foot" or place == "summit" or place == "door":
 			bp.y = main.height(bp.x, bp.z)
 		b.global_position = bp
 		b.look_at(Vector3(p.global_position.x, bp.y, p.global_position.z), Vector3.UP)
@@ -108,7 +117,71 @@ func _stage() -> void:
 	# ふだんの息が勝手に出ないよう、しばらく先へ
 	for d in [p.doll] + bots.map(func(b): return b.doll):
 		d._next_breath = d._frame + 600
-	await _frames(240)
+	await _frames(60)
+	# 寒さがその場になじむまで待つ（なじむのに数秒かかる作り）
+	for i in 900:
+		if absf(p.doll._cold - p.doll._cold_want) < 0.01:
+			break
+		await physics_frame
+
+
+## 向き。ふもとと戸口では、カメラが丘と反対（空のほう）を向くように: 白い息は雪を背にするとほとんど見えない
+func _yaw(place: String) -> float:
+	if place == "foot" or place == "door":
+		var d := Vector2(p.global_position.x - 1.5, p.global_position.z).normalized()   # 丘の頂上（1.5, 0）から
+		return atan2(d.y, -d.x)
+	return -PI / 2.0
+
+
+## 立つ場所（世界）。ロッジの中は床の上
+func _place_pos(place: String) -> Vector3:
+	var lodge: Node3D = main.get_node_or_null("Lodge")
+	match place:
+		"summit":
+			return Vector3(1.5, main.height(1.5, 0.0) + 0.05, 0.0)
+		"inside":
+			return lodge.to_global(Vector3(0.0, 0.05, 4.0))
+		"fire":
+			return lodge.to_global(Temperature.FIRE_FALLBACK + Vector3(1.6, -0.95, 1.6))
+		"door":
+			var d: Vector3 = lodge.to_global(Audio.VEST + Vector3(0, 0, 7.0))
+			return Vector3(d.x, main.height(d.x, d.z) + 0.05, d.z)
+	var base := Vector3(6.0, 0, 30.0)
+	return Vector3(base.x, main.height(base.x, base.z) + 0.05, base.z)
+
+
+## ロッジの出入り: 片方で寒さがなじむまで待ち、B で吐きはじめてから、もう片方へ移る。移ってから何度か撮る
+func _move() -> void:
+	var out: bool = args["move"] == "out"
+	var dir: String = args.get("dir", "/tmp")
+	DirAccess.make_dir_recursive_absolute(dir)
+	await _stage("inside" if out else "door")
+	if main.settings:
+		main.settings.set_open(false)
+	p.menu_open = false
+	_key(KEY_B, true)
+	await _frames(12)
+	var to := _place_pos("door" if out else "inside")
+	p.global_position = to
+	p.rotation.y = _yaw("door" if out else "inside")
+	var t0 := Time.get_ticks_msec()
+	await _frames(8)   # 体と頭（姿勢は 12 fps）が移ってから、カメラを先に替えておく（最初の一枚が、移る前の向きで写らないよう）
+	_camera(args.get("view", "side"))
+	for w in MOVE_WHEN:
+		while (Time.get_ticks_msec() - t0) / 1000.0 < w:
+			await process_frame
+		if main.settings:
+			main.settings.set_open(false)
+		if p.doll.emote.is_empty() and w < 4.0:
+			_key(KEY_B, false)   # 息が 5 秒で切れたら、吐き直す
+			await process_frame
+			_key(KEY_B, true)
+		_camera(args.get("view", "side"))
+		RenderingServer.force_draw()
+		var path := dir.path_join("move_%s_%s_%.1f.png" % [args["move"], args.get("view", "side"), w])
+		root.get_texture().get_image().save_png(path)
+		print("保存: ", path, "  気温=%.1f 見え方の目標=%.2f いま=%.2f" % [root.get_node("Temperature").at(p.doll._long.global_position), p.doll._cold_want, p.doll._cold])
+	_key(KEY_B, false)
 
 
 func _start(kind: String) -> void:
