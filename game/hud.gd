@@ -384,8 +384,8 @@ class View extends Control:
 		if hud.main.settings and hud.main.settings.is_open:
 			_draw_card(u)
 
-	## 左下の札: 自分の名札（形・色・判子は自分の名札のデザイン）の中に、丘の断面の上をいま関わっているソリ（最後に触ったソリ）の
-	## 印が進み、ふもとからの赤い糸が登った分だけ伸びる。下に、そのソリにいる人の形と、押している人の数だけの糸の矢印。
+	## 左下の札: 自分の名札（形・色・柄・素材は自分の名札のデザイン）の中に無地の窓を敷き（sled_tags.gd の window_rect）、
+	## その窓に、いま関わっているソリ（最後に触ったソリ）の丘の断面・印・人の形・糸の矢印を描く（_draw_tag_info）。
 	## 名札の上には、自分のソリの方へ待ち針が倒れる 3D のピンクッション（_draw_compass_above。名札が消えていても出る）
 	func _draw_tag(u: float, a: float) -> void:
 		var main: Node3D = hud.main
@@ -396,13 +396,37 @@ class View extends Control:
 		var r := Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
 		var craft = main.get("craft")
 		var idx = craft.tag_designs.get(main.player.id, 0) if craft and main.player else 0   # 自分の名札
-		SledTags.draw_tag(self, r, idx, a, false)
-		var ink: Color = SledTags.design(idx).edge
+		# 名札の外の影と縁: 雪の白・空の青・ロッジの茶色のどれの上でも、名札の形が浮いて見えるように
+		var pts := SledTags.outline(r, SledTags.design(idx).shape)
+		var halo := Geometry2D.offset_polygon(pts, 1.6 * u, Geometry2D.JOIN_ROUND)
+		if halo.size() > 0:
+			var sh := PackedVector2Array()
+			for q in halo[0]:
+				sh.append(q + Vector2(1.2, 2.2) * u)
+			draw_colored_polygon(sh, Color(Icons.SHADOW, 0.30 * a))
+			var rim := halo[0].duplicate()
+			rim.append(halo[0][0])
+			draw_polyline(rim, Color(Icons.SHADOW, 0.35 * a), 1.2 * u, true)
+		# 名札の中に無地の窓を敷き、情報はその上に描く（名札の柄は、窓のまわりの縁として見える）
+		var win := SledTags.draw_tag(self, r, idx, a, false, true)
+		# 窓の中の絵は 210 × 120（u）の枠で組み、窓に収まるよう縮めて真ん中に置く
+		var fw := 210.0 * u
+		var fh := 120.0 * u
+		var k := minf(minf(win.size.x / fw, win.size.y / fh), 1.06)
+		draw_set_transform(win.get_center() - Vector2(fw, fh) * k / 2.0, 0.0, Vector2(k, k))
+		_draw_tag_info(u, a, fw, fh, sled, item)
+		draw_set_transform(Vector2.ZERO)
+		Icons.screen()
+
+	## 窓の中の絵（左上を原点に fw × fh）: 丘の断面の上をソリの印が進み、ふもとからの赤い糸が登った分だけ伸びる。
+	## 下に、そのソリにいる人の形と、押している人の数だけの糸の矢印。窓の地はいつも明るいので、線は濃く、印には白い縁
+	func _draw_tag_info(u: float, a: float, fw: float, fh: float, sled: RigidBody3D, item: Dictionary) -> void:
+		var main: Node3D = hud.main
 		# 丘の断面（頂上から PROFILE_R までの右半分と、頂上の向こうを少し）
-		var x0 := r.position.x + 44.0 * u
-		var x1 := r.end.x - 14.0 * u
-		var yb := r.position.y + 76.0 * u
-		var yt := r.position.y + 16.0 * u
+		var x0 := 6.0 * u
+		var x1 := fw - 6.0 * u
+		var yb := 64.0 * u
+		var yt := 7.0 * u
 		var rmin := -14.0
 		var to_x := func(rr: float) -> float: return lerpf(x0, x1, (rr - rmin) / (PROFILE_R - rmin))
 		var to_y := func(hh: float) -> float: return lerpf(yb, yt, hh / main.HILL_H)
@@ -414,11 +438,11 @@ class View extends Control:
 		mound.append(Vector2(x1, yb + 4.0 * u))
 		mound.append(Vector2(x0, yb + 4.0 * u))
 		Icons.screen()
-		Icons.patch(self, mound, Color(0.90, 0.93, 0.99), a, false)
-		Icons.dashes(self, prof, Icons.THREAD, 1.3 * u, 4.0 * u, 3.0 * u, 0.8 * a)
+		Icons.patch(self, mound, Color(0.74, 0.83, 0.95), a, false)
+		Icons.thread(self, prof, Icons.THREAD, 1.5 * u, a)
 		# 頂上の旗とふもとのロッジ
 		var top := Vector2(to_x.call(0.0), to_y.call(main.HILL_H))
-		Icons.thread(self, PackedVector2Array([top, top - Vector2(0, 16) * u]), Icons.WOOD, 1.6 * u, a)
+		Icons.thread(self, PackedVector2Array([top, top - Vector2(0, 16) * u]), Icons.WOOD.darkened(0.2), 1.6 * u, a)
 		Icons.patch(self, PackedVector2Array([top - Vector2(0, 16) * u, top + Vector2(11, -12.5) * u, top - Vector2(0, 9) * u]), Icons.RED, a, false)
 		var lodge := Vector2(x1 - 6.0 * u, yb)
 		Icons.patch(self, PackedVector2Array([lodge + Vector2(-7, 0) * u, lodge + Vector2(7, 0) * u, lodge + Vector2(7, -8) * u,
@@ -431,21 +455,23 @@ class View extends Control:
 		for i in 25:
 			var rr := lerpf(PROFILE_R, sr, i / 24.0)
 			climbed.append(Vector2(to_x.call(rr), to_y.call(main.hill(rr, 0.0)) - 1.0 * u))
-		Icons.thread(self, climbed, Icons.RED, 2.0 * u, a)
+		Icons.thread(self, climbed, Icons.RED, 2.2 * u, a)
 		var mark := Vector2(to_x.call(sr), to_y.call(main.hill(sr, 0.0)))
 		var slope := atan2(to_y.call(main.hill(sr + 1.0, 0.0)) - to_y.call(main.hill(sr - 1.0, 0.0)), to_x.call(sr + 1.0) - to_x.call(sr - 1.0))
-		Icons._o = mark + Vector2(0, -6.0 * u).rotated(slope)
+		var mc := mark + Vector2(0, -6.0 * u).rotated(slope)
+		draw_circle(mc, 10.5 * u, Color(1, 1, 1, 0.8 * a))   # 印の白い縁（丘の線や雪から浮かせる）
+		Icons._o = mc
 		Icons._s = 0.5 * u
 		if sled:
 			Icons.sled_side(self, Vector2.ZERO, 1.0, a, slope, true)   # 前は左（頂上）
 		else:   # 畳んだ包み
 			Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
 		# いまソリにいる人と、押している人の数だけの糸の矢印
-		var px := r.position.x + 52.0 * u
-		var py := r.end.y - 12.0 * u - 26.0 * 70.0 * u / 64.0   # 人形の箱の中心（足もとが札の下の縁の少し上）
+		var px := 14.0 * u
+		var py := fh - 29.0 * u   # 人形の箱の中心（足もとが窓の下の縁の少し上）
 		var ppl: Array = hud._people
 		if ppl.is_empty():
-			Icons.icon(self, "person", Vector2(px, py), 70.0 * u, 0.25 * a, Icons.PAPER_EDGE)
+			Icons.icon(self, "person", Vector2(px, py), 70.0 * u, 0.3 * a, Icons.PAPER_EDGE.darkened(0.2))
 			px += 30.0 * u
 		for x in ppl:
 			var pop: float = hud._pop.get(x[0], 0.0)
@@ -455,11 +481,11 @@ class View extends Control:
 			px += 30.0 * u
 		if sled == null and not item.is_empty():
 			# 畳んだソリは形がわからないので、広げた姿をくるくる回して見せる（タグの窓）
-			var tw := 62.0 * u
-			var win := Rect2(Vector2(r.end.x - tw - 14.0 * u, r.end.y - tw - 8.0 * u), Vector2(tw, tw))
+			var tw := 58.0 * u
+			var tr := Rect2(Vector2(fw - tw - 4.0 * u, fh - tw - 2.0 * u), Vector2(tw, tw))
 			Icons.screen()
-			Icons.patch(self, Icons.rr(win.position.x, win.position.y, tw, tw, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, ink)
-			draw_texture_rect(SledTags.turntable(item.get("sled", "mid"), item.get("fabric", "")), win.grow(-3.0 * u), false, Color(1, 1, 1, a))
+			Icons.patch(self, Icons.rr(tr.position.x, tr.position.y, tw, tw, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, Icons.THREAD)
+			draw_texture_rect(SledTags.turntable(item.get("sled", "mid"), item.get("fabric", "")), tr.grow(-3.0 * u), false, Color(1, 1, 1, a))
 			return
 		Icons.screen()
 		var n: int = mini(hud._n_push, 5)
@@ -467,7 +493,7 @@ class View extends Control:
 		for i in n:
 			var wave := 0.5 + 0.5 * sin((hud._flow - i * 0.3) * TAU)
 			var big: float = 1.0 + 0.5 * hud._chev_pop * float(i == n - 1)
-			Icons.chevron(self, Vector2(px + i * 16.0 * u, py + 6.0 * u), 20.0 * u * big, Icons.THREAD, a * (0.45 + 0.55 * wave), 0.0, 3.0 * u)
+			Icons.chevron(self, Vector2(px + i * 16.0 * u, py + 6.0 * u), 20.0 * u * big, Icons.THREAD, a * (0.55 + 0.45 * wave), 0.0, 3.0 * u)
 
 	## 名札の上に、方位磁針（3D のピンクッションと待ち針）。玉の所に距離の巻尺
 	func _draw_compass_above(u: float) -> void:
