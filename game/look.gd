@@ -434,6 +434,78 @@ static func stitch_mesh(color: Color) -> ArrayMesh:
 	return mesh
 
 
+## 引きずられ跡のステッチ: ぐし縫いのギャザー。引きずられた人のかかとが雪（毛糸の編み地）を縫い縮め、
+## 短いなみ縫いの目のまわりに、布が引き寄せられて寄ったひだ（ギャザー）ができる。
+## 目の形は stitch_mesh と同じ（INSTANCE_CUSTOM: 長さ m, 位相, 明るさ, 寄りの強さ 0〜1）。
+## 面 0 が細めの糸、面 1 が目のまわりのひだと針穴（乗算）。ひだは目に沿って並ぶ細い山と谷で、目に近いほど詰まって濃い
+static func gather_stitch_mesh(color: Color) -> ArrayMesh:
+	var mesh := stitch_mesh(color)
+	var mat: ShaderMaterial = (mesh.surface_get_material(0) as ShaderMaterial).duplicate()
+	mat.set_shader_parameter("radius", 0.018)
+	mesh.surface_set_material(0, mat)
+	var q := []
+	q.resize(Mesh.ARRAY_MAX)
+	q[Mesh.ARRAY_VERTEX] = PackedVector3Array([Vector3(-0.17, 0, 0.1), Vector3(0.17, 0, 0.1), Vector3(-0.17, 0, -0.4), Vector3(0.17, 0, -0.4)])
+	q[Mesh.ARRAY_NORMAL] = PackedVector3Array([Vector3.UP, Vector3.UP, Vector3.UP, Vector3.UP])
+	q[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(0, 0), Vector2(0, 0), Vector2(1, 0), Vector2(1, 0)])
+	q[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 2, 1, 1, 2, 3])
+	var arr := ArrayMesh.new()
+	arr.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh.surface_get_arrays(0))
+	arr.surface_set_material(0, mat)
+	arr.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, q)
+	var sh := Shader.new()
+	sh.code = GATHER_SHADER
+	var m2 := ShaderMaterial.new()
+	m2.shader = sh
+	m2.set_shader_parameter("shade", Color(0.2, 0.25, 0.48))   # 雪はとても明るいので、深い影の青で掛けないとひだが白く飛ぶ
+	m2.render_priority = -1
+	arr.surface_set_material(1, m2)
+	arr.custom_aabb = AABB(Vector3(-0.2, -0.06, -0.8), Vector3(0.4, 0.16, 0.95))
+	return arr
+
+
+const GATHER_SHADER := """
+shader_type spatial;
+render_mode unshaded, blend_mul, depth_draw_never, cull_disabled, fog_disabled;
+
+uniform vec3 shade : source_color;
+
+varying vec2 v_p;
+varying float v_len;
+varying float v_pull;
+varying float v_ph;
+
+void vertex() {
+	v_len = max(INSTANCE_CUSTOM.x, 0.05);
+	v_ph = INSTANCE_CUSTOM.y;
+	v_pull = INSTANCE_CUSTOM.w;
+	VERTEX = vec3(VERTEX.x, 0.012, mix(0.1, -v_len - 0.1, UV.x));   // 雪面のでこぼこに沈まないよう少し浮かす
+	v_p = VERTEX.xz;
+}
+
+void fragment() {
+	vec2 p = v_p;
+	float along = clamp(p.y, -v_len, 0.0);
+	float d_line = length(vec2(p.x, p.y - along));
+	// ひだ: 目に沿って細い山と谷が並ぶ（横から引き寄せられて寄ったしわ）。目の両端（針穴）へ扇のように集まる
+	float t = clamp(-p.y / v_len, 0.0, 1.0);
+	float pinch = 1.0 - 0.55 * sin(3.14159 * t);                 // 目のまんなかは寄りが浅く、針穴のそばで深い
+	float wave = sin(abs(p.x) * 70.0 / pinch + p.y * 14.0 + v_ph * 6.28318);
+	float reach = 1.0 - smoothstep(0.02, 0.17, abs(p.x));         // 目から離れると平らに戻る
+	float ends = 1.0 - smoothstep(0.0, 0.09, max(-p.y - v_len, p.y));   // 目の先と後ろへは短く
+	float fold = smoothstep(0.35, 0.95, wave) * reach * ends * v_pull;
+	// 糸の下の影と、針穴（stitch_mesh と同じ）
+	float under = (1.0 - smoothstep(0.01, 0.04, d_line)) * 0.4;
+	vec2 hv = length(p) < length(p - vec2(0.0, -v_len)) ? p : p - vec2(0.0, -v_len);
+	float dh = length(hv);
+	float core = 1.0 - smoothstep(0.004, 0.02, dh);
+	float dimple = 1.0 - smoothstep(0.015, 0.08, dh);
+	float k = clamp(under + core * 0.5 + dimple * 0.3 + fold * 0.95, 0.0, 0.85);
+	ALBEDO = mix(vec3(1.0), shade, k);
+}
+"""
+
+
 const THREAD_SHADER := """
 shader_type spatial;
 render_mode cull_back;

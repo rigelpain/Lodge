@@ -7,7 +7,8 @@ extends SceneTree
 ##   --case=drag      頂上の近くから滑り出したソリ（乗る人 0〜3。空のソリは --from-empty=8 から放す）を、
 ##                    頂上から --at=15 m の所で、止める人 1〜3 人がつかむ。止まるまでの距離と時間、止まらなければ手が離れた距離
 ##   --case=snowball  （--no-player なしで --bots=1）あなたと仲間がソリをつかみ、互いに雪玉を当てる。手が離れるか、ソリがずり落ちるか
-##   --case=shot      （画面あり、--bots=N が乗る）一人称で引きずられている場面を撮る。--out=絵.png（main.gd の --shot とは別）
+##   --case=shot      （画面あり、--bots=N が乗る）一人称で引きずられている場面を撮る。--out=絵.png（main.gd の --shot とは別）。
+##                    --side で横から（姿勢）、--behind で後ろ上から（かかとの引きずられ跡）
 
 const DUMMY_SRC := """extends Node3D
 var sled: Node3D
@@ -326,7 +327,7 @@ func _shot(dt: float) -> void:
 			p.grab()
 			p._snap = 1.0
 			p._pitch = float(args.get("pitch", "-0.45"))   # 足もとの雪とソリが見えるよう、少し下を見る
-			if args.has("side"):
+			if args.has("side") or args.has("behind"):
 				# 横から見る（人形の姿勢を見る用）。ソリの横 4 m から、つかんでいる人を見る
 				var c := Camera3D.new()
 				c.fov = 55
@@ -337,7 +338,12 @@ func _shot(dt: float) -> void:
 			r.phase = 1
 			r.t = 0.0
 			print("つかんだ: 速さ %.1f m/s 引きずられている=%s" % [sled.linear_velocity.length(), str(sled.is_dragged(p))])
-	if r.has("cam"):
+	if r.has("cam") and args.has("behind"):
+		# 後ろ上から、かかとの引きずられ跡を見下ろす（ソリの後ろ = 坂の上）
+		var at: Vector3 = p.global_position
+		r.cam.global_position = at + sled.global_basis.z * float(args.get("back", "3.2")) + sled.global_basis.x * 1.2 + Vector3.UP * float(args.get("up", "2.6"))
+		r.cam.look_at(at + sled.global_basis.z * 0.6, Vector3.UP)
+	elif r.has("cam"):
 		var at: Vector3 = p.global_position + Vector3.UP * 0.8
 		r.cam.global_position = at + sled.global_basis.x * 4.2 + sled.global_basis.z * 1.0 + Vector3.UP * 0.6
 		r.cam.look_at(at - sled.global_basis.z * 0.8, Vector3.UP)

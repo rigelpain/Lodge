@@ -513,16 +513,27 @@ func _pose() -> void:
 					_turn_axis("thigh.R", X, -0.15 * k)
 				bend = 0.45
 				if dragged:
-					# 引きずられている: 片足を前へ突っ張り、かかとで雪をすべる。体はソリに引かれて前へ。
-					# 雪のでこぼこで 2 コマごとに小さく揺れる
-					var j := 0.05 if (_frame / 2) % 2 == 0 else -0.05
-					_turn_axis("thigh.L", X, 0.55 + j)
+					# 引きずられている: 体勢が崩れている。体ごとソリへ前のめりに引かれ、片足を前へ突っ張ってかかとですべり、
+					# もう片足は後ろに残って膝が折れる。左右によろけ、左手はソリを離して宙をかく（右手だけでしがみつく）。
+					# ときどき膝ががくっと抜けて沈む。揺れはコマ（12 fps）で刻むので、人によってずらす（_rng の種）
+					var f := _frame + int(_scale * 97.0)
+					var sway := sin(f * 0.55) * 0.22 + (0.06 if f % 2 == 0 else -0.06)   # よろけ（ゆっくり）＋ 雪のでこぼこ（コマごと）
+					var buckle := 1.0 if f % 14 < 3 else 0.0                           # 膝が抜ける 3 コマ
+					_turn_axis("hips", X, -0.55 - 0.12 * buckle)
+					_turn_axis("hips", Z, sway * 0.6)
+					_turn_axis("thigh.L", X, 0.75 + 0.1 * sin(f * 1.3))
 					_turn_axis("shin.L", X, -0.05)
-					_turn_axis("thigh.R", X, 0.1 - j)
-					_turn_axis("shin.R", X, -0.35)
-					_turn_axis("chest", Z, j * 0.6)
-					_turn_axis("hips", X, -0.3)   # 体ごとソリへ引かれて前へ
-					bend = 0.6 + j
+					_turn_axis("thigh.R", X, -0.35 + 0.5 * buckle)
+					_turn_axis("shin.R", X, -0.9 - 0.4 * buckle)
+					_turn_axis("chest", Z, -sway)
+					_turn_axis("chest", Vector3.UP, 0.25 * sin(f * 0.4))
+					_hips_drop = 0.06 + 0.1 * buckle
+					_update_all()
+					# 左手はソリを離し、肩の上から外へ、大きな輪を描いて宙をかく
+					var h := height()
+					var swing := f * 0.9
+					_hold[0] = [self, Vector3(-0.42 - 0.12 * cos(swing), h * 0.78 + 0.22 * sin(swing), -0.05 + 0.2 * cos(swing * 0.5))]
+					bend = 0.75 + 0.15 * buckle
 			elif act == Act.ROPE:
 				if rope_hand != Vector3.INF:
 					_hold[1] = [self, to_local(rope_hand)]
