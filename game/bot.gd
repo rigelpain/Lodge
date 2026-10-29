@@ -8,6 +8,7 @@ const Palm := preload("res://palm.gd")
 ## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手のひらを掲げると、ソリを離して前まで来て、
 ## 同じ高さで掲げる（高ければハイタッチ、低ければ握手）。片手か両手かもまねる。
 ## 一緒に乗っているとき、あなたが高い両手のひらにしたら一緒に上げる（万歳）。声には同じ声、「ウン？」には「ウン」、拍手には拍手。
+## 「おーーーい」と呼ぶと、遠くからでもそちらを見て、「おーい」と返すか手を振る（ソリをつかんでいれば声で返す）。
 ## 雪玉が当たると、のけぞって笑う。つかんでいたら手を離し、少しして（REGRAB_WAIT）つかみ直しに行く。
 ## 速く下るソリをつかむと引きずられ、引きずられている間は押さずに踏ん張る（止める力は sled.gd がまとめてかける）。
 
@@ -254,7 +255,10 @@ func _pose_doll() -> void:
 	doll.airborne = not is_on_floor() and state != State.RIDE and handle == Vector3.INF
 	# 顔の向き: あなたが指さしたら、指された所を一緒に見る。押していないときは、近くのあなたの顔を見る
 	doll.gaze = Vector3.INF
-	if player:
+	doll.waving = _wave_t > 0.0
+	if player and _look_t > 0.0:
+		doll.gaze = player.global_position + Vector3.UP * 1.25   # 呼ばれた人のほうを見る
+	elif player:
 		var pt: Vector3 = player.point_at
 		if pt != Vector3.INF:
 			doll.gaze = pt
@@ -267,6 +271,8 @@ func _pose_doll() -> void:
 var _shape := ""             # 仲間がいま掲げている手（Palm.HANDS の名前）
 var _five_shape := ""        # 合わせにいく手（"high_R" "low_both" など）
 var _lower_t := 0.0          # 返しで掲げた形を下ろすまで (s)
+var _look_t := 0.0           # 呼ばれて、あなたのほうを見ているあいだ (s)
+var _wave_t := 0.0           # 呼ばれて、手を振っているあいだ (s)
 
 
 func _on_emote(ev: Dictionary) -> void:
@@ -297,6 +303,14 @@ func _on_emote(ev: Dictionary) -> void:
 		"huh":
 			if near < 15.0:
 				_reply(randf_range(0.4, 0.8), {"kind": "un"})   # たずねられたら、ウンとうなずく
+		"oi":
+			# 呼ばれたら、そちらを見て、おーいと返すか、手を振る（遠くても届く）
+			if near < 100.0:
+				_look_t = 3.0
+				if randf() < 0.5 or handle != Vector3.INF:
+					_reply(randf_range(0.7, 1.1), {"kind": "oi"})
+				else:
+					_wave_t = 2.5
 		"clap":
 			if near < 10.0:
 				_reply(randf_range(0.15, 0.3), {"kind": "hands", "hands": "high_both"})
@@ -334,6 +348,8 @@ func _update_replies(dt: float) -> void:
 			var ev: Dictionary = r[1].duplicate()
 			ev["who"] = id
 			hub.send(ev)
+	_look_t = maxf(0.0, _look_t - dt)
+	_wave_t = maxf(0.0, _wave_t - dt)
 	if _lower_t > 0.0:
 		_lower_t -= dt
 		if _lower_t <= 0.0 and _shape != "" and _five_with < 0:

@@ -12,7 +12,7 @@ const Palm := preload("res://palm.gd")
 ## どう動くかはソリの滑り木と重力が決める。離すのは F だけ。Shift でダッシュ。
 ## 前に回って F を押すと紐を持ち、歩いて引ける。
 ## 身ぶり: Tab を押しているあいだ輪が出て、マウスの向きで選び、離すと出す。輪と同じ 6 つを 1〜6 キーでも:
-## 1 高い手のひら、2 低い手のひら、3 指さし、4 ウン、5 ンーン、6 首をかしげてウン？。手のひらは下ろすまで掲げたまま、
+## 1 高い手のひら、2 低い手のひら、3 指さし、4 ウン、5 ンーン、6 首をかしげてウン？、7 おーーーい（遠くへ呼ぶ）。手のひらは下ろすまで掲げたまま、
 ## 腕は見ている向きへ。手は Q で片手⇄両手、X で右⇄左。滑りながら高い両手のひらにすると、ひとりでに「ワ〜」。B を押しているあいだ、白い息を長く吐く（押した瞬間に短く吸う）。
 ## 左 Ctrl を押しているあいだしゃがむ。しゃがんで雪面を見て F で、雪玉を丸める。
 ## 左クリック: 雪玉を持っていれば押してためて（振りかぶり）、離して投げる（長く押すほど遠くへ）。両手のひらなら拍手。
@@ -217,9 +217,9 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_TAB:
 				if ring and not menu_open:
 					ring.open(hand, _height(), point_at != Vector3.INF)
-			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6:
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7:
 				# 輪と同じ 6 つ: 1 高い手のひら、2 低い手のひら、3 指さし、4 ウン、5 ンーン、6 首をかしげてウン？
-				_choose(["high", "low", "point", "un", "nn", "huh"][e.physical_keycode - KEY_1])
+				_choose(["high", "low", "point", "un", "nn", "huh", "oi"][e.physical_keycode - KEY_1])
 			KEY_Q:
 				# 片手 ⇄ 両手
 				_set_hand("both" if hand != "both" else _one_hand)
@@ -685,7 +685,7 @@ func _place_shapes_fp(em: Array) -> void:
 func available() -> Dictionary:
 	var busy := rooted() or _winding
 	return {
-		"wa": true, "un": true, "nn": true, "huh": true,
+		"wa": true, "un": true, "nn": true, "huh": true, "oi": true,
 		"breath": not busy,
 		"clap": not busy and hands_name == "high_both",
 		"make_ball": not busy and mode == Mode.WALK and not holding_ball and crouching,
@@ -866,6 +866,8 @@ func _emote_cam(kind: String, k: int) -> Vector3:
 			return Vector3(-0.12 if k >= 2 and k < 8 else 0.0, 0.08 if k >= 2 and k < 5 else 0.0, 0)
 		"wa":
 			return Vector3(-0.04 if k < 2 else 0.08, 0, 0)
+		"oi":
+			return Vector3(-0.05 if k < 2 else (0.1 if k < 15 else 0.03), 0, 0)   # 顔を上げて呼ぶ
 	return Vector3.ZERO
 
 
@@ -943,6 +945,15 @@ func _emote_hand(s: int) -> Vector3:
 		"huh":
 			if k >= 2 and k < 12:
 				return Vector3(s * 0.3, -0.3, -0.42)   # さあ？と両手を少し外へ
+		"oi":
+			# 空いた手（手のひらも指さしもしていない手。右から）を口の横へ。画面の下の端に、手袋の先がのぞく
+			if k >= 1 and k < 16:
+				var free := 0
+				for sd in [1, -1]:
+					if free == 0 and doll.hand_shapes[0 if sd > 0 else 1] == "" and not (point_at != Vector3.INF and sd in Palm.sides_of(hand)):
+						free = sd
+				if s == free:
+					return Vector3(0.1 * s, -0.2, -0.22)
 		"nn":
 			if s > 0 and k < 12:
 				return Vector3(0.04 + (0.06 if (k / 2) % 2 == 0 else -0.06), -0.08, -0.32)   # 顔の前で手を振る

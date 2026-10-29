@@ -545,7 +545,7 @@ func _pose() -> void:
 		bend += _crouch_legs(1.0) * 0.6
 	if em[1] >= 0:
 		bend += _emote_body(em[0], em[1])
-	if em[0] != "breath":
+	if em[0] != "breath" and em[0] != "oi":
 		_long.emitting = false
 	_turn_axis("chest", X, -bend)
 
@@ -880,7 +880,7 @@ func _puff(size: float, speed: float) -> void:
 ## emotes.gd の KINDS と同じ長さ（コマ）。0 は終わりを持ち主が決める
 const EMOTE_FRAMES := {
 	"high_five": 12, "shake": 24, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
-	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16,
+	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18,
 }
 ## 腕を使う身ぶり。このあいだは手の形を出さない
 const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit"]
@@ -1014,6 +1014,13 @@ func _emote_body(kind_: String, k: int) -> float:
 		"nn":
 			_em_head.x = [0.35, 0.35, -0.35, -0.35, 0.35, 0.35, -0.3, -0.3, 0.2, 0.2, -0.1, -0.1, 0.0, 0.0][k]
 			_em_head.y = -0.08
+		"oi":
+			# 呼ぶ: 小さく息を吸ってかがみ（ため）、胸を張って顔を上げ、遠くへ声を届ける
+			if k < 2:
+				_em_head.y = -0.12
+				return 0.12
+			_em_head.y = 0.22 if k < 15 else 0.08
+			return -0.12 if k < 15 else -0.04
 		"huh":
 			# 首をかしげる: 小さく引いて（ため）、ことんと横へ傾けて止め、ゆっくり戻す。肩も少しすくめる
 			_em_roll = [-0.08, -0.08, 0.38, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.42, 0.38, 0.3, 0.2, 0.12, 0.05, 0.0][k]
@@ -1120,6 +1127,16 @@ func _emote_arms(kind_: String, k: int) -> void:
 			elif k < 11:
 				for side in ["L", "R"]:
 					_arm(side, Vector3(0.75, 0.3, -0.35), Vector3(0.55, 0.85, -0.3))   # 両手を開いて上へ
+		"oi":
+			if k >= 1 and k < 16:
+				# 空いた手を口の横に当てて、メガホンに（高い片手のひらで場所を示しながら呼べる）
+				var free := 0
+				for sd in [1, -1]:
+					if free == 0 and hand_shapes[0 if sd > 0 else 1] == "" and not (point != Vector3.INF and (sd in point_sides or point_sides.is_empty())):
+						free = sd
+				if free != 0:
+					var arm_r := _len(_id("upper_arm.R")) + _len(_id("forearm.R"))
+					_hand_to("R" if free > 0 else "L", head + Vector3(0.16 * float(free), -0.06, -0.55) * arm_r)
 		"huh":
 			if k >= 2 and k < 12:
 				# 肩をすくめて、両の前腕を少し外へ開く（さあ？の手）
@@ -1152,6 +1169,12 @@ func _emote_breath(kind_: String, k: int) -> void:
 			if k == 2:
 				_puff(1.15, 0.6)
 				_next_breath = _frame + 24
+		"oi":
+			# 声を伸ばすあいだ、大きな白い息を吐き続ける
+			if k == 2:
+				_puff(1.9, 1.6)
+			_long.emitting = k >= 2 and k < 15
+			_next_breath = _frame + 30
 		"nn":
 			if k == 0 or k == 6:
 				_puff(1.2, 0.7)

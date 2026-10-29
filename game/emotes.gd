@@ -38,8 +38,9 @@ const KINDS := {
 	"un": {"frames": 7, "root": false},           # 声「ウン」うなずく
 	"nn": {"frames": 14, "root": false},          # 声「ンーン」いやいや
 	"huh": {"frames": 16, "root": false},         # 声「ウン？」首をかしげる
+	"oi": {"frames": 18, "root": false},          # 声「おーーーい」遠くの人を呼ぶ（空いた手を口に当てる）
 }
-const VOICES := ["wa", "un", "nn", "huh"]
+const VOICES := ["wa", "un", "nn", "huh", "oi"]
 const HANDS := Palm.HANDS
 const TOUCH_REACH := 1.3     # 手と手が届く、体どうしの距離 (m)。人形の腕は短いが、手の形が大きい
 const SHAKE_REACH := 1.0     # 握手は手のひらをくっつけるので、もう少し近づいてから（腕の短い人形でも届く所）
