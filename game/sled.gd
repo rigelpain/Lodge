@@ -112,7 +112,7 @@ const FWD_LEAN_EASE := 0.6         # 前傾した人の割合 × これだけ、
 # 下り坂で全部効き、平らな所では KICK_FLAT だけ、登りでは効かない（登りを楽にしない）
 const KICK_DV := 1.5               # 一回蹴って速くなる量 (m/s。止まりかけのとき)
 const KICK_TOP := 16.0             # 蹴って届く速さの上限 (m/s)。ここに近づくほど蹴りが効かない
-const KICK_FLAT := 0.3             # 平らな所での蹴りの効き（下り坂で 1）
+const KICK_FLAT := 0.6             # 平らな所での蹴りの効き（下り坂で 1）。走って乗った勢いを、平らな所でも漕いで保てる
 const KICK_FULL_SLOPE := 0.15      # この下り（傾きの sin）より急なら、蹴りが全部効く
 const KICK_MIN_SPEED := 0.5        # これより遅いと蹴れない（滑っているあいだだけ。滑り出しは W で雪をかく）
 signal kicked(who: Node3D)

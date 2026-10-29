@@ -14,7 +14,8 @@ extends Node
 ##   sewn   {sled, fabric, at, yaw, id}  ミシンが縫い上げた。広げた実寸のソリが at に出る
 ##   fold   {id, item}         置いてあるソリを畳んで、持ち物に入れる（畳む動きは origami.gd）。item に名札の柄 tag も入る
 ##   unfold {slot, item, at, yaw, up, id}  畳んだソリを手から前の床に広げて置く（up は床の傾き）
-##   sack_out  {at, yaw, up}   装備の米袋（いま選んでいるもの）を足もとに出す（2026-10-29 代表: 米袋は装備。持ち物の列は使わない）
+##   sack_out  {at, yaw, up, v}  装備の米袋（いま選んでいるもの）を足もとに出す（2026-10-29 代表: 米袋は装備。持ち物の列は使わない）。
+##                             v は出した人の勢い（初めの速さ。走りながら出すと滑り出す）
 ##   sack_in   {}              出している米袋を、くるっと丸めて帯に戻す
 ##   tag_design {design}       自分の名札のデザインを決める（装備の画面）。持ち主の印として、その人のソリ・米袋の名札が替わる
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
@@ -220,6 +221,7 @@ func _apply(ev: Dictionary) -> bool:
 			gs.set_meta("gear_of", who)
 			sack_out[who] = gs
 			_sack_far[who] = 0.0
+			gs.linear_velocity = ev.get("v", Vector3.ZERO)
 			ev["id"] = gid
 			_pop(gs)
 		"sack_in":
