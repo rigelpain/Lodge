@@ -70,6 +70,9 @@ const TRAFFIC_HALF := 600.0          # 滑った跡が半分に薄れるまで (
 # ---- 取る
 const HIT := 0.12              # 滑り木がボタンの縁からこれだけ外を通っても切れる (m)
 const MIN_SPEED := 2.0         # これより遅いソリでは切れない (m/s)
+## 胴の下でも切れるソリ（2026-10-30 代表「当たりを広げる」）。大は滑り木のあいだが 1.9 m あり、曲がりも遅いので、
+## 滑り木だけでは一回でほとんど拾えなかった（design/snow-buttons）。大は胴の下（左右の滑り木のあいだ）を通っても切れる
+const BELLY := ["large"]
 # ---- 歩いて裁ちばさみで取る
 const SHEAR_REACH := 1.8       # ボタンまでこれより近く、向いていれば取れる (m)
 const SHEAR_CUT := 8           # はさみを出してから、糸が切れるまで（コマ）。2 回目のちょきんは 10 コマ目
@@ -401,11 +404,18 @@ func _check_hits() -> void:
 			continue
 		var c := sled.global_position
 		var segs := runner_segments(sled)
+		var belly: bool = sled.kind in BELLY
 		for b in buttons.values():
 			if b.state != "rest" or b.at.distance_squared_to(c) > 64.0:
 				continue
-			if _under_runner(b, segs):
+			if _under_runner(b, segs) or (belly and _under_belly(sled, b)):
 				_snip(sled, b)
+
+
+## 胴の下（左右の滑り木のあいだ、滑り木の前後の長さ）をボタンが通るか
+func _under_belly(sled: RigidBody3D, b: Btn) -> bool:
+	var lp := sled.to_local(b.at)
+	return absf(lp.y) < 0.8 and absf(lp.x) < sled.RUNNER_X and absf(lp.z) < sled.RUNNER_Z + 0.1 + b.r
 
 
 ## 滑り木（左右の 2 本）の、雪に触れる線（世界）

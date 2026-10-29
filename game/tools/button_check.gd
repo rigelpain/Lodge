@@ -138,7 +138,7 @@ func _step(dt: float) -> void:
 func _policy() -> float:
 	var best := INF
 	var steer := 0.0
-	var gap: bool = sled.RUNNER_X > sb.R + sb.HIT * 0.5
+	var gap: bool = sled.RUNNER_X > sb.R + sb.HIT * 0.5 and not sled.kind in sb.BELLY   # 胴の下でも切れるソリは、まんなかで狙う
 	for b in sb.buttons.values():
 		if b.state != "rest":
 			continue
