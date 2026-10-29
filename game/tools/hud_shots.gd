@@ -11,6 +11,7 @@ extends SceneTree
 ##   lodge   ロッジの中（札は消える）
 ##   menu    Esc を押したとき（操作の札）
 ##   ring    Tab で身ぶりの輪を出したとき（仲間のそば）
+## --tp で三人称（--cam-dist=m・--cam-height=m でカメラの距離と高さ。保存しない）。
 ## --hud-scale=0.7〜1.6 と --menu-scale=0.7〜1.6 で、設定の「HUD の大きさ」「メニューの大きさ」を、保存せずに当てて撮る。
 ## main.gd の引数（--bots など）もそのまま効く。
 
@@ -97,6 +98,11 @@ func _process(dt: float) -> bool:
 			"ring":
 				p.global_position = sled.to_global(Vector3(5.0, 0, 3.5)) + Vector3.UP * 0.3
 				_key(KEY_TAB, true)
+		# --tp で三人称に。--cam-dist・--cam-height でカメラの距離と高さ（保存はしない）
+		if args.has("tp"):
+			p.set_third(true)
+			p.cam_dist = float(args.get("cam-dist", str(p.cam_dist)))
+			p.cam_height = float(args.get("cam-height", str(p.cam_height)))
 		# 大きさの設定は、保存してある値に関わらず、引数の値で（保存はしない）
 		if args.has("hud-scale"):
 			preload("res://hud_icons.gd").user_scale = float(args["hud-scale"])
@@ -112,6 +118,11 @@ func _process(dt: float) -> bool:
 		want.y = main.height(want.x, want.z) + 0.1
 		p.global_position = want
 		_face(p, sled.global_position, -0.3)
+	if _set and scene != "menu" and main.settings.is_open:   # 撮るあいだは設定の画面を開かない（窓の切り替えなどで開くことがある）
+		main.settings.set_open(false)
+		p.menu_open = false
+	if main.hud and not args.has("hud-debug"):
+		main.hud.debug_on = false   # 保存してある「確かめ用の数字」に関わらず消す
 	if _set and (scene == "people" or scene == "ring"):
 		var bots := main.get_children().filter(func(c): return c != p and c is CharacterBody3D and c.get("doll") != null)
 		if bots.size() > 0:

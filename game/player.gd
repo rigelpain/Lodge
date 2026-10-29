@@ -51,6 +51,12 @@ var pulling := false
 var prompt := ""             # 画面に出す一言（main.gd が読む）
 var base_fov := 75.0         # ホイールで変える視野角
 var third := false           # C で三人称
+var cam_dist := 3.4          # 三人称: 頭の後ろからカメラまでの距離 (m)。Alt＋ホイール・ピンチ・二本指の縦・設定
+var cam_height := 0.6        # 三人称: 頭より上のカメラの高さ (m)。Alt＋Shift＋ホイール・二本指の横・設定
+const CAM_DIST := Vector2(1.4, 9.0)     # 人形の真後ろ近く 〜 ソリ全体が見える遠さ
+const CAM_HEIGHT := Vector2(-0.3, 3.0)  # 肩ごし 〜 見下ろす
+var _cam_save_t := -1.0      # ホイールで変えた視野角・カメラを、少し止まってから設定に保存する
+var _cam_free := 0.0         # 三人称のカメラが、当たりで縮められずにいられる距離（いまの値）
 var bob_enabled := true      # 設定: 押す・引くときの視点の揺れ
 var fov_kick_enabled := true # 設定: 押すときに画角が少し広がる
 var mouse_sens := 1.0        # 設定: マウスの感度
@@ -161,6 +167,31 @@ func _ready() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
 
+## 一人称の視野角を変える（ホイール・ピンチ・二本指）。少し止まってから設定に保存する
+func _zoom_fov(d: float) -> void:
+	base_fov = clampf(base_fov + d, 50.0, 110.0)
+	_cam_save_t = 0.6
+
+
+## 三人称のカメラの距離と高さを変える（ホイール・ピンチ・二本指）。少し止まってから設定に保存する
+func _zoom_cam(d_dist: float, d_height: float) -> void:
+	cam_dist = clampf(cam_dist + d_dist, CAM_DIST.x, CAM_DIST.y)
+	cam_height = clampf(cam_height + d_height, CAM_HEIGHT.x, CAM_HEIGHT.y)
+	_cam_save_t = 0.6
+
+
+func _save_cam(dt: float) -> void:
+	if _cam_save_t < 0.0:
+		return
+	_cam_save_t -= dt
+	if _cam_save_t < 0.0:
+		var st = get_parent().get("settings")
+		if st:
+			st.sync("fov", base_fov)
+			st.sync("cam_dist", cam_dist)
+			st.sync("cam_height", cam_height)
+
+
 ## 三人称では自分の体を映し、一人称の手は映さない。滑るときの風（層 5）はどちらでも映す
 func set_third(on: bool) -> void:
 	third = on
@@ -174,24 +205,41 @@ func _unhandled_input(e: InputEvent) -> void:
 		rotate_y(-e.relative.x * 0.003 * mouse_sens)
 		_pitch = clamp(_pitch - e.relative.y * 0.003 * mouse_sens, -1.4, 1.3)
 	elif e is InputEventPanGesture:
-		# トラックパッドの二本指スクロール（Mac ではホイールでなくこれで届く）: 持ち物があれば持ち替え
-		if craft and not craft.bag(id).is_empty() and not menu_open:
+		# トラックパッドの二本指スクロール（Mac ではホイールでなくこれで届く）: ホイールと同じ決まり。
+		# 持ち物があれば持ち替え。Alt を押しているか持ち物がなければ、一人称は視野角、三人称は縦で距離・横で高さ
+		if menu_open:
+			pass
+		elif craft and not craft.bag(id).is_empty() and not e.alt_pressed:
 			_pan_acc += e.delta.y
 			if absf(_pan_acc) >= PAN_STEP:
 				cycle_hand(1 if _pan_acc > 0.0 else -1)
 				_pan_acc = 0.0
+		elif third:
+			_zoom_cam(e.delta.y * 0.25, -e.delta.x * 0.1)
+		else:
+			_zoom_fov(e.delta.y * 2.0)
 	elif e is InputEventMagnifyGesture:
-		# トラックパッドのピンチ: 広げると寄る（視野角が狭まる）
-		base_fov = clamp(base_fov / e.factor, 50.0, 110.0)
+		# トラックパッドのピンチ: 広げると寄る（一人称は視野角が狭まり、三人称はカメラが近づく）
+		if third:
+			_zoom_cam(cam_dist / e.factor - cam_dist, 0.0)
+		else:
+			_zoom_fov(base_fov / e.factor - base_fov)
 	elif e is InputEventMouseButton and e.pressed:
-		if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN]:
-			var step := -1 if e.button_index == MOUSE_BUTTON_WHEEL_UP else 1
+		if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]:
+			var step := -1 if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_LEFT] else 1
+			# Shift＋ホイールは、Mac では横のホイールとして届くことがある
+			var sideways: bool = e.shift_pressed or e.button_index in [MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]
 			if menu_open:
 				pass
 			elif craft and not craft.bag(id).is_empty() and not e.alt_pressed:
 				cycle_hand(step)   # 持ち物があれば、ホイールは手に持つ物
+			elif third:
+				if sideways:
+					_zoom_cam(0.0, -0.2 * step)
+				else:
+					_zoom_cam(0.4 * step, 0.0)
 			else:
-				base_fov = clamp(base_fov + 3.0 * step, 50.0, 110.0)
+				_zoom_fov(3.0 * step)
 		elif e.button_index == MOUSE_BUTTON_RIGHT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			toggle_point()
 		elif e.button_index == MOUSE_BUTTON_LEFT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
@@ -615,16 +663,41 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
 		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0)
 		return
-	# 三人称: 頭の少し上を中心に、後ろ上から見下ろす。地面に潜らない
+	# 三人称: 頭の少し上を中心に、後ろからカメラの距離と高さで見る。マウスの上下で回り込む。
+	# 頭からカメラへ玉を滑らせて、壁・天井・地面・ソリに当たる手前で止める（埋まらない）。
+	# 当たって縮むときはすぐ、離れて戻るときはゆっくり（壁の向こうが一瞬見えないように）
 	var pivot := Vector3(0, 1.6, 0)
-	var offset := Vector3(0, 0.6, 3.4).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
-	var want := pivot + offset
-	var want_w := to_global(want)
+	var offset := Vector3(0, cam_height, cam_dist).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
+	var pivot_w := to_global(pivot)
+	var want_w := to_global(pivot + offset)
 	var floor_y: float = get_parent().height(want_w.x, want_w.z) + 0.4
 	if want_w.y < floor_y:
-		want.y += floor_y - want_w.y
-	cam.position = cam.position.lerp(want, min(1.0, dt * 8.0))
-	cam.look_at(to_global(pivot), Vector3.UP)
+		want_w.y = floor_y
+	var ray := want_w - pivot_w
+	var free := _cam_clear(pivot_w, ray)
+	_cam_free = free if free < _cam_free else move_toward(_cam_free, free, dt * 4.0)
+	var at := pivot_w + ray.normalized() * minf(_cam_free, ray.length())
+	cam.global_position = at if cam.global_position.distance_to(at) > 2.0 or free < _cam_free + 0.01 \
+		else cam.global_position.lerp(at, min(1.0, dt * 10.0))
+	if cam.global_position.distance_to(pivot_w) > 0.05:
+		cam.look_at(pivot_w, Vector3.UP)
+
+
+## 頭（from）からカメラの向き（ray）へ玉を滑らせ、何にも当たらずに行ける距離を返す。
+## 自分と、乗っている・つかんでいるソリの縁の内側は、人形の体と同じくよける（ソリは当たりに入れる。中に潜らない）
+func _cam_clear(from: Vector3, ray: Vector3) -> float:
+	var space := get_world_3d().direct_space_state
+	var q := PhysicsShapeQueryParameters3D.new()
+	var ball := SphereShape3D.new()
+	ball.radius = 0.22
+	q.shape = ball
+	q.transform = Transform3D(Basis(), from)
+	q.motion = ray
+	q.exclude = [get_rid()]
+	if space.get_rest_info(q).size() > 0:   # 頭がもう何かに触れている（座ったソリなど）: ソリは外して測り直す
+		q.exclude = [get_rid(), sled.get_rid()]
+	var r := space.cast_motion(q)
+	return maxf(0.3, ray.length() * r[0] - 0.05)
 
 
 func _pose_hands(dt: float) -> void:
@@ -632,6 +705,7 @@ func _pose_hands(dt: float) -> void:
 	var bob := sin(_t * 9.0) if bob_enabled else 0.0
 	# 押す・引くと視点がわずかに揺れ、画角が少し広がる
 	_place_camera(dt, bob, working)
+	_save_cam(dt)
 	cam.fov = lerp(cam.fov, base_fov + (4.0 if working and fov_kick_enabled else 0.0), min(1.0, dt * 4.0))
 	var fi := Doll.frame_index()
 	for h in hands:

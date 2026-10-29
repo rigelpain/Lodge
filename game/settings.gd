@@ -19,7 +19,9 @@ const ITEMS := [
 	["snow", "舞う雪", "bool", true, null],
 	["wind", "風の流れ（滑るとき）", "float", 1.0, [0.0, 1.0, 0.05]],
 	["third", "三人称", "bool", false, null],
-	["fov", "視野角", "float", 75.0, [50.0, 110.0, 1.0]],
+	["fov", "視野角（一人称）", "float", 75.0, [50.0, 110.0, 1.0]],
+	["cam_dist", "三人称: カメラの距離", "float", 3.4, [1.4, 9.0, 0.1]],
+	["cam_height", "三人称: カメラの高さ", "float", 0.6, [-0.3, 3.0, 0.05]],
 	["sens", "マウスの感度", "float", 1.0, [0.3, 2.5, 0.05]],
 	["scale", "3D の描画の解像度（軽さ）", "float", 0.67, [0.4, 1.0, 0.01]],
 	["ssao", "くぼみの影（SSAO）", "bool", true, null],
@@ -142,6 +144,7 @@ func _build() -> void:
 func _fmt(key: String, v: float) -> String:
 	match key:
 		"fov": return "%d°" % v
+		"cam_dist", "cam_height": return "%.1f m" % v
 		"scale", "wind", "vol_music", "vol_sfx", "vol_voice", "menu_scale", "hud_scale": return "%d%%" % round(v * 100)
 		_: return "%.2f" % v
 
