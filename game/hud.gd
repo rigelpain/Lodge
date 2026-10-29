@@ -53,6 +53,13 @@ const EXCHANGE_T := 0.5       # 縫い縮まる長さ (s)
 const NEXT_LOOK := {"wood": "brass", "brass": "pearl", "pearl": "raden"}
 const LOOK_VALUE := {"wood": 1, "brass": 10, "pearl": 100, "raden": 1000}
 var _merge_t0 := -1.0         # いま縫い縮まっている両替の始まり（_clock_now。なければ -1）
+## 糸くず: 滑った分のうち、乗り物の倍率でまだ木 1 個に満たない端数（snow_buttons.gd の ride_lint）と、前の滑りから持ち越した端数。
+## 糸の上の積もったボタンのいちばん上に、小さな糸くずの玉として見せ、たまるほど大きくなる（取りこぼしに見えないように）
+var _lint_frac := 0.0
+var _lint_carry := 0.0
+
+func lint() -> float:
+	return _lint_frac + _lint_carry
 var _reel := 0.0              # 滑り終わって、縫い目の糸を巻き取っている残り (s)。糸の上のボタンは財布へ飛ぶ（craft_ui.gd）
 var _reel_t := 1.6            # この巻き取りの長さ (s)。ボタンが多いほど長い
 var _ride_seen := -99.0       # 最後に乗っていた時刻（止まってすぐ降りても、巻き取りを見せる）
@@ -517,9 +524,14 @@ func _on_buttons(ev: Dictionary) -> void:
 				var audio = main.get_node_or_null("Audio")
 				if audio:
 					audio.stitch(look)   # 糸に縫い付いて積もる、ぷつっ・ころん（真鍮は、きらっ）
+		"ride_lint":
+			if p.mode == Player.Mode.RIDE:
+				_lint_frac = float(ev.frac)
 		"ride_pay_one":
-			# 自分の分（止まったとき・途中で降りたとき）: 糸を巻き取って、糸の上のボタンを財布へ
+			# 自分の分（止まったとき・途中で降りたとき）: 糸を巻き取って、糸の上のボタンを財布へ。端数は次の滑りへ持ち越す
 			if int(ev.who) == int(p.id):
+				_lint_carry = float(ev.get("carry", 0.0))
+				_lint_frac = 0.0
 				_exchange(true)   # 縫い縮まっている途中なら、すぐ済ませる（財布へ飛ぶボタンを決める前に）
 				_reel_t = maxf(REEL_T, 1.1 + sewn_looks().size() * 0.065)
 				_reel = _reel_t
@@ -824,7 +836,7 @@ class View extends Control:
 		if part == "ribbon":
 			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
 			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false,
-					hud._spd_sewn, hud.reel_k())
+					hud._spd_sewn, hud.reel_k(), hud.lint())
 			Icons.printing = false
 			return
 		if part.begins_with("tagback:"):   # 束の後ろの札（名札の柄だけ。中の窓は無地）
@@ -988,7 +1000,7 @@ class View extends Control:
 			if hud.plates == null:   # 平らなとき: リボンは糸巻きから吊るして揺れる。ボビンは小刻みに
 				var rb: Rect2 = g.ribbon
 				draw_set_transform_matrix(Icons.wind_xform(Vector2(rb.get_center().x, rb.position.y), 6.0, 0.05, 0.05, 1.5 * u))
-				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e, true, hud._spd_sewn, hud.reel_k())
+				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e, true, hud._spd_sewn, hud.reel_k(), hud.lint())
 			draw_set_transform_matrix(Icons.wind_xform(g.c, 4.0, 0.0, 0.03, 2.0 * u))
 			Speedo.draw_spool(self, g, k, hud._spd_spin, hud._spd_color, hud.spd_best, hud._spd_pop, e, hud.plates == null)
 			draw_set_transform_matrix(Transform2D.IDENTITY)

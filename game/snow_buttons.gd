@@ -30,7 +30,8 @@ extends Node3D
 ##                                                   "brass" はいちばん速い所 speed を超えたとき）
 ##   ride_pay  {sled, dist, wood, brass, sewn, gives: {番号: 数}}  一回の滑りが終わった（まとめ）。滑った長さ（m）と、木と真鍮の数。
 ##                                                   sewn は縫い込んだ順のボタンの並び（"wood"・"brass"）。gives は手伝った人の分
-##   ride_pay_one {sled, who, sewn, n, left}         乗っていた一人に、その人が乗ってから縫い込まれた分（sewn、n はその値打ち）を入れる。
+##   ride_lint {sled, frac}                          滑った分のうち、まだ木 1 個に満たない端数（0〜1）。速さの表示の糸の上に糸くずとして積もる
+##   ride_pay_one {sled, who, sewn, n, left, carry}  （carry は、その人が次の滑りへ持ち越す端数）         乗っていた一人に、その人が乗ってから縫い込まれた分（sewn、n はその値打ち）を入れる。
 ##                                                   止まったとき（left = false）か、途中で降りたとき（E で降りる・米袋をしまう・
 ##                                                   落とされる。left = true）。ほかの人の分は、それぞれ降りたときか止まったとき
 ## いまは一人の画面の中だけ: send() がすぐ _apply() して配る。通信を入れたら、当たりの判定（_physics_process）と
@@ -88,6 +89,12 @@ const SHEAR_END := 15          # はさみをしまい終わるまで（コマ�
 # ---- 滑った距離と速さ（一回の滑りごと）。斜面のボタンを拾うほうが多くもらえるくらいに
 const RIDE_M_PER_WOOD := 12.0  # これだけ滑るごとに木のボタン 1 つ (m)
 const RIDE_BRASS := [10.0, 13.0]     # この速さ (m/s) を超えるたびに真鍮のボタン 1 つ（一回の滑りで一度ずつ）
+## 乗り物ごとの倍率（2026-10-30 代表「乗り物によって収入倍率を変えたほうが良いな〜。米袋でもそこそこ稼げてしまうし、
+## 大きなソリで頑張る理由がなくなってしまう」）。大きいソリは重く、人を集めないと押して登れない。その頑張りがお金でも報われるように。
+## 滑った分（12 m ごとの木 1・速さを超えたときの真鍮 10）に掛ける
+const RIDE_RATE := {"sack": 0.3, "small": 0.7, "mid": 1.0, "large": 1.6}
+## 一緒に乗っている人数のおまけ: 2 人目から 1 人ごとに一人ひとりの取り分が +CREW_BONUS（大に 8 人で +70%）
+const CREW_BONUS := 0.1
 const RIDE_STOP_T := 1.0       # 0.5 m/s より遅いのがこれだけ続いたら、滑り終わり (s)
 const HELPER_SHARE := 1.0 / 3.0   # 押して手伝ったけれど乗らなかった人に届く割合
 const HELP_WINDOW := 120.0     # 滑る前のこの秒のうちに押した人を、手伝った人にする（ソリの時計 sled._trail_now）
@@ -120,6 +127,7 @@ var auto := true                # 自分で降らせる（確かめの台本は 
 var gust_override := -1.0       # 確かめ用: 0〜1 なら、風の強さをこれに固定する
 var buttons := {}               # 番号 → Btn
 var crumbs := {}                # 人の番号 → ためている端数（手伝った人の分）
+var ride_carry := {}            # 人の番号 → 滑った分の、次の滑りへ持ち越す端数（倍率で木 1 個に満たなかった分）
 var stats := {"snip": 0, "value": 0}   # 確かめ用の数（切った数と、その値打ちの合計）
 var _shears: Array = []         # 動いている裁ちばさみ {node, a, b, btn, who, f0}
 var _cuts: Array = []           # ホスト: はさみで切る予定 {id, who, at}
@@ -372,7 +380,7 @@ func _track_runs(dt: float) -> void:
 		if run.is_empty():
 			if riding and v > 1.5:
 				run = {"top": sled.global_position.y, "cells": {}, "dist": 0.0, "best": 0.0, "marks": [], "riders": {}, "slow": 0.0,
-						"wood": 0, "sewn": [], "on": {}, "name": String(sled.name)}
+						"wood": 0, "sewn": [], "on": {}, "name": String(sled.name), "acc": 0.0, "whole": 0, "acc_at": {}}
 				_runs[sled] = run
 			else:
 				continue
@@ -387,6 +395,7 @@ func _track_runs(dt: float) -> void:
 		for id in now_ids:
 			if not run.on.has(id):
 				run.on[id] = run.sewn.size()
+				run.acc_at[id] = run.acc
 				run.riders[id] = true
 		if riding:
 			var hv := Vector2(sled.linear_velocity.x, sled.linear_velocity.z).length()
@@ -397,14 +406,12 @@ func _track_runs(dt: float) -> void:
 			for m in RIDE_BRASS:
 				if v >= m and not m in run.marks:
 					run.marks.append(m)
-					run.sewn.append("brass")
-					send({"kind": "ride_mark", "sled": String(sled.name), "look": "brass", "speed": m})
-			# RIDE_M_PER_WOOD 滑るごとに木を一つ。上限はない（2026-10-30 まで一回 18 個までだったが、大きな山の長い滑りで取りこぼすのでやめた。
+					_ride_add(sled, run, 10.0, v)
+			# RIDE_M_PER_WOOD 滑るごとに木 1 の分。上限はない（2026-10-30 まで一回 18 個までだったが、大きな山の長い滑りで取りこぼすのでやめた。
 			# 速さの表示の糸の上では、10 個たまると上の素材に両替して収める。hud.gd）
 			while run.wood < floori(run.dist / RIDE_M_PER_WOOD):
 				run.wood += 1
-				run.sewn.append("wood")
-				send({"kind": "ride_mark", "sled": String(sled.name), "look": "wood", "speed": v})
+				_ride_add(sled, run, 1.0, v)
 		run.slow = run.slow + dt if (v < 0.5 or not riding) else 0.0
 		if run.slow >= RIDE_STOP_T:
 			var drop := (float(run.top) - sled.global_position.y) / maxf(1.0, world.height(0.0, 0.0))
@@ -421,9 +428,29 @@ func _track_runs(dt: float) -> void:
 			_runs.erase(s)
 
 
-## 乗っていた一人 id に、乗ってから縫い込まれた分を入れる（降りた・止まった）。番号のない人（確かめの人形）には入れない
+## いまの倍率: 乗り物の倍率 × 人数のおまけ（いま乗っている人数で）
+func ride_mult(sled: RigidBody3D) -> float:
+	return float(RIDE_RATE.get(sled.kind, 1.0)) * (1.0 + CREW_BONUS * maxi(0, sled.riders.size() - 1))
+
+
+## 滑った分を足す（base は木の何個分。12 m で 1、速さを超えたら 10）。倍率を掛けて端数ごとためておき、木 1 個分に届いた分を
+## 糸の上に縫い込む（大きい段から。真鍮の分があれば真鍮で）。端数は糸くずとして見せる（ride_lint）
+func _ride_add(sled: RigidBody3D, run: Dictionary, base: float, v: float) -> void:
+	run.acc += base * ride_mult(sled)
+	var whole := floori(run.acc + 0.0001) - int(run.whole)
+	if whole > 0:
+		run.whole += whole
+		for look in preload("res://craft.gd").pieces(whole):
+			run.sewn.append(look)
+			send({"kind": "ride_mark", "sled": String(sled.name), "look": look, "speed": v})
+	send({"kind": "ride_lint", "sled": String(sled.name), "frac": float(run.acc) - float(run.whole)})
+
+
+## 乗っていた一人 id に、乗ってから縫い込まれた分を入れる（降りた・止まった）。番号のない人（確かめの人形）には入れない。
+## 木 1 個に満たない端数は、その人が次の滑りへ持ち越す（ride_carry）。持ち越しが 1 を超えたら、木を足して入れる
 func _rider_pay(run: Dictionary, id: int, at: Vector3, left: bool) -> void:
 	var from: int = run.on.get(id, 0)
+	var acc0: float = run.acc_at.get(id, 0.0)
 	run.on.erase(id)
 	if id < 0:
 		return
@@ -431,9 +458,17 @@ func _rider_pay(run: Dictionary, id: int, at: Vector3, left: bool) -> void:
 	var n := 0
 	for look in pieces:
 		n += 10 if look == "brass" else 1
+	var carry: float = ride_carry.get(id, 0.0) + maxf(0.0, float(run.acc) - acc0 - n)
+	var extra := floori(carry + 0.0001)
+	carry -= extra
+	ride_carry[id] = carry
+	for i in extra:
+		pieces.append("wood")
+	n += extra
 	if n <= 0:
+		send({"kind": "ride_pay_one", "sled": String(run.name), "who": id, "sewn": [], "n": 0, "left": left, "carry": carry})
 		return
-	send({"kind": "ride_pay_one", "sled": String(run.name), "who": id, "sewn": pieces, "n": n, "left": left})
+	send({"kind": "ride_pay_one", "sled": String(run.name), "who": id, "sewn": pieces, "n": n, "left": left, "carry": carry})
 	_pay({id: n}, at, "spool", pieces, n)
 
 
@@ -600,15 +635,17 @@ func _ride_pay(sled: RigidBody3D, run: Dictionary) -> void:
 	var dist: float = run.dist
 	var wood: int = run.wood
 	var brass: int = run.marks.size()
-	var n := wood + 10 * brass
-	if n <= 0:
+	var n: int = run.whole   # 倍率を掛けたあとの、滑り全体の分（はじめから乗っていた人の取り分）
+	if n <= 0 and float(run.acc) <= 0.0:
 		return
 	var g := _gives(sled, run.riders.keys(), n)
 	var helpers := {}
 	for who in g.gives:
 		if not run.riders.has(who):
 			helpers[who] = g.gives[who]
-	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": wood, "brass": brass, "sewn": run.sewn, "gives": helpers})
+	# wood・brass は倍率を掛ける前の数（12 m ごと・速さを超えた回数）。value は倍率を掛けたあとの値打ち（端数 acc は持ち越しの元）
+	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": wood, "brass": brass, "value": n, "acc": run.acc,
+			"sewn": run.sewn, "gives": helpers})
 	_pay(helpers, sled.global_position)
 
 
