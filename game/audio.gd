@@ -166,13 +166,21 @@ func _bus(bus_name: String, send: String, effects: Array) -> void:
 		AudioServer.add_bus_effect(i, e)
 
 
+## バスの音量を変える（dur 秒かけて）。バスは毎回名前で引く: 変えているあいだに main.gd が設定の音量バス（SFX・Voice・Music）を
+## 差し込むと番号がずれ、番号で覚えていると別のバス（設定の音量）を書きかえてしまう（2026-10-30 に、効果音と音楽が設定より大きく、
+## 声が埋もれていた原因）
 func _bus_db(bus_name: String, db: float, dur := 0.0) -> void:
 	var i := AudioServer.get_bus_index(bus_name)
+	if i < 0:
+		return
 	if dur <= 0.0:
 		AudioServer.set_bus_volume_db(i, db)
 		return
 	var tw := create_tween()
-	tw.tween_method(func(v: float): AudioServer.set_bus_volume_db(i, v), AudioServer.get_bus_volume_db(i), db, dur)
+	tw.tween_method(func(v: float):
+		var j := AudioServer.get_bus_index(bus_name)
+		if j >= 0:
+			AudioServer.set_bus_volume_db(j, v), AudioServer.get_bus_volume_db(i), db, dur)
 
 
 func _bus_lowpass(bus_name: String, slot: int, enabled: bool, cutoff := 600.0) -> void:
@@ -591,6 +599,7 @@ const EMOTE_SOUNDS := {
 	"un": [[0, "voice_un", 3, -5.0, 1.0]],
 	"nn": [[0, "voice_nn", 3, -5.0, 1.0]],
 	"huh": [[2, "voice_unq", 3, -5.0, 1.0]],
+	"oi": [[2, "voice_oi", 3, -1.0, 1.0]],    # 遠くまで届く（_emote_sound で、届く距離を長く）
 	"hit": [[0, "voice_surprise", 3, -4.0, 1.0]],   # 雪玉が当たって、わっ
 	"whiff": [[2, "swish", 2, -10.0, 1.0]],
 	"throw": [[0, "swish", 2, -8.0, 1.15]],
@@ -628,7 +637,7 @@ func _on_emote(ev: Dictionary) -> void:
 			return
 	if who == null or not EMOTE_SOUNDS.has(ev.kind):
 		return
-	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "hit", "breath"]
+	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "oi", "hit", "breath"]
 	for s in EMOTE_SOUNDS[ev.kind]:
 		var p: float = s[4] * (pitch * rng.randf_range(0.98, 1.02) if voice else rng.randf_range(0.95, 1.05))
 		# 声（voice_*）は人ごとに決まった大きさの 1 つ（01 ふつう・02 高い・03 低い）。ほかの音は毎回選ぶ
@@ -653,7 +662,9 @@ func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, 
 		_shot2(p, s, db - 4.0, pitch)
 		p.finished.connect(p.queue_free)
 	else:
-		var p := _p3(world, bus if bus != "" else "Outdoor", db, 5.0, 45.0)
+		# 呼ぶ声は遠くまで届く（ほかの音は 45 m で消える）
+		var far := name_ == "voice_oi"
+		var p := _p3(world, bus if bus != "" else "Outdoor", db, 14.0 if far else 5.0, 120.0 if far else 45.0)
 		p.global_position = at
 		_shot(p, s, db, pitch)
 		p.finished.connect(p.queue_free)

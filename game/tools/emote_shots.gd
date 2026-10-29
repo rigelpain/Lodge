@@ -43,6 +43,8 @@ const SHOTS := [
 	["un", "un", 1],
 	["nn", "nn", 2],
 	["huh", "huh", 5],
+	["oi", "oi", 6],
+	["oi_high", "oi_high", 6],
 	["banzai", "banzai", 4],
 ]
 
@@ -216,6 +218,13 @@ func _act(kind: String) -> int:
 			await _wait_frames(8)
 			f = Doll.frame_index() + 1
 			p._left_click()
+		"oi_high":
+			# 高い片手のひらで場所を示しながら、空いた手を口に当てて呼ぶ
+			p._set_hand("R")
+			p.set_height("high")
+			await _wait_frames(8)
+			f = Doll.frame_index() + 1
+			p.emote("oi")
 		"crouch":
 			_key(KEY_CTRL, true)
 		"make_ball":
@@ -294,7 +303,7 @@ func _camera(view: String, kind: String) -> void:
 			if kind == "banzai":
 				tgt = me + Vector3(0, 0.6, 0)
 				cam.look_at_from_position(me + Vector3(2.8, 1.2, -2.2), tgt)
-			elif kind.begins_with("high_") or kind.begins_with("low_") or kind.begins_with("point_") or kind in ["clap", "ring", "huh"]:
+			elif kind.begins_with("high_") or kind.begins_with("low_") or kind.begins_with("point_") or kind in ["clap", "ring", "huh", "oi", "oi_high"]:
 				# 手の形は前（見ている先の側）から: 相手から見た形
 				cam.look_at_from_position(me + Vector3(-1.3, 1.2, -2.8), me + Vector3(0, 0.85, 0))
 			elif kind == "sled":
@@ -329,6 +338,12 @@ func _check() -> void:
 	await _wait_frames(90)
 	p.emote("huh")
 	await _wait_frames(90)
+	p.emote("oi")
+	var waved := false
+	for i in 120:
+		await physics_frame
+		waved = waved or bot.doll.waving
+	print("おーい に: 仲間の手を振る=", waved)
 	p._set_hand("both")
 	p.set_height("high")
 	await _wait_frames(6)
@@ -337,4 +352,4 @@ func _check() -> void:
 	for line in _log:
 		print("出来事: ", line)
 	var mine := func(k: String): return _log.filter(func(l): return (" %s " % k) in l and l.ends_with("who=%d" % bot.id)).size()
-	print("ハイタッチ=%d 握手=%d 仲間の手=%d 仲間の声=%d 仲間のウン=%d 仲間の拍手=%d" % [mine.call("high_five"), mine.call("shake"), mine.call("hands"), mine.call("nn"), mine.call("un"), mine.call("clap")])
+	print("ハイタッチ=%d 握手=%d 仲間の手=%d 仲間の声=%d 仲間のウン=%d 仲間のおーい=%d 仲間の拍手=%d" % [mine.call("high_five"), mine.call("shake"), mine.call("hands"), mine.call("nn"), mine.call("un"), mine.call("oi"), mine.call("clap")])

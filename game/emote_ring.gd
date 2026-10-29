@@ -2,12 +2,12 @@ extends Control
 
 const Palm := preload("res://palm.gd")
 ## 身ぶりの輪。Tab を押しているあいだ画面のまんなかに出て、マウスを動かした向きのものを選び、離すと出す。
-## 挨拶のボタンではなく、手と声の材料。6 つ: 上が高い手のひら、右上がウン、右下がンーン、下が低い手のひら、
-## 左下が首をかしげてウン？、左上が指さし。手の 3 つは、いま選んでいる手（右・左・両手。Q と X で替える）で出す。
+## 挨拶のボタンではなく、手と声の材料。7 つ: 上が高い手のひら、右回りにおーーーい（遠くへ呼ぶ）・ウン・ンーン・低い手のひら・
+## 首をかしげてウン？・指さし。手の 3 つは、いま選んでいる手（右・左・両手。Q と X で替える）で出す。
 ## 文字は出さない。紙の丸に、ゲームの手と同じ紙の手形（アップリケ）と、墨の線の絵。いま掲げている手には赤い縁。
 ## まんなかに、いまの手（右・左・両手）を小さな手袋で描く。
 
-const SLOTS := ["high", "un", "nn", "low", "huh", "point"]
+const SLOTS := ["high", "oi", "un", "nn", "low", "huh", "point"]
 const NONE := "?"            # 何も選ばずに離した
 const RING_R := 112.0
 const DISC_R := 38.0
@@ -63,9 +63,9 @@ func move(rel: Vector2) -> void:
 	if _aim.length() < PICK:
 		_sel = -1
 	else:
-		# 上が 0、時計回りに 6 つ
-		var a := fposmod(atan2(_aim.x, -_aim.y) + PI / 6.0, TAU)
-		_sel = int(a / (TAU / 6.0)) % 6
+		# 上が 0、時計回り
+		var a := fposmod(atan2(_aim.x, -_aim.y) + PI / SLOTS.size(), TAU)
+		_sel = int(a / (TAU / SLOTS.size())) % SLOTS.size()
 	if _sel != was:
 		queue_redraw()
 
@@ -79,8 +79,8 @@ func close() -> String:
 func _draw() -> void:
 	var c := get_viewport_rect().size * 0.5   # 輪は CanvasLayer の下にあるので、画面のまんなかを直接とる
 	draw_circle(c, RING_R + DISC_R + 14.0, Color(0.1, 0.1, 0.14, 0.18))   # 下の淡い丸（世界が透けて見える）
-	for i in 6:
-		var a := TAU * i / 6.0
+	for i in SLOTS.size():
+		var a := TAU * i / SLOTS.size()
 		var p := c + Vector2(sin(a), -cos(a)) * RING_R
 		var name_: String = SLOTS[i]
 		var big := i == _sel
@@ -153,6 +153,14 @@ func _icon(name_: String, c: Vector2, k: float) -> void:
 				var e := Vector2(c.x + s * 19 * k, y)
 				_line(e, e + Vector2(-s * 5, -4) * k)
 				_line(e, e + Vector2(-s * 5, 4) * k)
+		"oi":
+			# 呼ぶ: 横顔の口に手を当てて、声が遠くへ広がる弧
+			var h := c + Vector2(-12, -2) * k
+			draw_arc(h, 11.0 * k, 0, TAU, 20, INK, 2.6, true)
+			_hand("palm", 1, h + Vector2(12, 4) * k, 120.0 * k, 0.9)
+			for i in 3:
+				var r := (9.0 + i * 6.0) * k
+				draw_arc(c + Vector2(8, 0) * k, r, -0.6, 0.6, 10, INK, 2.0, true)
 		"huh":
 			# かしげた頭（傾いた肩の線）と、問いかけの小さな巻き
 			var h := c + Vector2(-4, 0) * k

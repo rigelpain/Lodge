@@ -87,7 +87,7 @@ func _input(e: InputEvent) -> void:
 		KEY_R: learn("return")
 		KEY_T: learn("sew"); learn("set")
 		KEY_G: learn("fold")
-		KEY_Q, KEY_G, KEY_TAB, KEY_1, KEY_2, KEY_3, KEY_4, KEY_B: learn("gesture")
+		KEY_Q, KEY_X, KEY_TAB, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_B: learn("gesture")
 
 
 func _process(dt: float) -> void:
@@ -300,7 +300,7 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if _meeting and not near_sled and _meet_t < MEET_SHOW and _meet_n <= LEARNED and not known("gesture"):
 		if main.get("emotes") != null:
 			_hint("g_ring", ["Tab"], "ring")
-			_hint("g_voice", ["1"], "voice")
+			_hint("g_voice", ["4"], "voice")   # 1〜3 は手（高い・低い手のひら、指さし）、4〜7 が声
 			_hint("g_breath", ["B"], "breath")
 		else:
 			_hint("g_wave", ["Q"], "wave")
@@ -480,7 +480,7 @@ class View extends Control:
 			[["Esc"], "settings"],
 		]
 		if hud.main.get("emotes") != null:
-			rows += [[["Tab"], "ring"], [["1", "2", "3", "4"], "voice"], [["B"], "breath"]]
+			rows += [[["Tab"], "ring"], [["1", "2", "3"], "ring"], [["4", "5", "6", "7"], "voice"], [["B"], "breath"]]
 		else:
 			rows += [[["Q"], "wave"], [["G"], "voice"]]
 		if hud.main.get("sewing") != null:
