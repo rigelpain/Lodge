@@ -30,6 +30,12 @@ WASD で歩き、マウスで見回す。ソリに向かって W で押す。E �
 /Applications/Godot.app/Contents/MacOS/Godot --path game --resolution 1280x720 -s res://tools/ride_shots.gd -- --bots=0 --no-sound --dir="$PWD/design/ride-wind"
 ```
 
+ロッジの中の大きなミシンは、前に立つと針が持ち上がり、T で縫う（7 つの場面の動きの試作。`game/sewing_machine.gd`）。Y でコマ撮り（12 fps、既定）／なめらか、H で仲間を足踏みに呼ぶと速く縫える。`--spawn=sew` でミシンの前から始まる。絵と感想は [design/sewing-motion](design/sewing-motion/README.md)。場面ごとの絵を撮るには:
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/sew_shots.gd -- --bots=0 --no-snow --no-sound --view=close --dir=/tmp/sew
+```
+
 ## Claude Code のスキル
 
 `.claude/skills/` に入れています（どちらも MIT）。
