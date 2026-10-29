@@ -24,6 +24,7 @@ static func color(fabric: String) -> Color:
 static func tint(root: Node, kind: String, fabric: String) -> void:
 	if fabric == "":
 		return
-	var key: Color = preload("res://sled.gd").KINDS.get(kind, {}).get("color", COLORS["red"])
+	var k: Dictionary = preload("res://sled.gd").KINDS.get(kind, {})
+	var key: Color = k.get("color", COLORS["red"])
 	if not color(fabric).is_equal_approx(key):
-		Props.recolor(root, key, color(fabric))
+		Props.recolor(root, key, color(fabric), k.get("whole", false))

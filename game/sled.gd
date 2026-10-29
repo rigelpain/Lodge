@@ -12,7 +12,7 @@ const Snowball := preload("res://snowball.gd")
 const PUSH_FORCE := 300.0   # 1人が押す力 (N)。1人でも最も急な所をじりじり登れる
 const CLIMB_DAMP := 3.5     # 登るときの雪の抵抗（押すのをやめるとすぐ止まる。大きいほどじりじり）
 const STAND := 0.6                 # つかむ人が立つ、縁からの距離
-const ROPE_LEN := 3.0
+var ROPE_LEN := 3.0           # 引き紐の長さ（KINDS の rope_len。米袋は短い）
 const ROPE_K := 260.0              # 紐が張ったときの引く力 (N/m)
 const SLIP_RESIST := 18.0          # 滑り木の横滑りのしにくさ（前後 2 点それぞれ）
 const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N per m/s)
@@ -35,7 +35,9 @@ const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N 
 const KINDS := {
 	"sack": {"mass": 1.0, "box": Vector3(0.6, 0.15, 1.1), "runner_x": 0.2, "runner_z": 0.4, "color": Color("B8402E"), "stitch": "running",
 			"drag": 25.0, "push": 0.8, "sink": 0.0, "plane": 1.0, "turn": 1.0, "stand_slip": 0.03, "stand_speed": 3.0, "kick": 1.0,
-			"seats": [Vector3(0, 0.15, 0.1)]},
+			"seats": [Vector3(0, 0.15, 0.1)],
+			"whole": true,                   # メインカラーは袋全体（地のクラフト紙ごと）。印刷は読める色に（props.gd の recolor）
+			"rope_spare": 0.1, "rope_len": 1.2},   # 紐は前の左右の耳を結ぶ短いたわみと、まんなかから短い引っ張り紐
 	"small": {"mass": 15.0, "box": Vector3(0.75, 0.45, 1.6), "runner_x": 0.28, "runner_z": 0.6, "color": Color("D2553A"), "stitch": "running",
 			"drag": 1.5, "push": 3.6, "sink": 0.0, "plane": 1.0, "turn": 1.0, "stand_slip": 0.1, "stand_speed": 1.5, "kick": 0.0,
 			"seats": [Vector3(0, 0.06, -0.3), Vector3(0, 0.06, 0.4)]},
@@ -194,6 +196,7 @@ func _ready() -> void:
 	if not KINDS.has(kind):
 		kind = "mid"
 	var k: Dictionary = KINDS[kind]
+	ROPE_LEN = k.get("rope_len", 3.0)
 	kind_mass = k.mass
 	mass = maxf(k.mass, BODY_MIN_MASS)
 	_k = mass / MID_MASS
@@ -235,7 +238,7 @@ func _make_body() -> void:
 	if ResourceLoader.exists(glb):
 		_body = Props.make(glb)
 		if not color().is_equal_approx(k.color):
-			Props.recolor(_body, k.color, color())
+			Props.recolor(_body, k.color, color(), k.get("whole", false))
 	else:
 		var mi := MeshInstance3D.new()
 		var bm := BoxMesh.new()
@@ -269,7 +272,7 @@ func set_main_color(c: Color) -> void:
 	if _body is MeshInstance3D and (_body as MeshInstance3D).material_override:   # 仮の箱
 		((_body as MeshInstance3D).material_override as StandardMaterial3D).albedo_color = color()
 	else:
-		Props.recolor(_body, KINDS[kind].color, color())
+		Props.recolor(_body, KINDS[kind].color, color(), KINDS[kind].get("whole", false))
 	if _stitch:
 		Look.stitch_set_color(_stitch, color())
 

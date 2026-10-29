@@ -20,7 +20,8 @@ const Palm := preload("res://palm.gd")
 ## （素手 → 持ち物 → …。持ち物がないときと Alt を押しているときは、ホイールは視野角。視野角はトラックパッドならピンチ）。
 ## 売り子のおじさんの前で F で売り台を開く。ミシンの前で F か T でミシンの画面を開き、持ち物から型紙と布を選んで縫う。
 ## 米袋は装備（craft.gd の sacks）: N で、いま選んでいる米袋を足もとにぽんと出して、すぐ乗る（坂ならそのまま滑り出す）。
-## もう一度 N で降りて、くるっと丸めて帯に戻す。離れた所に出したままなら、N で足もとへ呼び戻す。Shift+N で呼び出す米袋を替える。
+## もう一度 N で降りて、くるっと丸めて帯に戻す。離れた所に出したままなら、N で足もとへ呼び戻す。
+## どの米袋を装備するかは、I で開く装備の画面（craft_ui.gd）で選ぶ。
 ## 左クリックの順: 雪玉を持っていれば投げる → 高い両手のひらなら拍手。
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
@@ -255,10 +256,10 @@ func _unhandled_input(e: InputEvent) -> void:
 					emote("breath")
 			KEY_N:
 				if craft and not menu_open and not rooted():
-					if e.shift_pressed:
-						craft.send({"kind": "sack_pick", "who": id, "index": int(craft.sack_sel.get(id, 0)) + 1})
-					else:
-						toggle_sack()
+					toggle_sack()
+			KEY_I:
+				if craft and not menu_open and get_parent().get("craft_ui"):
+					get_parent().craft_ui.open_gear()   # 装備の画面
 			KEY_Z:
 				# 手に持つ物を替える（Shift で逆回り）。ホイールやトラックパッドが使えないとき
 				if craft and not craft.bag(id).is_empty() and not menu_open:

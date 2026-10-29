@@ -1,0 +1,12 @@
+最初の装備の米袋 [{ "fabric": "", "tag": 1 }] 持ち物 []
+N: 乗った true
+1.5 秒後の速さ 3.2 m/s
+乗ったまま N: 帯に戻った true 歩く true
+I: 装備の画面 true
+からしの米袋を選ぶ: true 装備 1 / 3
+I でもう一度: 閉じた true
+N で装備の米袋が出た: true（布 mustard）
+40 m 離れて 5 秒: ひとりでに帯に戻った true
+大きいソリをつかんでいる true
+つかんだまま N: 手を離して米袋に乗った true
+持ち物 [{ "kind": "pattern", "sled": "small" }, { "kind": "fabric", "fabric": "plum" }]（米袋は入らない）

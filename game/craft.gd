@@ -16,7 +16,9 @@ extends Node
 ##   unfold {slot, item, at, yaw, up, id}  畳んだソリを手から前の床に広げて置く（up は床の傾き）
 ##   sack_out  {at, yaw, up}   装備の米袋（いま選んでいるもの）を足もとに出す（2026-10-29 代表: 米袋は装備。持ち物の列は使わない）
 ##   sack_in   {}              出している米袋を、くるっと丸めて帯に戻す
-##   sack_pick {index}         装備の枠の中で、呼び出す米袋を替える
+##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える
+## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋だけ。服や名札の柄を足すときは、
+## GEARS に種類を足し、_gear_lists に持ち物の配列の入れ物を足す
 ## 米袋は全員が最初から 1 つ（標準）持つ。米袋の型紙と布で縫った米袋は、持ち物でなく装備の枠に入り、選ばれる
 
 signal happened(ev: Dictionary)
@@ -43,8 +45,9 @@ var bags := {}                 # 人の番号 → 持ち物（item の配列）
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
 var _next_sled := 1
-var sacks := {}                # 人の番号 → 装備の米袋の配列 [{fabric, tag}]（0 番は標準）
-var sack_sel := {}             # 人の番号 → 呼び出す米袋の番号
+const GEARS := ["sack"]        # 装備の種類（装備の画面の並び）
+var sacks := {}                # 人の番号 → 持っている米袋の配列 [{fabric, tag}]（0 番は標準）
+var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
 var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
 const SACK_FAR := 30.0         # 誰も乗っていない米袋から持ち主がこれより離れて…
@@ -60,6 +63,19 @@ func join(who: int) -> void:
 	hands[who] = -1
 	sacks[who] = [{"fabric": "", "tag": 1 + posmod(who - 1, preload("res://sled_tags.gd").count() - 1)}]   # 標準の米袋
 	sack_sel[who] = 0
+
+
+## 種類 gear の、持っている物の配列と、装備している番号
+func gear_list(who: int, gear: String) -> Array:
+	match gear:
+		"sack": return sacks.get(who, [])
+	return []
+
+
+func gear_index(who: int, gear: String) -> int:
+	match gear:
+		"sack": return int(sack_sel.get(who, 0))
+	return -1
 
 
 ## いま呼び出す米袋 {fabric, tag}
@@ -196,10 +212,13 @@ func _apply(ev: Dictionary) -> bool:
 						if d and d.get("sled") == gs:
 							d.set("sled", world.get("sled"))
 			gs.queue_free()
-		"sack_pick":
-			var n: int = sacks[who].size()
-			sack_sel[who] = posmod(int(ev.index), n)
-			ev["index"] = sack_sel[who]
+		"equip":
+			var list := gear_list(who, String(ev.get("gear", "")))
+			var i := int(ev.index)
+			if i < 0 or i >= list.size():
+				return false
+			match ev.gear:
+				"sack": sack_sel[who] = i
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):

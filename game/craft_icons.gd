@@ -41,10 +41,11 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			sack_roll(ci, Vector2(0, -12), 0.8, Color("B8402E"), a)
 			Icons.arrow(ci, Vector2(0, 0), Vector2(0, 14), Icons.THREAD, a, 2.0)
 			Icons.patch(ci, Icons.rr(-18, 16, 36, 9, 4), KRAFT, a, false)
-		"sack_pick":   # 呼び出す米袋を替える
-			sack_roll(ci, Vector2(-8, -8), 0.6, Color("B8402E"), a * 0.6)
-			sack_roll(ci, Vector2(6, 6), 0.7, Fabrics.color("navy"), a)
-			Icons.arc_arrow(ci, Vector2(0, 0), 22.0, PI * 1.1, PI * 1.8, Icons.THREAD, a, 1.8)
+		"gear":   # 装備の画面: 帯と、下げた色違いの米袋
+			Icons.patch(ci, Icons.rr(-26, -22, 52, 8, 3), Icons.WOOD.darkened(0.2), a, true, Icons.CAP)
+			sack_roll(ci, Vector2(-12, 4), 0.5, Color("B8402E"), a)
+			sack_roll(ci, Vector2(12, 4), 0.5, Color("EFE6D2"), a, Fabrics.color("navy"))
+			sack_roll(ci, Vector2(0, 20), 0.5, Fabrics.color("mustard").darkened(0.6), a, Fabrics.color("mustard"))
 		"shopkeeper":   # 売り子のおじさんの顔: 紺のとんがり帽、紙の顔、丸眼鏡、綿のひげ
 			var indigo := Color(0.20, 0.25, 0.46)
 			Icons.patch(ci, PackedVector2Array([Vector2(-20, -6), Vector2(4, -30), Vector2(14, -24), Vector2(20, -6)]), indigo, a, false)
@@ -73,13 +74,25 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 			Icons.mitten(ci, Vector2(0, 2), 0.0, Icons.RED, a, true, 1.5)
 
 
-## 丸めた米袋（帯に下げる形）。band は布の色の帯（標準の米袋は印刷の赤）
-static func sack_roll(ci: CanvasItem, c: Vector2, sc: float, band: Color, a := 1.0) -> void:
-	Icons.patch(ci, Icons.xf(Icons.rr(-20, -9, 40, 18, 9), 0.0, c, sc), KRAFT, a, false)
+## 米袋の袋の色（標準はクラフト紙、色違いは布の色）と、帯の色（標準は印刷の赤、色違いは地の上で読める色）
+static func sack_body(spec: Dictionary) -> Color:
+	return Fabrics.color(spec.fabric) if spec.get("fabric", "") != "" else KRAFT
+
+
+static func sack_band(spec: Dictionary) -> Color:
+	if spec.get("fabric", "") == "":
+		return Color("B8402E")
+	var c := Fabrics.color(spec.fabric)
+	return Color("EFE6D2") if c.get_luminance() < 0.5 else c.darkened(0.6)
+
+
+## 丸めた米袋（帯に下げる形）。band は帯の色、body は袋の色
+static func sack_roll(ci: CanvasItem, c: Vector2, sc: float, band: Color, a := 1.0, body := KRAFT) -> void:
+	Icons.patch(ci, Icons.xf(Icons.rr(-20, -9, 40, 18, 9), 0.0, c, sc), body, a, false)
 	Icons.patch(ci, Icons.xf(Icons.rr(-5, -9.5, 10, 19, 2), 0.0, c, sc), band, a, false)
 	var end := c + Vector2(15, 0) * sc
-	ci.draw_arc(Icons._o + end * Icons._s, 6.0 * sc * Icons._s, 0.0, TAU * 0.8, 14, Color(KRAFT.darkened(0.35), a), maxf(1.2 * Icons._s, 1.0), true)
-	ci.draw_arc(Icons._o + end * Icons._s, 3.0 * sc * Icons._s, 0.0, TAU * 0.8, 10, Color(KRAFT.darkened(0.35), a), maxf(1.0 * Icons._s, 1.0), true)
+	ci.draw_arc(Icons._o + end * Icons._s, 6.0 * sc * Icons._s, 0.0, TAU * 0.8, 14, Color(body.darkened(0.35), a), maxf(1.2 * Icons._s, 1.0), true)
+	ci.draw_arc(Icons._o + end * Icons._s, 3.0 * sc * Icons._s, 0.0, TAU * 0.8, 10, Color(body.darkened(0.35), a), maxf(1.0 * Icons._s, 1.0), true)
 	Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(-12, -9), Vector2(-12, 9)]), 0.0, c, sc), Icons.CAP, 1.4, a)
 
 

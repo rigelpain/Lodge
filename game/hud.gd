@@ -85,6 +85,7 @@ func _input(e: InputEvent) -> void:
 		KEY_R: learn("return")
 		KEY_T: learn("sew"); learn("set")
 		KEY_N: learn("sack")
+		KEY_I: learn("gear")
 		KEY_Q, KEY_X, KEY_TAB, KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_B: learn("gesture")
 
 
@@ -479,7 +480,7 @@ class View extends Control:
 		if hud.main.get("sewing") != null:
 			rows.append([["T"], "needle"])
 		if hud.main.get("craft") != null:   # 工房: 売り子に F、ミシンに T でセット、G で畳む、左クリックで広げる、ホイールで持ち替え
-			rows += [[["F"], "shop"], [["F"], "set"], [["N"], "sack"], [["Shift", "N"], "sack_pick"], [["mouse_wheel"], "hand"], [["Z"], "hand"]]
+			rows += [[["F"], "shop"], [["F"], "set"], [["N"], "sack"], [["I"], "gear"], [["mouse_wheel"], "hand"], [["Z"], "hand"]]
 		var bs := 46.0 * u                # 一つの段のワッペンの高さ
 		var row_h := bs * 1.08
 		var col_w := 0.0
