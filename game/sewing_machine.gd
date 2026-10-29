@@ -14,12 +14,17 @@ extends Node3D
 ## 12 コマでは 1 秒に 6 回より速い上下は正しく見えない（遅く見えたり逆に回って見えたりする）ので、針の速さの上限は
 ## 5.5 回／秒、はずみ車は針 1 往復で半回転にしてある。
 ## 操作: 立つ所のそばで T で縫う。Y でコマ撮り／なめらか。H で仲間（ボット）を足踏みに呼ぶ／帰す。
+## 工房（craft.gd）があるとき: 型紙か布を手に持って T でセットする（台の上に置かれる）。型紙と布の両方がそろうと縫い始め、
+## 布はその色で入り、見せるで出てくるのは型紙の大きさの、広げた実寸のソリ（布の色）。床に着いたら本物のソリになる。
+## 型紙と布はそれぞれ別の人がセットしてもよい（二人で一つのソリを作れる）。
 ## 起動引数: --sew-smooth（なめらかで始める）、--sew-helper（仲間を足踏みに立たせて始める）、--spawn=sew（ミシンの前から始める）
 
 const Doll := preload("res://doll.gd")
 const Bot := preload("res://bot.gd")
 const Props := preload("res://props.gd")
 const Look := preload("res://look.gd")
+const Fabrics := preload("res://fabrics.gd")
+const Sled := preload("res://sled.gd")
 
 enum Phase { WAIT, CALL, FEED, CHARGE, RELEASE, SHOW, AFTER }
 const PHASE_NAMES := ["wait", "call", "feed", "charge", "release", "show", "after"]
@@ -53,6 +58,9 @@ var phase := Phase.WAIT
 var phase_t := 0.0
 var last_charge := 0.0       # 直前のためにかかった時間 (s)。確かめ用
 var helper: Node3D           # H で呼んだ仲間
+var loaded := {}             # セットした型紙と布 {"pattern": 大きさ, "fabric": 色, "who": 型紙をセットした人}
+var _real := {}              # いま縫っている本物のソリ {"sled", "fabric", "who"}（空なら 1 m の見本）
+var _set_look := {}          # 台の上に置いた型紙・布の形
 
 var machine: Node3D
 var _mv := {}                # 名前 → 動かす部品
@@ -153,6 +161,9 @@ func _ready() -> void:
 	_dash_mesh = BoxMesh.new()
 	_dash_mesh.size = Vector3(0.02, 0.01, 0.04)
 	_dash_mat = Look.felt(Color("B8402E"), 4.0)
+	var craft: Node = world.get("craft") if world else null
+	if craft:
+		craft.happened.connect(_on_craft)
 
 
 # ---- 操作 ------------------------------------------------------------------------
@@ -163,7 +174,10 @@ func _unhandled_input(e: InputEvent) -> void:
 	match e.physical_keycode:
 		KEY_T:
 			if _user_near():
-				use()
+				if world.get("craft") and world.get("player"):
+					world.player.load_machine(self)   # 手に持った型紙か布をセットする（両方そろうと縫い始める）
+				else:
+					use()
 		KEY_Y:
 			set_stepped(not stepped)
 		KEY_H:
@@ -176,6 +190,52 @@ func use() -> bool:
 		return false
 	_set_phase(Phase.FEED)
 	return true
+
+
+## 手に持った物をセットできるか（待つ・呼ぶのときだけ。型紙と布は 1 つずつ）
+func accepts(it: Dictionary) -> bool:
+	if phase != Phase.WAIT and phase != Phase.CALL:
+		return false
+	match it.get("kind", ""):
+		"pattern": return not loaded.has("pattern")
+		"fabric": return not loaded.has("fabric")
+	return false
+
+
+func _on_craft(ev: Dictionary) -> void:
+	if ev.kind != "load":
+		return
+	var it: Dictionary = ev.item
+	if it.kind == "pattern":
+		loaded["pattern"] = it.sled
+		loaded["who"] = ev.who
+	else:
+		loaded["fabric"] = it.fabric
+	_show_loaded(it.kind)
+	_fx("sew_clack", -10.0, 1.2)
+	if loaded.has("pattern") and loaded.has("fabric"):
+		_real = {"sled": loaded.pattern, "fabric": loaded.fabric, "who": int(loaded.who)}
+		loaded = {}
+		use()
+
+
+## セットした型紙・布を、台の手前に置いて見せる（型紙は左、布は右）
+func _show_loaded(kind: String) -> void:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	if kind == "pattern":
+		bm.size = Vector3(0.34, 0.004, 0.42)
+		mi.material_override = Look.paper(Color(0.84, 0.72, 0.52))
+		mi.position = _bed_point(-0.45) + Vector3(0.38, 0.0, 0)
+		mi.rotation.y = 0.12
+	else:
+		bm.size = Vector3(0.36, 0.05, 0.26)
+		mi.material_override = Look.felt(Fabrics.color(loaded.fabric), 3.0)
+		mi.position = _bed_point(-0.45) + Vector3(-0.38, 0.02, 0)
+		mi.rotation.y = -0.1
+	mi.mesh = bm
+	machine.add_child(mi)
+	_set_look[kind] = mi
 
 
 func set_stepped(on: bool) -> void:
@@ -269,6 +329,7 @@ func _set_phase(p: Phase) -> void:
 			_landed = false
 			_start_product()
 		Phase.AFTER:
+			_deliver()
 			# いまの速さのまま入り、ちょうど針がいちばん上へ来た所で止まる（エルミート曲線）
 			var d := ceilf(_phi + _rate * STOP_LEN / 2.2) - _phi
 			_stop = {"p0": _phi, "d": d, "m0": _rate * STOP_LEN / d, "t": 0.0}
@@ -471,7 +532,10 @@ func _start_cloth() -> void:
 	var bm := BoxMesh.new()
 	bm.size = Vector3(0.6, 0.016, 0.48)
 	mi.mesh = bm
-	mi.material_override = Look.felt(Color(0.93, 0.89, 0.8), 3.0)   # クリームの布に、赤い糸の縫い目が並ぶ
+	mi.material_override = Look.felt(Color(0.93, 0.89, 0.8) if _real.is_empty() else Fabrics.color(_real.fabric), 3.0)   # 布に、赤い糸の縫い目が並ぶ
+	for k in _set_look:   # 台に置いた型紙と布は、縫う布になって消える
+		(_set_look[k] as Node).queue_free()
+	_set_look = {}
 	_cloth.add_child(mi)
 	machine.add_child(_cloth)
 	_cloth_z0 = _mark["work"].z
@@ -530,6 +594,19 @@ func _start_product() -> void:
 		_cloth = null
 	_product = Node3D.new()
 	_product.name = "Product"
+	if not _real.is_empty():
+		# 本物: 型紙の大きさの、広げた実寸のソリ（布の色）。原点はソリの体と同じ（床に着く所）
+		var look := Props.make("res://props/sled_%s.glb" % _real.sled)
+		Fabrics.tint(look, _real.sled, _real.fabric)
+		_product.add_child(look)
+		machine.add_child(_product)
+		_prod_pos = _product_start()
+		_prod_scl = Vector3.ONE * 0.01
+		_prod_pitch = 0.0
+		_product.position = _prod_pos
+		_product.scale = _prod_scl
+		_fx2("sew_pop", -6.0, 0.8)
+		return
 	var sled := Props.make("res://props/sled_small.glb")
 	var box := _aabb(sled)   # 木の外に出す前に測る
 	var k := PRODUCT_LEN / maxf(box.size.z, 0.01)
@@ -553,6 +630,9 @@ func _product_start() -> Vector3:
 
 ## 見せる: 押さえの前でふくらむ → 前へ押し出され、鼻先が下がる → 台から床へ滑り下りる → 床を滑って止まる
 func _move_product(_dt: float) -> void:
+	if not _real.is_empty():
+		_move_real()
+		return
 	var t := phase_t
 	var s0 := _product_start()
 	var o: Vector3 = _mark["out"]
@@ -585,6 +665,52 @@ func _move_product(_dt: float) -> void:
 	_prod_pitch = pitch
 	if t > 0.25:
 		_prod_scl = Vector3(1.0 / sqrt(sq), sq, 1.0 / sqrt(sq))
+
+
+## 本物のソリの見せる: 押さえの前に 1 m ほどの大きさで現れ → 前へ押し出されながら実寸までふくらみ →
+## 台から床へ滑り下りて、少しつぶれて止まる。止まる所は、ミシンのまんなかの前（人の立つ所の並び）で、
+## 後ろの端が「出口」の目印の少し奥。横に立つ売り子のおじさんとは重ならない
+func _move_real() -> void:
+	var t := phase_t
+	var L: float = Sled.KINDS[_real.sled].box.z
+	var s0 := _product_start()
+	var o: Vector3 = _mark["out"]
+	var land := Vector3(_mark["stand"].x, o.y, o.z - L * 0.5 + 0.6)
+	var first := minf(1.0, 1.0 / L)   # 出はじめは長さ 1 m
+	var p := s0
+	var pitch := 0.0
+	var grow := first * _ease_back(clampf(t / 0.25, 0.0, 1.0))
+	var sq := 1.0
+	if t >= 0.25 and t < 0.85:
+		var u := (t - 0.25) / 0.6
+		grow = lerpf(first, 1.0, _ease_back(u))
+		p = s0.lerp(land, u * u * (3.0 - 2.0 * u))
+		p.y = lerpf(s0.y, o.y, u * u) + 0.3 * sin(u * PI)
+		pitch = -0.35 * sin(u * PI)
+	elif t >= 0.85:
+		if not _landed:
+			_landed = true
+			_fx2("sew_pop", -3.0, 0.5)
+		grow = 1.0
+		p = land
+		sq = 1.0 - 0.15 * exp(-(t - 0.85) * 8.0) * cos((t - 0.85) * 26.0)
+	_prod_pos = p
+	_prod_pitch = pitch
+	_prod_scl = Vector3(grow / sqrt(sq), grow * sq, grow / sqrt(sq))
+
+
+## 縫い上がったソリを、本物のソリとして床に出す（craft.gd の sewn。見せるの形は消す）
+func _deliver() -> void:
+	if _real.is_empty() or _product == null:
+		return
+	var craft: Node = world.get("craft")
+	var at := machine.to_global(_prod_pos)
+	var fwd := -machine.global_basis.z
+	craft.send({"kind": "sewn", "who": _real.who, "sled": _real.sled, "fabric": _real.fabric, "at": at,
+			"yaw": atan2(-fwd.x, -fwd.z)})
+	_product.queue_free()
+	_product = null
+	_real = {}
 
 
 func _aabb(n: Node3D) -> AABB:
