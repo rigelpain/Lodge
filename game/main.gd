@@ -128,7 +128,7 @@ func _ready() -> void:
 	sled.trail_fade = args.get("trail-fade", sled.TRAIL_FADE)
 	if args.has("sled-color"):
 		sled.main_color = Color.from_string(args["sled-color"], Color(0, 0, 0, 0))
-	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3)
+	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6 + sled.place_lift(), -3)   # 長いソリが坂に埋まらないように
 	sled.snow_lift = snow_lift
 	add_child(sled)
 	if args.has("sled-yaw"):   # 確かめ用: 最初からソリを横や逆に向けておく

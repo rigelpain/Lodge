@@ -444,6 +444,14 @@ func _update_walkers(dt: float) -> void:
 			w.breath_t = maxf(w.breath_t, 1.5)
 
 
+## 米袋に乗ったまま足で雪を蹴った（player.gd が呼ぶ）。踏ん張りの音を短く高めに
+func kick(who: Node3D) -> void:
+	var w: Dictionary = _walkers.get(who, {})
+	if w.is_empty():
+		return
+	_play_step(w, _pick("step_snow_push", 4), -6.0, rng.randf_range(1.15, 1.3), who == player)
+
+
 func _play_step(w: Dictionary, s: AudioStreamWAV, db: float, pitch: float, is_player: bool) -> void:
 	if is_player:
 		_shot2(w.step, s, db, pitch)
