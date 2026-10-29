@@ -31,25 +31,27 @@ const RUNNER_DRAG := 3.0           # 滑り木 1 本の前後方向の抵抗 (N 
 ## 止まっているときの動かしやすさ（2026-10-29 代表「ソリの静止状態での移動自由度も、小さければ小さいほど高くしてほしい」）
 ##   stand_slip   止まっているときの横すべりのしにくさ（SLIP_RESIST に掛ける割合）。小さいほど、その場で回しやすく横にずらしやすい
 ##   stand_speed  この速さ (m/s) までは「止まっている」として stand_slip を使う。米袋は底が平らなので、ゆっくりなら横へも引きずれる
+##   kick  乗って滑っているあいだ、Space で足で雪を蹴って進める効き（米袋だけ。KICK_DV に掛ける）
 const KINDS := {
 	"sack": {"mass": 1.0, "box": Vector3(0.6, 0.15, 1.1), "runner_x": 0.2, "runner_z": 0.4, "color": Color("B8402E"), "stitch": "running",
-			"drag": 1.0, "push": 3.3, "sink": 0.0, "plane": 1.0, "turn": 1.0, "stand_slip": 0.03, "stand_speed": 3.0,
+			"drag": 25.0, "push": 0.8, "sink": 0.0, "plane": 1.0, "turn": 1.0, "stand_slip": 0.03, "stand_speed": 3.0, "kick": 1.0,
 			"seats": [Vector3(0, 0.15, 0.1)]},
 	"small": {"mass": 15.0, "box": Vector3(0.75, 0.45, 1.6), "runner_x": 0.28, "runner_z": 0.6, "color": Color("D2553A"), "stitch": "running",
-			"drag": 1.5, "push": 3.6, "sink": 0.0, "plane": 1.0, "turn": 1.0, "stand_slip": 0.1, "stand_speed": 1.5,
+			"drag": 1.5, "push": 3.6, "sink": 0.0, "plane": 1.0, "turn": 1.0, "stand_slip": 0.1, "stand_speed": 1.5, "kick": 0.0,
 			"seats": [Vector3(0, 0.06, -0.3), Vector3(0, 0.06, 0.4)]},
 	"mid": {"mass": 60.0, "box": Vector3(1.5, 0.45, 2.8), "runner_x": 0.6, "runner_z": 1.1, "color": Color("D2553A"), "stitch": "chain",
-			"drag": 8.0, "push": 2.5, "sink": 0.02, "plane": 3.0, "turn": 1.0, "stand_slip": 0.3, "stand_speed": 0.6,
+			"drag": 8.0, "push": 2.5, "sink": 0.02, "plane": 3.0, "turn": 1.0, "stand_slip": 0.3, "stand_speed": 0.6, "kick": 0.0,
 			"seats": [Vector3(0, 0.45, -0.75), Vector3(0, 0.45, 0.15), Vector3(0, 0.45, 1.0)]},
 	"large": {"mass": 220.0, "box": Vector3(2.2, 0.45, 4.8), "runner_x": 0.95, "runner_z": 1.9, "color": Color("D2553A"), "stitch": "saddle",
-			"drag": 12.0, "push": 3.5, "sink": 0.06, "plane": 5.0, "turn": 1.0, "stand_slip": 0.6, "stand_speed": 0.5,
+			"drag": 12.0, "push": 3.5, "sink": 0.06, "plane": 5.0, "turn": 1.0, "stand_slip": 0.6, "stand_speed": 0.5, "kick": 0.0,
 			"seats": [Vector3(-0.5, 0.55, -1.65), Vector3(0.5, 0.55, -1.65), Vector3(-0.5, 0.55, -0.55), Vector3(0.5, 0.55, -0.55),
 					Vector3(-0.5, 0.55, 0.55), Vector3(0.5, 0.55, 0.55), Vector3(-0.5, 0.55, 1.65), Vector3(0.5, 0.55, 1.65)]},
 }
 
 # ---- ずり落ちと引きずり（調整する値。意味と、変えるとどうなるかは design/controls-and-physics.md）
 const SLIDE_GRIP := 0.15       # 空のソリの雪の摩擦（重さに対する割合）。坂の傾き（tan）がこれより緩い所で止まる。0.15 ≈ 8.5°
-const SLIDE_DAMP := 1.2        # 空のソリがずり落ちるときの雪の抵抗。大きいほどゆっくり（乗ると RIDE_DAMP）
+const SLIDE_DRAG := 72.0       # 空のソリがずり落ちるときの雪の抵抗 (N per m/s)。大きいほどゆっくり。重さによらないので、
+                               # 重いソリほど速くずり落ちる（2026-10-29 に、重さに比べた 1.2 から、中で同じになる 72 N に）
 const RIDER_MASS := 45.0       # 乗っている人一人の重さ (kg)。止めるときにだけ効く（登りは速くも遅くもしない）
 const STOP_FORCE := 300.0      # つかんでいる人一人が止める力 (N)。押す力と同じ
 const DRAG_SPEED := 2.5        # これより速く下っているソリをつかむと、引きずられる (m/s)
@@ -101,6 +103,16 @@ const LEAN_DIG := 30.0             # 一人が体重をかけた側の滑り木�
 const SCOOP_FORCE := 210.0         # 一人が乗ったまま前傾して手で雪をかく力 (N)。坂を登る向きには効かない
 const BRAKE_DRAG := 24.0           # 一人が後ろに体重をかけたときの制動（両側, N per m/s）
 const FWD_LEAN_EASE := 0.6         # 前傾した人の割合 × これだけ、雪をこする抵抗が減る（全員前傾で 0.4 倍）
+# ---- 足で漕ぐ（米袋。2026-10-29 代表「スペース連打で滑走中のみ加速」「友達と連打勝負できるように」）
+# 一回蹴るごとに前へ KICK_DV だけ速くなるが、速いほど蹴りが効かなくなり、KICK_TOP に近づくと 0 になる。
+# 漕がずに滑るだけなら大きいソリより遅いが、速く連打するほど伸び、大きいソリより速くなれる（連打の速さがそのまま速さの差）。
+# 下り坂で全部効き、平らな所では KICK_FLAT だけ、登りでは効かない（登りを楽にしない）
+const KICK_DV := 1.5               # 一回蹴って速くなる量 (m/s。止まりかけのとき)
+const KICK_TOP := 16.0             # 蹴って届く速さの上限 (m/s)。ここに近づくほど蹴りが効かない
+const KICK_FLAT := 0.3             # 平らな所での蹴りの効き（下り坂で 1）
+const KICK_FULL_SLOPE := 0.15      # この下り（傾きの sin）より急なら、蹴りが全部効く
+const KICK_MIN_SPEED := 0.5        # これより遅いと蹴れない（滑っているあいだだけ。滑り出しは W で雪をかく）
+signal kicked(who: Node3D)
 const CLIMB_LEAN_DIG := 17.5       # 押されて登っているときの体重移動・後傾（前の作りのまま。登りの手ざわりを変えない）
 const CLIMB_BRAKE_DRAG := 14.0
 const HOLD_FRICTION := 0.45        # 遅いときに働く静止摩擦（重さに対する割合）。丘のどこでも留まり、1人が押せば動き出す
@@ -375,6 +387,28 @@ func lean(steer: float, forward: bool, back: bool = false) -> void:
 	_n_back += 1 if back else 0
 
 
+## 乗っている人が足で雪を蹴る（Space を押すたび）。蹴れたら true
+func kick(who: Node3D) -> bool:
+	var K: Dictionary = KINDS[kind]
+	if K.get("kick", 0.0) <= 0.0 or not riders.has(who) or linear_velocity.length() < KICK_MIN_SPEED:
+		return false
+	var n := _ground_normal()
+	var f := -global_basis.z
+	f = (f - n * f.dot(n)).normalized()   # 地面に沿った前
+	var slope := 0.0                        # 前の向きの下り（sin）。登りなら負
+	slope = -f.y
+	if slope < -0.02:
+		return false                        # 登りでは蹴っても進まない
+	var eff := lerpf(KICK_FLAT, 1.0, clampf(slope / KICK_FULL_SLOPE, 0.0, 1.0))
+	var v_along := maxf(0.0, linear_velocity.dot(f))
+	var dv: float = KICK_DV * K.kick * eff * maxf(0.0, 1.0 - v_along / KICK_TOP)
+	if dv <= 0.0:
+		return false
+	apply_central_impulse(f * dv * mass)    # 体の速さを dv だけ（乗っている人も一緒に動くので、体の重さで足りる）
+	kicked.emit(who)
+	return true
+
+
 ## 広げる動きのあいだ（frames コマ）、止めて見た目を隠しておく（craft.gd が折り紙の形を見せる）
 func hold_still(frames: int) -> void:
 	freeze = true
@@ -397,8 +431,15 @@ func reset_to(pos: Vector3) -> void:
 		rope_holder.let_go()
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
-	global_transform = Transform3D(Basis(), pos)
+	global_transform = Transform3D(Basis(), pos + Vector3.UP * place_lift())
 	parked = true
+
+
+## 坂に水平に置くとき、地面からこれだけ余分に浮かせる (m)。呼ぶ側は地面の 0.3 m ほど上に置くので、その分は引く。
+## 長いソリ（大は 4.8 m）を坂に水平に置くと、下の端が雪に埋まり、地面を突き抜けて落ちることがあるため（丘のいちばん急な傾き 0.44 で足りる高さ）
+func place_lift() -> float:
+	var k: Dictionary = KINDS.get(kind, KINDS.mid)
+	return maxf(0.0, k.box.z * 0.5 * 0.45 - 0.3)
 
 
 ## 足元の影（やわらかい楕円）と、滑り木の跡のステッチ（毛糸の雪に残る針目）
@@ -798,7 +839,7 @@ func _physics_process(dt: float) -> void:
 	elif pushers > 0 or parked:
 		linear_damp = CLIMB_DAMP
 	else:
-		linear_damp = SLIDE_DAMP
+		linear_damp = 0.0   # 空のソリのずり落ちる抵抗は SLIDE_DRAG（下の「止める力」と一緒にかける）
 	_update_drag(dt)
 	var side := global_basis.x
 	var fwd := -global_basis.z
@@ -858,6 +899,8 @@ func _physics_process(dt: float) -> void:
 		# 乗っている人の重さは、止める力を分け合う重さに入れる（ソリと乗っている人をまとめて止める）
 		var v_t := linear_velocity - n * linear_velocity.dot(n)
 		var stop := brakers * STOP_FORCE * mass / load_mass() + snow
+		if not riding and pushers == 0 and not parked:
+			stop += SLIDE_DRAG * v_t.length()
 		if v_t.length() > 0.01 and stop > 0.0:
 			apply_central_force(-v_t.normalized() * minf(stop, v_t.length() * mass / dt))
 		hold_debug = "なし(速さ%.2f 押%d/%d 乗%d 止%d)" % [speed, _push_count, pushers, riders.size(), brakers]

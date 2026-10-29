@@ -43,7 +43,9 @@ var act := Act.WALK
 var facing := Vector3.ZERO   # 体の向き（世界、水平）。ZERO なら持ち主の前
 var gaze := Vector3.INF      # 見ている所（世界）
 var effort := false
-var dragged := false         # ソリに引きずられている（足を前へ突っ張り、体はソリへ引かれて前に傾く）
+var dragged := false
+var _kick_frame := -100      # 足で雪を蹴ったコマ（米袋。kick が入れる）
+var _kick_leg := "R"         # ソリに引きずられている（足を前へ突っ張り、体はソリへ引かれて前に傾く）
 var airborne := false
 var waving := false
 var point := Vector3.INF     # 腕を伸ばして指す所（世界）。gaze が決まっていなければ、そこを見る
@@ -212,6 +214,12 @@ func play(ev: Dictionary) -> void:
 ## 頭のてっぺんの高さ (m)
 func height() -> float:
 	return TOP.get(kind, 1.3) * _scale
+
+
+## 乗ったまま足で雪を蹴る（side 1 右足、-1 左足）。次のコマから 3 コマ
+func kick(side: int) -> void:
+	_kick_frame = frame_index() + 1
+	_kick_leg = "R" if side > 0 else "L"
 
 
 ## いまの身ぶりの種類と、始まってからのコマ数。身ぶりがなければ ["", -1]
@@ -469,6 +477,13 @@ func _pose() -> void:
 			_squash = 0.12
 			_update_all()
 			for s in ["L", "R"]:
+				var kk := _frame - _kick_frame
+				if kk >= 0 and kk < 3 and s == _kick_leg:
+					# 足で雪を蹴る（米袋）: 横から下へ伸ばし（0）、後ろへ蹴り（1）、引き戻す（2）
+					_turn_axis("thigh." + s, X, [0.7, 0.2, 0.9][kk])
+					_turn_axis("shin." + s, X, [-0.5, -0.1, -0.6][kk])
+					_turn_axis("thigh." + s, Z, (0.25 if s == "R" else -0.25) * [1.0, 1.0, 0.5][kk])
+					continue
 				_turn_axis("thigh." + s, X, 1.5)
 				_turn_axis("shin." + s, X, -0.25)
 			bend = -lean.y * 0.3
