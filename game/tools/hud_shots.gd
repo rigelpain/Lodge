@@ -10,6 +10,8 @@ extends SceneTree
 ##   people  ソリから離れて、仲間のそばにいる（身ぶりの案内）
 ##   lodge   ロッジの中（札は消える）
 ##   menu    Esc を押したとき（操作の札）
+##   ring    Tab で身ぶりの輪を出したとき（仲間のそば）
+## --hud-scale=0.7〜1.6 と --menu-scale=0.7〜1.6 で、設定の「HUD の大きさ」「メニューの大きさ」を、保存せずに当てて撮る。
 ## main.gd の引数（--bots など）もそのまま効く。
 
 var args := {}
@@ -92,6 +94,15 @@ func _process(dt: float) -> bool:
 			"menu":
 				main.settings.set_open(true)
 				p.menu_open = true
+			"ring":
+				p.global_position = sled.to_global(Vector3(5.0, 0, 3.5)) + Vector3.UP * 0.3
+				_key(KEY_TAB, true)
+		# 大きさの設定は、保存してある値に関わらず、引数の値で（保存はしない）
+		if args.has("hud-scale"):
+			preload("res://hud_icons.gd").user_scale = float(args["hud-scale"])
+		if args.has("menu-scale"):
+			main.settings.values["menu_scale"] = float(args["menu-scale"])
+			main.settings._layout()
 	if _set and t < 1.5:   # 360° 映像は、保存してある設定に関わらず出す（設定は書き換えない）
 		main.pip_hidden = false
 		if main._pip_layer: main._pip_layer.visible = true
@@ -101,7 +112,7 @@ func _process(dt: float) -> bool:
 		want.y = main.height(want.x, want.z) + 0.1
 		p.global_position = want
 		_face(p, sled.global_position, -0.3)
-	if _set and scene == "people":
+	if _set and (scene == "people" or scene == "ring"):
 		var bots := main.get_children().filter(func(c): return c != p and c is CharacterBody3D and c.get("doll") != null)
 		if bots.size() > 0:
 			_face(p, bots[0].global_position + Vector3.UP * 1.2, -0.05)
@@ -110,6 +121,7 @@ func _process(dt: float) -> bool:
 	if t > float(args.get("at", "4")):
 		var out: String = args.get("out", "/tmp/hud.png")
 		root.get_texture().get_image().save_png(out)
+		if p.get("ring"): print("輪: ", p.ring.visible, " ", p.ring.scale, " ", p.menu_open)
 		print("保存: ", out, "  案内: ", main.hud.uses, "  押している人: ", sled.pushers)
 		return true
 	return false

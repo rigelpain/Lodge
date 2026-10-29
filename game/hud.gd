@@ -62,9 +62,9 @@ func _ready() -> void:
 	add_child(_debug)
 
 
-## 画面の高さに合わせた大きさ（1080 で 1）
+## 画面の高さと、設定の「HUD の大きさ」に合わせた大きさ（1080・100% で 1）
 func ui() -> float:
-	return clampf(_view.size.y / 1080.0, 0.6, 2.0)
+	return Icons.ui_scale(_view.size.y)
 
 
 func learn(id: String, n := 1) -> void:
@@ -472,7 +472,7 @@ class View extends Control:
 		Icons.icon(self, "back", Vector2(lr.position.x + tw + 14.0, lr.position.y + lr.size.y / 2.0), 22.0, 0.95)
 
 	## Esc の札: すべてのキーと絵（設定の画面の左）
-	func _draw_card(u: float) -> void:
+	func _draw_card(u: float, fit := true) -> void:
 		var rows: Array = [
 			[["W", "A", "S", "D"], "walk"], [["Shift"], "run"], [["Space"], "jump"], [["mouse_move"], "look"],
 			[["F"], "grab"], [["F"], "rope"], [["E"], "ride"], [["R"], "return"],
@@ -496,7 +496,14 @@ class View extends Control:
 		var per := ceili(rows.size() / 2.0)
 		var w := col_w * 2.0 + 24.0 * u
 		var h := per * row_h + 28.0 * u
-		var left := maxf(16.0 * u, size.x / 2.0 - 250.0 - w - 16.0 * u)
+		# 設定の画面（メニューの大きさで変わる）の左に置く。入らなければ札を縮める
+		var st = hud.main.settings
+		var pr: Rect2 = st.panel_rect() if st.has_method("panel_rect") else Rect2(size.x / 2.0 - 250.0, 0, 500, size.y)
+		var room := pr.position.x - 24.0 * u
+		if fit and (room < w or h > size.y - 24.0):
+			_draw_card(u * clampf(minf(room / w, (size.y - 24.0) / h), 0.35, 1.0), false)
+			return
+		var left := maxf(8.0, pr.position.x - 16.0 * u - w)
 		var r := Rect2(left, size.y / 2.0 - h / 2.0, w, h)
 		Icons.screen()
 		Icons.patch(self, Icons.rr(r.position.x, r.position.y, w, h, 14.0 * u), Icons.PAPER, 0.97, false)

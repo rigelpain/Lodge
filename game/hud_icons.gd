@@ -22,9 +22,16 @@ const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "get
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
 	"pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "back"]
 
+static var user_scale := 1.0   # 設定の「HUD の大きさ」（settings.gd が入れる）
 static var _felt: ImageTexture
 static var _o := Vector2.ZERO   # いま描いている絵の中心（画面）
 static var _s := 1.0            # 1 単位あたりの画面の px
+
+
+## HUD の倍率: 画面の高さによる倍率（1080 で 1）に、設定の「HUD の大きさ」を掛ける。
+## hud.gd・craft_ui.gd・emote_ring.gd・daycycle.gd の表示はみなこれでそろえる
+static func ui_scale(view_h: float) -> float:
+	return clampf(view_h / 1080.0, 0.6, 2.0) * user_scale
 
 
 ## フェルトの毛羽のむら（明るさ 0.86〜1.0 の灰色）。色と掛け合わせて面に貼る

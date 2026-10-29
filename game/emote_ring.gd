@@ -78,6 +78,8 @@ func close() -> String:
 
 func _draw() -> void:
 	var c := get_viewport_rect().size * 0.5   # 輪は CanvasLayer の下にあるので、画面のまんなかを直接とる
+	var k: float = preload("res://hud_icons.gd").ui_scale(get_viewport_rect().size.y)   # HUD とそろえた大きさ（まんなかを中心に）
+	draw_set_transform(c * (1.0 - k), 0.0, Vector2(k, k))
 	draw_circle(c, RING_R + DISC_R + 14.0, Color(0.1, 0.1, 0.14, 0.18))   # 下の淡い丸（世界が透けて見える）
 	for i in SLOTS.size():
 		var a := TAU * i / SLOTS.size()
