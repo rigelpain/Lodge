@@ -43,7 +43,6 @@ var _shake := 0.0
 var _pop := {}               # 持ち物の番号 → 跳ねの残り
 var _coin_pop := 0.0
 var _bar_a := 0.0
-var plated := false          # 持ち物の列を、立体の板（hud_plates.gd）に貼って描いている
 var _goods: Array = []       # 売る品物の並び
 var _rects: Array = []       # 品物の札の場所（画面の px）
 var _buy_rect := Rect2()
@@ -63,29 +62,6 @@ func _ready() -> void:
 	add_child(_view)
 	if craft:
 		craft.happened.connect(_on_craft)
-
-
-## 持ち物の列の板の場所（画面の px）。左の持ち替えの案内（Z とホイール）も含む
-func bar_rect() -> Rect2:
-	var u := ui()
-	var vs := _view.size
-	var n: int = craft.bag(_who()).size() + 1
-	var cell := 66.0 * u
-	var gap := 8.0 * u
-	var w: float = n * cell + (n - 1) * gap + 24.0 * u + 96.0 * u
-	var x0: float = vs.x / 2.0 - w / 2.0
-	var y := vs.y - 20.0 * u - cell
-	var left := 70.0 * u if n > 1 else 12.0 * u
-	return Rect2(x0 - left, y - 22.0 * u, w + left + 12.0 * u, cell + 32.0 * u)
-
-
-## 板に貼る印刷を描く入れ物
-func painter(part: String) -> Control:
-	var v := View.new()
-	v.ui = self
-	v.part = part
-	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	return v
 
 
 func ui() -> float:
@@ -382,25 +358,17 @@ func _process(dt: float) -> void:
 
 class View extends Control:
 	var ui: Node
-	var part := ""          # "bar" なら持ち物の列だけ（立体の板に貼る印刷）
 
 	func _draw() -> void:
 		var u: float = ui.ui()
-		if part == "bar":
-			Icons.printing = true
-			_draw_bar(u, 1.0)
-			Icons.printing = false
-			return
 		if ui.shop_open:
 			_draw_shop(u)
 		if ui.machine_open:
 			_draw_machine(u)
 		if ui.gear_open:
 			_draw_gear_screen(u)
-		if ui._bar_a > 0.01 and not ui.plated:   # 持ち物の列は、滑っているあいだ風で小刻みに震える（hud.gd が Icons.wind を入れる）
-			draw_set_transform_matrix(Icons.wind_xform(Vector2(size.x / 2.0, size.y - 60.0 * u), 3.0, 0.0, 0.02, 2.0 * u))
+		if ui._bar_a > 0.01:   # 操作のための表示なので、風では揺らさない（2026-10-29 代表）
 			_draw_bar(u, ui._bar_a)
-			draw_set_transform_matrix(Transform2D.IDENTITY)
 		_draw_gear(u)
 
 	## 装備の枠: 帯に下げた米袋。N で出す・しまう、Shift+N で替える。持っている米袋の数だけ点（選んでいるのは赤）
@@ -452,11 +420,7 @@ class View extends Control:
 		var x0 := size.x / 2.0 - w / 2.0
 		var y := size.y - 20.0 * u - cell
 		Icons.screen()
-		if Icons.printing:   # 立体の板に貼る印刷: 板いっぱいに地を敷く（板の形と印刷の形をそろえる）
-			var br: Rect2 = ui.bar_rect()
-			Icons.patch(self, Icons.rr(br.position.x, br.position.y, br.size.x, br.size.y, 16.0 * u), Icons.PAPER, 1.0, false, Color(0, 0, 0, 0), false)
-		else:
-			Icons.patch(self, Icons.rr(x0 - 12.0 * u, y - 10.0 * u, w + 24.0 * u, cell + 20.0 * u, 16.0 * u), Icons.PAPER, 0.85 * a, false)
+		Icons.patch(self, Icons.rr(x0 - 12.0 * u, y - 10.0 * u, w + 24.0 * u, cell + 20.0 * u, 16.0 * u), Icons.PAPER, 0.85 * a, false)
 		if not bag.is_empty():   # 持ち替えの案内: Z（と、ホイール・二本指スクロール）
 			Icons.keycap(self, "Z", Vector2(x0 - 44.0 * u, y + cell * 0.32), 30.0 * u, a)
 			Icons.icon(self, "mouse_wheel", Vector2(x0 - 44.0 * u, y + cell * 0.86), 34.0 * u, a)

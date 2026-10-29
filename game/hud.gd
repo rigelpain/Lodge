@@ -458,36 +458,18 @@ func _update_plates() -> void:
 		var tr: Rect2 = _view.tag_rect(u)
 		plates.plate("tag", _painter.bind("tag"), tr, 12.0 * u, 8.0 * u, "paper", Vector2(tr.position.x, tr.get_center().y),
 			[1.0, -0.09, 0.05, 2.0 * u], _tag_a)
-	if debug_on and not _dbg.is_empty():
-		var dr := debug_rect(u)
-		plates.plate("debug", _painter.bind("debug"), dr, 10.0 * u, 6.0 * u, "paper", Vector2(dr.get_center().x, dr.position.y + 13.0 * u),
-			[2.0, 0.14, 0.06, 1.5 * u], 1.0)
-	for id in _hints:
-		var h: Dictionary = _hints[id]
-		if h.a < 0.02 or not h.get("shown", false):
-			continue
-		var sz: float = h.draw_sz
-		var w := Icons.badge_w(h.keys, sz)
-		var hh := sz * 60.0 / 64.0
-		var c: Vector2 = h.draw_at
-		plates.plate("hint:" + id, _painter.bind("badge:" + id), Rect2(c - Vector2(w, hh) / 2.0, Vector2(w, hh)), hh * 0.43, 5.0 * u,
-			"felt", c, [float(id.hash() % 97), 0.0, 0.03, 2.0 * u], ease(h.a, 0.5))
-	if _spd_a > 0.01 and main.args.get("speedo", "both") != "seams":
-		var r := speedo_box()
-		r.position.y += (1.0 - ease(_spd_a, 0.6)) * 24.0 * u
-		var sp := Speedo.spool_at(r, _spd_pop)
-		plates.model("bobbin", "res://props/hud/hud_bobbin.glb", sp[0], sp[1] / 0.5, -_spd_spin, [4.0, 0.0, 0.025, 2.5 * u], _spd_a)
+	if _spd_a > 0.01:   # 速さの表示: 立体のボビンと、縫い目を縫うフェルトのリボンの板（ボビンから吊るす）
+		var g := Speedo.layout(speedo_box_now(), _spd_pop)
+		plates.model("bobbin", "res://props/hud/hud_bobbin.glb", g.c, g.r / 0.5, -_spd_spin, [4.0, 0.0, 0.03, 2.0 * u], _spd_a)
+		var rb: Rect2 = g.ribbon
+		plates.plate("ribbon", _painter.bind("ribbon"), rb, 8.0 * u, 5.0 * u, "felt", Vector2(rb.get_center().x, rb.position.y),
+			[6.0, 0.05, 0.05, 1.5 * u], _spd_a)
 	var sc = main.get("self_cam")
 	if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
 		sc.plain_frame = true
 		var fr: Control = sc._frame
 		var rr := fr.size.x / 2.0
 		plates.model("hoop", "res://props/hud/hud_hoop.glb", fr.position + fr.size / 2.0, (rr + 3.0 * u) / 1.03, 0.0, [5.0, 0.0, 0.03, 2.5 * u], 1.0)
-	var cu = main.get("craft_ui")
-	if cu and is_instance_valid(cu) and cu.has_method("bar_rect") and cu._bar_a > 0.01:
-		cu.plated = true
-		var br: Rect2 = cu.bar_rect()
-		plates.plate("bar", cu.painter.bind("bar"), br, 16.0 * u, 7.0 * u, "paper", br.get_center(), [3.0, 0.0, 0.02, 2.0 * u], cu._bar_a)
 	plates.end()
 
 
@@ -506,18 +488,20 @@ func debug_rect(u: float) -> Rect2:
 	return Rect2(18.0 * u, 26.0 * u, 176.0 * u, 30.0 * u + 34.0 * u * 5.0 + 12.0 * u)
 
 
-## 速さの表示の置き場（画面の px）: 下の端の右寄り。右下の小窓（自分の姿）と日時計の左に、下の縁をそろえて置く。
-## 上の右には 360° 映像があり、下のまんなかには案内のワッペンと持ち物の列があるので、その間の空いた所
+## 速さの表示の置き場（画面の px）: 画面の左側の縦の帯。左上の確かめ用の札の下から、左下の名札の上のピンクッションの上まで
 func speedo_box() -> Rect2:
 	var u := ui()
 	var vs := _view.size
-	var w := 300.0 * u   # 左の持ち物・装備の枠に、縫い目がかからない幅
-	var h := 160.0 * u
-	var right := vs.x - 14.0 * u - 104.0 * u   # 日時計のぶん
-	var sc = main.get("self_cam")
-	if sc and is_instance_valid(sc) and not sc.get("hidden"):
-		right -= (236.0 + 18.0) * u          # 小窓のぶん（self_cam.gd の DIAM と MARGIN）
-	return Rect2(right - w, vs.y - h - 6.0 * u, w, h)
+	var top := 26.0 * u + debug_rect(u).size.y + 18.0 * u        # 確かめ用の札の下（出していなくても同じ所）
+	var bottom := vs.y - (146.0 + 18.0) * u - 150.0 * u          # 名札と、その上のピンクッションの上
+	return Rect2(22.0 * u, top, 126.0 * u, maxf(bottom - top, 200.0 * u))
+
+
+## いまの置き場（出てくるときは、上からふわっと下りてくる）
+func speedo_box_now() -> Rect2:
+	var r := speedo_box()
+	r.position.y -= (1.0 - ease(_spd_a, 0.6)) * 24.0 * ui()
+	return r
 
 
 ## 確かめ用の札に出す値: 押している人数・ソリの高さ（頂上まで）・速さ・fps・いまの状態・覚えた案内の数
@@ -541,18 +525,14 @@ func _debug_values(sled: RigidBody3D, p: Node) -> Dictionary:
 
 class View extends Control:
 	var hud: Node
-	var part := ""      # "tag" なら左下の名札だけを描く
+	var part := ""      # "tag" なら左下の名札だけ、"ribbon" なら速さの縫い目だけを描く（立体の板に重ねる印刷）
 
 	func _draw() -> void:
 		var u: float = hud.ui()
 		Icons.printing = part != "" and hud.plates != null
-		if part != "" and part != "tag":
-			if part == "debug":
-				_draw_debug(u, true)
-			elif part.begins_with("badge:"):
-				var h: Dictionary = hud._hints.get(part.substr(6), {})
-				if not h.is_empty() and h.get("shown", false):
-					Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, 1.0)
+		if part == "ribbon":
+			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
+			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false)
 			Icons.printing = false
 			return
 		if part == "tag":   # 名札だけを描く入れ物（風で、この入れ物ごと傾ける。名札の絵は中で描く向きを自分で変えるので）
@@ -565,18 +545,14 @@ class View extends Control:
 		_draw_compass_above(u)
 		for id in hud._hints:
 			var h: Dictionary = hud._hints[id]
-			if h.a < 0.02 or not h.get("shown", false) or hud.plates:   # 立体の板のときは、板に貼った印刷が出る
+			if h.a < 0.02 or not h.get("shown", false):
 				continue
-			var e := ease(h.a, 0.5)
-			var bc: Vector2 = h.draw_at
-			draw_set_transform_matrix(Icons.wind_xform(bc, float(id.hash() % 97), 0.0, 0.03, 2.0 * u))   # 貼ったワッペンは小刻みに震える
-			Icons.badge(self, h.keys, h.icon, bc, h.draw_sz, e)
-			draw_set_transform_matrix(Transform2D.IDENTITY)
+			Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, ease(h.a, 0.5))   # 操作のための表示なので、平らで、風でも揺らさない
 		_draw_pip_back(u)
 		if hud._spd_a > 0.01:
 			_draw_speedo(u)
 		if hud.debug_on and not hud._dbg.is_empty():
-			_draw_debug(u, false)
+			_draw_debug(u)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 		if hud.main.settings and hud.main.settings.is_open:
 			_draw_card(u)
@@ -958,22 +934,20 @@ class View extends Control:
 	func _draw_speedo(u: float) -> void:
 		var e := ease(hud._spd_a, 0.6)
 		if e > 0.01:
-			var r: Rect2 = hud.speedo_box()
-			r.position.y += (1.0 - e) * 24.0 * u   # 下からふわっと上がってくる
-			draw_set_transform_matrix(Icons.wind_xform(r.get_center(), 4.0, 0.0, 0.025, 2.5 * u))   # ボビンの形が読める程度に、小刻みに
-			var style: String = hud.main.args.get("speedo", "both")   # both: ボビンと左右の縫い目 / seams: 縫い目だけ / bobbin: ボビンだけ
-			if style != "seams":
-				Speedo.draw(self, r, hud._spd, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud.spd_best,
-					hud._spd_pop, hud._spd_knots, e, hud.plates == null)
+			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
+			var k := Speedo.level_of(hud._spd)
+			if hud.plates == null:   # 平らなとき: リボンは糸巻きから吊るして揺れる。ボビンは小刻みに
+				var rb: Rect2 = g.ribbon
+				draw_set_transform_matrix(Icons.wind_xform(Vector2(rb.get_center().x, rb.position.y), 6.0, 0.05, 0.05, 1.5 * u))
+				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e)
+			draw_set_transform_matrix(Icons.wind_xform(g.c, 4.0, 0.0, 0.03, 2.0 * u))
+			Speedo.draw_spool(self, g, k, hud._spd_spin, hud._spd_color, hud.spd_best, hud._spd_pop, e, hud.plates == null)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
-			if style != "bobbin":
-				Speedo.seams(self, size, u, Speedo.level_of(hud._spd), hud._spd_dist, hud._spd_color, e)
 
 	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。
 	## 段ごとに絵と数字: 人の形（押している人数）、丘（ソリの高さ／頂上）、風（速さ）、砂時計（fps）、いまの状態の絵と、
 	## 覚えた案内の数だけの玉止め。地は無地の生成りで、外側に影と藍の縁取り（雪・空・ロッジの中でも読める）
-	## body_only: 板に貼る印刷（糸と揺れなし）。板を使うときの本体の画面では、吊るす糸だけを描く
-	func _draw_debug(u: float, body_only: bool) -> void:
+	func _draw_debug(u: float) -> void:
 		var d: Dictionary = hud._dbg
 		var row := 34.0 * u
 		var w := 176.0 * u
@@ -984,13 +958,10 @@ class View extends Control:
 		var hole := Vector2(x0 + w / 2.0, y0 + 13.0 * u)
 		# 吊るす糸（画面の上の縁から、はとめへ）
 		Icons.screen()
-		if not body_only:
-			Icons.thread(self, PackedVector2Array([Vector2(hole.x - 10.0 * u, -2.0), hole + Vector2(0, -4.0 * u), Vector2(hole.x + 10.0 * u, -2.0)]),
-				Icons.RED, 1.8 * u, 1.0)
-			if hud.plates:
-				return
-			# 吊るした札は、はとめを支点に、風で外（左）へなびいて揺れる
-			draw_set_transform_matrix(Icons.wind_xform(hole, 2.0, 0.14, 0.06, 1.5 * u))
+		Icons.thread(self, PackedVector2Array([Vector2(hole.x - 10.0 * u, -2.0), hole + Vector2(0, -4.0 * u), Vector2(hole.x + 10.0 * u, -2.0)]),
+			Icons.RED, 1.8 * u, 1.0)
+		# 吊るした札は、はとめを支点に、風で外（左）へなびいて揺れる
+		draw_set_transform_matrix(Icons.wind_xform(hole, 2.0, 0.14, 0.06, 1.5 * u))
 		Icons.paper_tag(self, Rect2(x0, y0, w, h), 10.0 * u, u)
 		draw_circle(hole, 5.0 * u, Icons.PAPER_EDGE)
 		draw_circle(hole, 3.2 * u, Color(0.35, 0.30, 0.28, 0.9))
