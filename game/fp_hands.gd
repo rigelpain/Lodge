@@ -5,12 +5,14 @@ extends RefCounted
 
 const Look := preload("res://look.gd")
 
-## 人形ごとの袖（右、左）と手の色
+## 人形ごとの袖（右、左）と手の色。leg は米袋に座ったときに見える膝から下の裾、foot は足先
 const STYLE := {
-	"kasa": {"sleeve": [["mizutama", "3E6E66", "CFE0D6"], ["kikko", "2F5A8F", "5D86B8"]], "hand": "F0D2A6"},
-	"origami": {"sleeve": [["paper", "3B5F99"], ["paper", "3B5F99"]], "hand": "D9BE97"},
-	"news": {"sleeve": [["burlap", "66773F"], ["burlap", "66773F"]], "hand": "E6DCC6"},
+	"kasa": {"sleeve": [["mizutama", "3E6E66", "CFE0D6"], ["kikko", "2F5A8F", "5D86B8"]], "hand": "F0D2A6",
+			"leg": ["seigaiha", "3E7F86", "6FA9AD"], "foot": "1F1B1E"},
+	"origami": {"sleeve": [["paper", "3B5F99"], ["paper", "3B5F99"]], "hand": "D9BE97", "leg": ["paper", "F4F0E8"], "foot": "4A3326"},
+	"news": {"sleeve": [["burlap", "66773F"], ["burlap", "66773F"]], "hand": "E6DCC6", "leg": ["burlap", "5A4634"], "foot": "2A2016"},
 }
+const LEG_R := 0.07          # 膝の太さ（半径）
 const SLEEVE_LEN := 0.22
 const MOUTH_R := 0.078       # 袖口の半径
 
@@ -19,16 +21,7 @@ const MOUTH_R := 0.078       # 袖口の半径
 static func make(kind: String, side: int, layers: int) -> Node3D:
 	var st: Dictionary = STYLE.get(kind, STYLE["kasa"])
 	var root := Node3D.new()
-	var spec: Array = st["sleeve"][0 if side > 0 else 1]
-	var cloth: StandardMaterial3D
-	match spec[0]:
-		"paper":
-			cloth = Look.paper(Color(spec[1]))
-		"burlap":
-			cloth = Look.cloth(Color(spec[1]), 14.0)
-		_:
-			cloth = Look.wagara(spec[0], Color(spec[1]), Color(spec[2]), 6.0)
-	cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var cloth := _cloth(st["sleeve"][0 if side > 0 else 1])
 
 	# 袖: 六角の筒。袖口がいちばん広く、肩のほうへ少しすぼまる。紙を折ったように面ごとに陰をつける
 	var cm := CylinderMesh.new()
@@ -76,6 +69,69 @@ static func make(kind: String, side: int, layers: int) -> Node3D:
 	thumb.transform = Transform3D(Basis.from_scale(Vector3(0.9, 0.8, 1.4)), Vector3(-0.042 * side, 0.0, -0.05))
 	root.add_child(thumb)
 	return root
+
+
+static func _cloth(spec: Array) -> StandardMaterial3D:
+	var cloth: StandardMaterial3D
+	match spec[0]:
+		"paper":
+			cloth = Look.paper(Color(spec[1]))
+		"burlap":
+			cloth = Look.cloth(Color(spec[1]), 14.0)
+		_:
+			cloth = Look.wagara(spec[0], Color(spec[1]), Color(spec[2]), 6.0)
+	cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
+	return cloth
+
+
+## 米袋に座ったときの、一人称で見える両脚（腿・すね・足先）。置き方は pose_legs で
+static func make_legs(kind: String, layers: int) -> Node3D:
+	var st: Dictionary = STYLE.get(kind, STYLE["kasa"])
+	var root := Node3D.new()
+	var cloth := _cloth(st["leg"])
+	var foot_m := Look.paper(Color(st["foot"]))
+	for side in ["L", "R"]:
+		var leg := Node3D.new()
+		leg.name = side
+		root.add_child(leg)
+		for part in ["thigh", "shin"]:
+			var cm := CylinderMesh.new()   # 長さ 1 の六角の筒。pose_legs で 2 点のあいだに伸ばす
+			cm.top_radius = LEG_R * (1.0 if part == "thigh" else 0.8)
+			cm.bottom_radius = LEG_R * (0.95 if part == "thigh" else 0.7)
+			cm.height = 1.0
+			cm.radial_segments = 6
+			cm.rings = 1
+			var m := _part(_flat(cm), cloth, layers)
+			m.name = part
+			leg.add_child(m)
+		var fm := SphereMesh.new()
+		fm.radius = 0.045
+		fm.height = 0.07
+		fm.radial_segments = 6
+		fm.rings = 3
+		var f := _part(_flat(fm), foot_m, layers)
+		f.name = "foot"
+		f.scale = Vector3(0.9, 0.8, 1.5)
+		leg.add_child(f)
+	return root
+
+
+## 脚を置く（root の座標で、腰・膝・足先の点）。side は "L" か "R"
+static func pose_leg(root: Node3D, side: String, hip: Vector3, knee: Vector3, foot: Vector3) -> void:
+	var leg := root.get_node(side) as Node3D
+	_span(leg.get_node("thigh") as Node3D, hip, knee)
+	_span(leg.get_node("shin") as Node3D, knee, foot)
+	var f := leg.get_node("foot") as Node3D
+	f.position = foot + Vector3(0, 0.0, -0.03)
+
+
+## 長さ 1 の筒（y 向き）を、a から b へ伸ばす
+static func _span(n: Node3D, a: Vector3, b: Vector3) -> void:
+	var d := b - a
+	var y := d.normalized()
+	var x := y.cross(Vector3.BACK if absf(y.z) < 0.95 else Vector3.RIGHT).normalized()
+	var z := x.cross(y)
+	n.transform = Transform3D(Basis(x, y * d.length(), z), (a + b) * 0.5)
 
 
 static func _part(mesh: Mesh, mat: Material, layers: int) -> MeshInstance3D:

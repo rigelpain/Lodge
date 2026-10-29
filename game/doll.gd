@@ -32,6 +32,14 @@ const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.
 ## 頭のいちばん上（glb の座標、人形の大きさのまま）。雪玉の当たりの背丈と、ハイタッチの手の高さに
 const TOP := {"kasa": 1.372, "origami": 1.49, "news": 0.955}
 const BALL_R := 0.075        # 雪玉の半径 (m)
+## 米袋の動きのコマ数（12 コマ／秒）。乗る・降りるは押した瞬間に済んでいて、見た目だけがこのコマで追いつく
+## （乗り込みの途中でも滑り出せる。足で蹴ると、残りを飛ばしてすぐ座る）
+##   out: 0 右手を帯へ / 1 引き抜いて胸の前で両手に / 2 ばさっと前へ広げて落とす / 3 しゃがむ / 4 腰を下ろす（ぽふっ） / 5〜 座って紐を握る
+##   in:  0〜1 腰を上げてかがむ / 2〜6 くるくる丸める / 7 跳ねた包みを受ける / 8 帯へ / 9 しまった
+const SACK_OUT := 7
+const SACK_IN := 10
+## 帯の米袋の所（glb の座標、人形の大きさのまま）。右の腰の少し後ろ
+const BELT := {"kasa": Vector3(0.2, 0.6, 0.05), "origami": Vector3(0.21, 0.8, 0.06), "news": Vector3(0.24, 0.34, 0.06)}
 
 enum Act { WALK, PUSH, ROPE, RIDE }
 
@@ -46,6 +54,13 @@ var effort := false
 var dragged := false
 var _kick_frame := -100      # 足で雪を蹴ったコマ（米袋。kick が入れる）
 var _kick_leg := "R"         # ソリに引きずられている（足を前へ突っ張り、体はソリへ引かれて前に傾く）
+var sack_anim := ""          # 米袋の動き（sack_start が入れる）: "out" 帯から取り出して広げ、座る / "in" 立って丸め、帯に戻す
+var _sack_frame := -100      # その動きが始まったコマ
+var belt_sack := false       # 帯に丸めた米袋を下げている（持ち主が毎フレーム入れる）
+var belt_color := Color("B8402E")
+var _roll: Node3D            # 丸めた米袋（帯か右手）
+var _roll_hip: Node3D
+var _roll_hand: Node3D
 var airborne := false
 var waving := false
 var point := Vector3.INF     # 腕を伸ばして指す所（世界）。gaze が決まっていなければ、そこを見る
@@ -118,6 +133,7 @@ func _ready() -> void:
 	_make_breath()
 	_make_long_breath()
 	_make_ball()
+	_make_roll()
 	_shapes = Palm.make_set(Color(FpHands.STYLE.get(kind, FpHands.STYLE["kasa"]).hand), layers)
 	for sh in _shapes:
 		for n in _shapes[sh].values():
@@ -220,6 +236,31 @@ func height() -> float:
 func kick(side: int) -> void:
 	_kick_frame = frame_index() + 1
 	_kick_leg = "R" if side > 0 else "L"
+	if sack_anim == "out":
+		_sack_frame = mini(_sack_frame, frame_index() + 1 - 5)   # 乗り込みの途中で蹴ったら、すぐ座った姿に
+
+
+## 米袋の動きを始める（what: "out" 取り出して乗る / "in" 立って丸めてしまう）。次のコマから
+func sack_start(what: String) -> void:
+	sack_anim = what
+	_sack_frame = frame_index() + 1
+
+
+## 米袋の動きの、始まってからのコマ数。その動きでなければ（終わっていれば）-1
+func sack_k(what: String) -> int:
+	if sack_anim != what:
+		return -1
+	var k := frame_index() - _sack_frame
+	if k >= (SACK_OUT if what == "out" else SACK_IN):
+		sack_anim = ""
+		return -1
+	return maxi(k, 0)
+
+
+## 乗っていて、もう腰を下ろしているか（取り出して広げているあいだは立っている）。一人称の目の高さに使う
+func sack_seated() -> bool:
+	var k := sack_k("out")
+	return act == Act.RIDE and (k < 0 or k >= 3)
 
 
 ## いまの身ぶりの種類と、始まってからのコマ数。身ぶりがなければ ["", -1]
@@ -469,29 +510,48 @@ func _pose() -> void:
 
 	match act:
 		Act.RIDE:
-			# ソリに座る。腰を落とし、脚は前へ。両手はソリの縁
-			# 裾は縦につぶして座面に広げ、脚は前へ投げ出す（足先は座面の高さ）
-			# 裾は腰の骨の付け根へ向かってつぶれるので、その付け根を座面のすぐ上に。
-			# 脚の付け根が腰の骨よりずっと低い人形（③）は、脚が座布団に埋もれてケープに隠れる
-			_hips_drop = _sit_drop()
-			_squash = 0.12
-			_update_all()
-			for s in ["L", "R"]:
-				var kk := _frame - _kick_frame
-				if kk >= 0 and kk < 3 and s == _kick_leg:
-					# 足で雪を蹴る（米袋）: 横から下へ伸ばし（0）、後ろへ蹴り（1）、引き戻す（2）
-					_turn_axis("thigh." + s, X, [0.7, 0.2, 0.9][kk])
-					_turn_axis("shin." + s, X, [-0.5, -0.1, -0.6][kk])
-					_turn_axis("thigh." + s, Z, (0.25 if s == "R" else -0.25) * [1.0, 1.0, 0.5][kk])
-					continue
-				_turn_axis("thigh." + s, X, 1.5)
-				_turn_axis("shin." + s, X, -0.25)
-			bend = -lean.y * 0.3
-			_turn_axis("chest", Z, -lean.x * 0.3)
-			if sled:
-				var me: Vector3 = sled.to_local(global_position)
-				_hold[0] = [sled, Vector3(-0.68, 0.5, me.z - 0.1)]
-				_hold[1] = [sled, Vector3(0.68, 0.5, me.z - 0.1)]
+			var sk := sack_k("out")
+			if sk >= 0 and sk < 3:
+				bend = _sack_draw(sk)   # 米袋をまだ取り出して広げている（立ったまま）
+			else:
+				# ソリに座る。腰を落とし、脚は前へ。両手はソリの縁（米袋は前の紐）
+				# 裾は縦につぶして座面に広げ、脚は前へ投げ出す（足先は座面の高さ）
+				# 裾は腰の骨の付け根へ向かってつぶれるので、その付け根を座面のすぐ上に。
+				# 脚の付け根が腰の骨よりずっと低い人形（③）は、脚が座布団に埋もれてケープに隠れる
+				var sack: bool = sled != null and sled.get("kind") == "sack"
+				var half := sk == 3   # しゃがんで、腰を下ろす途中
+				_hips_drop = _sit_drop() * (0.55 if half else 1.0)
+				_squash = 0.55 if half else 0.12
+				_update_all()
+				for s in ["L", "R"]:
+					var kk := _frame - _kick_frame
+					if kk >= 0 and kk < 3 and s == _kick_leg:
+						# 足で雪を蹴る（米袋）: 横から下へ伸ばし（0）、後ろへ蹴り（1）、引き戻す（2）
+						_turn_axis("thigh." + s, X, [0.7, 0.2, 0.9][kk])
+						_turn_axis("shin." + s, X, [-0.5, -0.1, -0.6][kk])
+						_turn_axis("thigh." + s, Z, (0.25 if s == "R" else -0.25) * [1.0, 1.0, 0.5][kk])
+						continue
+					if half:
+						_turn_axis("thigh." + s, X, 1.05)
+						_turn_axis("shin." + s, X, -1.55)
+					elif sack:
+						# 米袋は低いので、膝を少し立てて足先を袋の前の縁へ（脚が見えて、座っているとわかる）
+						_turn_axis("thigh." + s, X, 2.0)
+						_turn_axis("shin." + s, X, -1.2)
+					else:
+						_turn_axis("thigh." + s, X, 1.5)
+						_turn_axis("shin." + s, X, -0.25)
+				bend = -lean.y * 0.3 - (0.3 if sack and not half else 0.0)   # 米袋では少し後ろへもたれる
+				_turn_axis("chest", Z, -lean.x * 0.3)
+				if sled and sack:
+					# 米袋: 前の紐を両手で握り、少し引き寄せる
+					var me: Vector3 = sled.to_local(global_position)
+					_hold[0] = [sled, Vector3(-0.13, me.y + 0.16, me.z - 0.36)]
+					_hold[1] = [sled, Vector3(0.13, me.y + 0.16, me.z - 0.36)]
+				elif sled:
+					var me: Vector3 = sled.to_local(global_position)
+					_hold[0] = [sled, Vector3(-0.68, 0.5, me.z - 0.1)]
+					_hold[1] = [sled, Vector3(0.68, 0.5, me.z - 0.1)]
 		_:
 			if airborne:
 				for s in ["L", "R"]:
@@ -554,6 +614,10 @@ func _pose() -> void:
 					_hold[1] = [self, to_local(rope_hand)]
 				if effort:
 					bend += 0.3
+
+	var si := sack_k("in")
+	if si >= 0 and act != Act.RIDE:
+		bend = _sack_stow(si)
 
 	var em := _emote_k()
 	if crouch and act != Act.RIDE and em[0] != "make_ball":
@@ -642,6 +706,7 @@ func _pose() -> void:
 		ball_k = 1.0
 	_ball.visible = ball_k > 0.0
 	_ball.scale = Vector3.ONE * maxf(ball_k, 0.01)
+	_place_roll()
 
 	# 声と白い息
 	if _voice > 0:
@@ -1247,6 +1312,127 @@ func _make_ball() -> void:
 	pivot.add_child(m)
 	_ball = pivot
 	_ball.visible = false
+
+
+# ---------------------------------------------------------------- 米袋を出す・しまう
+
+## 帯の米袋を取り出して広げる（立ったまま）。k: 0 右手を帯へ / 1 引き抜いて胸の前で両手に / 2 ばさっと前へ広げて落とす
+func _sack_draw(k: int) -> float:
+	var h := height()
+	match k:
+		0:
+			_hips_drop = 0.03
+			_update_all()
+			_turn_axis("chest", Vector3.UP, -0.3)   # 右の腰へ体をひねる（ため）
+			_hold[1] = [self, (BELT.get(kind, BELT["kasa"]) as Vector3) * _scale + Vector3(0.03, 0.04, 0.0)]
+			return 0.12
+		1:
+			_hold[1] = [self, Vector3(0.1, h * 0.6, -0.2)]
+			_hold[0] = [self, Vector3(-0.07, h * 0.58, -0.22)]
+			return 0.02
+		_:
+			# 解放: 両腕を前へ振り下ろし、袋を雪の上へ広げる
+			_hips_drop = 0.06
+			_update_all()
+			_hold[1] = [self, Vector3(0.15, h * 0.4, -0.45)]
+			_hold[0] = [self, Vector3(-0.15, h * 0.4, -0.45)]
+			return 0.45
+
+
+## 立って米袋を丸め、帯に戻す。k: 0〜1 腰を上げてかがむ / 2〜6 くるくる丸める / 7 跳ねた包みを受ける / 8 帯へ / 9 しまった
+func _sack_stow(k: int) -> float:
+	var h := height()
+	if k <= 6:
+		var b := _crouch_legs(0.75)
+		if k <= 1:
+			_hold[1] = [self, Vector3(0.12, h * 0.14, -0.4)]
+			_hold[0] = [self, Vector3(-0.12, h * 0.14, -0.4)]
+		else:
+			# 足もとの袋を、両手で前へ転がすように、交互に回す
+			var a := k * 1.7
+			_hold[1] = [self, Vector3(0.08, h * 0.12 + 0.05 * sin(a), -0.38 - 0.07 * cos(a))]
+			_hold[0] = [self, Vector3(-0.08, h * 0.12 - 0.05 * sin(a), -0.38 + 0.07 * cos(a))]
+		return b + 0.45   # 深く前かがみ
+	if k == 7:
+		_crouch_legs(0.3)
+		_hold[1] = [self, Vector3(0.08, h * 0.55, -0.22)]
+		_hold[0] = [self, Vector3(-0.06, h * 0.53, -0.24)]
+		return 0.15
+	if k == 8:
+		_turn_axis("chest", Vector3.UP, -0.25)
+		_hold[1] = [self, (BELT.get(kind, BELT["kasa"]) as Vector3) * _scale + Vector3(0.03, 0.04, 0.0)]
+		return 0.1
+	return 0.0
+
+
+## 丸めた米袋: 帯（右の腰）に下げておき、取り出す・しまうときは右手に持つ
+func _make_roll() -> void:
+	var hips := _id("hips")
+	var hand := _id("hand.R")
+	if hips < 0 or hand < 0:
+		return
+	var at_hip := BoneAttachment3D.new()
+	at_hip.bone_name = "hips"
+	skel.add_child(at_hip)
+	_roll_hip = Node3D.new()
+	_roll_hip.transform = Transform3D(Basis(Vector3.RIGHT, 1.2).rotated(Vector3.UP, 0.3), skel.get_bone_global_rest(hips).affine_inverse() * (BELT.get(kind, BELT["kasa"]) as Vector3))
+	at_hip.add_child(_roll_hip)
+	var at_hand := BoneAttachment3D.new()
+	at_hand.bone_name = "hand.R"
+	skel.add_child(at_hand)
+	_roll_hand = Node3D.new()
+	_roll_hand.transform = Transform3D(Basis(Vector3.BACK, PI / 2), Vector3(-0.04, 0.05, 0) / _scale)
+	at_hand.add_child(_roll_hand)
+	_roll = Node3D.new()
+	_roll.scale = Vector3.ONE / _scale
+	var felt := Look.felt(belt_color, 6.0)
+	var cm := CylinderMesh.new()   # くるくる巻いた袋
+	cm.top_radius = 0.052
+	cm.bottom_radius = 0.052
+	cm.height = 0.24
+	cm.radial_segments = 7
+	cm.rings = 1
+	var body := MeshInstance3D.new()
+	body.mesh = cm
+	body.material_override = felt
+	body.layers = layers
+	_roll.add_child(body)
+	for y in [-0.06, 0.06]:   # 麻ひもで 2 か所しばる
+		var tm := CylinderMesh.new()
+		tm.top_radius = 0.056
+		tm.bottom_radius = 0.056
+		tm.height = 0.016
+		tm.radial_segments = 7
+		var tie := MeshInstance3D.new()
+		tie.mesh = tm
+		tie.material_override = Look.felt(Color(0.82, 0.72, 0.5), 8.0)
+		tie.position.y = y
+		tie.layers = layers
+		_roll.add_child(tie)
+	_roll_hip.add_child(_roll)
+	_roll.visible = false
+
+
+## 丸めた米袋をコマごとに、帯・右手・なし（広げてある）のどこかに置く
+func _place_roll() -> void:
+	if _roll == null:
+		return
+	var ko := sack_k("out")
+	var ki := sack_k("in")
+	var at: Node3D = null
+	if ko >= 0:
+		at = _roll_hip if ko == 0 else (_roll_hand if ko == 1 else null)
+	elif ki >= 0:
+		at = _roll_hand if ki in [7, 8] else (_roll_hip if ki >= 9 else null)
+	elif belt_sack:
+		at = _roll_hip
+	_roll.visible = at != null
+	if at and _roll.get_parent() != at:
+		_roll.reparent(at, false)
+	var body := _roll.get_child(0) as MeshInstance3D
+	var m := body.material_override as StandardMaterial3D
+	if not m.albedo_color.is_equal_approx(belt_color):
+		m.albedo_color = belt_color
 
 
 static var _ball_mesh: Mesh
