@@ -41,7 +41,7 @@ const START_BUTTONS := 30
 ## 大きい段から: 螺鈿 1000・白蝶貝 100・真鍮 10・木 1。絵は craft_icons.gd の money、斜面のボタンは snow_buttons.gd の TIERS
 const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 ## 型紙の値段（木の何個分）。ソリの倍率を上げて稼ぎが増えたので上げた（2026-10-30 代表「あとお店の値段」）。
-## 最初の小は、米袋で漕いで丘を 1〜2 分、大は、中に 3 人で大きな山を 5 分・米袋ひとりで 20 分ほど（design/snow-buttons の表）
+## 最初の小は、米袋で漕いで丘を 1 分ほど、大は、中に 3 人で大きな山を 5 分・米袋ひとりで 10〜20 分ほど（design/snow-buttons の表）
 const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
 const FABRIC_PRICE := 10
 const PATTERNS := ["sack", "small", "mid", "large"]

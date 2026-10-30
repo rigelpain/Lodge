@@ -168,7 +168,7 @@ func _ride(dt: float) -> void:
 		var p := _paid
 		var mult: float = main.snow_buttons.RIDE_RATE.get(sled.kind, 1.0) * (1.0 + main.snow_buttons.CREW_BONUS * (int(r.n) - 1))
 		var key := "%d_%d" % [r.n, r.mash]
-		var sm: Dictionary = _sums.get(key, {"k": 0, "dist": 0.0, "t": 0.0, "acc": 0.0, "slope": 0.0, "slope_exp": 0.0, "snips": 0, "wood": 0, "brass": 0, "best": 0.0})
+		var sm: Dictionary = _sums.get(key, {"k": 0, "dist": 0.0, "t": 0.0, "acc": 0.0, "slope": 0.0, "slope_exp": 0.0, "snips": 0, "wood": 0.0, "speed": 0.0, "brass": 0, "best": 0.0})
 		sm.k += 1
 		sm.dist += float(p.get("dist", 0.0))
 		sm.t += r.t
@@ -176,15 +176,16 @@ func _ride(dt: float) -> void:
 		sm.slope += _slope
 		sm.slope_exp += _slope_exp
 		sm.snips += _snips
-		sm.wood += int(p.get("wood", 0))
+		sm.wood += float(p.get("wood", 0.0))
+		sm.speed += float(p.get("speed", 0.0))
 		sm.brass += int(p.get("brass", 0))
 		sm.best += r.best
 		_sums[key] = sm
 		if int(sm.k) == int(args.get("reps", "1")):
 			var k := float(sm.k)
-			_rows.append("| %s%s | %s | %d | %s | %.0f m | %.0f 秒 | %.1f m/s | 木 %.1f・真鍮 %.1f | ×%.2f | %.1f | %.1f 個 → %.1f（見込み %.1f） |" % [
+			_rows.append("| %s%s | %s | %d | %s | %.0f m | %.0f 秒 | %.1f m/s | 距離 %.1f・速さ %.1f・コンボ真鍮 %.1f 個 | ×%.2f | %.1f | %.1f 個 → %.1f（見込み %.1f） |" % [
 					args.get("map", "hill"), "（中腹から）" if args.get("from", "") == "mid" else "", sled.kind, r.n,
-					("1 秒に %d 回" % r.mash) if r.mash > 0 else "—", sm.dist / k, sm.t / k, sm.best / k, sm.wood / k, sm.brass / k,
+					("1 秒に %d 回" % r.mash) if r.mash > 0 else "—", sm.dist / k, sm.t / k, sm.best / k, sm.wood / k, sm.speed / k, sm.brass / k,
 					mult, sm.acc / k, sm.snips / k, sm.slope / k, sm.slope_exp / k])
 		for d in r.rs:
 			sled.dismount(d)

@@ -244,4 +244,4 @@ func _hook_pay() -> void:
 		return
 	sb.happened.connect(func(ev: Dictionary) -> void:
 		if ev.kind == "ride_pay":
-			print("滑った分: %.0f m、木 %d、真鍮 %d、縫い込んだ数 %d" % [float(ev.dist), int(ev.wood), int(ev.brass), ev.sewn.size()]))
+			print("滑った分: %.0f m、距離の分 %.1f、速さの分 %.1f、コンボの真鍮 %d、縫い込んだ数 %d" % [float(ev.dist), float(ev.wood), float(ev.get("speed", 0.0)), int(ev.brass), ev.sewn.size()]))
