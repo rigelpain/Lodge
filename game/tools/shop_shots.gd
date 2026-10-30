@@ -1,7 +1,7 @@
 extends SceneTree
 ## 型紙と布を買って、ミシンでソリを縫い、畳んで持ち、外で広げて乗るまでを通して、場面ごとに一人称で撮る（確かめ用）。
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/shop_shots.gd -- \
-##       --bots=0 --no-sound --no-pip --spawn=shop --dir=/path/shots [--sled=mid] [--fabric=navy]
+##       --bots=0 --no-sound --no-pip --spawn=shop --dir=/path/shots [--sled=mid] [--fabric=navy] [--money=N]
 ## 流れ: おじさんの前 → 売り台を開く → 型紙を選んで買う → 布を選んで買う → ミシンの画面で型紙と布を選んで縫う →
 ##       縫う（入れる・ため・解放・見せる・余韻）→ 出てきたソリ（米袋なら装備の枠に入る。大はロッジの前に出る）。
 ## 操作は人の手と同じ入口（player.gd の関数、craft_ui.gd の選ぶ・買う）を呼ぶ。<dir>/<番号>_<名前>.png を書き、
@@ -66,6 +66,9 @@ func _run() -> void:
 	var who: int = p.id
 	var kind: String = args.get("sled", "sack")   # 畳めるのは一人用（米袋）だけ
 	var fabric: String = args.get("fabric", "navy")
+	# 型紙と布の分が足りなければ足す（最初の財布 craft.gd の START_BUTTONS では、米袋より大きいソリはまだ買えない）。--money=N で財布を N に
+	var need: int = craft.price({"kind": "pattern", "sled": kind}) + craft.price({"kind": "fabric"})
+	craft.wallets[who] = int(args.get("money", str(maxi(int(craft.wallets[who]), need))))
 	p.set("_pitch", 0.12)
 	await _wait(0.6)
 	await _shot("shop_front")

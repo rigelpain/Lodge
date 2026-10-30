@@ -14,8 +14,10 @@ extends Node3D
 ##   色・光り方・穴の数・大きさ・音で見分ける。光るボタンは、遠くからも分かるよう、上で星がきらっとまたたく（画面での大きさが一定）。
 ## 歩いて裁ちばさみで取る: 歩いて近づき F（player.gd）で、はさみを出してちょきんと切る（12 fps）。そのあいだは動けず、
 ##   取ったボタンは切った人だけに入る。ソリで通るほうが、たくさん・速く取れる。
-## 滑った距離と速さでも: 一回の滑り（乗って滑り出してから止まるまで）の長さで木のボタン、いちばん速い所（RIDE_BRASS）を
-##   超えるたびに真鍮のボタンが一つ。どちらも、もらえた瞬間に速さの表示（speedo.gd）の糸の上へぽんと縫い込まれ、
+## 倍率（2026-10-30 代表）: 歩いて取るのは ×1.0 のまま（どこで取っても、木 1 個は 1）。ソリは乗り物の倍率（RIDE_RATE）と
+##   場所の倍率（大きな山は丘より上、高い所ほど上。MAP_RATE・ALT_RATE）で上。降るボタンも、大きな山・高い所ほど上の素材が多く、少し多く降る（MAP_RARE・RARE_ALT・MT_SPOT_ALT）
+## 滑った距離と速さでも: 一回の滑り（乗って滑り出してから止まるまで）の長さと、いちばん速い所の高さで木のボタン（倍率が高いほど
+##   間が詰まる。詰まりすぎたら真鍮でまとめる）、止まらずに 50 m ごとの節目で真鍮のコンボ（1・2・3…）。どれも、もらえた瞬間に速さの表示（speedo.gd）の糸の上へぽんと縫い込まれ、
 ##   止まると糸が巻き取られて、糸の上のボタンが財布へ飛ぶ（hud.gd・craft_ui.gd）。
 ## 取得音: 財布に入る瞬間に、素材ごとの音（木「コッ」・真鍮「チン」・白蝶貝「シャラン」・螺鈿）を耳元で鳴らす（craft_ui.gd が
 ##   audio.gd の coin を呼ぶ）。ソリで取っても、はさみで取っても、滑った分でも同じ。その場では、糸が切れる「ぷつん」と「ぽん」だけ
@@ -26,11 +28,14 @@ extends Node3D
 ##   snip   {id, sled, by, at}                       ソリ（名前）が、ボタン id の糸を切った（by は、はさみで切った人の番号。ソリなら -1）
 ##   share  {id, gives: {番号: 数}, parts: {番号: 端数}, at}  切ったボタンを分ける。数はそのあと craft の earn で財布へ
 ##   shear  {id, who}                                歩いてきた人が裁ちばさみを出した（frame + SHEAR_CUT コマで snip。snip の by に人の番号）
-##   ride_mark {sled, look, speed}                   滑っているソリに、ボタンが一つ縫い込まれた（look: "wood" は RIDE_M_PER_WOOD 滑るごと、
-##                                                   "brass" はいちばん速い所 speed を超えたとき）
-##   ride_pay  {sled, dist, wood, brass, sewn, gives: {番号: 数}}  一回の滑りが終わった（まとめ）。滑った長さ（m）と、木と真鍮の数。
-##                                                   sewn は縫い込んだ順のボタンの並び（"wood"・"brass"）。gives は手伝った人の分
-##   ride_pay_one {sled, who, sewn, n, left}         乗っていた一人に、その人が乗ってから縫い込まれた分（sewn、n はその値打ち）を入れる。
+##   ride_mark {sled, look, speed}                   滑っているソリに、ボタンが一つ縫い込まれた（look: 滑った距離と速さの分は、倍率に応じた
+##                                                   一つ分（ride_unit）の素材。コンボの節目は "brass"）
+##   ride_pay  {sled, dist, wood, speed, brass, value, acc, sewn, gives: {番号: 数}}  一回の滑りが終わった（まとめ）。滑った長さ（m）、
+##                                                   距離の分と速さの分（倍率を掛けたあと）、コンボの真鍮の数。sewn は縫い込んだ順のボタンの並び。
+##                                                   gives は手伝った人の分
+##   ride_carry {who, carry}                         乗っていた人の持ち越しの端数が変わった（斜面のボタンを倍率つきで取った）
+##   ride_lint {sled, frac}                          滑った分のうち、まだ一つ分に満たない端数（一つ分に対する割合 0〜1）。速さの表示の糸の上に糸くずとして積もる
+##   ride_pay_one {sled, who, sewn, n, left, carry}  （carry は、その人が次の滑りへ持ち越す端数）         乗っていた一人に、その人が乗ってから縫い込まれた分（sewn、n はその値打ち）を入れる。
 ##                                                   止まったとき（left = false）か、途中で降りたとき（E で降りる・米袋をしまう・
 ##                                                   落とされる。left = true）。ほかの人の分は、それぞれ降りたときか止まったとき
 ## いまは一人の画面の中だけ: send() がすぐ _apply() して配る。通信を入れたら、当たりの判定（_physics_process）と
@@ -42,6 +47,7 @@ const Doll := preload("res://doll.gd")
 const Look := preload("res://look.gd")
 const Props := preload("res://props.gd")
 const Rope := preload("res://sled_rope.gd")
+const Mountain := preload("res://mountain.gd")
 
 const GLB_DIR := "res://props/snow_button/"
 const R := 0.25                # 木のボタンの半径 (m。glb)
@@ -54,14 +60,24 @@ const TIERS := [
 	{"value": 100, "look": "pearl", "glb": "snow_button_pearl", "r": 0.19, "thick": 0.026, "chance": 0.013, "spark": Color(0.94, 0.97, 1.0)},
 	{"value": 1000, "look": "raden", "glb": "snow_button_raden", "r": 0.23, "thick": 0.056, "chance": 0.002, "spark": Color(0.7, 1.0, 0.95)},
 ]
+const LOOK_OF := {1: "wood", 10: "brass", 100: "pearl", 1000: "raden"}
+const VALUE_OF := {"wood": 1, "brass": 10, "pearl": 100, "raden": 1000}
 const SPARK_EVERY := Vector2(1.0, 2.6)   # またたきの間 (s)。値打ちが高いほど短い
 const SPARK_PX := 0.0016                 # またたきの星の、画面での大きさ（Sprite3D の fixed_size）
 
 # ---- 出し方（調整する値）
-const MAX_BUTTONS := 14              # 斜面に同時に出ているボタンの数
+const MAX_BUTTONS := 14              # 斜面に同時に出ているボタンの数（丘）
+## 山ごと・標高ごとの降るボタン（2026-10-30 代表）。大きな山はコースの上に降る。高い所ほど、上の素材が出やすく、少し多く降る
+const MAP_MAX := {"hill": MAX_BUTTONS, "mountain": 20}   # 同時に出ている数（山ごと）
+const MAP_RARE := {"hill": 1.0, "mountain": 1.3}   # 真鍮・白蝶貝・螺鈿の出やすさ（山ごと。TIERS の chance に掛ける）
+const RARE_ALT := 0.012              # 高さ 1 m ごとに、上の素材が +1.2% 出やすく（大きな山の頂上 75 m で ×1.9。山の 1.3 と合わせて ×2.5）
+const MT_SPOT_ALT := 0.02            # 大きな山では、高さ 1 m ごとに置かれやすさ +2%（頂上はふもとの 2.5 倍ほど）
 const FIRST_DROP := 1.5              # 始まってから最初のボタンが降るまで (s)
 const FIRST_BURST := 6               # 始まってすぐ、続けて降らせる数
-const DROP_EVERY := Vector2(3.0, 7.0)   # 足りないとき、次のボタンが降るまで (s)
+## 次のボタンが降るまで (s。山ごと)。歩いて切って回ると、降る数をほとんど取れてしまうので、降る数を絞り、そのぶん長く残す
+## （MAP_LIFE）。ソリで滑ると、残っているボタンのうち通り道のものを拾う。歩きの 1 分あたりがソリより少なくなるように（design/snow-buttons）
+const MAP_DROP_EVERY := {"hill": Vector2(12.0, 24.0), "mountain": Vector2(20.0, 40.0)}
+const MAP_LIFE := {"hill": 1.5, "mountain": 3.0}   # 埋もれきるまでの時間（LIFE）に掛ける
 const AWAY := 3.0                    # ほかのボタンから、これより離して置く (m)
 const SPOT_R := Vector2(7.0, 45.0)   # 置く、頂上からの距離 (m)
 const COLORS := ["B8402E", "34477E", "D9A53C", "5E8A4E", "C2577E", "2F7F86"]   # 糸の色（赤・藍・からし・緑・桃・青緑）。一つずつ選ぶ
@@ -85,9 +101,34 @@ const BELLY := ["mid", "large"]
 const SHEAR_REACH := 1.8       # ボタンまでこれより近く、向いていれば取れる (m)
 const SHEAR_CUT := 8           # はさみを出してから、糸が切れるまで（コマ）。2 回目のちょきんは 10 コマ目
 const SHEAR_END := 15          # はさみをしまい終わるまで（コマ）。このあいだは動けない
-# ---- 滑った距離と速さ（一回の滑りごと）。斜面のボタンを拾うほうが多くもらえるくらいに
-const RIDE_M_PER_WOOD := 12.0  # これだけ滑るごとに木のボタン 1 つ (m)
-const RIDE_BRASS := [10.0, 13.0]     # この速さ (m/s) を超えるたびに真鍮のボタン 1 つ（一回の滑りで一度ずつ）
+# ---- 滑った距離と速さ（一回の滑りごと）
+## 倍率は、ボタン 1 個の重さではなく、もらえる間隔に効く（2026-10-30 代表「1 ボタンの重さというよりか、滑走距離に対して出る報酬の
+## 間隔が狭くなるのと、達成速度に対して出る報酬の間隔が狭くなるのが良い」）。倍率（乗り物 × 人数のおまけ × 山 × 標高）が上がるほど、
+## 木 1 個が出るまでに滑る距離（RIDE_M_PER_WOOD ÷ 倍率）と、いちばん速い所を上げる幅（RIDE_V_PER_WOOD ÷ 倍率）が詰まる
+const RIDE_M_PER_WOOD := 12.0  # 倍率 ×1 のとき、これだけ滑るごとに木 1 つ (m)
+const RIDE_V_FROM := 8.0       # これより速くなったら、速さでももらえる (m/s)
+const RIDE_V_PER_WOOD := 0.3   # 倍率 ×1 のとき、いちばん速い所がこれだけ上がるごとに木 1 つ (m/s)
+const RIDE_MIN_GAP := 2.0      # 木の間がこれより詰まったら（倍率 6 より上）、10 個分ずつ真鍮でまとめて縫い込む (m)。真鍮でも詰まれば白蝶貝
+## 滑った距離の節目の真鍮は、コンボ（2026-10-30 代表「コンボ性にするとかが良い」）。止まらずに RIDE_COMBO_M 滑るたびに、
+## 真鍮が 1 つ・2 つ・3 つ…と増えていく。RIDE_COMBO_KEEP より遅くなるとコンボが切れ、次の節目は 1 つから（距離も数え直す）。
+## 倍率は掛けない（長く続けて滑るほど、重ねて増える）
+const RIDE_COMBO_M := 50.0
+const RIDE_COMBO_KEEP := 3.0
+## 乗り物ごとの倍率（2026-10-30 代表「乗り物によって収入倍率を変えたほうが良いな〜。米袋でもそこそこ稼げてしまうし、
+## 大きなソリで頑張る理由がなくなってしまう」）。大きいソリは重く、人を集めないと押して登れない。その頑張りがお金でも報われるように。
+## 歩いて裁ちばさみで取るのを ×1.0 の基準にして、乗り物はそれより上（2026-10-30 代表「歩いて取る倍率を下げると、1 が 0.3 に
+## なってしまうのでは？ ソリの倍率を上げるほうが良いでしょう」）。滑った分（木の出る間隔を詰める）と、
+## ソリで拾った斜面のボタン（値打ちに掛ける）の両方に
+const RIDE_RATE := {"sack": 1.2, "small": 2.3, "mid": 3.3, "large": 5.3}
+## 場所の倍率（2026-10-30 代表「山ごと＆標高ごとに倍率と降ってくるボタンを変えましょう」）。ソリで滑った分と拾ったボタンに掛ける（place_rate）。
+## 歩いて取るのには掛けない（×1.0 のまま）
+const MAP_RATE := {"hill": 1.0, "mountain": 1.5}   # 山ごと: 大きな山は丘より上
+## 標高ごと: 高さ 1 m ごとに +3%（丘の頂上 18 m で ×1.54、大きな山の中腹 45 m で ×2.35、頂上 75 m で ×3.25）。滑った分は、木 1 の分を
+## 滑った区間のまんなかの高さ（真鍮は速さを超えた所の高さ）、斜面のボタンは拾った所の高さで数える。
+## 大きな山の頂上まで押し上げる時間は、中腹までの倍ほど。上の区間の分がそれを上回るように（design/snow-buttons の 1 分あたりの表）
+const ALT_RATE := 0.03
+## 一緒に乗っている人数のおまけ: 2 人目から 1 人ごとに一人ひとりの取り分が +CREW_BONUS（大に 8 人で +70%）
+const CREW_BONUS := 0.1
 const RIDE_STOP_T := 1.0       # 0.5 m/s より遅いのがこれだけ続いたら、滑り終わり (s)
 const HELPER_SHARE := 1.0 / 3.0   # 押して手伝ったけれど乗らなかった人に届く割合
 const HELP_WINDOW := 120.0     # 滑る前のこの秒のうちに押した人を、手伝った人にする（ソリの時計 sled._trail_now）
@@ -120,12 +161,13 @@ var auto := true                # 自分で降らせる（確かめの台本は 
 var gust_override := -1.0       # 確かめ用: 0〜1 なら、風の強さをこれに固定する
 var buttons := {}               # 番号 → Btn
 var crumbs := {}                # 人の番号 → ためている端数（手伝った人の分）
+var ride_carry := {}            # 人の番号 → 滑った分の、次の滑りへ持ち越す端数（倍率で木 1 個に満たなかった分）
 var stats := {"snip": 0, "value": 0}   # 確かめ用の数（切った数と、その値打ちの合計）
 var _shears: Array = []         # 動いている裁ちばさみ {node, a, b, btn, who, f0}
 var _cuts: Array = []           # ホスト: はさみで切る予定 {id, who, at}
 var _next_id := 1
-var _drop_t := FIRST_DROP
-var _burst := FIRST_BURST
+var _drop_t := {"hill": FIRST_DROP, "mountain": FIRST_DROP}   # 山ごと
+var _burst := {"hill": FIRST_BURST, "mountain": FIRST_BURST}
 var _rng := RandomNumberGenerator.new()
 var _noise := FastNoiseLite.new()   # 風
 var _life_noise := FastNoiseLite.new()
@@ -225,24 +267,41 @@ func _physics_process(dt: float) -> void:
 		return
 	_track_runs(dt)
 	if auto:
-		_drop_t -= dt
-		if _drop_t <= 0.0:
-			_drop_t = 0.4 if _burst > 0 else _rng.randf_range(DROP_EVERY.x, DROP_EVERY.y)
-			_burst -= 1
-			if _live() < MAX_BUTTONS:
-				var p := _pick_spot()
-				if p != Vector3.INF:
-					drop_at(p)
+		for m in MAP_MAX:
+			_drop_t[m] -= dt
+			if _drop_t[m] <= 0.0:
+				_drop_t[m] = 0.4 if _burst[m] > 0 else _rng.randf_range(MAP_DROP_EVERY[m].x, MAP_DROP_EVERY[m].y)
+				_burst[m] -= 1
+				if _live(m) < int(MAP_MAX[m]):
+					var p := _pick_spot(m)
+					if p != Vector3.INF:
+						drop_at(p)
 	_check_hits()
 	_do_cuts()
 
 
-func _live() -> int:
+## 斜面に出ている数（m を渡すと、その山の分だけ）
+func _live(m := "") -> int:
 	var n := 0
 	for b in buttons.values():
-		if b.state != "gone" and b.state != "pop":
+		if b.state != "gone" and b.state != "pop" and (m == "" or map_of(b.at) == m):
 			n += 1
 	return n
+
+
+## どの山か: "hill"（丘）か "mountain"（大きな山。上り返しの土手から北）
+static func map_of(p: Vector3) -> String:
+	return "mountain" if p.z > Mountain.BERM_Z - Mountain.BERM_HALF else "hill"
+
+
+## 場所の倍率（山ごと × 標高ごと）。p の高さ（y）で数える
+static func place_rate(p: Vector3) -> float:
+	return float(MAP_RATE[map_of(p)]) * (1.0 + ALT_RATE * maxf(0.0, p.y))
+
+
+## 上の素材（真鍮・白蝶貝・螺鈿）の出やすさ（山ごと × 標高ごと）
+static func rare_at(p: Vector3) -> float:
+	return float(MAP_RARE[map_of(p)]) * (1.0 + RARE_ALT * maxf(0.0, p.y))
 
 
 ## ボタンを降らせる（ホスト）。p は雪の上の点（xz だけ使う。高さと向きはここで決める）。番号を返す
@@ -254,22 +313,22 @@ func drop_at(p: Vector3, color_i := -1, instant := false, tier := -1) -> int:
 	if instant:
 		f0 -= FALL_FRAMES + SEW_FRAMES + 1
 	var at := _on_snow(p)
-	var life := LIFE * maxf(0.2, 1.0 + LIFE_PATCH * clampf(_life_noise.get_noise_2d(at.x, at.z) * 1.6, -1.0, 1.0)
+	var life := LIFE * float(MAP_LIFE[map_of(at)]) * maxf(0.2, 1.0 + LIFE_PATCH * clampf(_life_noise.get_noise_2d(at.x, at.z) * 1.6, -1.0, 1.0)
 			+ LIFE_SCATTER * _rng.randf_range(-1.0, 1.0))
 	var c: String = COLORS[_rng.randi() % COLORS.size() if color_i < 0 else color_i]
 	if tier < 0:
-		tier = pick_tier(_rng.randf())
+		tier = pick_tier(_rng.randf(), rare_at(at))
 	send({"kind": "drop", "id": id, "tier": tier, "at": at, "up": _normal(at), "yaw": _rng.randf() * TAU, "color": c,
 			"end": f0 + FALL_FRAMES + SEW_FRAMES + int(life * Doll.FPS), "frame": f0})
 	return id
 
 
-## 段を選ぶ: x は 0〜1 の乱数。ほとんど木、たまに真鍮、まれに白蝶貝、ごくまれに螺鈿
-static func pick_tier(x: float) -> int:
+## 段を選ぶ: x は 0〜1 の乱数。ほとんど木、たまに真鍮、まれに白蝶貝、ごくまれに螺鈿。rare は上の素材の出やすさ（rare_at）
+static func pick_tier(x: float, rare := 1.0) -> int:
 	for i in range(TIERS.size() - 1, 0, -1):
 		var above := 0.0
 		for j in range(i, TIERS.size()):
-			above += float(TIERS[j].chance)
+			above += float(TIERS[j].chance) * rare
 		if x > 1.0 - above:
 			return i
 	return 0
@@ -288,10 +347,13 @@ func _normal(p: Vector3) -> Vector3:
 	return Vector3(-hx / (2.0 * e), 1.0, -hz / (2.0 * e)).normalized()
 
 
-## 置いてよい所か: ロッジの近くでない、斜面の上、ほかのボタンから離れている、木や小物に重ならない
+## 置いてよい所か: ロッジの近くでない、斜面の上（丘）かコースの上（大きな山）、ほかのボタンから離れている、木や小物に重ならない
 func _free_spot(p: Vector3) -> bool:
 	var r := Vector2(p.x, p.z).length()
-	if r < 4.0 or r > 60.0 or world.lodge_weight(p.x, p.z) < 1.0:
+	if map_of(p) == "mountain":
+		if absf(p.x - Mountain.COURSE_X) > Mountain.COURSE_W or not Mountain.on_course(p.x, p.z):
+			return false
+	elif r < 4.0 or r > 60.0 or world.lodge_weight(p.x, p.z) < 1.0:
 		return false
 	for b in buttons.values():
 		if b.state != "gone" and Vector2(b.at.x - p.x, b.at.z - p.z).length() < AWAY:
@@ -314,15 +376,24 @@ func _free_spot(p: Vector3) -> bool:
 	return true
 
 
-## 置き場所を選ぶ: 候補をいくつか取り、重み（spot_weight）で引く
-func _pick_spot() -> Vector3:
+## 置き場所を選ぶ: 候補をいくつか取り、重み（spot_weight）で引く。m は山（"hill"・"mountain"）
+func _pick_spot(m := "hill") -> Vector3:
 	var cands := []
 	var total := 0.0
+	Mountain._build()
 	for i in 40:
-		var a := _rng.randf() * TAU
-		var r := _rng.randf_range(SPOT_R.x, SPOT_R.y)
-		var p := Vector3(cos(a) * r, 0, sin(a) * r)
-		var w := spot_weight(p)
+		var p: Vector3
+		var w: float
+		if m == "mountain":
+			# 大きな山: コースの上（頂上から流しの終わりまで）。高い所ほど置かれやすい
+			p = Vector3(Mountain.COURSE_X + _rng.randf_range(-1.0, 1.0) * (Mountain.COURSE_W - 1.0), 0,
+					_rng.randf_range(Mountain.BOTTOM_Z + 4.0, Mountain.top_z))
+			w = 1.0 + MT_SPOT_ALT * maxf(0.0, world.height(p.x, p.z))
+		else:
+			var a := _rng.randf() * TAU
+			var r := _rng.randf_range(SPOT_R.x, SPOT_R.y)
+			p = Vector3(cos(a) * r, 0, sin(a) * r)
+			w = spot_weight(p)
 		if w <= 0.0 or not _free_spot(p):
 			continue
 		cands.append([p, w])
@@ -371,8 +442,9 @@ func _track_runs(dt: float) -> void:
 		var run: Dictionary = _runs.get(sled, {})
 		if run.is_empty():
 			if riding and v > 1.5:
-				run = {"top": sled.global_position.y, "cells": {}, "dist": 0.0, "best": 0.0, "marks": [], "riders": {}, "slow": 0.0,
-						"wood": 0, "sewn": [], "on": {}, "name": String(sled.name)}
+				run = {"top": sled.global_position.y, "cells": {}, "dist": 0.0, "best": 0.0, "riders": {}, "slow": 0.0,
+						"wood": 0.0, "speed": 0.0, "combo": 0, "combo_d": 0.0, "combos": 0, "sewn": [], "on": {}, "name": String(sled.name),
+						"acc": 0.0, "whole": 0, "acc_at": {}}
 				_runs[sled] = run
 			else:
 				continue
@@ -387,24 +459,35 @@ func _track_runs(dt: float) -> void:
 		for id in now_ids:
 			if not run.on.has(id):
 				run.on[id] = run.sewn.size()
+				run.acc_at[id] = run.acc
 				run.riders[id] = true
 		if riding:
 			var hv := Vector2(sled.linear_velocity.x, sled.linear_velocity.z).length()
 			run.dist += hv * dt
-			run.best = maxf(run.best, v)
 			if v > 2.0:
 				run.cells[_cell(sled.global_position)] = true
-			for m in RIDE_BRASS:
-				if v >= m and not m in run.marks:
-					run.marks.append(m)
-					run.sewn.append("brass")
-					send({"kind": "ride_mark", "sled": String(sled.name), "look": "brass", "speed": m})
-			# RIDE_M_PER_WOOD 滑るごとに木を一つ。上限はない（2026-10-30 まで一回 18 個までだったが、大きな山の長い滑りで取りこぼすのでやめた。
-			# 速さの表示の糸の上では、10 個たまると上の素材に両替して収める。hud.gd）
-			while run.wood < floori(run.dist / RIDE_M_PER_WOOD):
-				run.wood += 1
-				run.sewn.append("wood")
-				send({"kind": "ride_mark", "sled": String(sled.name), "look": "wood", "speed": v})
+			# いまの倍率（乗り物 × 人数のおまけ × 山 × いまの高さ）で、木の出る間を詰める。上限はない（速さの表示の糸の上では、
+			# 10 個たまると上の素材に両替して収める。hud.gd）
+			var mult := ride_mult(sled) * place_rate(sled.global_position)
+			var gain := hv * dt / RIDE_M_PER_WOOD * mult
+			run.wood += gain
+			if v > run.best:
+				var up := (maxf(v, RIDE_V_FROM) - maxf(run.best, RIDE_V_FROM)) / RIDE_V_PER_WOOD * mult
+				run.speed += up
+				gain += up
+				run.best = v
+			_ride_add(sled, run, gain, v, mult)
+			# 距離の節目のコンボ
+			if v < RIDE_COMBO_KEEP:
+				run.combo = 0
+				run.combo_d = 0.0
+			else:
+				run.combo_d += hv * dt
+				if run.combo_d >= RIDE_COMBO_M:
+					run.combo_d -= RIDE_COMBO_M
+					run.combo += 1
+					run.combos += run.combo
+					_ride_sew(sled, run, "brass", int(run.combo), v)
 		run.slow = run.slow + dt if (v < 0.5 or not riding) else 0.0
 		if run.slow >= RIDE_STOP_T:
 			var drop := (float(run.top) - sled.global_position.y) / maxf(1.0, world.height(0.0, 0.0))
@@ -421,19 +504,64 @@ func _track_runs(dt: float) -> void:
 			_runs.erase(s)
 
 
-## 乗っていた一人 id に、乗ってから縫い込まれた分を入れる（降りた・止まった）。番号のない人（確かめの人形）には入れない
+## いまの倍率: 乗り物の倍率 × 人数のおまけ（いま乗っている人数で）
+func ride_mult(sled: RigidBody3D) -> float:
+	return float(RIDE_RATE.get(sled.kind, 1.0)) * (1.0 + CREW_BONUS * maxi(0, sled.riders.size() - 1))
+
+
+## 倍率 mult のとき、一つずつ縫い込むボタンの値打ち: 木の間（RIDE_M_PER_WOOD ÷ mult）が RIDE_MIN_GAP より詰まったら 10 個分ずつ（真鍮）、
+## それでも詰まれば 100 個分ずつ（白蝶貝）
+static func ride_unit(mult: float) -> int:
+	var u := 1
+	while u < 1000 and RIDE_M_PER_WOOD * u / maxf(mult, 0.001) < RIDE_MIN_GAP:
+		u *= 10
+	return u
+
+
+## 滑った分 gain（木の何個分。倍率を掛けたあと）をためておき、一つ分（ride_unit）に届くたびに糸の上に縫い込む。
+## 届かない分は糸くずとして見せる（ride_lint。いまの一つ分に対する割合）
+func _ride_add(sled: RigidBody3D, run: Dictionary, gain: float, v: float, mult: float) -> void:
+	run.acc += gain
+	var u := ride_unit(mult)
+	while float(run.acc) - float(run.whole) >= u - 0.0001:
+		_ride_sew(sled, run, LOOK_OF[u], 1, v, false)
+	send({"kind": "ride_lint", "sled": String(sled.name), "frac": (float(run.acc) - float(run.whole)) / u})
+
+
+## 糸の上に、look のボタンを n 個縫い込む。add: ためた分（acc）にも足す（コンボの真鍮）
+func _ride_sew(sled: RigidBody3D, run: Dictionary, look: String, n: int, v: float, add := true) -> void:
+	var val: int = VALUE_OF[look]
+	for i in n:
+		if add:
+			run.acc += val
+		run.whole += val
+		run.sewn.append(look)
+		send({"kind": "ride_mark", "sled": String(sled.name), "look": look, "speed": v})
+
+
+## 乗っていた一人 id に、乗ってから縫い込まれた分を入れる（降りた・止まった）。番号のない人（確かめの人形）には入れない。
+## 木 1 個に満たない端数は、その人が次の滑りへ持ち越す（ride_carry）。持ち越しが 1 を超えたら、木を足して入れる
 func _rider_pay(run: Dictionary, id: int, at: Vector3, left: bool) -> void:
 	var from: int = run.on.get(id, 0)
+	var acc0: float = run.acc_at.get(id, 0.0)
 	run.on.erase(id)
 	if id < 0:
 		return
 	var pieces: Array = run.sewn.slice(from)
 	var n := 0
 	for look in pieces:
-		n += 10 if look == "brass" else 1
+		n += int(VALUE_OF[look])
+	var carry: float = ride_carry.get(id, 0.0) + maxf(0.0, float(run.acc) - acc0 - n)
+	var extra := floori(carry + 0.0001)
+	carry -= extra
+	ride_carry[id] = carry
+	for i in extra:
+		pieces.append("wood")
+	n += extra
 	if n <= 0:
+		send({"kind": "ride_pay_one", "sled": String(run.name), "who": id, "sewn": [], "n": 0, "left": left, "carry": carry})
 		return
-	send({"kind": "ride_pay_one", "sled": String(run.name), "who": id, "sewn": pieces, "n": n, "left": left})
+	send({"kind": "ride_pay_one", "sled": String(run.name), "who": id, "sewn": pieces, "n": n, "left": left, "carry": carry})
 	_pay({id: n}, at, "spool", pieces, n)
 
 
@@ -488,11 +616,28 @@ func _snip(sled: RigidBody3D, b: Btn) -> void:
 	_share(sled, b.id, int(TIERS[b.tier].value), b.at)
 
 
-## 切ったボタンを分ける: 乗っていた全員に n、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
+## 切ったボタンを分ける: 値打ち n に乗り物の倍率（RIDE_RATE。人数のおまけは掛けない。2026-10-30 代表「乗り物の倍率だけ（C）」）を掛け、
+## 乗っていた全員にその分、押して手伝ったけれど乗らなかった人にその HELPER_SHARE。木 1 個に満たない端数は、乗っていた人は
+## 滑った分と同じく持ち越し（ride_carry。速さの表示の糸くず）、手伝った人はためる（crumbs）
 func _share(sled: RigidBody3D, id_: int, n: int, at: Vector3) -> void:
-	var gives := _gives(sled, sled.riders.map(func(r): return r.get("id")), n)
-	send({"kind": "share", "id": id_, "gives": gives.gives, "parts": gives.parts, "at": at})
-	_pay(gives.gives, at)
+	var v := n * float(RIDE_RATE.get(sled.kind, 1.0)) * place_rate(at)
+	var rider_ids: Array = sled.riders.map(func(r): return r.get("id"))
+	var g := _gives(sled, rider_ids, v)
+	var gives := {}
+	for who in g.gives:   # 手伝った人の分
+		if not who in rider_ids:
+			gives[who] = g.gives[who]
+	for id in rider_ids:   # 乗っていた人の分: 持ち越しの端数に足して、木 1 個分ずつ
+		if id == null or int(id) < 0:
+			continue
+		var c: float = ride_carry.get(int(id), 0.0) + v
+		var whole := floori(c + 0.0001)
+		ride_carry[int(id)] = c - whole
+		if whole > 0:
+			gives[int(id)] = whole
+		send({"kind": "ride_carry", "who": int(id), "carry": ride_carry[int(id)]})
+	send({"kind": "share", "id": id_, "gives": gives, "parts": g.parts, "value": v, "at": at})
+	_pay(gives, at)
 
 
 ## 財布へ（craft.gd の earn）。from: "spool" なら、画面では速さの表示の糸の上から飛ぶ。
@@ -507,15 +652,15 @@ func _pay(gives: Dictionary, at: Vector3, from := "", pieces := [], full := -1) 
 			craft.send(ev)
 
 
-## 分け方: 乗っていた人（番号の配列）に n ずつ、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
-func _gives(sled: RigidBody3D, rider_ids: Array, n: int) -> Dictionary:
+## 分け方: 乗っていた人（番号の配列）に n ずつ（整数に切り下げ）、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
+func _gives(sled: RigidBody3D, rider_ids: Array, n: float) -> Dictionary:
 	var gives := {}
 	var parts := {}
 	var riders := []
 	for id in rider_ids:
 		if id != null and int(id) >= 0:
 			riders.append(int(id))
-			gives[int(id)] = n
+			gives[int(id)] = floori(n + 0.0001)
 	var helped: Dictionary = sled.get("helped") if sled.get("helped") != null else {}
 	for h in helped:
 		if not is_instance_valid(h) or sled._trail_now - float(helped[h]) > HELP_WINDOW:
@@ -582,12 +727,13 @@ func _do_cuts() -> void:
 		var b: Btn = buttons.get(int(c.id))
 		if b == null or b.state != "shear":
 			continue
-		var v := int(TIERS[b.tier].value)
+		var n := int(TIERS[b.tier].value)
 		send({"kind": "snip", "id": b.id, "sled": "", "by": int(c.who), "at": b.at, "frame": f})
 		stats.snip += 1
-		stats.value += v
-		send({"kind": "share", "id": b.id, "gives": {int(c.who): v}, "parts": {}, "at": b.at})
-		_pay({int(c.who): v}, b.at)
+		stats.value += n
+		# 歩いて取るのは ×1.0 のまま（2026-10-30 代表）。乗り物の倍率も場所の倍率も掛けない。木 1 個は 1
+		send({"kind": "share", "id": b.id, "gives": {int(c.who): n}, "parts": {}, "value": n, "at": b.at})
+		_pay({int(c.who): n}, b.at)
 
 
 # ================================================================ ホスト: 滑った距離と速さ
@@ -598,17 +744,18 @@ func _ride_pay(sled: RigidBody3D, run: Dictionary) -> void:
 	for id in run.on.keys():
 		_rider_pay(run, id, sled.global_position, false)
 	var dist: float = run.dist
-	var wood: int = run.wood
-	var brass: int = run.marks.size()
-	var n := wood + 10 * brass
-	if n <= 0:
+	var n: int = run.whole   # 倍率を掛けたあとの、滑り全体の分（はじめから乗っていた人の取り分）
+	if n <= 0 and float(run.acc) <= 0.0:
 		return
 	var g := _gives(sled, run.riders.keys(), n)
 	var helpers := {}
 	for who in g.gives:
 		if not run.riders.has(who):
 			helpers[who] = g.gives[who]
-	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": wood, "brass": brass, "sewn": run.sewn, "gives": helpers})
+	# wood は滑った距離の分、speed は速さの分（どちらも倍率を掛けたあと、端数こみ）、brass はコンボの真鍮の数。
+	# value は縫い込んだ値打ち（端数 acc は持ち越しの元）
+	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": run.wood, "speed": run.speed, "brass": run.combos,
+			"value": n, "acc": run.acc, "sewn": run.sewn, "gives": helpers})
 	_pay(helpers, sled.global_position)
 
 

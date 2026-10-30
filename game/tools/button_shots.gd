@@ -1,7 +1,7 @@
 extends SceneTree
 ## 雪に縫い留められたボタン（snow_buttons.gd）を撮る（見た目の確かめ用）。
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/button_shots.gd -- \
-##       --no-player --bots=0 --no-sound --no-pip --dir=/path/shots --case=<名前>
+##       --no-player --bots=0 --no-sound --no-pip --dir=/path/shots --case=<名前>（mountain は大きな山のコース）
 ## 場面（--case）:
 ##   field  ゲームと同じ選び方（_pick_spot）でばらばらに 12 個降らせ、縫い付いたあと、上から斜めに見た全体と、
 ##          遠く（ふもとの登り口）から見上げた 2 枚
@@ -115,6 +115,8 @@ func _run() -> void:
 	match args.get("case", "field"):
 		"field":
 			await _case_field()
+		"mountain":
+			await _case_mountain()
 		"close":
 			await _case_close()
 		"roll":
@@ -146,6 +148,29 @@ func _case_field() -> void:
 	_save(await _grab(), "above")
 	_look(_snow(2, 40) + Vector3.UP * 1.6, _snow(0, 14) + Vector3.UP * 0.5, 60.0)
 	_save(await _grab(), "far")
+
+
+## 大きな山のコースに降ったボタン（山ごと・標高ごと。上ほど多く、上の素材が多い）: 頂上の上から下を、中腹から上を見る
+func _case_mountain() -> void:
+	const Mountain := preload("res://mountain.gd")
+	sb.gust_override = 0.4
+	for i in 200:
+		if sb._live("mountain") >= int(sb.MAP_MAX["mountain"]):
+			break
+		var p: Vector3 = sb._pick_spot("mountain")
+		if p != Vector3.INF:
+			sb.drop_at(p, -1, true)
+	await _wait_steps(4)
+	var cx := Mountain.COURSE_X
+	var tiers := [0, 0, 0, 0]
+	for b in sb.buttons.values():
+		tiers[b.tier] += 1
+	print("大きな山のボタン: 木 %d・真鍮 %d・白蝶貝 %d・螺鈿 %d" % tiers)
+	_look(_snow(cx + 3.0, Mountain.top_z - 4.0) + Vector3.UP * 3.5, _snow(cx, Mountain.top_z - 34.0), 55.0)
+	_save(await _grab(), "top")
+	var mid: Array = Mountain.section("中腹")
+	_look(_snow(cx + 6.0, mid[1] + 4.0) + Vector3.UP * 3.0, _snow(cx, mid[0] + 40.0) + Vector3.UP * 4.0, 60.0)
+	_save(await _grab(), "mid")
 
 
 func _case_close() -> void:

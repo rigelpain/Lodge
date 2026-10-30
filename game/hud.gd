@@ -42,7 +42,7 @@ var _spd_dist := 0.0          # 滑った長さ (m)。下の端の縫い目が�
 var _spd_knots: Array = []    # ご褒美の結び目を結んだときの _spd_dist
 var _spd_color := Icons.RED   # 乗っているソリのメインカラー（糸の色のもと）
 ## この滑りで糸の上に縫い込まれたボタン {d（縫い込んだときの _spd_dist）, look（"wood"・"brass"）, claimed（財布へ飛ぶ番が決まった）,
-## off（糸から外れて飛んでいった）}。12 m ごとの木と、いちばん速い所を超えた真鍮（snow_buttons.gd の ride_mark）
+## off（糸から外れて飛んでいった）}。滑った距離と速さの木（倍率が高いと真鍮）と、コンボの真鍮（snow_buttons.gd の ride_mark）
 ## 両替（2026-10-30 代表「ゲージが木のコインで埋まって獲得できないお金なんかは、真鍮にして場所を空ければいいのに」）:
 ## 同じ素材が EXCHANGE_N 個たまると、くるくる縫い縮まって上の素材 1 個に変わり、場所が空く（木 10 → 真鍮、真鍮 10 → 白蝶貝、
 ## 白蝶貝 10 → 螺鈿）。値打ちは変えない。変わるときに素材の音（チン など）ときらめき。entry には両替の進み mk（0〜1）・
@@ -53,6 +53,13 @@ const EXCHANGE_T := 0.5       # 縫い縮まる長さ (s)
 const NEXT_LOOK := {"wood": "brass", "brass": "pearl", "pearl": "raden"}
 const LOOK_VALUE := {"wood": 1, "brass": 10, "pearl": 100, "raden": 1000}
 var _merge_t0 := -1.0         # いま縫い縮まっている両替の始まり（_clock_now。なければ -1）
+## 糸くず: 滑った分のうち、乗り物の倍率でまだ木 1 個に満たない端数（snow_buttons.gd の ride_lint）と、前の滑りから持ち越した端数。
+## 糸の上の積もったボタンのいちばん上に、小さな糸くずの玉として見せ、たまるほど大きくなる（取りこぼしに見えないように）
+var _lint_frac := 0.0
+var _lint_carry := 0.0
+
+func lint() -> float:
+	return _lint_frac + _lint_carry
 var _reel := 0.0              # 滑り終わって、縫い目の糸を巻き取っている残り (s)。糸の上のボタンは財布へ飛ぶ（craft_ui.gd）
 var _reel_t := 1.6            # この巻き取りの長さ (s)。ボタンが多いほど長い
 var _ride_seen := -99.0       # 最後に乗っていた時刻（止まってすぐ降りても、巻き取りを見せる）
@@ -500,11 +507,15 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 
 
 ## 滑った距離と速さのボタン（snow_buttons.gd）。自分が乗っているソリのことだけ:
-##   ride_mark 12 m 滑った（木）・いちばん速い所を超えた（真鍮） → 糸の上にボタンが一つ、ぽんと縫い込まれる（真鍮はボビンも跳ねる）
+##   ride_mark 滑った距離・速さの分が一つ分たまった・コンボの節目（真鍮） → 糸の上にボタンが一つ、ぽんと縫い込まれる（真鍮はボビンも跳ねる）
 ##   ride_pay  一回の滑りが終わった → 縫い目の糸がくるくる巻き取られる。そのあいだ、糸の上のボタンが上から順にぽんぽん財布へ飛ぶ
 func _on_buttons(ev: Dictionary) -> void:
 	var p = main.player if main else null
 	# 自分が乗っている（か、さっきまで乗っていた）ソリのことだけ。米袋をしまうとソリは消えるので、名前で覚えておいた方と比べる
+	if p and ev.kind == "ride_carry":   # 斜面のボタンを倍率つきで取った: 持ち越しの端数（糸くず）が変わる
+		if int(ev.who) == int(p.id):
+			_lint_carry = float(ev.carry)
+		return
 	if p == null or _ride_sled == "" or _ride_sled != String(ev.get("sled", "")):
 		return
 	match ev.kind:
@@ -517,9 +528,14 @@ func _on_buttons(ev: Dictionary) -> void:
 				var audio = main.get_node_or_null("Audio")
 				if audio:
 					audio.stitch(look)   # 糸に縫い付いて積もる、ぷつっ・ころん（真鍮は、きらっ）
+		"ride_lint":
+			if p.mode == Player.Mode.RIDE:
+				_lint_frac = float(ev.frac)
 		"ride_pay_one":
-			# 自分の分（止まったとき・途中で降りたとき）: 糸を巻き取って、糸の上のボタンを財布へ
+			# 自分の分（止まったとき・途中で降りたとき）: 糸を巻き取って、糸の上のボタンを財布へ。端数は次の滑りへ持ち越す
 			if int(ev.who) == int(p.id):
+				_lint_carry = float(ev.get("carry", 0.0))
+				_lint_frac = 0.0
 				_exchange(true)   # 縫い縮まっている途中なら、すぐ済ませる（財布へ飛ぶボタンを決める前に）
 				_reel_t = maxf(REEL_T, 1.1 + sewn_looks().size() * 0.065)
 				_reel = _reel_t
@@ -824,7 +840,7 @@ class View extends Control:
 		if part == "ribbon":
 			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
 			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false,
-					hud._spd_sewn, hud.reel_k())
+					hud._spd_sewn, hud.reel_k(), hud.lint())
 			Icons.printing = false
 			return
 		if part.begins_with("tagback:"):   # 束の後ろの札（名札の柄だけ。中の窓は無地）
@@ -988,7 +1004,7 @@ class View extends Control:
 			if hud.plates == null:   # 平らなとき: リボンは糸巻きから吊るして揺れる。ボビンは小刻みに
 				var rb: Rect2 = g.ribbon
 				draw_set_transform_matrix(Icons.wind_xform(Vector2(rb.get_center().x, rb.position.y), 6.0, 0.05, 0.05, 1.5 * u))
-				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e, true, hud._spd_sewn, hud.reel_k())
+				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e, true, hud._spd_sewn, hud.reel_k(), hud.lint())
 			draw_set_transform_matrix(Icons.wind_xform(g.c, 4.0, 0.0, 0.03, 2.0 * u))
 			Speedo.draw_spool(self, g, k, hud._spd_spin, hud._spd_color, hud.spd_best, hud._spd_pop, e, hud.plates == null)
 			draw_set_transform_matrix(Transform2D.IDENTITY)

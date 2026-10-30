@@ -154,8 +154,11 @@ func _on_craft(ev: Dictionary) -> void:
 				from = preload("res://speedo.gd").layout(hud.speedo_box_now(), 0.0).c
 			var list: Array = ev.get("pieces", []).duplicate() if ev.has("pieces") else Craft.pieces(int(ev.n))
 			if on_spool:
-				if hud.sewn_value() == int(ev.n):
+				var extra: int = int(ev.n) - hud.sewn_value()
+				if extra >= 0 and extra < 10:
 					list = hud.sewn_looks()   # 糸の上のボタン（両替したあと）を、上から順に
+					for i in extra:   # 持ち越した端数が木 1 個になった分は、糸巻きから
+						list.append("wood")
 				else:
 					list = Craft.pieces(int(ev.n))   # 糸の上と合わないときは、段ごとに分けて糸巻きから
 			if list.size() > 24:   # 多すぎるときは大きい段だけ飛ばし、残りはまとめて財布へ

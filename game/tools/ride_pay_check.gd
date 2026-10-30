@@ -5,7 +5,7 @@ extends SceneTree
 ## 乗る人を 1 人と席いっぱいで、あとは何もしない。米袋は、Space の連打（1 秒に 0・6・10 回）も比べる。
 ## 連打は、ふもとの平らな所（高さ 1 m より下）に着いたらやめる（平らな所でも漕げるので、やめないと地図の端まで行く）。
 ## 斜面のボタンは置かない。--trace で 2 秒ごとの位置。--backward で後ろ向き（ソリの前を頂上へ向けたまま、ふもとへ押し出す）
-## 出すのは、滑った長さ、いちばん速い所、もらえた木と真鍮の数（乗っていた一人ひとりに入る数）。
+## 出すのは、滑った長さ、いちばん速い所、距離の分・速さの分（倍率を掛けたあと）、コンボの真鍮の数、縫い込んだ値打ち（乗っていた一人ひとりに入る数）。
 
 const DUMMY_SRC := """extends Node3D
 var sled: Node3D
@@ -63,8 +63,8 @@ func _physics_process(dt: float) -> bool:
 					_queue.append([n, rate])
 			else:
 				_queue.append([n, 0])
-		_rows.append("| ソリ | 乗る人 | 連打（回/秒） | 滑った長さ | いちばん速い所 | 木 | 真鍮 | 一人に入る数 |")
-		_rows.append("|---|---|---|---|---|---|---|---|")
+		_rows.append("| ソリ | 乗る人 | 連打（回/秒） | 滑った長さ | いちばん速い所 | 距離の分 | 速さの分 | コンボの真鍮 | 一人に入る数 |")
+		_rows.append("|---|---|---|---|---|---|---|---|---|")
 	if _run.is_empty():
 		if _queue.is_empty():
 			print("\n".join(_rows))
@@ -105,9 +105,8 @@ func _physics_process(dt: float) -> bool:
 				("%.0f m slow=%.1f" % [run.dist, run.slow]) if not run.is_empty() else "なし"])
 	if not _paid.is_empty() or r.t > 90.0:
 		var p := _paid
-		var wood: int = p.get("wood", 0)
-		var brass: int = p.get("brass", 0)
-		_rows.append("| %s | %d | %d | %.0f m | %.1f m/s | %d | %d | %d |" % [sled.kind, r.n, r.rate, float(p.get("dist", 0.0)), r.best, wood, brass, wood + 10 * brass])
+		_rows.append("| %s | %d | %d | %.0f m | %.1f m/s | %.1f | %.1f | %d | %d |" % [sled.kind, r.n, r.rate, float(p.get("dist", 0.0)), r.best,
+				float(p.get("wood", 0.0)), float(p.get("speed", 0.0)), int(p.get("brass", 0)), int(p.get("value", 0))])
 		for d in r.rs:
 			sled.dismount(d)
 			d.queue_free()

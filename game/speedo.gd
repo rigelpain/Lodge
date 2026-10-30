@@ -142,7 +142,7 @@ static func sewn_positions(g: Dictionary, dist: float, sewn: Array, reel := 0.0)
 
 ## リボンと、その上を下へ縫い進む縫い目・結び目・流れる糸・舞う切れはし。ribbon が true ならリボンの地も描く（平らなとき）
 static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, dist: float, base: Color, knots: Array, a: float, ribbon := true,
-		sewn := [], reel := 0.0) -> void:
+		sewn := [], reel := 0.0, lint := 0.0) -> void:
 	var u: float = g.u
 	var x: float = g.x
 	var y0: float = g.y0
@@ -202,6 +202,23 @@ static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, 
 		CI.money(ci, Vector2.ZERO, SEWN_R * u * pop, String(e.look), a * (1.0 - 0.4 * maxf(mk, 0.0)), spin * 0.2 + i)
 		if pk < 1.0:
 			CI._glint(ci, ps[i] + Vector2(SEWN_R, -SEWN_R) * u * 0.6, SEWN_R * u * 1.6 * (1.0 - pk * 0.6), Color(1.0, 0.95, 0.75, a * (1.0 - pk)))
+	# 糸くず: 木 1 個に満たない端数（乗り物の倍率）。積もったボタンのいちばん上に、ほつれた糸の玉。たまるほど大きく
+	if lint > 0.02:
+		var top := y1 - SEWN_R * u
+		for i in sewn.size():
+			if not sewn[i].get("off", false):
+				top = minf(top, (ps[i] as Vector2).y - SEWN_R * u * 1.3)
+		top = maxf(top, y0 + SEWN_R * u)
+		var lr := SEWN_R * u * (0.35 + 0.65 * clampf(lint, 0.0, 1.0))
+		var lc := col.lightened(0.25)
+		for j in 7:
+			var a0 := j * 0.9 + spin * 0.05
+			var arc := PackedVector2Array()
+			for q in 6:
+				var t := a0 + q * 0.5
+				var rr := lr * (0.45 + 0.55 * sin(j * 1.7 + q * 0.8) * 0.5 + 0.3)
+				arc.append(Vector2(x, top) + Vector2(cos(t), sin(t)) * rr)
+			Icons.thread(ci, arc, lc, 1.3 * u, a * 0.9)
 	# 縫い目の横を下へ流れる糸（速いほど長く、波が細かい）
 	var len := (y1 - y0) * clampf(0.2 + 0.8 * k, 0.2, 1.0)
 	var tail := PackedVector2Array()
