@@ -35,13 +35,15 @@ const Doll := preload("res://doll.gd")
 const Sled := preload("res://sled.gd")
 const Fabrics := preload("res://fabrics.gd")
 
-## お金はまだ決めていない（design/facilities.md）。仮にボタンをお金にし、最初に START_BUTTONS 個持たせる
-const START_BUTTONS := 12
+## お金はボタン（snow_buttons.gd）。最初に START_BUTTONS 個（木の何個分）持たせる。米袋の型紙と布はすぐ買えるが、小はまだ（少し滑って稼いでから）
+const START_BUTTONS := 30
 ## お金のボタンの 4 段（2026-10-30 代表）。財布の中はいままでどおり「木のボタンの何個分」で持ち、見せるときに段ごとに分ける（両替はひとりでに）。
 ## 大きい段から: 螺鈿 1000・白蝶貝 100・真鍮 10・木 1。絵は craft_icons.gd の money、斜面のボタンは snow_buttons.gd の TIERS
 const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
-const PATTERN_PRICE := {"sack": 1, "small": 2, "mid": 3, "large": 5}   # 型紙の値段（ボタンの数）
-const FABRIC_PRICE := 1
+## 型紙の値段（木の何個分）。ソリの倍率を上げて稼ぎが増えたので上げた（2026-10-30 代表「あとお店の値段」）。
+## 最初の小は、米袋で漕いで丘を 1〜2 分、大は、中に 3 人で大きな山を 5 分・米袋ひとりで 20 分ほど（design/snow-buttons の表）
+const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
+const FABRIC_PRICE := 10
 const PATTERNS := ["sack", "small", "mid", "large"]
 ## ロッジの中から外へ運び出せないソリ（tools/carry_out_check.gd で確かめた。大は西の通路の家具と壁に当たる）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
