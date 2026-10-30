@@ -30,6 +30,7 @@ extends Node3D
 ##                                                   "brass" はいちばん速い所 speed を超えたとき）
 ##   ride_pay  {sled, dist, wood, brass, sewn, gives: {番号: 数}}  一回の滑りが終わった（まとめ）。滑った長さ（m）と、木と真鍮の数。
 ##                                                   sewn は縫い込んだ順のボタンの並び（"wood"・"brass"）。gives は手伝った人の分
+##   ride_carry {who, carry}                         乗っていた人の持ち越しの端数が変わった（斜面のボタンを倍率つきで取った）
 ##   ride_lint {sled, frac}                          滑った分のうち、まだ木 1 個に満たない端数（0〜1）。速さの表示の糸の上に糸くずとして積もる
 ##   ride_pay_one {sled, who, sewn, n, left, carry}  （carry は、その人が次の滑りへ持ち越す端数）         乗っていた一人に、その人が乗ってから縫い込まれた分（sewn、n はその値打ち）を入れる。
 ##                                                   止まったとき（left = false）か、途中で降りたとき（E で降りる・米袋をしまう・
@@ -523,11 +524,28 @@ func _snip(sled: RigidBody3D, b: Btn) -> void:
 	_share(sled, b.id, int(TIERS[b.tier].value), b.at)
 
 
-## 切ったボタンを分ける: 乗っていた全員に n、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
+## 切ったボタンを分ける: 値打ち n に乗り物の倍率（RIDE_RATE。人数のおまけは掛けない。2026-10-30 代表「乗り物の倍率だけ（C）」）を掛け、
+## 乗っていた全員にその分、押して手伝ったけれど乗らなかった人にその HELPER_SHARE。木 1 個に満たない端数は、乗っていた人は
+## 滑った分と同じく持ち越し（ride_carry。速さの表示の糸くず）、手伝った人はためる（crumbs）
 func _share(sled: RigidBody3D, id_: int, n: int, at: Vector3) -> void:
-	var gives := _gives(sled, sled.riders.map(func(r): return r.get("id")), n)
-	send({"kind": "share", "id": id_, "gives": gives.gives, "parts": gives.parts, "at": at})
-	_pay(gives.gives, at)
+	var v := n * float(RIDE_RATE.get(sled.kind, 1.0))
+	var rider_ids: Array = sled.riders.map(func(r): return r.get("id"))
+	var g := _gives(sled, rider_ids, v)
+	var gives := {}
+	for who in g.gives:   # 手伝った人の分
+		if not who in rider_ids:
+			gives[who] = g.gives[who]
+	for id in rider_ids:   # 乗っていた人の分: 持ち越しの端数に足して、木 1 個分ずつ
+		if id == null or int(id) < 0:
+			continue
+		var c: float = ride_carry.get(int(id), 0.0) + v
+		var whole := floori(c + 0.0001)
+		ride_carry[int(id)] = c - whole
+		if whole > 0:
+			gives[int(id)] = whole
+		send({"kind": "ride_carry", "who": int(id), "carry": ride_carry[int(id)]})
+	send({"kind": "share", "id": id_, "gives": gives, "parts": g.parts, "value": v, "at": at})
+	_pay(gives, at)
 
 
 ## 財布へ（craft.gd の earn）。from: "spool" なら、画面では速さの表示の糸の上から飛ぶ。
@@ -542,15 +560,15 @@ func _pay(gives: Dictionary, at: Vector3, from := "", pieces := [], full := -1) 
 			craft.send(ev)
 
 
-## 分け方: 乗っていた人（番号の配列）に n ずつ、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
-func _gives(sled: RigidBody3D, rider_ids: Array, n: int) -> Dictionary:
+## 分け方: 乗っていた人（番号の配列）に n ずつ（整数に切り下げ）、押して手伝ったけれど乗らなかった人に n × HELPER_SHARE（端数はためる）
+func _gives(sled: RigidBody3D, rider_ids: Array, n: float) -> Dictionary:
 	var gives := {}
 	var parts := {}
 	var riders := []
 	for id in rider_ids:
 		if id != null and int(id) >= 0:
 			riders.append(int(id))
-			gives[int(id)] = n
+			gives[int(id)] = floori(n + 0.0001)
 	var helped: Dictionary = sled.get("helped") if sled.get("helped") != null else {}
 	for h in helped:
 		if not is_instance_valid(h) or sled._trail_now - float(helped[h]) > HELP_WINDOW:

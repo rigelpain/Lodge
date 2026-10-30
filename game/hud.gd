@@ -512,6 +512,10 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 func _on_buttons(ev: Dictionary) -> void:
 	var p = main.player if main else null
 	# 自分が乗っている（か、さっきまで乗っていた）ソリのことだけ。米袋をしまうとソリは消えるので、名前で覚えておいた方と比べる
+	if p and ev.kind == "ride_carry":   # 斜面のボタンを倍率つきで取った: 持ち越しの端数（糸くず）が変わる
+		if int(ev.who) == int(p.id):
+			_lint_carry = float(ev.carry)
+		return
 	if p == null or _ride_sled == "" or _ride_sled != String(ev.get("sled", "")):
 		return
 	match ev.kind:
