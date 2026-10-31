@@ -888,17 +888,16 @@ def build_interior():
     fb = M("floor1", "floor", "interior")
     fb.box(X0 + R, Y0 + 0.05, FL1, X1 - R, Y1 - R, FL1 + 0.02)
     fb.done()
-    # 間仕切り（厨房の両脇）
+    # 間仕切り（厨房の東の脇だけ）。西の脇（ミシンとのあいだ）は置かない
+    # （2026-10-31 代表: ミシンとご飯の方の施設との間の仕切りを無くしたい。ご飯の前の塀も消してほしい）
     W = M("partitions", "board", "interior")
-    for x in (KITCHEN["x0"], KITCHEN["x1"]):
+    for x in (KITCHEN["x1"],):
         W.box(x - 0.06, KITCHEN["y_front"], FL1, x + 0.06, Y1 - R, CEIL1 - 0.3)
     W.done(bevel=0.01)
-    # カウンター（レジ・配膳）と裏の台、上にメニュー板。
-    # 貸出のカウンターは置かない（2026-10-29 代表: ミシンの前の塀を消し、横に型紙と布の売り子を立たせる）
+    # 裏の台と貸出の棚（壁ぎわ）、上にメニュー板。
+    # 前のカウンターは置かない（貸出のカウンター: 2026-10-29 代表「ミシンの前の塀を消し」、
+    # レジ・配膳のカウンター: 2026-10-31 代表「ご飯の前の塀も消してほしい」）。ミシンからご飯の機械まで、ひと続きの床
     C = M("counters", "board", "interior")
-    for c in (COUNTER,):
-        C.box(c["x0"], c["y0"] + 0.06, FL1, c["x1"], c["y1"], c["h"] + FL1 - 0.05)
-        C.box(c["x0"] - 0.04, c["y0"] - 0.06, FL1 + c["h"] - 0.05, c["x1"] + 0.04, c["y1"] + 0.03, FL1 + c["h"])
     C.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
     C.box(RENTAL["x0"], BACK["y0"], FL1, RENTAL["x1"], BACK["y1"], FL1 + 1.9)      # 貸出の棚
     for z in (0.5, 1.0, 1.5):
@@ -1425,12 +1424,11 @@ def build_collision():
     # 家具（座れる・ぶつかるもの）
     for x, y in TABLES:
         Fu.box(x, y, FL1, x + TABLE["w"], y + TABLE["d"], FL1 + TABLE["h"])
-    for cc in (COUNTER,):   # 貸出のカウンターはない
-        Fu.box(cc["x0"], cc["y0"], FL1, cc["x1"], cc["y1"], FL1 + cc["h"])
+    # 前のカウンター（貸出・レジ）はない
     Fu.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
     Fu.box(WINDOW_BAR["x0"], WINDOW_BAR["y0"], FL1, WINDOW_BAR["x1"], WINDOW_BAR["y0"] + WINDOW_BAR["d"],
            FL1 + WINDOW_BAR["h"])
-    for x in (KITCHEN["x0"], KITCHEN["x1"]):
+    for x in (KITCHEN["x1"],):   # 厨房の西の間仕切りはない
         Fu.box(x - 0.06, KITCHEN["y_front"], FL1, x + 0.06, Y1, CEIL1 - 0.3)
     for x0, y0, x1, y1 in HEARTH_BENCH:
         Fu.box(x0, y0, FL1, x1, y1, FL1 + 0.45)
