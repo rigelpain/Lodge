@@ -59,12 +59,14 @@ const CraftUi := preload("res://craft_ui.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 
-## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がロッジの中の側）と向き
-const SHOP_AT := Vector3(2.0, 0, 1.0)
+## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
+## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
+## （2026-10-31 代表の並び: design/lodge-layout/layout-daihyo.json）
+const SHOP_AT := Vector3(-5.3, 0, -0.1)
 const SHOP_YAW := PI - 0.5
-## ご飯係の雪だるまの冷蔵庫の立つ所（厨房の目印 slot_food_kitchen の座標。厨房の奥の並びのいちばん西＝ミシンの右。
-## 厨房の装置は東へ詰めてある: props/build_scenes.py）と大きさ（ミシンと同じくらいの高さ 3.7 m）。当たり判定の箱は倍率 1 の幅・高さ・奥行き
-const SNOWMAN_AT := Vector3(-7.15, 0, -1.07)
+## ご飯係の雪だるまの冷蔵庫の立つ所（厨房の目印 slot_food_kitchen の座標。厨房の奥の並びのいちばん西＝炉の右。
+## 厨房の装置は props/build_scenes.py）と大きさ（ミシンと同じくらいの高さ 3.7 m）。当たり判定の箱は倍率 1 の幅・高さ・奥行き
+const SNOWMAN_AT := Vector3(-4.6, 0, 0.5)
 const SNOWMAN_SCALE := 1.85
 const FRIDGE_BOX := Vector3(1.1, 2.0, 0.85)
 

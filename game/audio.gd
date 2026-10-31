@@ -634,7 +634,7 @@ func _play_step(w: Dictionary, s: AudioStreamWAV, db: float, pitch: float, is_pl
 func _make_lodge() -> void:
 	if lodge == null:
 		return
-	var fire := _marker("light_fire", Vector3(10.9, 1.0, -10.8))
+	var fire := _marker("light_fire", Vector3(-10.4, 1.0, -10.8))
 	var kitchen := _marker("light_kitchen", Vector3(-8.0, 1.2, -9.0))
 	var bed := _p3(lodge, "Inside", -10, 4.0, 60.0)
 	bed.position = fire

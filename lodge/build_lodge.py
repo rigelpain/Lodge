@@ -905,25 +905,19 @@ def build_interior():
     fb = M("floor1", "floor", "interior")
     fb.box(X0 + R, Y0 + 0.05, FL1, X1 - R, Y1 - R, FL1 + 0.02)
     fb.done()
-    # 間仕切り（厨房の東の脇だけ）。西の脇（ミシンとのあいだ）は置かない
-    # （2026-10-31 代表: ミシンとご飯の方の施設との間の仕切りを無くしたい。ご飯の前の塀も消してほしい）
-    W = M("partitions", "board", "interior")
-    for x in (KITCHEN["x1"],):
-        W.box(x - 0.06, KITCHEN["y_front"], FL1, x + 0.06, Y1 - R, CEIL1 - 0.3)
-    W.done(bevel=0.01)
-    # 裏の台と貸出の棚（壁ぎわ）、上にメニュー板。
-    # 前のカウンターは置かない（貸出のカウンター: 2026-10-29 代表「ミシンの前の塀を消し」、
-    # レジ・配膳のカウンター: 2026-10-31 代表「ご飯の前の塀も消してほしい」）。ミシンからご飯の機械まで、ひと続きの床
+    # 厨房の奥の台（北の壁ぎわ）と貸出の棚（西のガラスの壁ぎわ）、厨房の前にメニュー板。
+    # 間仕切りと前のカウンターは置かない（2026-10-29 代表「ミシンの前の塀を消し」、
+    # 2026-10-31 代表「仕切りを無くしたい。ご飯の前の塀も消してほしい」）
     C = M("counters", "board", "interior")
     C.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
-    C.box(RENTAL["x0"], BACK["y0"], FL1, RENTAL["x1"], BACK["y1"], FL1 + 1.9)      # 貸出の棚
-    for z in (0.5, 1.0, 1.5):
-        C.box(RENTAL["x0"] - 0.02, BACK["y0"] - 0.04, FL1 + z, RENTAL["x1"] + 0.02, BACK["y0"], FL1 + z + 0.03)
+    C.box(RENTAL["x0"], RENTAL["y0"], FL1, RENTAL["x1"], RENTAL["y1"], FL1 + RENTAL["h"])      # 貸出の棚
+    for z in (0.5, 1.0, 1.5):   # 棚板の縁（口は東）
+        C.box(RENTAL["x1"], RENTAL["y0"] - 0.02, FL1 + z, RENTAL["x1"] + 0.04, RENTAL["y1"] + 0.02, FL1 + z + 0.03)
     C.done(bevel=0.012)
     mb = M("menu_board", "felt_green", "interior")   # 色あせたフェルトの案内板
-    mid = (COUNTER["x0"] + COUNTER["x1"]) / 2
+    mid = (BACK["x0"] + BACK["x1"]) / 2
     for k in (-1, 0, 1):   # 3 枚並べて吊る
-        mb.box(mid + k * 1.6 - 0.65, COUNTER["y1"] - 0.03, FL1 + 2.6, mid + k * 1.6 + 0.65, COUNTER["y1"] + 0.01, FL1 + 3.4)
+        mb.box(mid + k * 1.6 - 0.65, MENU_Y - 0.03, FL1 + 2.6, mid + k * 1.6 + 0.65, MENU_Y + 0.01, FL1 + 3.4)
     mb.done(bevel=0.01)
     # 卓 6 つと椅子（3 脚ずつ向かい合う）
     tw, td, th = TABLE["w"], TABLE["d"], TABLE["h"]
@@ -996,18 +990,17 @@ def build_interior():
         Cu.box(x0 + 0.02, y0 + 0.02, FL1 + 0.40, x1 - 0.02, y1 - 0.02, FL1 + 0.47)
     B.done(bevel=0.015)
     Cu.done(bevel=0.025, seg=3)
-    # 内のスキー置場（西のガラス際）
+    # スキー置場（中から外の下屋へ出した。2026-10-31 代表の並び）。下屋の雪の上に立てる
     S = SKI_RACK
-    sk = M("ski_rack", "board", "interior")
-    sk.box(S["x0"], S["y0"], FL1, S["x1"], S["y1"], FL1 + 0.12)
-    sk.box(S["x0"], S["y0"], FL1 + 1.10, S["x1"], S["y1"], FL1 + 1.16)
+    sk = M("ski_rack", "board", "setsue")
+    sk.box(S["x0"], S["y0"], 0, S["x1"], S["y1"], 0.12)
+    sk.box(S["x0"], S["y0"], 1.10, S["x1"], S["y1"], 1.16)
     sk.done(bevel=0.01)
     step = (S["y1"] - S["y0"]) / S["n"]
     for i, role in enumerate(("felt_red", "felt_blue", "felt_green", "felt_yellow")):
-        sm = M("skis_in_%s" % role, role, "interior")
+        sm = M("skis_in_%s" % role, role, "setsue")
         y = S["y0"] + step * (i + 0.5)
-        sm.box((S["x0"] + S["x1"]) / 2 - 0.05, y - 0.03, FL1 + 0.12, (S["x0"] + S["x1"]) / 2 + 0.05, y + 0.03,
-               FL1 + 1.75)
+        sm.box((S["x0"] + S["x1"]) / 2 - 0.05, y - 0.03, 0.12, (S["x0"] + S["x1"]) / 2 + 0.05, y + 0.03, 1.75)
         sm.done(bevel=0.02, seg=3, array=(math.ceil((S["n"] - i) / 4), (0, step * 4, 0)))
     # 内階段: 東の壁際を北へ上り、北の壁際の踊り場で折り返して、南へ上って 2 階に出る
     I = INSTAIR
@@ -1132,16 +1125,17 @@ def build_interior():
         y0 = gy(6.7) + j * 0.4
         bn.box(gx(-1.4), y0, 0, gx(-0.6), y0 + 0.3, 0.42)
     bn.done(bevel=0.012)
-    # 機械の置き場（代表があとで置く）: 空の目印
-    for name, loc in SLOTS.items():
+    # 機械の置き場: 空の目印。向きは目印の回転（ゲームは目印の +Z 側＝向きの側へ機械の正面を向ける）
+    for name, (x, y, z, rot) in SLOTS.items():
         e = bpy.data.objects.new(name, None)
         e.empty_display_type = "CUBE"
         e.empty_display_size = 0.4
-        e.location = loc
+        e.location = (x, y, z)
+        e.rotation_euler = (0, 0, math.radians(rot))
         coll("markers").objects.link(e)
     # 灯りの場所の目印。glTF の灯りは明るさの単位が合わないので、ゲームの側で灯りを置く
     # 灯りは少なく（スマホでも動くように）: 食堂は炉と天井の 3 つの計 4 つ、座敷は 2 つ、風除室に 1 つ。影はなし
-    lights = [("light_lamp_%d" % i, (gx(x), gy(4.6), CEIL1 - 1.0)) for i, x in enumerate((5.0, 7.6, 10.2))]
+    lights = [("light_lamp_%d" % i, (x, y, CEIL1 - 1.0)) for i, (x, y) in enumerate(LAMPS)]
     ky = (KOTATSU[0][1] + KOTATSU[-1][1] + KOTATSU_D) / 2
     lights += [("light_lantern_%d" % i, ((KOTATSU[a][0] + KOTATSU[a + 1][0] + KOTATSU_W) / 2, ky, FL2 + TATAMI["h"] + 1.95))
                for i, a in enumerate((0, 2))]
@@ -1445,13 +1439,12 @@ def build_collision():
     Fu.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
     Fu.box(WINDOW_BAR["x0"], WINDOW_BAR["y0"], FL1, WINDOW_BAR["x1"], WINDOW_BAR["y0"] + WINDOW_BAR["d"],
            FL1 + WINDOW_BAR["h"])
-    for x in (KITCHEN["x1"],):   # 厨房の西の間仕切りはない
-        Fu.box(x - 0.06, KITCHEN["y_front"], FL1, x + 0.06, Y1, CEIL1 - 0.3)
+    Fu.box(RENTAL["x0"], RENTAL["y0"], FL1, RENTAL["x1"], RENTAL["y1"], FL1 + RENTAL["h"])   # 貸出の棚（間仕切りはない）
     for x0, y0, x1, y1 in HEARTH_BENCH:
         Fu.box(x0, y0, FL1, x1, y1, FL1 + 0.45)
     Fu.box(c["x0"] - 0.25, c["y0"] - 0.65, FL1, c["x1"] + 0.25, c["y0"], FL1 + 0.12)
     S_ = SKI_RACK
-    Fu.box(S_["x0"], S_["y0"], FL1, S_["x1"], S_["y1"], FL1 + 1.75)
+    Fu.box(S_["x0"], S_["y0"], 0, S_["x1"], S_["y1"], 1.75)   # 外の下屋
     zt = FL2 + TATAMI["h"]
     for x, ky in KOTATSU:
         Fu.box(x - 0.12, ky - 0.12, zt, x + KOTATSU_W + 0.12, ky + KOTATSU_D + 0.12, zt + 0.40)

@@ -150,14 +150,14 @@ func _run() -> void:
 	await _shot("01_spawn_inside")
 	_say("1 秒後のあなた: x=%.2f y=%.2f、カメラ x=%.2f y=%.2f（三人称 %s）" % [_l(p.global_position).x, _l(p.global_position).y,
 		_l(p.cam.global_position).x, _l(p.cam.global_position).y, str(p.third)])
-	# 2. 歩く: ミシンの前 → 冷蔵庫の前 → アイロン台の前 → プレス機の前 → 乾燥機の前（厨房の目印の座標で、並びの前 2.6 m）、そして帰り
+	# 2. 歩く: ミシンの前（南西の隅、正面は東）→ 冷蔵庫の前 → アイロン台の前 → プレス機の前 → 乾燥機の前（炉の右の並びの前）、
+	# そして帰り。場所はロッジの座標（2026-10-31 代表の並び: design/lodge-layout/layout-daihyo.json）
 	p.set_third(false)
-	var kitchen := lodge.find_child("slot_food_kitchen", true, false) as Node3D
-	var stops := [["ミシン", -10.9], ["冷蔵庫", -7.15], ["アイロン台", -0.8], ["プレス機", 3.0], ["乾燥機", 6.25]]
+	var stops := [["ミシン", Vector2(-15.4, -3.4)], ["冷蔵庫", Vector2(-1.6, 7.4)], ["アイロン台", Vector2(2.0, 7.4)],
+		["プレス機", Vector2(5.5, 7.4)], ["乾燥機", Vector2(8.5, 7.4)]]
 	var pts := []
 	for s in stops:
-		var g := kitchen.to_global(Vector3(s[1], 0, 2.6))
-		pts.append(_w(_l(g)))
+		pts.append(_w(s[1]))
 	p.global_position = pts[0] + Vector3.UP * 0.05
 	p.velocity = Vector3.ZERO
 	await create_timer(0.4).timeout

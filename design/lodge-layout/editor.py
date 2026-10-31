@@ -3,17 +3,29 @@
   python3 design/lodge-layout/editor.py
 
 建物（壁・ガラス・窓・風除室・内階段・丸柱）は動かない下絵。家具と施設は動かせる品物。
-品物の初めの並びは plan.py の「今」と「案」。寸法と座標は lodge/ と同じ（x = 東、y = 北、m）。
-ページはダッシュボードと同じく docs/ を出すだけで動く。並べた結果は「書き出し」の JSON か、
-ページの window.getLayout() で読める。決めた並びは design/lodge-layout/layout-*.json に残し、ここで始めの並びに足す。
+始めの並びは 3 つ:
+  ゲームの今   いまのコードから作る（lodge/dims.py、props/build_scenes.py の kitchen、game/main.gd の売り子と冷蔵庫）。
+               ロッジや厨房の並びを変えたら、これを走らせ直すとダッシュボードも合う
+  代表の並び   layout-daihyo.json（2026-10-31 に代表が手で並べたもの）
+  前の並び     layout-pr68.json（PR #68 のころ）
+寸法と座標は lodge/ と同じ（x = 東、y = 北、m）。向き rot は度で、0 が正面を南へ、上から見て反時計回り。
+ページは docs/ を出すだけで動く。並べた結果は「書き出し」の JSON か、ページの window.getLayout() で読める。
+決めた並びは layout-*.json に残す。
 """
+import ast
 import json
+import math
 import os
+import re
+import sys
 
-from plan import HERE, now_layout, new_layout, SLOT_K
-from dims import *  # noqa: F403
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.normpath(os.path.join(HERE, "..", ".."))
+sys.path.insert(0, os.path.join(ROOT, "lodge"))
+from dims import *  # noqa: E402,F403
 
 R = LOG_D / 2
+X2 = 2.0   # 厨房の場面の座標は 2 倍する前の数
 
 
 def static():
@@ -67,58 +79,93 @@ def static():
     return s
 
 
-def items(L):
-    """動かせる品物。x, y は真ん中、rot は度（0 で正面が南＝食堂の側）"""
+def _rot(x, y, deg):
+    a = math.radians(deg)
+    return x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a)
+
+
+def _gd_vec(name):
+    """game/main.gd の const NAME := Vector3(a, b, c) を (a, b, c) で"""
+    src = open(os.path.join(ROOT, "game", "main.gd"), encoding="utf-8").read()
+    m = re.search(r"const %s := Vector3\(([^)]*)\)" % name, src)
+    return tuple(float(v) for v in m.group(1).split(","))
+
+
+def _kitchen():
+    """props/build_scenes.py の kitchen の並びと当たりの箱"""
+    tree = ast.parse(open(os.path.join(ROOT, "props", "build_scenes.py"), encoding="utf-8").read())
+    got = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name) and node.targets[0].id in ("SCENES", "COLLIDE"):
+            got[node.targets[0].id] = ast.literal_eval(node.value)
+    return got["SCENES"]["kitchen"], got["COLLIDE"]["kitchen"]
+
+
+def game_items():
+    """いまのコードの並び。x, y は真ん中"""
     out = []
 
-    def add(id_, name, shape, x, y, w, d, kind, rot=0, **k):
+    def add(id_, name, shape, x, y, w, d, kind, rot=0):
         out.append(dict(id=id_, name=name, shape=shape, x=round(x, 2), y=round(y, 2), w=round(w, 2), d=round(d, 2),
-                        rot=rot, kind=kind, **k))
-    hw = (CH["x1"] - CH["x0"]) / 2
-    cx = L["ch_cx"]
-    add("hearth", "暖炉", "hearth", cx, (CH["y0"] + Y1 + 1.5) / 2, 2 * hw, Y1 + 1.5 - CH["y0"], "fire")
-    add("machine", "大きなミシン", "box", *L["machine"], 4.2, 1.8, "sled")
-    add("seller", "売り子", "person", *L["seller"], 0.9, 0.9, "sled")
-    add("rental_shelf", "貸出の棚", "box", (RENTAL["x0"] + RENTAL["x1"]) / 2, (BACK["y0"] + BACK["y1"]) / 2,
-        RENTAL["x1"] - RENTAL["x0"], BACK["y1"] - BACK["y0"], "sled")
+                        rot=rot, kind=kind))
+    add("hearth", "暖炉", "hearth", (CH["x0"] + CH["x1"]) / 2, (CH["y0"] + Y1 + 1.5) / 2, CH["x1"] - CH["x0"],
+        Y1 + 1.5 - CH["y0"], "fire")
+    mx, my, _, mr = SLOTS["slot_craft_rental"]
+    add("machine", "大きなミシン", "box", mx, my, 4.2, 1.8, "sled", mr)
+    sx, _, sz = _gd_vec("SHOP_AT")                 # 目印の中の座標（Godot: -z が北）
+    dx, dy = _rot(sx, -sz, mr)
+    add("seller", "売り子", "person", mx + dx, my + dy, 0.9, 0.9, "sled")
+    add("rental_shelf", "貸出の棚", "box", (RENTAL["x0"] + RENTAL["x1"]) / 2, (RENTAL["y0"] + RENTAL["y1"]) / 2,
+        RENTAL["y1"] - RENTAL["y0"], RENTAL["x1"] - RENTAL["x0"], "sled", 90)
     SR = SKI_RACK
     add("ski_rack", "スキー置場", "rack", (SR["x0"] + SR["x1"]) / 2, (SR["y0"] + SR["y1"]) / 2,
         SR["x1"] - SR["x0"], SR["y1"] - SR["y0"], "sled")
-    add("fridge", "雪だるまの冷蔵庫", "fridge", *L["fridge"], 2.0, 1.6, "food")
-    add("board", "巨大アイロン台", "box", *L["board"], 3.8, 1.24, "food")
-    add("press", "プレス機", "box", *L["press"], 1.6, 2.0, "food")
-    add("dryer", "乾燥機", "box", *L["dryer"], 2.7, 2.7, "food")
-    for i, (x, y) in enumerate(L["sacks"]):
-        add("sack%d" % i, "麻袋", "sack", x, y, 0.7, 0.7, "food")
-    b0, b1 = L["back"]
-    add("back", "厨房の奥の台", "box", (b0 + b1) / 2, (BACK["y0"] + BACK["y1"]) / 2, b1 - b0, BACK["y1"] - BACK["y0"],
-        "wood")
-    for i, (x, y, rot) in enumerate(L["vend_in"]):
-        add("vend%d" % i, "自販機", "box", x, y, 2.1, 1.8, "food", rot=rot)
-    for i, x in enumerate(L["partition"]):
-        add("partition%d" % i, "間仕切り", "box", x, (KITCHEN["y_front"] + Y1) / 2, 0.12, Y1 - KITCHEN["y_front"],
-            "wall")
-    add("door1", "勝手口", "door", L["door1"], Y1 - 0.15, DOOR1["w"], 0.3, "door")
-    for i, (x, y) in enumerate(TABLES):
-        add("table%d" % i, "食卓", "table", x, y, TABLE["w"], TABLE["d"], "seat")
+    kx, ky, _, _ = SLOTS["slot_food_kitchen"]
+    fx, _, fz = _gd_vec("SNOWMAN_AT")
+    add("fridge", "雪だるまの冷蔵庫", "fridge", kx + fx, ky - fz, 2.0, 1.6, "food")
+    scene, boxes = _kitchen()
+    names = {"giant_press_board": ("board", "巨大アイロン台"), "giant_heat_press": ("press", "プレス機"),
+             "giant_dryer": ("dryer", "乾燥機")}
+    n_sack = 0
+    for path, x, y, z, rz, _sc in scene:
+        base = os.path.splitext(os.path.basename(path))[0]
+        if base in names:
+            box = min(boxes, key=lambda b: (b[0] - x) ** 2 + (b[1] - y) ** 2)
+            add(names[base][0], names[base][1], "box", kx + X2 * x, ky + X2 * y, X2 * box[2], X2 * box[3], "food")
+        elif base.startswith("pellet_sack"):
+            add("sack%d" % n_sack, "麻袋", "sack", kx + X2 * x, ky + X2 * y, 0.7, 0.7, "food")
+            n_sack += 1
+    add("back", "厨房の奥の台", "box", (BACK["x0"] + BACK["x1"]) / 2, (BACK["y0"] + BACK["y1"]) / 2,
+        BACK["x1"] - BACK["x0"], BACK["y1"] - BACK["y0"], "wood")
+    for i, k in enumerate(("slot_vending_1", "slot_vending_2")):
+        x, y, _, r = SLOTS[k]
+        add("vend%d" % i, "自販機", "box", x, y, 2.1, 1.8, "food", r)
+    for c, kind in OPENINGS["1F_N"]:
+        if kind == "door1":
+            add("door1", "勝手口", "door", c, Y1 - 0.15, DOOR1["w"], 0.3, "door")
+    for i, (x, y) in enumerate(TABLES):   # TABLES は卓の南西の角
+        add("table%d" % i, "食卓", "table", x + TABLE["w"] / 2, y + TABLE["d"] / 2, TABLE["w"], TABLE["d"], "seat")
     WB = WINDOW_BAR
     add("window_bar", "窓向きのカウンター", "bar", (WB["x0"] + WB["x1"]) / 2, WB["y0"] + 0.5,
         WB["x1"] - WB["x0"], 1.0, "seat")
-    for kind, a, b, label in L["zones"]:
-        add("zone_" + kind, label, "zone", (a + b) / 2, (gy(2.45) + Y1 - R) / 2, b - a, Y1 - R - gy(2.45), kind)
     return out
 
 
+def _saved(name):
+    return json.load(open(os.path.join(HERE, name), encoding="utf-8"))
+
+
 def main():
-    daihyo = json.load(open(os.path.join(HERE, "layout-daihyo.json"), encoding="utf-8"))
+    daihyo = _saved("layout-daihyo.json")
+    game = game_items() + [i for i in daihyo["items"] if i["shape"] == "zone"]   # 区分けは代表の並びから
     presets = {
-        "daihyo": dict(label="代表の並び（10/31）", note="代表が手で並べたもの。これをゲームに入れる", items=daihyo["items"]),
-        "pr68": dict(label="前の並び（#68）", note="暖炉が東寄り、厨房が西寄りだったころ", items=items(now_layout())),
+        "game": dict(label="ゲームの今", note="いまのコード（lodge/dims.py ほか）から作った並び", items=game),
+        "daihyo": dict(label="代表の並び（10/31）", note="代表が手で並べたもの", items=daihyo["items"]),
+        "pr68": dict(label="前の並び（#68）", note="暖炉が東寄り、厨房が西寄りだったころ", items=_saved("layout-pr68.json")["items"]),
     }
-    data = dict(static=static(), presets=presets, start="daihyo",
+    data = dict(static=static(), presets=presets, start="game",
                 bounds=[-31.0, -19.5, 24.5, 17.0], hearth=dict(
-                    benches=[[x0 - (CH["x0"] + CH["x1"]) / 2, y0 - (CH["y0"] + Y1 + 1.5) / 2,
-                              x1 - (CH["x0"] + CH["x1"]) / 2, y1 - (CH["y0"] + Y1 + 1.5) / 2]
+                    benches=[[x0 - HEARTH_CX, y0 - (CH["y0"] + Y1 + 1.5) / 2, x1 - HEARTH_CX, y1 - (CH["y0"] + Y1 + 1.5) / 2]
                              for x0, y0, x1, y1 in HEARTH_BENCH],
                     fire_w=CH["fire_w"]),
                 table=dict(chair=[0.5, 0.45], gap=0.35, step=1.15),
