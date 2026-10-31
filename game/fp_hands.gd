@@ -71,6 +71,11 @@ static func make(kind: String, side: int, layers: int) -> Node3D:
 	return root
 
 
+## 袖の筒の、手の所から z (m) の半径（袖口がいちばん広く、肩のほうへすぼまる。角の所で測る）
+static func sleeve_r(z: float) -> float:
+	return MOUTH_R * lerpf(1.0, 0.72, clampf((z - 0.03) / SLEEVE_LEN, 0.0, 1.0))
+
+
 static func _cloth(spec: Array) -> StandardMaterial3D:
 	var cloth: StandardMaterial3D
 	match spec[0]:
