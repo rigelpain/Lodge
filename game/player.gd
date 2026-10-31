@@ -92,9 +92,13 @@ var _col: CollisionShape3D
 var _t := 0.0
 var _snap := 0.0             # 吸い付きの途中（0→1）
 var _hand_frame := -1        # 一人称の手を最後に置き直したコマ
-var point_at := Vector3.INF  # 指している所（世界）。仲間はここを見る
-var _point_on: Node3D = null # 指した物（ソリや人）。動いても指し続ける
-var _point_local := Vector3.ZERO
+var point_at := Vector3.INF  # 指している所（世界）。指していなければ INF。指しているあいだは、いつも見ている先を追う
+var pointing := false        # 指さしを入れているか（右クリック・輪・2 キーで入れたり切ったり）
+var _point_sent := Vector3.ZERO   # 最後に配り役へ送った向き（間引くため）
+var _point_send_t := 0.0
+const POINT_FOLLOW := 10.0   # 指す先が、見ている先へ追いつく速さ（1/s）
+const POINT_SEND_DEG := 4.0  # 向きがこれだけ変わったら送る（度）
+const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
@@ -544,7 +548,7 @@ func _physics_process(dt: float) -> void:
 			_walk(dt, true)
 		Mode.WALK:
 			_walk(dt, false)
-	_update_point()
+	_update_point(dt)
 	_update_emote(dt)
 	_sack_events(dt)
 	_pose_hands(dt)
@@ -583,36 +587,64 @@ func _pose_doll() -> void:
 		doll.lantern_lit = craft.lamp_on(id)
 
 
-## 右クリックで指さしを入れたり切ったりする。入れると、いま向いている先（画面のまんなかが当たる所）を指し、
-## その所を指し続ける。指したまま見回せば、顔の向きと違う所を指していられる。もう一度押すと腕を下ろす
+## 右クリックで指さしを入れたり切ったりする。入れているあいだ、腕はいま見ている先（画面のまんなかが当たる所）を追う。
+## 見回すと指す先も一緒に動く（2026-10-31 代表「指差し時に向きを固定していますが、視点に追従するほうがわかりやすいので、向き固定はやめましょう」）。
+## 前の作り（指した所に残す・動く物に吸い付く）はやめた。もう一度押すと腕を下ろす
 func toggle_point() -> void:
-	if point_at != Vector3.INF:
-		point_at = Vector3.INF
-		_point_on = null
+	if pointing:
+		_stop_point()
 		return
 	set_height("")   # 指さす手は、手のひらを下ろす
+	pointing = true
+	point_at = _view_point()
+	_send_point(true)
+
+
+func _stop_point() -> void:
+	pointing = false
+	point_at = Vector3.INF
+	if hub:
+		hub.send({"kind": "point", "who": id, "dir": Vector3.ZERO, "dist": 0.0})
+		_point_sent = Vector3.ZERO
+
+
+## いま見ている先: 画面のまんなかから 60 m 先までで、最初に当たる所（なければ 60 m 先）
+func _view_point() -> Vector3:
 	var from := cam.global_position
 	var to := from - cam.global_basis.z * 60.0
 	var q := PhysicsRayQueryParameters3D.create(from, to)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	point_at = hit.position if hit else to
-	_point_on = null
-	# 動く物（ソリや人）を指したら、その物に対しての所を覚えて、動いても指し続ける
-	if hit and (hit.collider is RigidBody3D or hit.collider is CharacterBody3D):
-		_point_on = hit.collider
-		_point_local = _point_on.to_local(point_at)
+	return hit.position if hit else to
 
 
-## 指した物が動いたら、指す所もついていく。物が消えたら腕を下ろす
-func _update_point() -> void:
-	if _point_on == null:
+## 指しているあいだ、指す先を見ている先へなめらかに追わせる。向き（頭から）を回し、長さは近づける
+## （当たる所が手前の物と遠くの雪のあいだで跳んでも、腕が飛ばないように）。腕の形は人形が 12 コマで刻む
+func _update_point(dt: float = 0.0) -> void:
+	if not pointing:
 		return
-	if not is_instance_valid(_point_on):
-		point_at = Vector3.INF
-		_point_on = null
+	var head := global_position + Vector3.UP * 1.55
+	var want := _view_point() - head
+	var cur := point_at - head if point_at != Vector3.INF else want
+	var k := 1.0 - exp(-dt * POINT_FOLLOW)
+	var dir := cur.normalized().slerp(want.normalized(), k) if cur.length() > 0.01 and want.length() > 0.01 else want.normalized()
+	var dist := lerpf(cur.length(), want.length(), k)
+	point_at = head + dir * dist
+	_send_point(false)
+
+
+## 指さしの向きを配り役へ送る。向きが POINT_SEND_DEG 以上変わったときだけ、多くても 1 秒に 6 回（通信の量を抑える）
+func _send_point(force: bool) -> void:
+	if hub == null or point_at == Vector3.INF:
 		return
-	point_at = _point_on.to_global(_point_local)
+	var rel := point_at - (global_position + Vector3.UP * 1.55)
+	var dir := rel.normalized()
+	var now := Time.get_ticks_msec() / 1000.0
+	var turned := _point_sent == Vector3.ZERO or rad_to_deg(dir.angle_to(_point_sent)) >= POINT_SEND_DEG
+	if force or (turned and now - _point_send_t >= POINT_SEND_GAP):
+		hub.send({"kind": "point", "who": id, "dir": dir, "dist": snappedf(rel.length(), 0.1)})
+		_point_sent = dir
+		_point_send_t = now
 
 
 ## 小さな段差（STEP_UP まで）は、歩くだけで乗り上げる。
@@ -999,9 +1031,8 @@ func _height() -> String:
 
 ## 手のひらを掲げる・下ろす（配り役へ送る）。いまの手（右・左・両手）で。指さしていれば、指さしをやめる
 func set_height(height: String) -> void:
-	if height != "" and point_at != Vector3.INF:
-		point_at = Vector3.INF
-		_point_on = null
+	if height != "" and pointing:
+		_stop_point()
 	set_hands(Palm.hands_name(height, hand))
 
 
