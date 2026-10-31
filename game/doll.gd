@@ -28,6 +28,8 @@ const FOOT_SHADOW := {"kasa": 0.46, "origami": 0.44, "news": 0.38}
 const EYE := {"kasa": Vector3(0, 1.01, -0.1), "origami": Vector3(0, 1.235, -0.1), "news": Vector3(0, 0.745, -0.12)}
 ## 座ったとき、腰の骨の付け根を座面からどれだけ上に置くか（骨の座標の空間）
 const SIT_HIPS := 0.07
+## ロッジの席に座ったときの太ももの角度（rad。下へ垂れた形から前へ。π/2 で水平）。座面に沿わせ、水平より少し下げる
+const SIT_THIGH := 1.40
 ## 口の位置（頭の骨の付け根から、人形の大きさのまま）。白い息が出る
 const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.27), "news": Vector3(0, 0.13, -0.3)}
 ## 頭のいちばん上（glb の座標、人形の大きさのまま）。雪玉の当たりの背丈と、ハイタッチの手の高さに
@@ -48,7 +50,7 @@ const SACK_IN := 10
 ## 帯の米袋の所（glb の座標、人形の大きさのまま）。右の腰の少し後ろ
 const BELT := {"kasa": Vector3(0.2, 0.6, 0.05), "origami": Vector3(0.21, 0.8, 0.06), "news": Vector3(0.24, 0.34, 0.06)}
 
-enum Act { WALK, PUSH, ROPE, RIDE }
+enum Act { WALK, PUSH, ROPE, RIDE, SIT }
 
 var kind := "kasa"
 var layers := 1
@@ -77,6 +79,8 @@ var airborne := false
 var waving := false
 var point := Vector3.INF     # 腕を伸ばして指す所（世界）。gaze が決まっていなければ、そこを見る
 var sled: Node3D = null
+var sit_stage := 0           # ロッジの席（seats.gd）: 0 立つ、1 中腰、2 座る（持ち主が毎フレーム入れる。act が SIT のとき）
+var seat_drop := 0.45        # 座面から足を下ろす床までの高さ (m)（持ち主が入れる）
 var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標）
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
 var lean := Vector2.ZERO     # 乗っているときの体重移動（x 右、y 前）
@@ -403,6 +407,39 @@ func _sit_drop() -> float:
 	return skel.get_bone_global_rest(_id("hips")).origin.y - SIT_HIPS
 
 
+## ロッジの席に座る（seats.gd）。腰の骨の付け根を座面のすぐ上へ下ろし、裾は座面に広げ、太ももは座面に沿って前へ、すねは下へ垂らす。
+## 脚が長くて足が床に届くときは、すねを前へ出して足を床に置く（床を突き抜けない）。脚の短い人形は足が浮く。
+## 太ももを座面に沿わせて上げないので、膝が机の天板の裏に当たらない。両手は膝の上。返り値は胸を前へ曲げる量
+func _sit_chair() -> float:
+	var X := Vector3.RIGHT
+	_hips_drop = _sit_drop()
+	_squash = 0.12
+	_update_all()
+	var floor_y := -seat_drop / _scale   # 骨の座標の空間。座面が 0
+	for s in ["L", "R"]:
+		var th := _id("thigh." + s)
+		var sh := _id("shin." + s)
+		var ft := _id("foot." + s)
+		if th < 0 or sh < 0 or ft < 0:
+			continue
+		var sole := skel.get_bone_global_rest(ft).origin.y   # 足首から足の裏まで（立った形の足首の高さ）
+		var knee_y := _head_of(th).y - _len(th) * cos(SIT_THIGH)
+		var shin := _len(sh)
+		_turn_axis("thigh." + s, X, SIT_THIGH)
+		var reach := knee_y - shin - sole
+		if reach < floor_y:
+			# 足が床に届く: すねを前へ振り出して、足の裏を床に
+			var fwd := acos(clampf((knee_y - sole - floor_y) / shin, -1.0, 1.0))
+			_turn_axis("shin." + s, X, -(SIT_THIGH - fwd))
+		else:
+			_turn_axis("shin." + s, X, -SIT_THIGH)
+		# 手は膝の上
+		var hip := skel.global_transform * _head_of(th)
+		var knee := skel.global_transform * _head_of(sh)
+		_hold[0 if s == "L" else 1] = [self, to_local(hip.lerp(knee, 0.75)) + Vector3(0, 0.06 * _scale, 0)]
+	return 0.08
+
+
 ## 目の所（人形の座標、m）。座っているときは腰を落とした分だけ低い（姿勢のコマや揺れには付き合わない）
 func eye_point(sitting: bool) -> Vector3:
 	var e: Vector3 = EYE.get(kind, EYE["kasa"])
@@ -578,6 +615,18 @@ func _pose() -> void:
 					var me: Vector3 = sled.to_local(global_position)
 					_hold[0] = [sled, Vector3(-0.68, 0.5, me.z - 0.1)]
 					_hold[1] = [sled, Vector3(0.68, 0.5, me.z - 0.1)]
+		Act.SIT:
+			if sit_stage == 1:
+				# 中腰: 腰を半分落とし、膝を曲げる（ソリに乗り込むときと同じ）
+				_hips_drop = _sit_drop() * 0.55
+				_squash = 0.55
+				_update_all()
+				for s in ["L", "R"]:
+					_turn_axis("thigh." + s, X, 1.05)
+					_turn_axis("shin." + s, X, -1.55)
+				bend = 0.25
+			elif sit_stage == 2:
+				bend = _sit_chair()
 		_:
 			if airborne:
 				for s in ["L", "R"]:
@@ -738,7 +787,7 @@ func _pose() -> void:
 	var acc := (_vel - _lantern_v) * FPS
 	_lantern_v = _vel
 	var fwd := -global_basis.z
-	_lantern.step(_speed, _phase, Vector2(acc.dot(global_basis.x), acc.dot(fwd)), act == Act.RIDE)
+	_lantern.step(_speed, _phase, Vector2(acc.dot(global_basis.x), acc.dot(fwd)), act == Act.RIDE or (act == Act.SIT and sit_stage > 0))
 
 	# 声と白い息
 	if _voice > 0:

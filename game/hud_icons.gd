@@ -18,7 +18,7 @@ const CAP := Color(0.98, 0.96, 0.92)        # キーのワッペン
 const SHADOW := Color(0.10, 0.08, 0.16)
 const LEG := Color(0.28, 0.27, 0.32)
 
-const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "lean_l", "lean_r", "brake",
+const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "sit", "standup", "lean_l", "lean_r", "brake",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
 	"cam_dist", "cam_frame", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "mouse_pinch", "mouse_pan", "back"]
 
@@ -261,6 +261,8 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"pull": _pull(ci, a, tint)
 		"scoop": _scoop(ci, a, tint)
 		"getoff": _getoff(ci, a, tint)
+		"sit": _sit(ci, a, tint)
+		"standup": _standup(ci, a, tint)
 		"lean_l": _lean(ci, a, tint, -1)
 		"lean_r": _lean(ci, a, tint, 1)
 		"brake": _brake(ci, a, tint)
@@ -636,6 +638,29 @@ static func _getoff(ci: CanvasItem, a: float, col: Color) -> void:
 	sled_side(ci, Vector2(-8, 20), 0.95, a)
 	doll(ci, Vector2(20, 28), col, "stand", a, 0.9)
 	arc_arrow(ci, Vector2(4, 12), 14.0, PI * 1.1, PI * 1.85, THREAD, a, 2.0)
+
+
+## 横から見た椅子（座布団つき。前は右）。c は座面の上のまんなか
+static func chair_side(ci: CanvasItem, c: Vector2, sc: float, a := 1.0) -> void:
+	var P := func(x: float, y: float, w: float, h: float) -> PackedVector2Array: return xf(rr(x, y, w, h, 1.2), 0.0, c, sc)
+	patch(ci, P.call(-11.0, -24.0, 3.6, 25.0), WOOD, a, false)               # 背もたれ
+	patch(ci, P.call(-10.0, 2.0, 3.2, 16.0), WOOD.darkened(0.2), a, false)    # 後ろの脚
+	patch(ci, P.call(7.0, 2.0, 3.2, 16.0), WOOD.darkened(0.2), a, false)      # 前の脚
+	patch(ci, P.call(-12.0, 0.0, 23.0, 4.0), WOOD, a, false)                  # 座面
+	patch(ci, P.call(-9.0, -3.0, 19.0, 3.6), Color(0.79, 0.54, 0.40), a, false)   # 座布団
+
+
+static func _sit(ci: CanvasItem, a: float, col: Color) -> void:
+	chair_side(ci, Vector2(-4, 10), 1.05, a)
+	doll(ci, Vector2(-6, 6), col, "sit", a, 1.0)
+	chevron(ci, Vector2(20, -10), 10.0, THREAD, a, PI / 2.0)          # 腰を下ろす
+	chevron(ci, Vector2(20, -3), 10.0, THREAD, 0.6 * a, PI / 2.0)
+
+
+static func _standup(ci: CanvasItem, a: float, col: Color) -> void:
+	chair_side(ci, Vector2(-10, 10), 0.95, a)
+	doll(ci, Vector2(16, 28), col, "stand", a, 0.9)
+	arc_arrow(ci, Vector2(2, 10), 14.0, PI * 1.1, PI * 1.85, THREAD, a, 2.0)
 
 
 static func _lean(ci: CanvasItem, a: float, col: Color, side: int) -> void:
