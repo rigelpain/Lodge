@@ -17,6 +17,10 @@ const Look := preload("res://look.gd")
 ##   --trail-fade=fray|bury  滑りあとの消え方（ほつれる・雪に埋もれる）
 ##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
 ##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
+##   --spawn=wardrobe  2 階の衣装掛けの前から始める（F で人形を選び直す）
+##   --doll=人形   あなたの始めの人形（doll.gd の KINDS: kasa・origami・news・robo・musha・ningyo・golem）。保存した人形より勝つ
+##   --bot-dolls=人形,人形…  ソリを押す仲間の人形（既定は右が origami、左が news）
+##   --lodge-dolls=人形,人形…  ロッジでくつろぐ仲間の人形（既定は robo・ningyo・golem・musha の順）
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
@@ -58,6 +62,12 @@ const Shopkeeper := preload("res://shopkeeper.gd")
 const CraftUi := preload("res://craft_ui.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
+const Wardrobe := preload("res://wardrobe.gd")
+const WardrobeUi := preload("res://wardrobe_ui.gd")
+## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
+## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
+const WARDROBE_AT := Vector2(21.25, 2.2)
+const WARDROBE_FLOOR := 6.1   # 2 階の床（dims.FL2）
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
 ## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
@@ -99,6 +109,8 @@ var sewing: Node3D            # 大きなミシンの動き（sewing_machine.gd�
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
+var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
+var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
 var seats: Seats              # ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団）の配り役。人より先に置く
 
@@ -234,6 +246,9 @@ func _ready() -> void:
 		b.sled = sled
 		b.player = player
 		b.side = 1 if i % 2 == 0 else -1
+		if args.has("bot-dolls"):
+			var ds: PackedStringArray = String(args["bot-dolls"]).split(",")
+			b.doll_kind = ds[i % ds.size()]
 		b.lean_mode = args.get("bot-lean", "follow")
 		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
 		add_child(b)
@@ -244,6 +259,8 @@ func _ready() -> void:
 			b.sled = sled
 			b.player = player
 			b.side = 1 if i % 2 == 0 else -1
+			var ld: PackedStringArray = String(args.get("lodge-dolls", "robo,ningyo,golem,musha")).split(",")
+			b.doll_kind = ld[i % ld.size()]   # ロッジには 4 回目の人形たちがいる
 			b.lounge = true
 			b.position = get_node("Lodge").to_global(Vector3(6.0 + 3.0 * i, 0.6, -4.0))
 			add_child(b)
@@ -315,6 +332,18 @@ func _ready() -> void:
 		craft_ui.craft = craft
 		craft_ui.player = player
 		add_child(craft_ui)
+		if wardrobe:
+			wardrobe.player = player
+		wardrobe_ui = WardrobeUi.new()
+		wardrobe_ui.main = self
+		wardrobe_ui.craft = craft
+		wardrobe_ui.player = player
+		add_child(wardrobe_ui)
+		if args.get("spawn", "") == "wardrobe" and wardrobe:   # --spawn=wardrobe: 2 階の衣装掛けの前から始める
+			var at := wardrobe.to_global(Vector3(0, 0.1, 1.6))
+			player.global_position = at
+			var to := wardrobe.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if args.get("spawn", "") == "shop" and shopkeeper:   # --spawn=shop: 売り子のおじさんの前から始める
 			var at := shopkeeper.to_global(Vector3(0, 0.1, -1.9))   # 番台の向こう（客の側）。話しかけられる距離（2.2 m）の内
 			player.global_position = at
@@ -748,6 +777,13 @@ func _furnish_lodge() -> void:
 		_put_snowman(kitchen)
 	for b in BANDAI:
 		_put_bandai(lodge, b)
+	# 2 階の衣装掛け: 前で F を押すと人形を選び直す
+	wardrobe = Wardrobe.new()
+	wardrobe.name = "Wardrobe"
+	wardrobe.player = player
+	wardrobe.position = Vector3(WARDROBE_AT.x, WARDROBE_FLOOR, -WARDROBE_AT.y)
+	wardrobe.rotation.y = -PI / 2.0   # 竿の正面（+Z）を西へ
+	lodge.add_child(wardrobe)
 
 
 ## 番台 1 つ: パッチワーク（または藍）のフェルトを張った木のカウンター。上に、店番の側を向いたレジと、払いを受けるお皿。

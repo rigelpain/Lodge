@@ -25,6 +25,8 @@ extends Node
 ##   tag_on    {id, loose}     名札入れの名札を、持ち主のいない名札なしのソリに付けて、持ち主になる（同じく G を長押し）。
 ##                             ロッジのソリ（ロッジの名札が付いている）には付けられない
 ##   profile   {name, color}   自分の名前と、キャラの色（COLORS の番号）を決める（装備の画面）。HUD の札で、人の形の色と頭の上の名前になる
+##   doll      {doll}          自分の人形（doll.gd の KINDS のどれか）を替える（2 階の衣装掛け）。みんなの画面で、その人の人形が作り直される。
+##                             入った時にも今の人形で 1 度送る（通信では、あとから来た人もこれでほかの人の人形を知る）
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
@@ -72,6 +74,7 @@ var sacks := {}                # 人の番号 → 持っている米袋の配列
 var loose_tags := {}           # 人の番号 → 帯の名札入れの、外した名札の柄の配列（付け直せる）
 var names := {}                # 人の番号 → 名前（装備の画面で決める。HUD の札で頭の上に出す）
 var colors := {}               # 人の番号 → キャラの色（COLORS の番号）
+var dolls := {}                # 人の番号 → 人形（doll.gd の KINDS。衣装掛けで替える）
 var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
 var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
@@ -133,6 +136,10 @@ func gear_index(who: int, gear: String) -> int:
 ## その人のキャラの色と名前（知らない人は灰色・名前なし）
 func color_of(who: int) -> Color:
 	return COLORS[posmod(int(colors[who]), COLORS.size())] if colors.has(who) else Color(0.55, 0.55, 0.58)
+
+
+func doll_of(who: int) -> String:
+	return String(dolls.get(who, ""))
 
 
 func name_of(who: int) -> String:
@@ -404,6 +411,10 @@ func _apply(ev: Dictionary) -> bool:
 					lantern_sel[who] = i
 					if i < 0:
 						lamps[who] = false
+		"doll":
+			if not String(ev.get("doll", "")) in Doll.KINDS:
+				return false
+			dolls[who] = String(ev.doll)
 		"lamp":
 			if lantern(who).is_empty():
 				return false

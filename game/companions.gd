@@ -248,6 +248,10 @@ func _pose_kit() -> void:
 # ---------------------------------------------------------------- 時計
 
 func _physics_process(dt: float) -> void:
+	if host.get("doll") != _doll and is_instance_valid(host.get("doll")):   # 衣装掛けで着替えた: 新しい頭に小鳥を止め直す（前の小鳥は前の体と消えた）
+		_doll = host.get("doll")
+		if bird_on:
+			_make_bird()
 	if _doll == null or not is_instance_valid(_doll):
 		return
 	var pointing := _doll.point != Vector3.INF
