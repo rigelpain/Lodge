@@ -15,7 +15,10 @@ const PX := 224               # 描く大きさ（正方形の px）。窓とほ
 const STITCH_PX := 2.6        # 糸 1 本の、画面での幅（1080 のとき, px）
 const EVERY := 2              # 何コマに 1 回描くか
 const DIAM := 236.0           # 画面での丸窓の直径（1080 のとき, px）
-const MARGIN := 18.0          # 画面の端からの間（1080 のとき, px）
+const MARGIN := Vector2(92.0, 56.0)   # 画面の右・下の端からの間（1080 のとき, px）。左の縁に縫った濡れゲージと右上のバッジ（damp_hud.gd）が
+                                      # 画面の端に寄りすぎないよう、端から離す（2026-11-01 代表「刺繍と濡れゲージが画面はしにくっつきそうだから、
+                                      # もう少し画面中央に寄せましょう」）
+const GAUGE_W := 64.0         # 丸窓の左の縁に縫った濡れゲージ（damp_hud.gd）の幅（px）。日時計はさらにその左に置く
 const FOV := 36.0
 const DIST := 3.0             # 人形からの距離の目安 (m)。実際は全身が収まるよう _extent() から決める
 const MARGIN_K := 1.3         # 全身の高さに対する窓の高さ（上下の余白）
@@ -280,7 +283,7 @@ func ui() -> float:
 
 ## 丸窓が画面の右から占める幅（px）。日時計はこの左に置く
 func width() -> float:
-	return (DIAM + MARGIN) * ui() if not hidden else 0.0
+	return (DIAM + MARGIN.x) * ui() if not hidden else 0.0
 
 
 func _process(dt: float) -> void:
@@ -291,7 +294,7 @@ func _process(dt: float) -> void:
 	_frame.position += Icons.wind_offset(5.0, 2.5 * ui())
 	var dc := get_node_or_null("/root/DayCycle")
 	if dc and "dial_right" in dc:
-		dc.dial_right = 16.0 + width()
+		dc.dial_right = 16.0 + width() + (GAUGE_W * ui() if not hidden else 0.0)
 	if hidden or player == null:
 		return
 	_env_t += dt
@@ -319,7 +322,7 @@ func _layout() -> void:
 	var u := ui()
 	var vs := get_viewport().get_visible_rect().size
 	var d := DIAM * u
-	_frame.position = vs - Vector2(d, d) - Vector2(MARGIN, MARGIN) * u
+	_frame.position = vs - Vector2(d, d) - MARGIN * u
 	_frame.size = Vector2(d, d)
 	_frame.view.position = Vector2.ZERO
 	_frame.view.size = _frame.size
