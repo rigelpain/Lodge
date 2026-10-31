@@ -38,7 +38,7 @@ sc = bpy.context.scene
 
 # ---------------------------------------------------------------- 素材（粘土の濃淡）
 CLAY = {
-    "log": (0.74, 0.69, 0.62), "post": (0.50, 0.45, 0.40), "frame": (0.90, 0.88, 0.82),
+    "log": (0.74, 0.69, 0.62), "chink": (0.93, 0.90, 0.84), "post": (0.50, 0.45, 0.40), "frame": (0.90, 0.88, 0.82),
     "board": (0.68, 0.62, 0.54), "door": (0.46, 0.38, 0.31), "deck": (0.64, 0.58, 0.50),
     "rail": (0.60, 0.55, 0.48), "stone": (0.58, 0.57, 0.55), "roof": (0.17, 0.20, 0.40),
     "snow": (0.92, 0.93, 0.96), "glass": (0.10, 0.13, 0.18), "metal": (0.22, 0.22, 0.24),
@@ -251,8 +251,12 @@ def subtract(segs, h0, h1):
     return out
 
 
+CHINK = []   # 丸太の継ぎ目の綿を詰める所 (axis, fixed, s0, s1, z)。build_walls が最後に形にする
+
+
 def log_wall(m, axis, fixed, a0, a1, z0, z1, offset, holes=(), top=None):
-    """丸太を段に積む。holes は (u0, u1, 下, 上)。top(z) はその高さで丸太が届く u の上限（妻）"""
+    """丸太を段に積む。holes は (u0, u1, 下, 上)。top(z) はその高さで丸太が届く u の上限（妻）。
+    段と段の継ぎ目には綿を詰める（CHINK に積んで、build_walls が外と中の両面に細い帯で置く）"""
     if offset:
         segs = [(a0, a1)]
         for h0, h1, hb, ht in holes:
@@ -276,6 +280,8 @@ def log_wall(m, axis, fixed, a0, a1, z0, z1, offset, holes=(), top=None):
                     m.cyl((s0, fixed, zc), (s1, fixed, zc), R)
                 else:
                     m.cyl((fixed, s0, zc), (fixed, s1, zc), R)
+                if zc + LOG_H < z1 + 0.02:   # この段と上の段の継ぎ目（上の段がある所だけ）
+                    CHINK.append((axis, fixed, s0 + 0.05, s1 - 0.05, zc + LOG_H / 2))
         last = zc + LOG_H / 2
     return last
 
@@ -607,6 +613,17 @@ def build_walls():
         Cl.cyl((x, y, FL2), (x, y, roof_z(y) + (RAFTER["h"] if PH >= 3 else 0)), COL_D / 2 * 0.85, seg=20)
     Cl.done(smooth=True)
     build_vestibule()
+    # 継ぎ目の綿: 丸太の丸みのくぼみに、外と中の両面から見える細い帯（厚み 2 cm の箱 1 本。丸太にほぼ埋まり、くぼみにだけ出る）
+    Ck = M("chinking", "chink", "walls")
+    for axis, fixed, s0, s1, z in CHINK:
+        if s1 - s0 < 0.1:
+            continue
+        hw = R * 0.5
+        if axis == "x":
+            Ck.box(s0, fixed - hw, z - 0.011, s1, fixed + hw, z + 0.011)
+        else:
+            Ck.box(fixed - hw, s0, z - 0.011, fixed + hw, s1, z + 0.011)
+    Ck.done()
     Lg.done(smooth=True, cap_uv=True)
     F.done(bevel=0.006)
     G.done()

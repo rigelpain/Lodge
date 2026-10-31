@@ -10,6 +10,7 @@ import bpy
 
 # 色: 代表の図面の色をそのまま使う（丸太 #8B5E3C、柱 #6F4628、板 #C8A26C、屋根 #2F3B79、石 #CDC5B8）
 HEX = {
+    "chink": "EFE6D2",   # 丸太の継ぎ目に詰めた綿
     "log": "7E5535", "log_cap": "A97F4F", "post": "6F4628", "frame": "EDE1C9", "board": "C8A26C",
     "door": "6E4A30", "deck": "B99465", "rail": "A97F4F", "stone": "CDC5B8", "roof": "283268",
     "snow": "F6F7FA", "glass": "B9CBE3", "metal": "3A2A1E", "dark": "1A1410", "tatami": "D9D2A8",
