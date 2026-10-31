@@ -1,0 +1,35 @@
+== old1（直す前=old・後=new。負荷が高く、当てにならない）
+01_front: 平均 15 fps、いちばん重いコマ 82.6 ms
+02_corner: 平均 17 fps、いちばん重いコマ 73.5 ms
+03_dining: 平均 15 fps、いちばん重いコマ 92.0 ms
+04_machine: 平均 14 fps、いちばん重いコマ 91.6 ms
+05_ceiling: 平均 13 fps、いちばん重いコマ 126.4 ms
+06_inner_wall: 平均 14 fps、いちばん重いコマ 173.6 ms
+== new1（直す前=old・後=new。負荷が高く、当てにならない）
+01_front: 平均 11 fps、いちばん重いコマ 170.7 ms
+02_corner: 平均 14 fps、いちばん重いコマ 87.7 ms
+03_dining: 平均 12 fps、いちばん重いコマ 118.7 ms
+04_machine: 平均 6 fps、いちばん重いコマ 222.8 ms
+05_ceiling: 平均 15 fps、いちばん重いコマ 90.1 ms
+06_inner_wall: 平均 10 fps、いちばん重いコマ 150.6 ms
+== old2（直す前=old・後=new。負荷が高く、当てにならない）
+01_front: 平均 18 fps、いちばん重いコマ 64.7 ms
+02_corner: 平均 18 fps、いちばん重いコマ 78.6 ms
+03_dining: 平均 16 fps、いちばん重いコマ 86.3 ms
+04_machine: 平均 16 fps、いちばん重いコマ 73.6 ms
+05_ceiling: 平均 18 fps、いちばん重いコマ 65.1 ms
+06_inner_wall: 平均 11 fps、いちばん重いコマ 183.8 ms
+== new2（直す前=old・後=new。負荷が高く、当てにならない）
+01_front: 平均 9 fps、いちばん重いコマ 166.6 ms
+02_corner: 平均 15 fps、いちばん重いコマ 96.1 ms
+03_dining: 平均 18 fps、いちばん重いコマ 80.3 ms
+04_machine: 平均 21 fps、いちばん重いコマ 50.7 ms
+05_ceiling: 平均 23 fps、いちばん重いコマ 49.8 ms
+06_inner_wall: 平均 17 fps、いちばん重いコマ 85.8 ms
+== 混んでいないときに直す前に測った値（360° 映像あり）
+01_front: 平均 31 fps、いちばん重いコマ 52.8 ms
+02_corner: 平均 34 fps、いちばん重いコマ 46.6 ms
+03_dining: 平均 31 fps、いちばん重いコマ 44.3 ms
+04_machine: 平均 32 fps、いちばん重いコマ 43.5 ms
+05_ceiling: 平均 34 fps、いちばん重いコマ 53.6 ms
+06_inner_wall: 平均 30 fps、いちばん重いコマ 57.8 ms
