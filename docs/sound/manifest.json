@@ -28,6 +28,258 @@
   "loop": false
  },
  {
+  "file": "cmp_voice_nn_01a.wav",
+  "dur": 0.61,
+  "peak": -7.0,
+  "rms": -17.2,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_nn_01b.wav",
+  "dur": 0.61,
+  "peak": -7.0,
+  "rms": -17.0,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_nn_02a.wav",
+  "dur": 0.65,
+  "peak": -7.0,
+  "rms": -15.3,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_nn_02b.wav",
+  "dur": 0.65,
+  "peak": -7.0,
+  "rms": -16.2,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_nn_03a.wav",
+  "dur": 0.64,
+  "peak": -7.0,
+  "rms": -19.1,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_nn_03b.wav",
+  "dur": 0.64,
+  "peak": -7.0,
+  "rms": -18.9,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_01a.wav",
+  "dur": 1.36,
+  "peak": -5.0,
+  "rms": -16.8,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_01b.wav",
+  "dur": 1.36,
+  "peak": -5.0,
+  "rms": -16.2,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_02a.wav",
+  "dur": 1.27,
+  "peak": -5.0,
+  "rms": -15.9,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_02b.wav",
+  "dur": 1.27,
+  "peak": -5.0,
+  "rms": -16.2,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_03a.wav",
+  "dur": 1.37,
+  "peak": -5.0,
+  "rms": -17.1,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_03b.wav",
+  "dur": 1.37,
+  "peak": -5.0,
+  "rms": -17.1,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_surprise_01a.wav",
+  "dur": 0.32,
+  "peak": -6.0,
+  "rms": -21.3,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_surprise_01b.wav",
+  "dur": 0.32,
+  "peak": -6.0,
+  "rms": -20.1,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_surprise_02a.wav",
+  "dur": 0.31,
+  "peak": -6.0,
+  "rms": -20.9,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_surprise_02b.wav",
+  "dur": 0.31,
+  "peak": -6.0,
+  "rms": -20.5,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_surprise_03a.wav",
+  "dur": 0.33,
+  "peak": -6.0,
+  "rms": -20.7,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_surprise_03b.wav",
+  "dur": 0.33,
+  "peak": -6.0,
+  "rms": -22.9,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_un_01a.wav",
+  "dur": 0.31,
+  "peak": -7.0,
+  "rms": -18.0,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_un_01b.wav",
+  "dur": 0.31,
+  "peak": -7.0,
+  "rms": -17.3,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_un_02a.wav",
+  "dur": 0.33,
+  "peak": -7.0,
+  "rms": -18.0,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_un_02b.wav",
+  "dur": 0.33,
+  "peak": -7.0,
+  "rms": -19.9,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_un_03a.wav",
+  "dur": 0.32,
+  "peak": -7.0,
+  "rms": -18.2,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_un_03b.wav",
+  "dur": 0.32,
+  "peak": -7.0,
+  "rms": -22.3,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_unq_01a.wav",
+  "dur": 0.41,
+  "peak": -7.0,
+  "rms": -15.9,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_unq_01b.wav",
+  "dur": 0.41,
+  "peak": -7.0,
+  "rms": -16.8,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_unq_02a.wav",
+  "dur": 0.42,
+  "peak": -7.0,
+  "rms": -16.6,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_unq_02b.wav",
+  "dur": 0.42,
+  "peak": -7.0,
+  "rms": -19.0,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_unq_03a.wav",
+  "dur": 0.44,
+  "peak": -7.0,
+  "rms": -17.2,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_unq_03b.wav",
+  "dur": 0.44,
+  "peak": -7.0,
+  "rms": -19.3,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_wa_01a.wav",
+  "dur": 0.75,
+  "peak": -6.0,
+  "rms": -19.6,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_wa_01b.wav",
+  "dur": 0.75,
+  "peak": -6.0,
+  "rms": -21.3,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_wa_02a.wav",
+  "dur": 0.84,
+  "peak": -6.0,
+  "rms": -19.4,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_wa_02b.wav",
+  "dur": 0.84,
+  "peak": -6.0,
+  "rms": -19.4,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_wa_03a.wav",
+  "dur": 0.74,
+  "peak": -6.0,
+  "rms": -19.6,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_wa_03b.wav",
+  "dur": 0.74,
+  "peak": -6.0,
+  "rms": -20.9,
+  "loop": false
+ },
+ {
   "file": "dish_01.wav",
   "dur": 0.12,
   "peak": -9.0,
