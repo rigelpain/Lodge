@@ -21,6 +21,11 @@ button_glint_01       真鍮が縫い付いたときに重ねる、きらっ（�
 button_reward_01      少し（〜5 枚）: 木のボタンが手の中でまとまる、ちゃりっ
 button_reward_02      ふつう（6〜12 枚）: もう少し多く重なって、ちゃりん
 button_reward_03      たくさん・真鍮が混ざる: ちゃりんと鳴ったあと、真鍮の澄んだ 2 音が上る
+止まらずに滑って、距離の節目でコンボが一段上がったとき（2026-10-31 代表「コンボしていることを、なにかで表示＋気持ちがいい音を追加で
+出してほしい」。game/audio.gd の combo）:
+button_combo_01..08   木琴のやわらかい「ポン」に、小さな鈴の「りん」を重ねた 1 音。段ごとに五音音階で一つずつ上がる
+                      （ド・レ・ミ・ソ・ラ・ド・レ・ミ）。3 段目からは、5 度上と 1 オクターブ上の小さなきらめきが後ろに続き、段が上がるほど増える
+button_combo_break_01 コンボが切れた: 木琴の 2 音が、短くやさしく下がる（ミ → ド。小さく）
 """
 import numpy as np
 
@@ -182,6 +187,41 @@ def clink_cluster(rng, count, spread, f_lo=900.0, f_hi=1500.0):
     return out
 
 
+COMBO_NOTES = [523.25, 587.33, 659.25, 783.99, 880.0, 1046.5, 1174.66, 1318.51]   # ド・レ・ミ・ソ・ラ・ド・レ・ミ（五音音階）
+
+
+def mallet(rng, f0, dur=0.6, soft=1.0):
+    """木琴のやわらかい鳴り: 木の板の 1・4・10 倍の部分音（高いほど早く消える）と、毛糸巻きのばちの柔らかい当たり"""
+    n = n_of(dur)
+    out = modes(n, np.array([1.0, 3.93, 9.8]) * f0, [0.32, 0.06, 0.018], [1.0, 0.22 * soft, 0.06 * soft], rng)
+    m = n_of(0.008)
+    place(out, lp(rng.standard_normal(m), 2500) * exp_decay(m, 0.002) * 0.15, 0.0)
+    return out
+
+
+def combo_up(rng, level):
+    """コンボが一段上がる: 木琴のポン + 鈴のりん（同じ高さ）。段が上がるほど、後ろのきらめきが増える"""
+    f0 = COMBO_NOTES[level]
+    out = np.zeros(n_of(1.4))
+    place(out, mallet(rng, f0), 0.0)
+    place(out, lp(ting(rng, n_of(1.0), f0 * 2.0, 0.3), 7000) * 0.35, 0.004)
+    sparks = max(0, level - 1)   # 3 段目（level 2）から 1 つ、2 つ…
+    for i, ratio in enumerate([1.5, 2.0, 3.0, 4.0, 6.0][:sparks]):
+        f = f0 * ratio
+        while f > 2400.0:   # きらめきは 2.4 kHz までに折り返す（高い段で耳に刺さらないように）
+            f /= 2.0
+        place(out, lp(ting(rng, n_of(0.6), f, 0.12), 6000) * (0.16 - 0.02 * i), 0.07 + 0.055 * i)
+    return fade(out, 0.0005, 0.25)
+
+
+def combo_break(rng):
+    """コンボが切れた: 木琴の 2 音が短く下がる（ミ → ド）"""
+    out = np.zeros(n_of(0.7))
+    place(out, mallet(rng, 659.25, 0.45, 0.6), 0.0)
+    place(out, mallet(rng, 523.25, 0.5, 0.6) * 0.8, 0.11)
+    return fade(out, 0.0005, 0.15)
+
+
 def reward(rng, size):
     count, spread = [(5, 0.12), (9, 0.2), (13, 0.26)][size]
     out = np.zeros(n_of(1.6 if size == 2 else 0.8))
@@ -213,3 +253,6 @@ if __name__ == "__main__":
     for i in range(3):
         write(f"button_stitch_{i + 1:02d}.wav", stitch_on(np.random.default_rng(1590 + i)), -4)
     write("button_glint_01.wav", glint(np.random.default_rng(1595)), -5)
+    for i in range(8):
+        write(f"button_combo_{i + 1:02d}.wav", combo_up(np.random.default_rng(1600 + i), i), -3)
+    write("button_combo_break_01.wav", combo_break(np.random.default_rng(1610)), -9)
