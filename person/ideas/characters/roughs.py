@@ -8,6 +8,7 @@
   musha    折り紙の武者（縫い目）: 折り紙の顔と手。紺のフェルトの兜と鎧を、赤い糸の縅・十字縫い・なみ縫いで固める。三日月、忍緒、大袖、草摺、脛当て
   ningyo   絹の人形: 和紙の顔に刺繍の閉じた目。紺の毛糸のお団子に絹の花と、左右の歩揺。月白の襦、胸高の茜の裙、絹のリボン、透ける披帛
   golem    継ぎはぎの巨人: 頭の小さなゴーレムのような大男。継ぎはぎの布をふくらませた体に、十字縫いで手足を縫いつける。頭とこぶしはもんだ紙。肩と頭に綿の雪
+--export DIR  骨を入れて質感を焼き、ゲーム用の glb を DIR に書き出す（例: game/person）
 --lineup   いまの 3 体（person/build_dolls.py を読むだけで組む）と 4 体を雪の上に並べる
 
 素材と縫い目は、ソリと同じもの（props/common.py → lodge/materials.py）を読むだけで使う。紙は person/build_dolls.py から写した。
@@ -35,6 +36,7 @@ ap.add_argument("--turn", type=float, default=0.0)
 ap.add_argument("--size", default="900x1100")
 ap.add_argument("--samples", type=int, default=64)
 ap.add_argument("--blend", default="")
+ap.add_argument("--export", default="", help="骨を入れて焼き、ゲーム用の glb をこのフォルダーに書き出す（person/rig_export.py）")
 A = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -1428,6 +1430,11 @@ else:
     C.reset()
     register_paper()
     top = BUILDERS[A.doll]()
+    if A.export:
+        sys.path.insert(0, PERSON)
+        import rig_export  # noqa: E402
+        rig_export.export(A.doll, A.export)
+        sys.exit(0)
     stage(A.size)
     if A.blend:
         bpy.ops.wm.save_as_mainfile(filepath=os.path.abspath(A.blend))

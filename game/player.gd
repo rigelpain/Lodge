@@ -204,7 +204,7 @@ func _ready() -> void:
 			# 2026-10-31 代表「投げる方の手にくっついてしまっているから、左手にストックはくっつけてほしい」
 			# →「左手の袖に縫い付けるような感じでキャラにもストックさせましょう」「一人称でそのストック雪玉見える角度にしてほしい」
 			var dz := STOCK_Z.y - STOCK_Z.x
-			var dr := FpHands.sleeve_r(STOCK_Z.y) - FpHands.sleeve_r(STOCK_Z.x)
+			var dr := FpHands.sleeve_r(STOCK_Z.y, doll.kind) - FpHands.sleeve_r(STOCK_Z.x, doll.kind)
 			_stock_fp = Doll.stock_strip(sqrt(dz * dz + dr * dr), 1 << 2)
 			_stock_fp.visible = false
 			h.add_child(_stock_fp)
@@ -1035,8 +1035,8 @@ func _face_stock_fp() -> void:
 	var to_eye := h.basis.inverse() * -h.position
 	var d := Vector3(to_eye.x, to_eye.y, 0.0)
 	d = d.normalized() if d.length() > 0.001 else Vector3.UP
-	var p0 := d * (FpHands.sleeve_r(STOCK_Z.x) + 0.002) + Vector3(0, 0, STOCK_Z.x)
-	var p1 := d * (FpHands.sleeve_r(STOCK_Z.y) + 0.002) + Vector3(0, 0, STOCK_Z.y)
+	var p0 := d * (FpHands.sleeve_r(STOCK_Z.x, doll.kind) + 0.002) + Vector3(0, 0, STOCK_Z.x)
+	var p1 := d * (FpHands.sleeve_r(STOCK_Z.y, doll.kind) + 0.002) + Vector3(0, 0, STOCK_Z.y)
 	var along := (p1 - p0).normalized()
 	var out := d - along * d.dot(along)
 	_stock_fp.transform = Transform3D(Basis(along.cross(out.normalized()), along, out.normalized()), p0)

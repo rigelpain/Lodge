@@ -1,6 +1,7 @@
 extends SceneTree
 ## 3 体の人形を並べて撮る（骨と姿勢の確かめ用）。
 ##   Godot --path game -s res://tools/doll_shots.gd -- --out=/path/to.png [--at=秒] [--pose=idle|walk|wave|call|breath]
+## 並べる人形を替える: --kinds=robo,musha,ningyo,golem（doll.gd の KINDS のどれでも。--kinds=all で 7 体）
 ## 息の見本: --pose=breath --close（顔の近くから）[--dark（うしろに暗い壁。ロッジの壁や木の前の見え方）] [--caller=0〜2]
 ## kasa は立ってこちらを見る、origami は手を振る、news は横へ歩く（--pose で全員を同じにもできる）
 ## 指さしの見本: --pose=point（① が赤い玉を指し、② と ③ がそこを見る）
@@ -81,10 +82,16 @@ func _initialize() -> void:
 		ball.position = target
 		world.add_child(ball)
 		cam.look_at_from_position(Vector3(-2.6, 2.0, 4.2), Vector3(0.6, 0.6, 0.6))
-	var kinds := ["kasa", "origami", "news"]
-	for k in 3:
+	var kinds: Array = ["kasa", "origami", "news"]
+	if args.has("kinds"):
+		kinds = Doll.KINDS if args.kinds == "all" else Array(String(args.kinds).split(","))
+	var n := kinds.size()
+	var gap := 1.3 if n <= 3 else 1.15
+	if n > 3:   # 並びが広いので引く
+		cam.look_at_from_position(Vector3(0, 1.3, 1.6 + gap * n), Vector3(0, 0.75, 0))
+	for k in n:
 		var host := Node3D.new()
-		host.position = Vector3((k - 1) * 1.3, 0, 0)
+		host.position = Vector3((k - (n - 1) * 0.5) * gap, 0, 0)
 		world.add_child(host)
 		var d := Doll.new()
 		d.kind = kinds[k]
@@ -93,7 +100,7 @@ func _initialize() -> void:
 		to_cam.y = 0
 		d.facing = to_cam.rotated(Vector3.UP, 0.3)
 		d.gaze = cam.position
-		var pose: String = args.get("pose", ["idle", "wave", "walk"][k])
+		var pose: String = args.get("pose", ["idle", "wave", "walk"][k % 3])
 		match pose:
 			"wave":
 				d.waving = true

@@ -4,8 +4,10 @@ const Look := preload("res://look.gd")
 const FpHands := preload("res://fp_hands.gd")
 const Palm := preload("res://palm.gd")
 const Lantern := preload("res://lantern.gd")
-## 人形（person/build_dolls.py で作り、骨を入れて焼いた glb）を骨で動かす。
-## 3 体: kasa 笠と千代紙の人形 / origami 多面体の折り紙の人 / news 新聞紙と麻布の人形。骨の名前は 3 体で同じ。
+## 人形（person/build_dolls.py と person/ideas/characters/roughs.py で作り、骨を入れて焼いた glb）を骨で動かす。
+## 7 体: kasa 笠と千代紙の人形 / origami 多面体の折り紙の人 / news 新聞紙と麻布の人形 /
+## robo 紙のロボット / musha 折り紙の武者 / ningyo 絹の人形 / golem 継ぎはぎの巨人。骨の名前は 7 体で同じ。
+## kind は作る前に入れる。作ったあとに替えるときは、持ち主が人形を作り直す（player.gd の set_doll）。
 ## 居場所（位置と向き）は毎フレームなめらか。姿勢（骨の向き）は 12 コマ／秒で刻み、コマの間は止める。
 ## 全員が同じ時計（物理のコマ数）でコマを変え、そのたびに骨をわずかに揺らす（クレイアニメの揺れ）。
 ## ソリや紐をつかむ手は、つかんだ物に対しての姿勢をコマで決め、毎フレーム腕を伸ばし直す（ソリが動いても手が離れない）。
@@ -15,30 +17,35 @@ const Lantern := preload("res://lantern.gd")
 const FPS := 12
 const CADENCE := 2.0          # 歩く周期の上限（1 秒に何周）
 const BOIL := 0.018           # コマごとの骨の揺れ（rad）
+## 選べる人形の並び（衣装掛けの札の順）
+const KINDS := ["kasa", "origami", "news", "robo", "musha", "ningyo", "golem"]
+## glb は使う人形のぶんだけ読む（7 体を全部先に読むと起動が重い）
 const SCENES := {
-	"kasa": preload("res://person/kasa.glb"),
-	"origami": preload("res://person/origami.glb"),
-	"news": preload("res://person/news.glb"),
+	"kasa": "res://person/kasa.glb", "origami": "res://person/origami.glb", "news": "res://person/news.glb",
+	"robo": "res://person/robo.glb", "musha": "res://person/musha.glb", "ningyo": "res://person/ningyo.glb", "golem": "res://person/golem.glb",
 }
-## ゲームでの大きさ。news がいちばん小さく、目の高さが origami のお尻あたり
-const SCALE := {"kasa": 1.15, "origami": 1.1, "news": 1.05}
+## ゲームでの大きさ。news がいちばん小さく、目の高さが origami のお尻あたり。golem がいちばん大きい
+const SCALE := {"kasa": 1.15, "origami": 1.1, "news": 1.05, "robo": 1.15, "musha": 1.1, "ningyo": 1.1, "golem": 1.35}
 ## 足もとの影の半径（人形の大きさのまま）
-const FOOT_SHADOW := {"kasa": 0.46, "origami": 0.44, "news": 0.38}
+const FOOT_SHADOW := {"kasa": 0.46, "origami": 0.44, "news": 0.38, "robo": 0.36, "musha": 0.32, "ningyo": 0.36, "golem": 0.62}
 ## 目の所（glb の座標、人形の大きさのまま。立ったとき）。乗っているときの一人称のカメラを合わせる
-const EYE := {"kasa": Vector3(0, 1.01, -0.1), "origami": Vector3(0, 1.235, -0.1), "news": Vector3(0, 0.745, -0.12)}
+const EYE := {"kasa": Vector3(0, 1.01, -0.1), "origami": Vector3(0, 1.235, -0.1), "news": Vector3(0, 0.745, -0.12),
+	"robo": Vector3(0, 0.67, -0.12), "musha": Vector3(0, 0.53, -0.1), "ningyo": Vector3(0, 0.715, -0.11), "golem": Vector3(0, 1.135, -0.18)}
 ## 座ったとき、腰の骨の付け根を座面からどれだけ上に置くか（骨の座標の空間）
 const SIT_HIPS := 0.07
 ## ロッジの席に座ったときの太ももの角度（rad。下へ垂れた形から前へ。π/2 で水平）。座面に沿わせ、水平より少し下げる
 const SIT_THIGH := 1.40
 ## 口の位置（頭の骨の付け根から、人形の大きさのまま）。白い息が出る
-const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.27), "news": Vector3(0, 0.13, -0.3)}
+const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.27), "news": Vector3(0, 0.13, -0.3),
+	"robo": Vector3(0, 0.05, -0.15), "musha": Vector3(0, 0.04, -0.12), "ningyo": Vector3(0, 0.04, -0.14), "golem": Vector3(0, 0.04, -0.1)}
 ## 頭のいちばん上（glb の座標、人形の大きさのまま）。雪玉の当たりの背丈と、ハイタッチの手の高さに
-const TOP := {"kasa": 1.372, "origami": 1.49, "news": 0.955}
+const TOP := {"kasa": 1.372, "origami": 1.49, "news": 0.955, "robo": 0.92, "musha": 0.9, "ningyo": 0.95, "golem": 1.25}
 const BALL_R := 0.075        # 雪玉の半径 (m)
 const BALL_BACK := 4         # 投げてから、次の雪玉が左の袖から右手に出るコマ
 ## 雪玉のストック: 左の袖（前腕）の外側に縫い付けた、藍のフェルトの細い帯。赤い糸に、持っている数だけ綿の雪玉が通る（右下の HUD と同じ形）。
 ## 人形ごとに [前腕のどこからどこまで（肘 0〜手首 1）, 腕の芯から外へ (m)]
-const SLEEVE_STOCK := {"kasa": [0.15, 0.95, 0.05], "origami": [0.15, 0.95, 0.05], "news": [0.15, 0.95, 0.05]}
+const SLEEVE_STOCK := {"kasa": [0.15, 0.95, 0.05], "origami": [0.15, 0.95, 0.05], "news": [0.15, 0.95, 0.05],
+	"robo": [0.15, 0.95, 0.06], "musha": [0.15, 0.9, 0.06], "ningyo": [0.1, 0.8, 0.09], "golem": [0.15, 0.85, 0.15]}
 const STOCK_NAVY := Color(0.16, 0.21, 0.38)   # 藍のフェルト（白い雪玉が映える）
 const STOCK_RED := Color(0.82, 0.27, 0.22)    # 縫う糸（あなたの赤）
 ## 米袋の動きのコマ数（12 コマ／秒）。乗る・降りるは押した瞬間に済んでいて、見た目だけがこのコマで追いつく
@@ -48,7 +55,8 @@ const STOCK_RED := Color(0.82, 0.27, 0.22)    # 縫う糸（あなたの赤）
 const SACK_OUT := 7
 const SACK_IN := 10
 ## 帯の米袋の所（glb の座標、人形の大きさのまま）。右の腰の少し後ろ
-const BELT := {"kasa": Vector3(0.2, 0.6, 0.05), "origami": Vector3(0.21, 0.8, 0.06), "news": Vector3(0.24, 0.34, 0.06)}
+const BELT := {"kasa": Vector3(0.2, 0.6, 0.05), "origami": Vector3(0.21, 0.8, 0.06), "news": Vector3(0.24, 0.34, 0.06),
+	"robo": Vector3(0.19, 0.27, 0.05), "musha": Vector3(0.17, 0.28, 0.05), "ningyo": Vector3(0.19, 0.42, 0.05), "golem": Vector3(0.36, 0.45, 0.08)}
 
 enum Act { WALK, PUSH, ROPE, RIDE, SIT }
 
@@ -130,7 +138,7 @@ var _em_roll := 0.0          # 身ぶりが頭に足す傾き（首をかしげ�
 func _ready() -> void:
 	top_level = true
 	_scale = SCALE[kind]
-	var inst: Node3D = SCENES[kind].instantiate()
+	var inst: Node3D = (load(SCENES[kind]) as PackedScene).instantiate()
 	inst.scale = Vector3.ONE * _scale
 	add_child(inst)
 	skel = inst.find_children("*", "Skeleton3D", true, false)[0]

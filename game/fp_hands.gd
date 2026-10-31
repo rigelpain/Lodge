@@ -11,7 +11,17 @@ const STYLE := {
 			"leg": ["seigaiha", "3E7F86", "6FA9AD"], "foot": "1F1B1E"},
 	"origami": {"sleeve": [["paper", "3B5F99"], ["paper", "3B5F99"]], "hand": "D9BE97", "leg": ["paper", "F4F0E8"], "foot": "4A3326"},
 	"news": {"sleeve": [["burlap", "66773F"], ["burlap", "66773F"]], "hand": "E6DCC6", "leg": ["burlap", "5A4634"], "foot": "2A2016"},
+	# 紙のロボット: 段ボールの蛇腹の腕と、段ボールのこぶし。足は青緑に塗った箱
+	"robo": {"sleeve": [["card", "B78C5C"], ["card", "B78C5C"]], "hand": "C9A57A", "leg": ["card", "B78C5C"], "foot": "4A8A8C"},
+	# 折り紙の武者: 紺のフェルトの籠手に、折り紙の手。脛当ても紺、足袋はクリーム
+	"musha": {"sleeve": [["felt", "3C4E7C"], ["felt", "3C4E7C"]], "hand": "E8CFA6", "leg": ["felt", "2B3760"], "foot": "EDE3CF"},
+	# 絹の人形: 月白の絹の広袖に、和紙の手。脚は茜の裙の中、靴は藍の刺繍
+	"ningyo": {"sleeve": [["silk", "DCE3D6"], ["silk", "DCE3D6"]], "hand": "EBD9BC", "leg": ["silk", "A93F3A"], "foot": "2B3760"},
+	# 継ぎはぎの巨人: 灰色のフェルトの太い腕に、もんだ紙のこぶし
+	"golem": {"sleeve": [["felt", "8C877F"], ["felt", "8C877F"]], "hand": "D9BC92", "leg": ["felt", "8C877F"], "foot": "4A3A2E"},
 }
+## 人形ごとの袖口の太さ（MOUTH_R に掛ける）。巨人の腕は太く、ロボットの蛇腹は細い
+const SLEEVE_WIDE := {"robo": 0.85, "musha": 0.95, "ningyo": 1.35, "golem": 1.45}
 const LEG_R := 0.07          # 膝の太さ（半径）
 const SLEEVE_LEN := 0.22
 const MOUTH_R := 0.078       # 袖口の半径
@@ -22,6 +32,7 @@ static func make(kind: String, side: int, layers: int) -> Node3D:
 	var st: Dictionary = STYLE.get(kind, STYLE["kasa"])
 	var root := Node3D.new()
 	var cloth := _cloth(st["sleeve"][0 if side > 0 else 1])
+	var wide: float = SLEEVE_WIDE.get(kind, 1.0)
 
 	# 袖: 六角の筒。袖口がいちばん広く、肩のほうへ少しすぼまる。紙を折ったように面ごとに陰をつける
 	var cm := CylinderMesh.new()
@@ -33,6 +44,7 @@ static func make(kind: String, side: int, layers: int) -> Node3D:
 	cm.cap_top = false
 	cm.cap_bottom = false
 	var sleeve := _part(_flat(cm), cloth, layers)
+	sleeve.scale = Vector3(wide, 1.0, wide)
 	# 筒の y を腕の向き（+z が肩）に。袖口が手の少しうしろに来るように
 	sleeve.transform = Transform3D(Basis(Vector3.RIGHT, PI / 2).rotated(Vector3.FORWARD, 0.18 * side), Vector3(0, 0, 0.03 + SLEEVE_LEN * 0.5))
 	root.add_child(sleeve)
@@ -47,6 +59,7 @@ static func make(kind: String, side: int, layers: int) -> Node3D:
 	inner.albedo_color = Color(0.13, 0.1, 0.08)
 	inner.roughness = 1.0
 	var deep := _part(dm, inner, layers)
+	deep.scale = Vector3(wide, 1.0, wide)
 	deep.transform = Transform3D(Basis(Vector3.RIGHT, PI / 2).rotated(Vector3.FORWARD, 0.18 * side), Vector3(0, 0, 0.05))
 	root.add_child(deep)
 
@@ -74,8 +87,8 @@ static func make(kind: String, side: int, layers: int) -> Node3D:
 
 
 ## 袖の筒の、手の所から z (m) の半径（袖口がいちばん広く、肩のほうへすぼまる。角の所で測る）
-static func sleeve_r(z: float) -> float:
-	return MOUTH_R * lerpf(1.0, 0.72, clampf((z - 0.03) / SLEEVE_LEN, 0.0, 1.0))
+static func sleeve_r(z: float, kind := "") -> float:
+	return MOUTH_R * float(SLEEVE_WIDE.get(kind, 1.0)) * lerpf(1.0, 0.72, clampf((z - 0.03) / SLEEVE_LEN, 0.0, 1.0))
 
 
 static func _cloth(spec: Array) -> StandardMaterial3D:
@@ -85,6 +98,18 @@ static func _cloth(spec: Array) -> StandardMaterial3D:
 			cloth = Look.paper(Color(spec[1]))
 		"burlap":
 			cloth = Look.cloth(Color(spec[1]), 14.0)
+		"card":   # 段ボール: 紙より粗い繊維
+			cloth = Look.paper(Color(spec[1]))
+			cloth.roughness = 0.95
+		"felt":
+			cloth = Look.felt(Color(spec[1]), 2.0)
+		"silk":   # 絹: 細かい織り目に、控えめでやわらかい光（光の色は糸の色）
+			cloth = Look.cloth(Color(spec[1]), 26.0)
+			cloth.roughness = 0.5
+			cloth.metallic_specular = 0.35
+			cloth.rim_enabled = true
+			cloth.rim = 0.25
+			cloth.rim_tint = 0.8
 		_:
 			cloth = Look.wagara(spec[0], Color(spec[1]), Color(spec[2]), 6.0)
 	cloth.cull_mode = BaseMaterial3D.CULL_DISABLED
