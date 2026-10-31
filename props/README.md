@@ -391,6 +391,7 @@
 - **飲み物の衣類スチーマー**（`build_kitchen.py` の `giant_vapor`）: 藍の台座に透明なフィルムのタンク（白糸の枠）、水色の水と毛糸の水面。木の竿とハンガー、カップの棚、藍の頭。赤い毛糸のホースで台座の口金と頭をつなぐ。ふたは別の glb（`giant_vapor_lid`、原点は蝶番）。目印は `lid`・`drop`（ペレットを落とす所）・`water`・`hose_0`〜`hose_7`（ホースの道）・`head`（湯気の出口）・`cup`・`stand`
   - **落とし穴**: 名前に `steam` を入れない。`kit.prepare` と Godot の `props.gd` は、名前に steam を含む形を湯気の目印に替えるので、形が全部消える
   - **落とし穴**: 角を丸める役割（`P.hard`）の回転体に、軸に潰れた輪（半径 0 の点）を入れない。角の丸めで形が崩れ（`not valid`）、焼き込みから外れる
+  - **落とし穴**: glb を書き出し直したら、Godot が glb から取り出した画像（`<名前>_prop_*.jpg`）は古いまま残る（取り込み直しても上書きしない）。古い jpg と、その glb の `.glb.import`・`game/.godot/imported/<名前>.glb-*` を消してから `Godot --headless --path game --import` で取り込み直し、新しい jpg をコミットする
 - **冷蔵庫の扉を左開きに**（`build_snowman.py`）: 蝶番を前から見て左の縁へ。扉が装置の並びをふさがない
 - **厨房の巨大な装置は結合しない**: `build_scenes.py` の kitchen から外し、`game/main.gd` の `KITCHEN` が 1 台ずつ置く（調理で動かすため）。並びは西から冷蔵庫 → プレス機 → アイロン台 → 乾燥機 → スチーマー
 
