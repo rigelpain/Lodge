@@ -17,13 +17,14 @@
 | [build_slope.py](build_slope.py) | 斜面の小物（スピーカーの柱・コースの旗・毛糸の安全ネット・案内板） |
 | [build_machines.py](build_machines.py) | ロッジの中の機械と小物（ミシンの制作機・アイロン台の焼き台・スチーマー・乾燥機・カップ・食べ物の粒） |
 | [kit.py](kit.py) | ロッジの中の小物の台本が使う組み立て部品（品物ごとの部品箱、箱・円板・回転体・縫い目、並べて描く、書き出す） |
-| [build_food.py](build_food.py) | 食べ物と飲み物 28 品（中華まん・缶・ラーメン・そば・うどん・マグ・おにぎり・おでんなど） |
+| [build_food.py](build_food.py) | 食べ物と飲み物 41 品（中華まん・缶・ラーメン・そば・うどん・マグ・おにぎり・おでんなど。雪だるまの店の 13 品を 2026-11-01 に足した） |
+| [build_pellets.py](build_pellets.py) | 雪だるまの店で売るペレット 22 種（料理のもとの手芸の粒。料理ごとに色と形を変える） |
 | [build_room.py](build_room.py) | 床・壁・敷物・座布団・布団・小上がり・掘りごたつ |
 | [build_furniture.py](build_furniture.py) | 調度品と灯り（椅子・ソファ・プフ・卓・本棚・膝掛け・吊り灯り・行灯など） |
 | [build_hearth.py](build_hearth.py) | 暖炉・ストーブ・やかん・薪 |
 | [build_counter.py](build_counter.py) | 食べ物を買うカウンターまわり（メニュー板・レジ・お盆・給水機・ティッシュなど） |
 | [build_misc.py](build_misc.py) | 乾かす物干し、入口まわり、自動販売機、壁と窓の飾り |
-| [build_kitchen.py](build_kitchen.py) | 厨房の作業台と、卓に載せる調理の道具（アイロン台・プレス機・乾燥機）とペレットの入れ物 |
+| [build_kitchen.py](build_kitchen.py) | 厨房の作業台と、卓に載せる調理の道具（アイロン台・プレス機・乾燥機）とペレットの入れ物。巨大な調理の装置と、飲み物の衣類スチーマー（`giant_vapor` とふた `giant_vapor_lid`） |
 | [build_lantern.py](build_lantern.py) | 持ち歩くランタン（装備）: 木の手提げ（標準）と和紙の提灯 |
 | [build_snow_button.py](build_snow_button.py) | お金のボタン 4 段（木・真鍮・白蝶貝・螺鈿。斜面の雪に縫い留める。× の糸はゲームで描く）と、糸を切る裁ちばさみ。光る素材（brass・pearl・lacquer・shell・steel）は焼かずに書き出し、Godot の `look.gd` の `shine` が光らせる |
 | [build_snowman.py](build_snowman.py) | ご飯係の雪だるま（段ごとに動かせる節点）と、雪だるまが入る扉の開いた昔の冷蔵庫 |
@@ -380,6 +381,18 @@
 - ゲームで撮る: `Godot --path game --resolution 1280x720 -s res://tools/snowman_lodge_shot.gd -- --bots=0 --no-sound --no-pip --out=… --view=front|quarter|near|kitchen`（`--probe` で、まわりの壁までの距離とミシン・売り子・厨房の位置を出す）
 
 ほかに考えた案（入口の風除室・自販機の並び・テラスへの戸のそば）は、選ばなかった。
+
+## 雪だるまの食べ物屋（2026-11-01）
+
+代表と決めた品書きと調理の道は [design/snowman-food/](../design/snowman-food/README.md)。
+
+- **料理 13 品を足した**（`build_food.py`、`game/props/food/`）: コロッケ・ハッシュドポテト・ポテト・ホットサンド・焼き芋・ホットケーキ・焼きサンマ・焼き牡蠣・焼きそば・お汁粉・コーンポタージュ（`mug_corn`）・クラムチャウダー（`clam_chowder`）・ミルクティー（`mug_milktea`）。今ある 9 品（おにぎり・たい焼き・肉まん・ラーメン・うどん・そば・ココア・緑茶・ホットミルク）と合わせて 22 品。描く: `--views shop,shop_a,shop_b,shop_c,shop_d`（新しい料理だけを明るい卓に並べる）
+- **ペレット 22 種**（`build_pellets.py`、`game/props/pellets/pellet_<料理>.glb`）: おにぎりは白い毛玉にのり、ラーメンは黄色い毛糸の渦、肉まんは綿のふわふわ、ミルクティーはティーバッグ、など
+- **飲み物の衣類スチーマー**（`build_kitchen.py` の `giant_vapor`）: 藍の台座に透明なフィルムのタンク（白糸の枠）、水色の水と毛糸の水面。木の竿とハンガー、カップの棚、藍の頭。赤い毛糸のホースで台座の口金と頭をつなぐ。ふたは別の glb（`giant_vapor_lid`、原点は蝶番）。目印は `lid`・`drop`（ペレットを落とす所）・`water`・`hose_0`〜`hose_7`（ホースの道）・`head`（湯気の出口）・`cup`・`stand`
+  - **落とし穴**: 名前に `steam` を入れない。`kit.prepare` と Godot の `props.gd` は、名前に steam を含む形を湯気の目印に替えるので、形が全部消える
+  - **落とし穴**: 角を丸める役割（`P.hard`）の回転体に、軸に潰れた輪（半径 0 の点）を入れない。角の丸めで形が崩れ（`not valid`）、焼き込みから外れる
+- **冷蔵庫の扉を左開きに**（`build_snowman.py`）: 蝶番を前から見て左の縁へ。扉が装置の並びをふさがない
+- **厨房の巨大な装置は結合しない**: `build_scenes.py` の kitchen から外し、`game/main.gd` の `KITCHEN` が 1 台ずつ置く（調理で動かすため）。並びは西から冷蔵庫 → プレス機 → アイロン台 → 乾燥機 → スチーマー
 
 ## 画像
 

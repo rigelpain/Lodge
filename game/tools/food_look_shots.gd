@@ -5,8 +5,10 @@ extends SceneTree
 
 const LOOKS := [
 	["food_counter", Vector3(-2.4, 4.6, 1.7), Vector3(-1.8, 8.6, 1.3)],     # 雪だるまの番台（客の側から）
-	["food_kitchen", Vector3(1.0, 3.0, 3.2), Vector3(2.0, 10.5, 1.2)],      # 厨房の装置の並び
+	["food_kitchen", Vector3(4.0, 1.5, 3.6), Vector3(4.0, 10.0, 1.2)],      # 厨房の装置の並び（冷蔵庫 → プレス機 → アイロン台 → 乾燥機 → スチーマー）
 	["food_wide", Vector3(-6.0, 1.0, 3.4), Vector3(0.5, 9.5, 1.0)],         # 炉の右を斜めから
+	["food_drink", Vector3(8.0, 5.5, 2.4), Vector3(9.5, 10.0, 1.6)],        # 衣類スチーマー
+	["food_fridge", Vector3(-3.5, 5.0, 2.2), Vector3(-1.6, 10.0, 1.6)],     # 左へ開く冷蔵庫の扉
 ]
 
 var args := {}

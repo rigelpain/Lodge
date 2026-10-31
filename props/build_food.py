@@ -344,6 +344,18 @@ def mug(name, body, drink, topping=None):
     elif topping == "yuzu":
         K.disc(P, "felt_yellow", (0.008, 0.0, H - 0.01), 0.018, 0.003, segs=16)
         K.ring(P, "felt_cream", (0.008, 0.0, H - 0.008), 0.014, 0.0015, n=16)
+    elif topping == "corn":
+        rnd = random.Random(30)
+        for k in range(10):
+            a, r = rnd.uniform(0, 2 * math.pi), rnd.uniform(0.0, R * 0.7)
+            K.pbox(P, "felt_gold", (r * math.cos(a), r * math.sin(a), H - 0.01), (0.003, 0.003, 0.0025), n=3.0, c=2)
+        for k in range(4):
+            K.pbox(P, "felt_green", (0.01 * k - 0.015, 0.006 * (k % 2), H - 0.009), (0.002, 0.002, 0.001), n=2.0, c=2)
+    elif topping == "teabag":
+        K.tube(P, "thread", [(-R * 0.6, 0.0, H - 0.012), (-R * 0.95, 0.0, H + 0.004), (-R - 0.006, 0.0, H - 0.02), (-R - 0.007, 0.0, H - 0.035)],
+               0.0007, sides=4)
+        K.box(P, "paper_white", (-R - 0.008, 0.0, H - 0.043), (0.002, 0.016, 0.018))
+        K.box(P, "felt_red", (-R - 0.0095, 0.0, H - 0.038), (0.001, 0.012, 0.004))
     K.steam(P, (0, 0, H), 0.06, 0.007, seed=len(name))
     P.mark("hand", (R + 0.03, 0, H * 0.5))
     P.finish(fuzz=0.001)
@@ -388,6 +400,243 @@ def noodle_bowl(name, bowl, broth, noodle_role, thick, toppings, seed=0):
     P.finish(fuzz=0.0012)
 
 
+# ---------------------------------------------------------------- 雪だるまの店の料理（2026-11-01 代表と決めた品書き。design/snowman-food/）
+C.HEX.update({"felt_azuki": "6A2A34", "yarn_sauce": "9A5A2A", "felt_crumb": "C98A3E", "felt_silver": "9AA6B0",
+              "felt_shell": "8E8A84", "felt_potato": "E8C878", "felt_syrup": "8A4A1E"})
+
+
+def plate(P, role, R, rim="thread"):
+    """浅い皿: フェルトの円い皿の縁をかがる"""
+    K.lathe(P, role, [(0.0, 0.0), (R * 0.72, 0.0), (R * 0.92, 0.01), (R, 0.018), (R * 0.95, 0.02), (R * 0.8, 0.012), (0.0, 0.008)],
+            segs=K.cuts(40, 20))
+    K.stitch_ring(P, rim, (0, 0, 0.0165), R * 0.97, r=0.0011, dash=0.007)
+
+
+def crumbs(P, rnd, cx, cy, rx, ry, z, n, role="felt_crumb"):
+    """衣のパン粉: 小さなフェルトの粒を、楕円の上にばらまく"""
+    for k in range(n if not EX else n // 3):
+        a = rnd.uniform(0, 2 * math.pi)
+        r = rnd.uniform(0.0, 1.0) ** 0.5
+        K.pbox(P, role, (cx + rx * r * math.cos(a), cy + ry * r * math.sin(a), z - 0.004 * r * r), (0.003, 0.003, 0.002), n=3.0, c=2)
+
+
+def korokke(name):
+    """コロッケ: クラフト紙に、パン粉の衣の小判形を 2 つ。脇にキャベツの千切り（毛糸）"""
+    P = K.Parts(name, kind="food")
+    rnd = random.Random(21)
+    K.box(P, "paper_kraft", (0, 0, 0.001), (0.15, 0.12, 0.002), rot=(0.12, "Z"))
+    for x, y in ((-0.028, -0.005), (0.032, 0.012)):
+        K.pbox(P, "felt_gold", (x, y, 0.016), (0.034, 0.024, 0.014), n=2.0, nz=2.6, c=6)
+        crumbs(P, rnd, x, y, 0.03, 0.02, 0.03, 40)
+    for k in range(12 if not EX else 5):
+        a0 = rnd.uniform(-0.4, 0.4)
+        x0, y0 = -0.035 + rnd.uniform(-0.02, 0.02), 0.045 + rnd.uniform(-0.008, 0.008)
+        K.tube(P, "thread_green",
+               [(x0, y0, 0.004), (x0 + 0.03 * math.cos(a0), y0 + 0.012 * math.sin(a0) + 0.004, 0.006)], 0.0016, sides=4)
+    P.finish(fuzz=0.0012)
+
+
+def hashbrown(name):
+    """ハッシュドポテト: 紙の袋（上が開く）に、細切りを押し固めた小判形。表に細切りの筋を縫う"""
+    P = K.Parts(name, kind="food")
+    K.extrude(P, "paper_white", K.round_rect(0.085, 0.022, 0.006), 0.0, 0.055)
+    K.stitch_line(P, "thread_red", [(-0.04, 0.0115, 0.045), (0.04, 0.0115, 0.045)], r=0.0012, dash=0.008)
+    K.pbox(P, "felt_gold", (0, 0.0, 0.065), (0.04, 0.009, 0.032), n=2.4, nz=2.4, c=6)
+    rnd = random.Random(22)
+    for side in (1, -1):
+        for k in range(9):
+            x = -0.03 + 0.0075 * k
+            z0 = 0.05 + rnd.uniform(0.0, 0.01)
+            K.stitch_line(P, "thread_dark", [(x, side * 0.0095, z0), (x + rnd.uniform(-0.006, 0.006), side * 0.0095, z0 + 0.03)],
+                          r=0.0008, dash=0.005)
+    P.finish(fuzz=0.0012)
+
+
+def fries(name):
+    """ポテト: 赤いフェルトの紙箱（前が低い）に、細い棒のポテトを立てて差す"""
+    P = K.Parts(name, kind="food")
+    K.lathe(P, "felt_red", [(0.0, 0.0), (0.028, 0.0), (0.042, 0.08), (0.038, 0.08), (0.025, 0.004), (0.0, 0.004)],
+            segs=K.cuts(4, 4), rot=(math.pi / 4, "Z"))
+    K.stitch_ring(P, "thread", (0, 0, 0.07), 0.043, r=0.0011, dash=0.007)
+    rnd = random.Random(23)
+    for k in range(16 if not EX else 9):
+        x, y = rnd.uniform(-0.016, 0.016), rnd.uniform(-0.012, 0.012)
+        tx = rnd.uniform(-0.15, 0.15)
+        h = rnd.uniform(0.085, 0.115)
+        K.box(P, "felt_potato", (x + math.sin(tx) * h / 2, y, math.cos(tx) * h / 2 + 0.012), (0.008, 0.008, h), rot=(tx, "Y"))
+    P.finish(fuzz=0.001)
+
+
+def hotsand(name):
+    """ホットサンド: 三角に切った 2 切れを紙に。焼き色の格子を縫い、切り口からチーズ（黄のフェルト）"""
+    P = K.Parts(name, kind="food")
+    K.box(P, "paper_white", (0, 0, 0.001), (0.15, 0.12, 0.002), rot=(-0.1, "Z"))
+    for s, dx in ((1, 0.018), (-1, -0.018)):
+        tri = [(0.0, -0.055 * s), (0.0, 0.055 * s), (0.06 * s, 0.0)] if s > 0 else [(0.0, 0.055), (0.0, -0.055), (-0.06, 0.0)]
+        K.extrude(P, "felt_gold", tri, 0.002, 0.024, offset=(dx, 0, 0))
+        for k in range(3):
+            o = 0.012 + 0.014 * k
+            K.stitch_line(P, "thread_dark", [(dx + s * o, -0.045 + o * 0.8, 0.0245), (dx + s * o, 0.045 - o * 0.8, 0.0245)],
+                          r=0.0011, dash=0.006)
+        K.box(P, "felt_yellow", (dx + s * 0.002, 0.0, 0.013), (0.006, 0.07, 0.006))
+    P.finish(fuzz=0.0012)
+
+
+def yakiimo(name):
+    """焼き芋: 新聞紙（クラフト紙）にくるんだ紫の芋を、半分に割って黄色い中身。綿の湯気"""
+    P = K.Parts(name, kind="food")
+    K.extrude(P, "paper_kraft", [(-0.075, -0.05), (0.06, -0.06), (0.075, 0.05), (-0.06, 0.06)], 0.0, 0.003)
+    K.pbox(P, "paper_kraft", (-0.04, 0.0, 0.015), (0.035, 0.045, 0.015), n=2.0, nz=2.0, c=5)
+    K.pbox(P, "felt_purple", (0.0, 0.022, 0.022), (0.055, 0.021, 0.019), n=2.0, nz=2.2, c=6)   # 丸ごと 1 本
+    # 割った半分: 黄色い断面を上へ向けて斜めに立てかける
+    half = Matrix.Translation((0.01, -0.026, 0.02)) @ Matrix.Rotation(-0.7, 4, "Y")
+    m = P.m("felt_purple")
+    n0 = len(m.bm.verts)
+    C.superellipsoid(m, (-0.02, 0, 0), (0.028, 0.02, 0.018), n_xy=2.0, n_z=2.2, cuts=K.cuts(10, 6))
+    for v in C.new_verts(m, n0):
+        v.co.x = min(v.co.x, 0.0)
+    C.place(m, n0, half)
+    m = P.m("felt_yellow")
+    n0 = len(m.bm.verts)
+    C.superellipsoid(m, (0.0, 0, 0), (0.004, 0.0185, 0.0165), n_xy=2.0, n_z=2.0, cuts=K.cuts(8, 5))
+    C.place(m, n0, half)
+    K.steam(P, (0.03, -0.026, 0.05), 0.06, 0.008, seed=24)
+    P.finish(fuzz=0.0012)
+
+
+def hotcake(name):
+    """ホットケーキ: クリームの皿に、厚い生地を 2 枚。上にバターの角と、垂れるシロップ（茶のフェルト）"""
+    P = K.Parts(name, kind="food")
+    plate(P, "felt_cream", 0.1)
+    for k, z in enumerate((0.012, 0.036)):
+        K.lathe(P, "felt_tan", [(0.0, z), (0.062, z), (0.066, z + 0.01), (0.062, z + 0.022), (0.0, z + 0.022)], segs=K.cuts(36, 18))
+        K.disc(P, "felt_gold", (0, 0, z + 0.0225), 0.06, 0.002, segs=K.cuts(36, 18))
+    K.extrude(P, "felt_syrup", K.circle_poly(0.045, 20, 0.004, 0.0, sx=1.0, sy=0.85), 0.0595, 0.0615)
+    for a in (0.4, 2.3, 4.0):   # 縁から垂れる
+        K.box(P, "felt_syrup", (0.0645 * math.cos(a), 0.0645 * math.sin(a), 0.05), (0.003, 0.012, 0.02), rot=(a, "Z"))
+    K.pbox(P, "felt_cream", (0.0, 0.0, 0.07), (0.012, 0.012, 0.008), n=6.0, c=4)
+    P.finish(fuzz=0.0012)
+
+
+def sanma(name):
+    """焼きサンマ: 藍の長皿に、銀のフェルトの細い魚。背は濃く、焼き目を縫う。大根おろし（綿）とすだち"""
+    P = K.Parts(name, kind="food")
+    K.pbox(P, "felt_navy2", (0, 0, 0.007), (0.13, 0.045, 0.007), n=6.0, c=6)
+    K.pbox(P, "felt_silver", (-0.005, 0.0, 0.026), (0.1, 0.014, 0.012), n=2.0, nz=2.0, c=8)
+    K.pbox(P, "felt_charcoal", (-0.005, 0.0, 0.034), (0.095, 0.008, 0.006), n=2.0, nz=2.0, c=6)
+    K.extrude(P, "felt_silver", [(0.092, 0.0), (0.122, 0.016), (0.116, 0.0), (0.122, -0.016)], 0.02, 0.032)
+    for k in range(5):
+        x = -0.07 + 0.03 * k
+        K.stitch_line(P, "thread_dark", [(x, -0.012, 0.035), (x + 0.012, 0.012, 0.035)], r=0.0011, dash=0.005)
+    K.disc(P, "felt_charcoal", (-0.09, 0.0125, 0.03), 0.003, 0.002, axis="Y", segs=10)   # 目
+    K.pbox(P, "cotton", (-0.085, 0.03, 0.02), (0.016, 0.012, 0.01), n=2.0, c=5)          # 大根おろし
+    K.disc(P, "felt_green", (-0.06, 0.032, 0.018), 0.011, 0.006, axis="Y", segs=14)        # すだち
+    K.disc(P, "felt_yellow", (-0.06, 0.0355, 0.018), 0.009, 0.001, axis="Y", segs=14)
+    P.finish(fuzz=0.001)
+
+
+def kaki(name):
+    """焼き牡蠣: 白い角皿に、ごつごつした灰色の殻を 2 つ。中にふっくらした身と、レモン"""
+    P = K.Parts(name, kind="food")
+    rnd = random.Random(26)
+    K.pbox(P, "felt_cream", (0, 0, 0.005), (0.11, 0.07, 0.005), n=6.0, c=6)
+    for x, y, yaw in ((-0.045, -0.01, 0.3), (0.05, 0.012, -0.4)):
+        m = P.m("felt_shell")
+        n0 = len(m.bm.verts)
+        C.superellipsoid(m, (0, 0, 0), (0.045, 0.03, 0.012), n_xy=2.0, n_z=2.0, cuts=K.cuts(10, 6))
+        for v in C.new_verts(m, n0):   # ごつごつ
+            v.co *= 1.0 + 0.12 * math.sin(v.co.x * 160 + rnd.random()) * math.cos(v.co.y * 140)
+        C.place(m, n0, Matrix.Translation((x, y, 0.018)) @ Matrix.Rotation(yaw, 4, "Z"))
+        K.pbox(P, "felt_cream", (x, y, 0.028), (0.026, 0.017, 0.008), n=2.0, c=5, rot=(yaw, "Z"))
+        K.ring(P, "felt_tan", (x, y, 0.027), 0.022, 0.0025, n=20)
+    K.extrude(P, "felt_yellow", [(0.0, 0.0), (0.03, -0.006), (0.03, 0.006)], 0.01, 0.022, offset=(0.02, -0.045, 0))
+    P.finish(fuzz=0.001)
+
+
+def yakisoba(name):
+    """焼きそば: クリームの皿に、ソースの色の毛糸の麺。キャベツ・豚・紅しょうが・青のり"""
+    P = K.Parts(name, kind="food")
+    rnd = random.Random(27)
+    plate(P, "felt_cream", 0.1)
+    for k in range(20 if not EX else 10):
+        a0 = rnd.uniform(0, 2 * math.pi)
+        pts = []
+        for i in range(18):
+            t = i / 17
+            ang = a0 + t * rnd.uniform(1.0, 2.2)
+            r = 0.012 + 0.05 * t
+            pts.append((r * math.cos(ang), r * math.sin(ang), 0.022 + 0.012 * (1 - t) + 0.003 * math.sin(t * 30 + k)))
+        K.tube(P, "yarn_sauce", pts, 0.003, sides=5)
+    for k in range(8):
+        a, r = rnd.uniform(0, 2 * math.pi), rnd.uniform(0.0, 0.045)
+        K.pbox(P, rnd.choice(["felt_green", "felt_green", "felt_tan"]), (r * math.cos(a), r * math.sin(a), 0.036),
+               (0.008, 0.006, 0.002), n=3.0, c=3, rot=(rnd.uniform(0, 3), "Z"))
+    for k in range(4):
+        K.box(P, "felt_red", (0.018 + 0.004 * k, -0.012 + 0.003 * k, 0.04), (0.012, 0.002, 0.002), rot=(0.5, "Z"))
+    for k in range(18 if not EX else 6):
+        a, r = rnd.uniform(0, 2 * math.pi), rnd.uniform(0.0, 0.05)
+        K.pbox(P, "felt_green", (r * math.cos(a), r * math.sin(a), 0.038), (0.0015, 0.0015, 0.001), n=2.0, c=2)
+    K.steam(P, (0, 0, 0.045), 0.05, 0.007, seed=27)
+    P.finish(fuzz=0.0012)
+
+
+def wan(P, role, R, H):
+    """お椀"""
+    K.lathe(P, role, [(0.0, 0.0), (R * 0.45, 0.0), (R * 0.5, 0.008), (R * 0.85, H * 0.5), (R, H), (R * 0.94, H + 0.001),
+                      (R * 0.8, H * 0.55), (R * 0.4, 0.014), (0.0, 0.012)], segs=K.cuts(40, 20))
+    K.stitch_ring(P, "thread", (0, 0, H - 0.008), R * 0.99, r=0.0011, dash=0.006)
+
+
+def oshiruko(name):
+    """お汁粉: 赤い椀にあずき色の汁と小豆の粒。焼き目のついた白い餅を 2 つ。綿の湯気"""
+    P = K.Parts(name, kind="drink")
+    rnd = random.Random(28)
+    R, H = 0.055, 0.055
+    wan(P, "felt_red", R, H)
+    K.disc(P, "felt_azuki", (0, 0, H - 0.01), R * 0.88, 0.003, segs=K.cuts(36, 18))
+    for k in range(14 if not EX else 6):
+        a, r = rnd.uniform(0, 2 * math.pi), rnd.uniform(0.0, R * 0.8)
+        K.pbox(P, "felt_azuki", (r * math.cos(a), r * math.sin(a), H - 0.008), (0.004, 0.003, 0.003), n=2.0, c=2)
+    for x, y, yaw in ((-0.012, 0.006, 0.3), (0.016, -0.01, -0.2)):
+        K.pbox(P, "felt_rice", (x, y, H - 0.004), (0.016, 0.013, 0.008), n=3.0, c=4, rot=(yaw, "Z"))
+        K.disc(P, "felt_tan", (x + 0.004, y, H + 0.004), 0.005, 0.0015, segs=10)
+    K.steam(P, (0, 0, H), 0.06, 0.007, seed=28)
+    P.finish(fuzz=0.001)
+
+
+def corn_potage(name):
+    """コーンポタージュ: クリームのマグに黄色のスープ。コーンの粒とパセリ"""
+    mug(name, "felt_cream", "felt_yellow", "corn")
+
+
+def clam_chowder(name):
+    """クラムチャウダー: 藍の深皿にクリームのスープ。人参・じゃがいもの角切りと小さな貝。横にクラッカー"""
+    P = K.Parts(name, kind="drink")
+    rnd = random.Random(29)
+    R, H = 0.065, 0.045
+    wan(P, "felt_navy2", R, H)
+    K.disc(P, "felt_cream", (0, 0, H - 0.008), R * 0.88, 0.003, segs=K.cuts(36, 18))
+    for k in range(9):
+        a, r = rnd.uniform(0, 2 * math.pi), rnd.uniform(0.0, R * 0.75)
+        K.pbox(P, rnd.choice(["felt_orange", "felt_potato", "felt_potato"]), (r * math.cos(a), r * math.sin(a), H - 0.005),
+               (0.005, 0.005, 0.004), n=4.0, c=3)
+    for k in range(3):
+        a = k * 2.1 + 0.4
+        K.extrude(P, "felt_shell", K.circle_poly(0.008, 10, 0, 0, sx=1.0, sy=0.7), H - 0.006, H - 0.002,
+                  offset=(0.03 * math.cos(a), 0.03 * math.sin(a), 0))
+    K.pbox(P, "felt_tan", (R + 0.03, -0.02, 0.004), (0.022, 0.022, 0.004), n=6.0, c=4)   # クラッカー
+    for i in range(3):
+        for j in range(3):
+            K.disc(P, "felt_brown", (R + 0.016 + 0.014 * i, -0.034 + 0.014 * j, 0.0085), 0.0015, 0.001, segs=6)
+    K.steam(P, (0, 0, H), 0.05, 0.006, seed=29)
+    P.finish(fuzz=0.001)
+
+
+def milk_tea(name):
+    """ミルクティー: 桃色のマグに、ミルクティーの色。縁からティーバッグの糸と紙の札"""
+    mug(name, "felt_pink", "felt_tan", "teabag")
+
+
 # ---------------------------------------------------------------- 組む
 bun("nikuman", "felt_bun")
 bun("anman", "felt_bun", "dot", "felt_red")
@@ -418,6 +667,19 @@ mug("mug_yuzu", "felt_cream", "felt_yellow", "yuzu")
 noodle_bowl("soba", "felt_charcoal" if "felt_charcoal" in C.HEX else "felt_navy2", "felt_broth", "yarn_soba", 0.0028,
             ["kakiage", "negi"], seed=4)
 noodle_bowl("udon", "felt_cream", "felt_broth_shio", "yarn_cream", 0.0055, ["kitsune", "negi", "kamaboko"], seed=5)
+korokke("korokke")
+hashbrown("hashbrown")
+fries("fries")
+hotsand("hotsand")
+yakiimo("yakiimo")
+hotcake("hotcake")
+sanma("sanma")
+kaki("kaki")
+yakisoba("yakisoba")
+oshiruko("oshiruko")
+corn_potage("mug_corn")
+clam_chowder("clam_chowder")
+milk_tea("mug_milktea")
 
 if A.export:
     K.export_all(A.export, A.only.split(",") if A.only else None)
@@ -429,6 +691,8 @@ else:
         "snacks": ["onigiri_ume", "onigiri_salmon", "onigiri_konbu", "oden", "taiyaki", "mikan", "yunomi_wood",
                    "yunomi_navy", "dango", "curry"],
         "more": ["mug_cocoa", "mug_milk", "mug_yuzu", "soba", "udon"],
+        "shop": ["korokke", "hashbrown", "fries", "hotsand", "yakiimo", "hotcake", "sanma"],
+        "shop2": ["kaki", "yakisoba", "oshiruko", "mug_corn", "clam_chowder", "mug_milktea"],
     }
     roots = {r.name: r for r, p in K.made}
     TZ = 0.75
@@ -438,6 +702,13 @@ else:
     K.grid_place([roots[n] for n in groups["ramen"]], 3, 0.27, 0.0, x0=-0.15, y0=-0.25, z=TZ)
     K.grid_place([roots[n] for n in groups["snacks"]], 5, 0.16, 0.2, x0=0.0, y0=-0.62, z=TZ)
     K.grid_place([roots[n] for n in groups["more"]], 5, 0.18, 0.0, x0=0.25, y0=-0.98, z=TZ)
+    if A.views.startswith("shop"):   # 雪だるまの店の新しい料理だけを、明るい卓に並べる
+        for r, _p in K.made:
+            if r.name not in groups["shop"] + groups["shop2"]:
+                for o in [r] + K.descendants(r):
+                    o.hide_render = True
+        K.grid_place([roots[n] for n in groups["shop"]], 7, 0.26, 0.0, x0=-0.25, y0=-0.05, z=TZ)
+        K.grid_place([roots[n] for n in groups["shop2"]], 6, 0.27, 0.0, x0=-0.15, y0=-0.45, z=TZ)
     roots["bun_case"].location = (1.25, 0.05, TZ)
     roots["oden"].rotation_euler.z = 0.3
     K.room()
@@ -450,5 +721,10 @@ else:
         "snacks": ((0.35, -0.05, 1.05), (0.35, -0.75, 0.77), 34),
         "case": ((1.25, 0.9, 1.15), (1.25, 0.05, 1.0), 36),
         "more": ((0.6, -0.45, 1.02), (0.6, -1.0, 0.78), 36),
+        "shop": ((0.55, 0.75, 1.45), (0.55, -0.25, 0.78), 34),
+        "shop_a": ((0.13, 0.42, 1.0), (0.13, -0.05, 0.77), 34),
+        "shop_b": ((0.95, 0.42, 1.0), (0.95, -0.05, 0.77), 34),
+        "shop_c": ((0.35, 0.0, 1.0), (0.35, -0.45, 0.77), 34),
+        "shop_d": ((1.0, 0.0, 1.0), (1.0, -0.45, 0.77), 34),
     }
     K.render_views(A, cams)
