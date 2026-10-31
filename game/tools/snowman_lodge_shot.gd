@@ -1,7 +1,7 @@
 extends SceneTree
 ## ゲームの場面（main.tscn）で、ミシンのまわり（slot_craft_rental）を撮る。雪だるまの冷蔵庫の置き場の確かめ用。
 ##   Godot --path game --resolution 1280x720 -s res://tools/snowman_lodge_shot.gd -- --bots=0 --no-sound --no-pip \
-##       --out=/path/to.png [--view=front|top|quarter|near]
+##       --out=/path/to.png [--view=front|top|quarter|near|kitchen]
 ## 目印の座標で: +Z が食堂の側（ミシンの正面）、ミシンの正面から見て右が +X
 
 var args := {}
@@ -23,9 +23,10 @@ func _run() -> void:
 	var cam := Camera3D.new()
 	slot.add_child(cam)
 	var at := {
-		"front": [Vector3(1.8, 1.8, 8.5), Vector3(1.8, 1.0, 0.5)],
-		"quarter": [Vector3(-2.0, 2.4, 7.0), Vector3(2.5, 0.9, 0.0)],
-		"near": [Vector3(2.4, 1.45, 5.6), Vector3(3.2, 1.0, 2.0)],
+		"front": [Vector3(2.4, 2.2, 10.5), Vector3(2.4, 1.5, 0.0)],
+		"quarter": [Vector3(-2.0, 2.6, 8.0), Vector3(3.5, 1.4, -0.5)],
+		"near": [Vector3(3.0, 1.5, 5.5), Vector3(3.7, 1.7, -1.0)],
+		"kitchen": [Vector3(5.5, 2.4, 9.0), Vector3(6.5, 1.4, -0.5)],
 		"top": [Vector3(1.5, 3.3, 1.6), Vector3(1.5, 0.0, 1.5)],
 	}
 	if args.has("probe"):   # 目印の座標で、まわりの壁までの距離と、ミシンの大きさを出す
@@ -46,6 +47,7 @@ func _run() -> void:
 				first = false
 			print("box (slot) ", c.name, ": ", box)
 		var kitchen := main.find_child("slot_food_kitchen", true, false) as Node3D
+		print("kitchen slot in craft slot: ", slot.to_local(kitchen.global_position), " yaw ", kitchen.global_rotation.y - slot.global_rotation.y)
 		for mi in kitchen.find_children("*", "MeshInstance3D", true, false):   # 厨房の西の端の品物（ミシンの目印の座標で）
 			var b: AABB = slot.global_transform.affine_inverse() * mi.global_transform * mi.get_aabb()
 			if b.position.x < 6.0:
