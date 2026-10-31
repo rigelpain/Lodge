@@ -152,7 +152,7 @@ func _physics_process(dt: float) -> void:
 		var who: Node3D = hub.people[id]
 		if who == null or not is_instance_valid(who):
 			continue
-		if authority:
+		if authority and not who.get("stays_dry"):   # 一人プレイの仲間（bot.gd）は湿らない
 			values[id] = clampf(value(id) + _rate(id, who, dt), LO, HI)
 		var d: Doll = who.get("doll")
 		if d and is_instance_valid(d):

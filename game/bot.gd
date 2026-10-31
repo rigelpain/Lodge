@@ -40,6 +40,7 @@ var _still := 0.0
 var _wait := 0.0
 var hub: Emotes
 var id := -1
+var stays_dry := true         # 一人プレイの仲間（CPU）は湿らない（damp.gd。乾かしに行かないので。2026-11-01 代表「一人プレイの時の CPU は濡れないように」）
 var _replies: Array = []     # [残り秒, 身ぶり]
 var _five_with := -1         # ハイタッチをしにいく相手の番号
 var _five_until := 0         # このコマまでに届かなければやめる
