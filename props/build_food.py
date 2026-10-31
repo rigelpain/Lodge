@@ -6,6 +6,8 @@
     /Applications/Blender.app/Contents/MacOS/Blender -b -P props/build_food.py -- \
         --look flat --export game/props/food
 
+    /Applications/Blender.app/Contents/MacOS/Blender -b -P props/build_food.py -- --icons game/props/food/icons
+
 食べ物はフェルトで形を作り、麺は毛糸、湯気とご飯の白は綿、包み紙は紙。缶はフェルトを巻いた筒に、
 アップリケのラベル（文字なし。中身を絵で見せる）。日本のゲレンデのロッジで食べるもの。
 """
@@ -22,7 +24,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import kit as K  # noqa: E402
 
-A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）"))])
+A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）")),
+              ("--icons", dict(default="", help="この場所に、品物ごとのアイコン（背景を透かした絵）を描く"))])
 K.setup(A, fiber=4.0, scale=1.5, tris=1200)
 EX = K.S["export"]
 
@@ -253,27 +256,147 @@ def oden(name):
     P.finish(fuzz=0.001)
 
 
+# たい焼きの横から見た輪郭（x は頭が +、z は上が +。m）。写真で確かめた形（2026-11-01、Wikimedia Commons の Taiyaki_003.jpg）:
+# 頭が大きく丸い深い体、前の下に小さな口、背に低く長いひれ、腹に小さなひれ、くびれた付け根から上下に尖った 2 つの先の尾びれ
+TAI_OUTLINE = [
+    (0.061, 0.003), (0.059, 0.013), (0.053, 0.023), (0.043, 0.031), (0.031, 0.036), (0.020, 0.039),
+    (0.012, 0.041), (0.006, 0.040), (0.0, 0.042), (-0.006, 0.040), (-0.012, 0.041), (-0.018, 0.038), (-0.024, 0.038),   # 背びれ（ぎざぎざ）
+    (-0.029, 0.031), (-0.035, 0.022), (-0.039, 0.017),   # 付け根のくびれ
+    (-0.047, 0.025), (-0.057, 0.034), (-0.067, 0.042), (-0.072, 0.040),   # 尾びれの上の先
+    (-0.068, 0.025), (-0.063, 0.011), (-0.064, 0.0), (-0.063, -0.011), (-0.068, -0.025),   # 尾の切れ込み
+    (-0.072, -0.040), (-0.067, -0.042), (-0.057, -0.034), (-0.047, -0.025), (-0.039, -0.017),
+    (-0.035, -0.022), (-0.029, -0.029), (-0.022, -0.033), (-0.016, -0.037), (-0.010, -0.034), (-0.004, -0.036),   # 腹びれ
+    (0.004, -0.034), (0.016, -0.033), (0.028, -0.030), (0.040, -0.024), (0.049, -0.017), (0.055, -0.011),
+    (0.058, -0.007), (0.054, -0.004), (0.060, -0.002),   # 口
+]
+
+
+def _seg_dist(px, pz, ax, az, bx, bz):
+    dx, dz = bx - ax, bz - az
+    t = max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / (dx * dx + dz * dz + 1e-12)))
+    return math.hypot(px - ax - t * dx, pz - az - t * dz), (ax + t * dx, az + t * dz)
+
+
+def _outline_info(poly, x, z):
+    """輪郭の中か、縁までの距離、縁のいちばん近い点"""
+    inside = False
+    best, near = 1e9, (x, z)
+    n = len(poly)
+    for i in range(n):
+        ax, az = poly[i]
+        bx, bz = poly[(i + 1) % n]
+        if (az > z) != (bz > z) and x < (bx - ax) * (z - az) / (bz - az) + ax:
+            inside = not inside
+        d, q = _seg_dist(x, z, ax, az, bx, bz)
+        if d < best:
+            best, near = d, q
+    return inside, best, near
+
+
+def _tai_thick(x, d):
+    """表の面の高さ（片側）: 胴はふっくら 14 mm、尾とひれは薄く。縁へ丸く落ちる"""
+    body = 0.011 if x > -0.024 else (0.0035 if x < -0.042 else 0.0035 + 0.0075 * (x + 0.042) / 0.018)
+    k = min(d / 0.011, 1.0)
+    return body * math.sqrt(max(0.0, 1.0 - (1.0 - k) ** 3))   # 上は平たく、縁できりっと落ちる
+
+
 def taiyaki(name):
-    """たい焼き: 魚の形をふっくら押し出し、うろこを縫い目で"""
-    P = K.Parts(name, kind="food")
-    body = []
-    for k in range(40):
-        t = 2 * math.pi * k / 40
-        x = 0.05 * math.cos(t)
-        y = 0.028 * math.sin(t) * (0.6 + 0.4 * math.cos(t))
-        body.append((x, y))
-    tail = [(-0.045, 0.0), (-0.075, 0.022), (-0.068, 0.0), (-0.075, -0.022)]
-    for poly in (body, tail):
-        K.extrude(P, "felt_tan", poly, -0.009, 0.009, plane="XZ", offset=(0, 0, 0.03))
-    for side in (1, -1):   # うろこ: 波の縫い目を数列
-        for row in range(3):
-            pts = []
-            for k in range(14):
-                x = -0.035 + 0.06 * k / 13
-                pts.append((x, side * 0.0095, 0.03 + (row - 1) * 0.012 + 0.003 * math.sin(k * 1.6)))
-            K.stitch_line(P, "thread_dark", pts, r=0.0009, dash=0.006)
-        K.disc(P, "felt_brown", (0.032, side * 0.0095, 0.038), 0.004, 0.002, axis="Y", segs=12)   # 目
-    P.finish(fuzz=0.001)
+    """たい焼き: きつね色のフェルト 2 枚を縁で縫い合わせた鯛。盛り上がった線（えら・うろこ・ひれの筋・目の輪）は、
+    焼き色のフェルトのひもを縫い付けて表す。寝かせて置く（片面が上）。長さ 13 cm、高さ 8 cm、厚さ 2.2 cm"""
+    P = K.Parts(name, kind="food", tris=2600)
+    poly = TAI_OUTLINE
+    step = 0.0025 if not EX else 0.003
+    xs = [-0.075 + step * i for i in range(int(0.14 / step) + 2)]
+    zs = [-0.045 + step * j for j in range(int(0.09 / step) + 2)]
+    info = {}
+    for i, x in enumerate(xs):
+        for j, z in enumerate(zs):
+            info[i, j] = _outline_info(poly, x, z)
+
+    def height(x, z):
+        ins, d, _q = _outline_info(poly, x, z)
+        return _tai_thick(x, d) if ins else 0.0
+
+    for side in (1, -1):   # 表（+Y）と裏。胴はきつね色、尾とひれの先は焼き色が濃い
+        verts = {}
+
+        def v(i, j, role):
+            if (role, i, j) not in verts:
+                ins, d, near = info[i, j]
+                x, z = (xs[i], zs[j]) if ins else near   # 外の点は縁へ寄せる（縁で表と裏が合う）
+                y = _tai_thick(x, d) if ins else 0.0
+                verts[role, i, j] = P.m(role).bm.verts.new((x, side * y, z))
+            return verts[role, i, j]
+
+        for i in range(len(xs) - 1):
+            for j in range(len(zs) - 1):
+                corners = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)]
+                if not any(info[c][0] for c in corners):
+                    continue
+                cx, cz = xs[i] + step / 2, zs[j] + step / 2
+                toast = cx < -0.041 or abs(cz) > 0.034
+                role = "felt_toast" if toast else "felt_taiyaki"
+                vs = [v(c[0], c[1], role) for c in corners]
+                if len({id(q) for q in vs}) < 3:
+                    continue
+                if side < 0:
+                    vs.reverse()
+                try:
+                    P.m(role).bm.faces.new(vs)
+                except ValueError:
+                    pass
+
+        def on(x, z, lift=0.0012):
+            return (x, side * (height(x, z) + lift), z)
+
+        def cord(pts, r=0.0013, role="felt_curry"):
+            K.tube(P, role, [on(x, z) for x, z in pts], r, sides=5)
+
+        # 目: 二重の輪と、まんなかの粒
+        ex, ez = 0.043, 0.014
+        for rr in (0.0045, 0.0085):
+            cord([(ex + rr * math.cos(a), ez + rr * math.sin(a)) for a in [2 * math.pi * k / 20 for k in range(21)]], 0.0011)
+        K.pbox(P, "felt_brown", on(ex, ez, 0.0008), (0.0025, 0.0018, 0.0025), n=2.0, c=3)
+        # えら: 目の後ろの大きな弧（上から下へ、尾の側へふくらむ）
+        cord([(0.05 - 0.032 * math.cos(a), 0.032 * math.sin(a) * 0.95) for a in [math.radians(t) for t in range(-62, 63, 6)]], 0.0016)
+        # 口
+        cord([(0.058, -0.0045), (0.052, -0.006), (0.047, -0.004)], 0.001)
+        # うろこ: 半円の弧（開きは頭の側）を互い違いの列に
+        for c in range(6):
+            x0 = 0.012 - 0.0072 * c
+            for r in range(-3, 4):
+                z0 = r * 0.0078 + (0.0039 if c % 2 else 0.0)
+                if not _outline_info(poly, x0 - 0.004, z0)[0] or _outline_info(poly, x0 - 0.004, z0)[1] < 0.007:
+                    continue
+                cord([(x0 - 0.004 * math.sin(a), z0 + 0.004 * math.cos(a)) for a in [math.pi * k / 8 for k in range(9)]], 0.0009)
+        # 胸びれ: えらの後ろの小さな扇
+        for k in range(4):
+            a = math.radians(-150 + 22 * k)
+            cord([(0.016, -0.012), (0.016 + 0.011 * math.cos(a), -0.012 + 0.011 * math.sin(a))], 0.0009)
+        # 尾びれの筋: 付け根から扇に
+        for k in range(7):
+            t = k / 6
+            tip = (-0.069, 0.036 - 0.072 * t)
+            mid = (-0.055, 0.02 - 0.04 * t)
+            cord([(-0.04, 0.0), mid, tip], 0.0011)
+        # 背びれ・腹びれの筋
+        for k in range(5):
+            x = 0.012 - 0.008 * k
+            cord([(x, 0.031), (x - 0.002, 0.038)], 0.0009)
+        for k in range(3):
+            x = -0.004 - 0.006 * k
+            cord([(x, -0.028), (x - 0.002, -0.034)], 0.0009)
+    for role in ("felt_taiyaki", "felt_toast"):   # 縁に寄せて重なった点を合わせ（表と裏もここで閉じる）、潰れた面を消す
+        bm = P.m(role).bm
+        bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=0.0003)
+        bmesh.ops.dissolve_degenerate(bm, dist=0.0003, edges=bm.edges)
+    # 縁: 2 枚を合わせた縫い目（ふくらんだ縁と、なみ縫い）
+    ring = poly + [poly[0]]
+    K.tube(P, "felt_toast", [(x, 0.0, z) for x, z in ring], 0.0022, sides=6)
+    K.stitch_line(P, "thread_dark", [(x * 1.0, 0.0024, z * 1.0) for x, z in ring], r=0.0007, dash=0.004)
+    # 寝かせる: 表（+Y）を上へ
+    P.transform(Matrix.Translation((0, 0, 0.0115)) @ Matrix.Rotation(-math.pi / 2, 4, "X"))
+    P.finish(fuzz=0.0004)   # 皮はぱりっと: 毛羽は控えめ
 
 
 def mikan(name, n=3):
@@ -402,7 +525,8 @@ def noodle_bowl(name, bowl, broth, noodle_role, thick, toppings, seed=0):
 
 # ---------------------------------------------------------------- 雪だるまの店の料理（2026-11-01 代表と決めた品書き。design/snowman-food/）
 C.HEX.update({"felt_azuki": "6A2A34", "yarn_sauce": "9A5A2A", "felt_crumb": "C98A3E", "felt_silver": "9AA6B0",
-              "felt_shell": "8E8A84", "felt_potato": "E8C878", "felt_syrup": "8A4A1E"})
+              "felt_shell": "8E8A84", "felt_potato": "E8C878", "felt_syrup": "8A4A1E",
+              "felt_taiyaki": "C98838", "felt_toast": "9E5E22"})
 
 
 def plate(P, role, R, rim="thread"):
@@ -681,8 +805,14 @@ corn_potage("mug_corn")
 clam_chowder("clam_chowder")
 milk_tea("mug_milktea")
 
+SHOP_MENU = ["onigiri_salmon", "taiyaki", "nikuman", "korokke", "hashbrown", "fries", "hotsand", "yakiimo", "hotcake", "sanma", "kaki",
+             "yakisoba", "ramen_shoyu", "udon", "soba", "mug_cocoa", "oshiruko", "mug_corn", "clam_chowder", "yunomi_navy", "mug_milk",
+             "mug_milktea"]   # 雪だるまの店の品書きの順（design/snowman-food/）
+
 if A.export:
     K.export_all(A.export, A.only.split(",") if A.only else None)
+elif A.icons:   # 雪だるまの店の画面のアイコン（game/props/food/icons/）
+    K.render_icons(A.icons, [n for n in SHOP_MENU if not A.only or n in A.only.split(",")], size=256, pad=1.12)
 else:
     groups = {
         "buns": ["nikuman", "anman", "pizzaman", "curryman"],
@@ -702,6 +832,13 @@ else:
     K.grid_place([roots[n] for n in groups["ramen"]], 3, 0.27, 0.0, x0=-0.15, y0=-0.25, z=TZ)
     K.grid_place([roots[n] for n in groups["snacks"]], 5, 0.16, 0.2, x0=0.0, y0=-0.62, z=TZ)
     K.grid_place([roots[n] for n in groups["more"]], 5, 0.18, 0.0, x0=0.25, y0=-0.98, z=TZ)
+    if A.views.startswith("taiyaki"):   # たい焼きだけ
+        for r, _p in K.made:
+            if r.name != "taiyaki":
+                for o in [r] + K.descendants(r):
+                    o.hide_render = True
+        roots["taiyaki"].location = (0.0, -0.2, TZ)
+        roots["taiyaki"].rotation_euler.z = 0.35
     if A.views.startswith("shop"):   # 雪だるまの店の新しい料理だけを、明るい卓に並べる
         for r, _p in K.made:
             if r.name not in groups["shop"] + groups["shop2"]:
@@ -726,5 +863,7 @@ else:
         "shop_b": ((0.95, 0.42, 1.0), (0.95, -0.05, 0.77), 34),
         "shop_c": ((0.35, 0.0, 1.0), (0.35, -0.45, 0.77), 34),
         "shop_d": ((1.0, 0.0, 1.0), (1.0, -0.45, 0.77), 34),
+        "taiyaki": ((0.0, 0.0, 1.05), (0.0, -0.2, 0.75), 26),
+        "taiyaki_side": ((0.25, -0.02, 0.85), (0.0, -0.2, 0.76), 30),
     }
     K.render_views(A, cams)
