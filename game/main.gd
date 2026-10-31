@@ -63,7 +63,7 @@ const Seats := preload("res://seats.gd")
 const SHOP_AT := Vector3(2.0, 0, 1.0)
 const SHOP_YAW := PI - 0.5
 ## ご飯係の雪だるまの冷蔵庫の立つ所（厨房の目印 slot_food_kitchen の座標。厨房の奥の並びのいちばん西＝ミシンの右。
-## もとは巨大なアイロン台の所）と大きさ（ミシンと同じくらいの高さ 3.7 m）。当たり判定の箱は倍率 1 の幅・高さ・奥行き
+## 厨房の装置は東へ詰めてある: props/build_scenes.py）と大きさ（ミシンと同じくらいの高さ 3.7 m）。当たり判定の箱は倍率 1 の幅・高さ・奥行き
 const SNOWMAN_AT := Vector3(-7.15, 0, -1.07)
 const SNOWMAN_SCALE := 1.85
 const FRIDGE_BOX := Vector3(1.1, 2.0, 0.85)

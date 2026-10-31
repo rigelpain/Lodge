@@ -294,7 +294,7 @@
 | `pellet_tray` | 仕分けの盆（3 × 2 に色ごと） |
 
 - 調理の道具は、厨房の顔になるよう巨大な装置にした（代表「アイコニックにするために巨大な装置に。今のも可愛いからバージョン違いとして」）。卓上の道具は同じ形の小さい版として残す（`heat_press_body()` `dryer_body()` を大きさを変えて使う）
-- 場面 `kitchen`（`build_scenes.py`、`game/props/sets/kitchen.tscn`）: 巨大なアイロン台・プレス機・乾燥機を奥に並べ（2026-10-31 にアイロン台は一旦外し、そこに雪だるまの冷蔵庫）、正面をカウンターの側へ。東の端の作業台に卓上のアイロン台と乾燥機。床に麻袋と仕分けの盆、ロッジの奥の台に瓶と紙袋。装置と作業台には当たり判定の箱。`main.gd` がロッジの `slot_food_kitchen` に置く
+- 場面 `kitchen`（`build_scenes.py`、`game/props/sets/kitchen.tscn`）: 巨大なアイロン台・プレス機・乾燥機を奥に並べ、正面をカウンターの側へ（2026-10-31 に東の端の作業台と卓上の道具を片付け、装置を東へ詰めて、西の端に雪だるまの冷蔵庫）。床に麻袋と仕分けの盆、ロッジの奥の台に瓶と紙袋。装置には当たり判定の箱。`main.gd` がロッジの `slot_food_kitchen` に置く
 - **入口はまだない**: 厨房はロッジのカウンターと両脇の間仕切りでふさがっていて、すき間は 0.3〜0.43 m（人の太さは 0.7 m）。カウンターの端に抜ける所（跳ね上げの板など、幅 1 m ほど）を作るのはロッジのセッションの仕事なので、頼んである
 
 ```bash
@@ -364,14 +364,15 @@
 - 描く: `Blender -b -P props/build_snowman.py -- --views front,quarter,side,door,face --prefix props/renders/30-snowman-fridge`。雪だるまだけを冷蔵庫の外に出して描くときは `--apart --views s_front,s_quarter,s_side,s_back`
 - ゲームで撮る: `Godot --path game -s res://tools/snowman_shots.gd -- --out=… --view=front|quarter|side|dolls|bow`（`dolls` は人形 3 体と並べる、`bow` は節点を回したおじぎの見本）。撮った絵は [docs/shots/snowman-fridge/](../docs/shots/snowman-fridge/)（`0*` がゲーム、`1*` が Blender）
 
-### 置き場所: ミシンの右、厨房の奥の並び（2026-10-31 代表「ミシンの右がいい」「小さいアイロンとかある机一旦消して同じ並びに冷蔵庫収まらない？」「冷蔵庫ミシンばりに大きく」）
+### 置き場所: ミシンの右、厨房の奥の並びの西の端（2026-10-31 代表「ミシンの右がいい」「冷蔵庫ミシンばりに大きく」「右端の通常サイズアイロンを片付けて、めっちゃデカいアイロンモチーフの調理施設を戻して、右詰めに」）
 
-ミシンの右にあった巨大なアイロン台を一旦外し（`build_scenes.py` の厨房の場面。麻袋 2 つも東へ寄せた）、その所に冷蔵庫を立てた。奥の並びは西から、ミシン → 冷蔵庫 → プレス機 → 乾燥機。
+厨房の東の端の作業台（卓上のアイロン台・乾燥機・たい焼き）を片付け、巨大なアイロン台・プレス機・乾燥機を東へ詰めた（`build_scenes.py` の厨房の場面）。空いた西の端に冷蔵庫を立てた。奥の並びは西から、ミシン → 冷蔵庫 → （麻袋）→ アイロン台 → プレス機 → 乾燥機。自販機は動かしていない。
 
 - `game/main.gd` の `_put_snowman()` が、厨房の目印 `slot_food_kitchen` の座標 `SNOWMAN_AT`（x = -7.15, z = -1.07。ミシンの目印から見て右へ 3.75 m）に冷蔵庫を立て、中の `snowman_spot` に雪だるまを入れる。正面は食堂（+Z）、扉は東（厨房の側）へ開く
 - 大きさは `SNOWMAN_SCALE` = 1.85 倍（冷蔵庫の高さ 3.7 m でミシンと同じくらい、雪だるまは 2.6 m）。冷蔵庫の箱（`FRIDGE_BOX` × 倍率）に当たり判定がある（開いた扉にはない）
-- 背は奥の台（ロッジの物）の手前にそろえた。いまの main では、ミシンとのあいだに間仕切り、前にレジ・配膳の塀があり（[24](../docs/shots/snowman-fridge/24-lodge-front-now.png)・[25](../docs/shots/snowman-fridge/25-lodge-kitchen-now.png)）、PR #61 で両方が外れると、ミシンと一続きの並びになる（[21〜23](../docs/shots/snowman-fridge/)）
-- ロッジを丸太組みに作り直すと目印の位置が変わることがある。そのときは `SNOWMAN_AT` を合わせる
+- 背は奥の台（ロッジの物）の手前にそろえた。絵は [21](../docs/shots/snowman-fridge/21-lodge-front.png)（ミシンの前から）と [22](../docs/shots/snowman-fridge/22-lodge-kitchen.png)（厨房の前から）
+- 並びの前を、ミシン ↔ 冷蔵庫 ↔ アイロン台 ↔ プレス機 ↔ 乾燥機と本物の W キーで行き来して、どこでも引っかからないことを確かめた（`game/tools/inside_spawn_check.gd`、記録は `docs/shots/inside-spawn/report.txt`）
+- ロッジを作り直して目印の位置が変わったら、`SNOWMAN_AT` を合わせる
 - ゲームで撮る: `Godot --path game --resolution 1280x720 -s res://tools/snowman_lodge_shot.gd -- --bots=0 --no-sound --no-pip --out=… --view=front|quarter|near|kitchen`（`--probe` で、まわりの壁までの距離とミシン・売り子・厨房の位置を出す）
 
 ほかに考えた案（入口の風除室・自販機の並び・テラスへの戸のそば）は、選ばなかった。
