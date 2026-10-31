@@ -128,6 +128,12 @@ var _breath_mat: ShaderMaterial
 var _cold := -1.0            # 白い息の見え方（0 暖かくて見えない 〜 1 ふつう 〜 1.6 とても寒い）。口もとの気温から、数秒でなじむ
 var _cold_want := 1.0
 var _cold_t := 0.0
+var _shiver := 0.0           # 寒さのふるえ（0 〜 1）。口もとの気温から、数秒でなじむ
+var _shiver_want := 0.0
+var _calm := 0.0             # 暖かさの落ち着き（0 〜 1）。揺れがゆっくりになる
+var _calm_want := 0.0
+var _boil_k := 0.0           # クレイアニメの揺れの進み（整数ごとに新しい形。寒い所では毎コマ 1 進む）
+var _idle_t := 0.0           # 立ち止まりの揺れの時計（暖かいとゆっくり進む）
 var _next_out := 0
 var _frame := -1
 var _yaw := 0.0
@@ -578,7 +584,8 @@ func _to_skel(world: Vector3) -> Vector3:
 
 
 func _pose() -> void:
-	var t := float(_frame) / FPS
+	_idle_t += lerpf(1.0, CALM_PACE, _calm) / FPS
+	_boil_k += 1.0 / lerpf(1.0, BOIL_SLOW, _calm)
 	_reset()
 	_hold = [null, null]
 	var stride := maxf(_speed / CADENCE, 0.5) / _scale
@@ -664,10 +671,12 @@ func _pose() -> void:
 				bend = 0.04 + 0.03 * minf(_speed, 6.0)
 				_turn_axis("chest", Vector3.UP, 0.12 * amp * sin(ph))
 			else:
-				# 立ち止まり: 重心をゆっくり左右に、息で胸が少し上下
-				_turn_axis("hips", Z, 0.03 * sin(t * 1.4))
-				_turn_axis("chest", Z, -0.02 * sin(t * 1.4))
-				bend = 0.02 * sin(t * 2.2)
+				# 立ち止まり: 重心をゆっくり左右に、息で胸が少し上下。暖かい所ではゆったりと、寒い所ではふるえる
+				_turn_axis("hips", Z, 0.03 * sin(_idle_t * 1.4))
+				_turn_axis("chest", Z, -0.02 * sin(_idle_t * 1.4))
+				bend = (0.02 + 0.01 * _calm) * sin(_idle_t * 2.2)
+				if act == Act.WALK and _shiver > 0.01:
+					bend += _shiver_pose()
 
 			if act == Act.PUSH and sled and grip != Vector3.INF:
 				var pts := _grip_points()
@@ -778,10 +787,17 @@ func _pose() -> void:
 			var face: Vector3 = (_g[hi] as Transform3D).basis.z.normalized()
 			_turn(hi, Quaternion(face, -_em_roll))
 
-	# クレイアニメの揺れ: 骨ごとに、コマごとにわずかに
-	_rng.seed = hash(Vector2i(_frame, get_instance_id()))
+	# クレイアニメの揺れ: 骨ごとにわずかに。寒い所ではコマごとに形が変わり（ふるえ。寒いほど大きく）、
+	# 暖かい所では、次の形へ何十コマもかけてゆっくり移る
+	var bk := floori(_boil_k)
+	var bw := smoothstep(0.0, 1.0, _boil_k - bk)
+	var boil := BOIL * (1.0 + BOIL_COLD * _shiver)
 	for i in _order:
-		_turn(i, Quaternion.from_euler(Vector3(_rng.randf_range(-1, 1), _rng.randf_range(-1, 1), _rng.randf_range(-1, 1)) * BOIL))
+		var a := _boil_at(bk, i)
+		if bw > 0.0:
+			a = a.lerp(_boil_at(bk + 1, i), bw)
+		_turn(i, Quaternion.from_euler(a * boil))
+	_rng.seed = hash(Vector2i(_frame, get_instance_id()))
 
 	# 腕の、伸ばし直す前の回転を覚えておく
 	_arm_base.clear()
@@ -902,8 +918,10 @@ uniform vec3 cool : source_color = vec3(0.88, 0.91, 0.96);
 uniform vec3 sun_dir = vec3(-0.5, -0.6, -0.6);   // 光の進む向き（世界）
 uniform float opacity = 0.78;                     // 少し透ける（後ろの景色がうっすら見える）
 uniform float bright = 1.75;                      // 画面の明るさの圧縮（トーンマップ）のあとでも真っ白に見えるよう、1 より明るく
+uniform float erode = 0.0;                        // 粒の寿命の後半で、薄い所から削れて消える強さ（白い息は 0.85。霧散する）
 
 varying float spin;
+varying float life;   // 粒の寿命のどこにいるか（0 生まれ 〜 1 消える）
 varying vec2 sun2;
 varying vec2 cell;   // 綿の形は 4 つ（2x2 に並べた画像）。粒ごとに選ぶ
 
@@ -912,6 +930,7 @@ void vertex() {
 	MODELVIEW_MATRIX = VIEW_MATRIX * mat4(INV_VIEW_MATRIX[0], INV_VIEW_MATRIX[1], INV_VIEW_MATRIX[2], MODEL_MATRIX[3]);
 	MODELVIEW_MATRIX = MODELVIEW_MATRIX * mat4(vec4(length(MODEL_MATRIX[0].xyz), 0.0, 0.0, 0.0), vec4(0.0, length(MODEL_MATRIX[1].xyz), 0.0, 0.0), vec4(0.0, 0.0, length(MODEL_MATRIX[2].xyz), 0.0), vec4(0.0, 0.0, 0.0, 1.0));
 	spin = INSTANCE_CUSTOM.x;
+	life = INSTANCE_CUSTOM.y;
 	cell = vec2(float(INSTANCE_ID % 2), float((INSTANCE_ID / 2) % 2));
 	vec3 s = (VIEW_MATRIX * vec4(-normalize(sun_dir), 0.0)).xyz;
 	sun2 = length(s.xy) > 0.001 ? normalize(s.xy) : vec2(0.0, 1.0);
@@ -924,6 +943,9 @@ void fragment() {
 	float inside = step(0.0, q.x) * step(q.x, 1.0) * step(0.0, q.y) * step(q.y, 1.0);
 	vec4 t = texture(cotton, (clamp(q, 0.0, 1.0) + cell) * 0.5);
 	t.a *= inside;
+	// 霧散: 寿命の後半、薄い毛羽から先に削れ、芯もまばらな筋になって消える
+	float e = erode * smoothstep(0.3, 1.0, life);
+	t.a = clamp((t.a - e) / max(1.0 - e, 0.05), 0.0, 1.0);
 	// 太陽の側ほど明るい。陰は薄い青白まで（灰色や青に沈ませない）
 	float side = dot(normalize(p * vec2(1.0, -1.0) + 1e-4), sun2) * smoothstep(0.0, 0.35, length(p));
 	float lit = clamp(0.78 + 0.25 * side - 0.18 * t.r, 0.0, 1.0);
@@ -995,11 +1017,11 @@ static func _cotton_tuft(n: int, seed: int) -> Image:
 
 
 ## 息の煙の出口ごとの出し方: [1 秒あたりの粒, 粒の寿命 (s), 大きさ, はじめの速さ (m/s)]
-## 粒は出口で小さく（大きさの 2 割）、寿命の終わりに 2 倍ほどまで広がる。粒どうしが重なる速さで出すので、一続きの煙になる
+## 粒は出口で小さく（大きさの 2 割）、昇りながら寿命の終わりに 3 倍ほどまで広がる。粒どうしが重なる速さで出すので、一続きの煙になる
 const STREAMS := {
-	"small": [26.0, 1.9, 0.85, 0.42],   # ふだんの息: 0.6 秒ほど、細く短く
-	"big": [30.0, 2.4, 1.15, 0.62],     # 声の息: 大きく勢いよく
-	"long": [24.0, 2.9, 1.35, 0.55],    # B の長い息・おーい: 吐いているあいだ出し続ける
+	"small": [26.0, 2.1, 0.85, 0.42],   # ふだんの息: 0.6 秒ほど、細く短く
+	"big": [30.0, 2.5, 1.15, 0.62],     # 声の息: 大きく勢いよく
+	"long": [24.0, 2.7, 1.35, 0.55],    # B の長い息・おーい: 吐いているあいだ出し続ける
 }
 
 
@@ -1014,18 +1036,20 @@ func _make_breath() -> void:
 	var mat := ShaderMaterial.new()
 	mat.shader = sh
 	mat.set_shader_parameter("cotton", cotton_texture())
+	mat.set_shader_parameter("erode", 0.85)
 	var sun := get_tree().root.find_children("*", "DirectionalLight3D", true, false)
 	if not sun.is_empty():
 		mat.set_shader_parameter("sun_dir", -(sun[0] as Node3D).global_basis.z)
 	quad.material = mat
 	_breath_mat = mat   # 人形ごとの材質（濃さを寒さで変える）
-	var grow := Curve.new()   # 出口で細く、離れるほど太く
+	var grow := Curve.new()   # 出口で細く、昇りながら太く広がる
+	grow.max_value = 4.0
 	grow.add_point(Vector2(0.0, 0.2))
-	grow.add_point(Vector2(0.25, 0.65))
-	grow.add_point(Vector2(1.0, 2.3))
-	var fade := Gradient.new()   # 出口で濃く、離れるほど薄く
-	fade.offsets = PackedFloat32Array([0.0, 0.05, 0.3, 0.7, 1.0])
-	fade.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.6), Color(1, 1, 1, 0.25), Color(1, 1, 1, 0.0)])
+	grow.add_point(Vector2(0.25, 0.7))
+	grow.add_point(Vector2(1.0, 2.9))
+	var fade := Gradient.new()   # 出口で濃く、広がるほど薄く透けて、消える
+	fade.offsets = PackedFloat32Array([0.0, 0.05, 0.25, 0.5, 0.75, 1.0])
+	fade.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.55), Color(1, 1, 1, 0.25), Color(1, 1, 1, 0.07), Color(1, 1, 1, 0.0)])
 	for key in STREAMS:
 		var spec: Array = STREAMS[key]
 		var e := CPUParticles3D.new()
@@ -1041,9 +1065,9 @@ func _make_breath() -> void:
 		e.spread = 5.0             # 出口では細く
 		e.initial_velocity_min = spec[3] * 0.85
 		e.initial_velocity_max = spec[3] * 1.15
-		e.damping_min = 0.45       # 口から離れるとゆっくりになり、たまって広がる
-		e.damping_max = 0.7
-		e.gravity = Vector3(0, 0.24, 0)   # 暖かい息なので、前へ少し伸びてから、ゆっくり上へ昇りながら広がる
+		e.damping_min = 0.3        # 口から離れると前へ進む勢いが落ち、たまって広がる
+		e.damping_max = 0.45
+		e.gravity = Vector3(0, 0.5, 0)   # 暖かい息なので、前へ少し伸びてから上へ昇りながら広がる（吐く勢いの落ちより強く）
 		e.angle_min = 0.0
 		e.angle_max = 360.0
 		e.angular_velocity_min = -14.0
@@ -1078,16 +1102,25 @@ func _puff(size: float, speed: float) -> void:
 
 ## 吐いている残りを減らし、残りのあいだだけ煙を出す（なめらかに。姿勢のコマとは関係なく）。
 ## 寒さ（口もとの気温、temperature.gd）で見え方を変える: 暖かい所では出さない。寒いほど煙が大きく、濃く、長く吐く。
-## 寒さは 0.25 秒おきに引き、2 秒ほどの時定数でなじむ（ロッジを出入りしても急に切り替わらない）
+## 寒さは 0.25 秒おきに引き、2 秒ほどの時定数でなじむ（ロッジを出入りしても急に切り替わらない）。
+## 同じ気温から、体のふるえ（_shiver）と、暖かさの落ち着き（_calm）も決める（どちらも同じ速さでなじむ）
 func _blow_breath(dt: float) -> void:
 	_cold_t -= dt
 	if _cold_t <= 0.0:
 		_cold_t = 0.25
 		var temp := get_node_or_null("/root/Temperature")
-		_cold_want = temp.breath(_long.global_position) if temp else 1.0
+		var c: float = temp.at(_long.global_position) if temp else 0.0
+		_cold_want = Temp.breath_of(c) if temp else 1.0
+		_shiver_want = Temp.shiver_of(c) if temp else 0.0
+		_calm_want = Temp.calm_of(c) if temp else 0.0
 		if _cold < 0.0:
 			_cold = _cold_want   # はじめは、その場の寒さから
-	_cold = lerpf(_cold, _cold_want, 1.0 - exp(-dt / 2.0))
+			_shiver = _shiver_want
+			_calm = _calm_want
+	var k := 1.0 - exp(-dt / 2.0)
+	_cold = lerpf(_cold, _cold_want, k)
+	_shiver = lerpf(_shiver, _shiver_want, k)
+	_calm = lerpf(_calm, _calm_want, k)
 	var seen := _cold > 0.04
 	var size := 0.7 + 0.35 * _cold
 	_breath_mat.set_shader_parameter("opacity", 0.78 * clampf(_cold, 0.0, 1.25))   # 暖かくなるにつれて薄れ、消える
@@ -1100,6 +1133,42 @@ func _blow_breath(dt: float) -> void:
 			e.emitting = _blow[key] > 0.0 and seen
 		elif not seen:
 			e.emitting = false   # 長い息も、暖かい所では白くならない
+
+
+const Temp := preload("res://temperature.gd")
+const BOIL_SLOW := 30.0       # いちばん暖かい所で、揺れが次の形へ移るのにかけるコマ数（寒い・ふつうの所では毎コマ）
+const BOIL_COLD := 0.8        # いちばん寒い所で、揺れがこれだけ大きくなる（割合）
+const CALM_PACE := 0.4        # いちばん暖かい所での、立ち止まりの揺れ（重心と胸）の速さ（ふつうを 1 として）
+
+
+## 揺れの k 番目の形の、骨 i の向き（-1 〜 1。人形ごとに違う）
+func _boil_at(k: int, i: int) -> Vector3:
+	var r := RandomNumberGenerator.new()
+	r.seed = hash(Vector3i(k, i, get_instance_id()))
+	return Vector3(r.randf_range(-1, 1), r.randf_range(-1, 1), r.randf_range(-1, 1))
+
+
+## 寒さのふるえ（立ち止まっているとき）: 背を少し丸めて首をすくめ、腕を体に寄せて、肘を曲げた手を胸の前へ。
+## 体はコマごとに小刻みにふるえる。強さは _shiver。背を丸める角を返す
+func _shiver_pose() -> float:
+	var s := _shiver
+	var k: float = [1.0, -0.7, 0.5, -1.0, 0.8, -0.4][_frame % 6]
+	_turn_axis("hips", Vector3.UP, 0.03 * s * k)
+	_turn_axis("chest", Vector3.BACK, 0.035 * s * k)
+	_turn_axis("neck", Vector3.RIGHT, -0.18 * s)
+	for side in ["L", "R"]:
+		var x := -1.0 if side == "L" else 1.0
+		_aim_toward(_id("upper_arm." + side), Vector3(0.1 * x, -1.0, -0.35), 0.8 * s)
+		_aim_toward(_id("forearm." + side), Vector3(-0.6 * x, 0.35, -1.0), 0.75 * s)
+	return 0.1 * s
+
+
+## 骨の向きを、いまの向きから dir のほうへ w（0 〜 1）だけ回す
+func _aim_toward(i: int, dir: Vector3, w: float) -> void:
+	if i < 0:
+		return
+	var y: Vector3 = (_g[i] as Transform3D).basis.y.normalized()
+	_aim(i, y.slerp(dir.normalized(), clampf(w, 0.0, 1.0)))
 
 
 # ---------------------------------------------------------------- 身ぶり（emotes.gd）

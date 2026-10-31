@@ -1,7 +1,7 @@
 extends SceneTree
 ## 白い息を撮る（確かめ用）。ふだんの息・声の息・B の長い息を、吐きはじめから何度か撮る。
 ##   Godot --path game --resolution 960x540 -s res://tools/breath_shots.gd -- --dir=/path [--view=fp|tp|side] [--tag=before]
-##        [--only=normal,voice,long] [--time=10] [--place=foot|summit|inside|fire]
+##        [--only=normal,voice,long] [--time=10] [--place=foot|summit|inside|fire] [--when=0.4,0.9,1.6]
 ## --place: 立つ場所（ふもと・丘の頂上・ロッジの中・暖炉のそば）。--time=23 で夜
 ## --move=out|in: ロッジの中から外へ（out）、外から中へ（in）出ながら B で長く吐き、息が気温になじむ様子を撮る
 ## fp 一人称（右下の小窓も写る）、tp 三人称（C）、side 顔の横から（煙の形がいちばん分かる）。
@@ -79,7 +79,8 @@ func _run() -> void:
 		await process_frame
 		await process_frame
 		_start(kind)
-		for w in WHEN:
+		var when: Array = Array(args["when"].split(",")).map(func(x): return float(x)) if args.has("when") else WHEN
+		for w in when:
 			while (Time.get_ticks_msec() - t0) / 1000.0 < w:
 				await process_frame
 			if main.settings:
