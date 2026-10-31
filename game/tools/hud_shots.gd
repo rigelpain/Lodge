@@ -171,6 +171,8 @@ func _process(dt: float) -> bool:
 		if t > pt0 + 0.3 and args.has("sweep"):
 			p.rotation.y += deg_to_rad(float(args["sweep"])) * dt
 			p._pitch = -0.1 + 0.15 * sin((t - pt0) * 1.3)
+		elif t > pt0 + 0.3 and args.has("look"):   # --look=rad: 指さしたまま、見上げる（正）・見下ろす（負）
+			p._pitch = float(args["look"])
 	if _set and args.has("point") and args.has("log-point") and int(t * 2.0) != int((t - dt) * 2.0) and p.point_at != Vector3.INF:
 		var head: Vector3 = p.global_position + Vector3.UP * 1.55
 		var hub = main.get_node_or_null("Emotes")

@@ -97,6 +97,7 @@ var pointing := false        # 指さしを入れているか（右クリック�
 var _point_sent := Vector3.ZERO   # 最後に配り役へ送った向き（間引くため）
 var _point_send_t := 0.0
 const POINT_FOLLOW := 10.0   # 指す先が、見ている先へ追いつく速さ（1/s）
+var point_level := true      # 一人称の指さしの手形を、画面の中で床に平行に置く（--point-tilt で前の、腕に沿った斜めの向き）
 const POINT_SEND_DEG := 4.0  # 向きがこれだけ変わったら送る（度）
 const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
@@ -975,10 +976,18 @@ func _place_shapes_fp(em: Array) -> void:
 			var h: Node3D = hands[0] if hands[0].get_meta("side") == side else hands[1]
 			match mode[side]:
 				"point":
-					# 人さし指を、手の伸びる向きへ（腕の先）
-					var y: Vector3 = (h.basis * Vector3.FORWARD).normalized()
-					var z := Vector3.UP.cross(y) * float(side)
-					z = z.normalized() if z.length() > 0.05 else Vector3.BACK
+					# 人さし指の手形は、画面の中で床に平行に（水平に、画面のまんなかの側へ）向け、手の甲を自分へ向ける。
+					# 腕の伸びる向きに合わせると、画面の中で指が斜め上を向き、どこを指しているか読みにくかった
+					# （2026-10-31 代表「指差しは床に平行な方が見やすい」。腕ではなく指のワッペンのこと）。--point-tilt で前の向き
+					var y: Vector3
+					var z: Vector3
+					if point_level:
+						y = Vector3(-0.8 * side, 0.0, -0.6).normalized()
+						z = (Vector3.BACK - y * Vector3.BACK.dot(y)).normalized()
+					else:
+						y = (h.basis * Vector3.FORWARD).normalized()
+						z = Vector3.UP.cross(y) * float(side)
+						z = z.normalized() if z.length() > 0.05 else Vector3.BACK
 					b = Palm.thumb_up(Basis(y.cross(z).normalized(), y, z), side)   # 親指は上
 					size = 1.0
 				"low":
