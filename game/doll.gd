@@ -22,6 +22,9 @@ const SCENES := {
 }
 ## ゲームでの大きさ。news がいちばん小さく、目の高さが origami のお尻あたり
 const SCALE := {"kasa": 1.15, "origami": 1.1, "news": 1.05}
+## 性別。声の高さを決める（女性で背が低いほど高く、男性で背が高いほど低い）。身長は TOP × SCALE。
+## 人形を足したら、ここと TOP・SCALE に書き、sound/gen/voice.py を走らせると、その人形の声（voice_*_<人形>.wav）ができる
+const SEX := {"kasa": "女", "origami": "女", "news": "男"}
 ## 足もとの影の半径（人形の大きさのまま）
 const FOOT_SHADOW := {"kasa": 0.46, "origami": 0.44, "news": 0.38}
 ## 目の所（glb の座標、人形の大きさのまま。立ったとき）。乗っているときの一人称のカメラを合わせる

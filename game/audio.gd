@@ -840,6 +840,8 @@ func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, 
 	var tick := (int(ev.frame) + k) * tps / Doll.FPS
 	var wait := maxf(0.0, float(tick - Engine.get_physics_frames()) / tps)
 	var s := _wav("%s_%s" % [name_, fixed]) if fixed != "" else _pick(name_, count)
+	if s == null and fixed != "":
+		s = _wav("%s_kasa" % name_)   # 声をまだ作っていない人形は、あなたの声で
 	if s == null:
 		return
 	if wait > 0.0:

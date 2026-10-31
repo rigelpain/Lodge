@@ -34,31 +34,30 @@ VOWEL = {
 }
 GAIN = {"w": [1.0, 0.3, 0.06], "u": [1.0, 0.45, 0.12], "a": [1.0, 1.4, 0.6], "n": [1.0, 0.05, 0.03],
         "o": [1.0, 0.9, 0.2], "i": [1.0, 0.55, 0.35]}
-# 人形の性別。身長は game/doll.gd の TOP（人形の頭の高さ）× SCALE（ゲームでの大きさ）
-SEX = {"kasa": "女", "origami": "女", "news": "男"}
+# 人形の性別と身長は game/doll.gd から読む（SEX、TOP（人形の頭の高さ）× SCALE（ゲームでの大きさ））。人形を足すときもそちらに書く
 SEX_PITCH = {"女": 1.0, "男": 0.6}    # 男性は約 9 半音低く
 SEX_FORM = {"女": 1.0, "男": 0.9}     # 男性は口の響きも少し低く
 HEIGHT_PITCH = 0.75    # 身長が半分なら、高さは 2^0.75 = 1.68 倍
 HEIGHT_FORM = 0.5      # 口の響きは、体の大きさにゆるくついていく
 
 
-def heights():
-    """game/doll.gd の TOP × SCALE。人形ごとの身長 (m)"""
+def dolls():
+    """game/doll.gd から、人形ごとの (性別, 身長 (m))。身長は TOP × SCALE"""
     src = (pathlib.Path(__file__).resolve().parents[2] / "game" / "doll.gd").read_text()
-    def table(name):
+    def table(name, val):
         body = re.search(rf"^const {name} := \{{(.*?)\}}", src, re.M).group(1)
-        return {k: float(v) for k, v in re.findall(r'"(\w+)":\s*([\d.]+)', body)}
-    top, scale = table("TOP"), table("SCALE")
-    return {k: top[k] * scale[k] for k in SEX}
+        return {k: v for k, v in re.findall(rf'"(\w+)":\s*{val}', body)}
+    sex, top, scale = table("SEX", '"(.+?)"'), table("TOP", r"([\d.]+)"), table("SCALE", r"([\d.]+)")
+    return {k: (sex[k], float(top[k]) * float(scale[k])) for k in sex}
 
 
 def voices():
     """人形ごとの (身長, 声の高さの倍率, 口の響きの倍率)"""
-    hs = heights()
+    ds = dolls()
     out = {}
-    for k, h in hs.items():
-        r = hs["kasa"] / h   # あなた（kasa）の声を 1.0 にする
-        out[k] = (h, SEX_PITCH[SEX[k]] * r ** HEIGHT_PITCH, SEX_FORM[SEX[k]] * r ** HEIGHT_FORM)
+    for k, (sex, h) in ds.items():
+        r = ds["kasa"][1] / h   # あなた（kasa）の声を 1.0 にする
+        out[k] = (h, SEX_PITCH[sex] * r ** HEIGHT_PITCH, SEX_FORM[sex] * r ** HEIGHT_FORM)
     return out
 
 
