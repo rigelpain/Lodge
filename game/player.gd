@@ -97,6 +97,10 @@ var pointing := false        # 指さしを入れているか（右クリック�
 var _point_sent := Vector3.ZERO   # 最後に配り役へ送った向き（間引くため）
 var _point_send_t := 0.0
 const POINT_FOLLOW := 10.0   # 指す先が、見ている先へ追いつく速さ（1/s）
+## 指す腕を床に平行にする（見ている向きの左右だけを追い、見上げる・見下ろすは腕に移さない）。
+## 2026-10-31 代表「指差しは床に平行な方が見やすいのかもしれません」。--point-tilt で前の傾く作り（見比べ用）
+var point_level := true
+const POINT_LEVEL_MIN := 4.0 # 床に平行に指すときの、指す先までの長さの下限 (m)。足もとを見ていても腕が縮まない
 const POINT_SEND_DEG := 4.0  # 向きがこれだけ変わったら送る（度）
 const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
@@ -625,6 +629,14 @@ func _update_point(dt: float = 0.0) -> void:
 		return
 	var head := global_position + Vector3.UP * 1.55
 	var want := _view_point() - head
+	if point_level:   # 床に平行: 高さを頭にそろえる。真下・真上を見ていて向きが決まらなければ、体の前
+		var flat := Vector3(want.x, 0.0, want.z)
+		if flat.length() < 0.3:
+			flat = -cam.global_basis.z
+			flat.y = 0.0
+			if flat.length() < 0.01:
+				flat = -global_basis.z
+		want = flat.normalized() * maxf(flat.length(), POINT_LEVEL_MIN)
 	var cur := point_at - head if point_at != Vector3.INF else want
 	var k := 1.0 - exp(-dt * POINT_FOLLOW)
 	var dir := cur.normalized().slerp(want.normalized(), k) if cur.length() > 0.01 and want.length() > 0.01 else want.normalized()
@@ -899,6 +911,10 @@ func _pose_hands(dt: float) -> void:
 		if pointing:
 			# 指さし: 選んだ手の手袋を、指している所の向きへ伸ばす（見回すと、指した向きに残る。後ろなら画面の外）
 			var d := cam.global_basis.inverse() * (point_at - cam.global_position).normalized()
+			if point_level:
+				# 体の腕は床に平行でも、一人称の手袋は画面の上下のまんなかに置く（見下ろすと袖が画面をふさぎ、見上げると手が画面の外へ出るので）。
+				# 左右は指す向きのまま
+				d = Vector3(d.x, 0.0, minf(d.z, -0.2)).normalized()
 			target = Vector3(0.1 * s, -0.1, 0.0) + d * 0.58
 		# 手も姿勢と同じ決まり: コマが変わるときだけ置き直す（一人称では揺らさない。目の前でふるえると見ていてつらい）。
 		# ソリをつかんでいる間は、ソリに対しての位置で保つ（ソリが動いても手が縁から離れない）

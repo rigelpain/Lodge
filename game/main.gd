@@ -196,6 +196,7 @@ func _ready() -> void:
 
 	if not args.has("no-player"):
 		player = Player.new()
+		player.point_level = not args.has("point-tilt")   # 確かめ用: 指す腕を、見上げる・見下ろすにも合わせて傾ける（前の作り）
 		player.sled = sled
 		player.position = START + Vector3(0, height(START.x, START.z) + 0.2, 0)
 		add_child(player)
