@@ -4,7 +4,8 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/spool_exchange_shots.gd -- --bots=0 --no-pip --dir=/path/shots \
 ##       [--sled=large --riders=7]（大に、あなたと人形 7 人）[--sled=sack --mash=10]（米袋で 1 秒に 10 回漕ぐ。受け皿の 30 m 手前まで）
 ## 速さの表示のまわりを、1 秒ごとと、両替が始まった所から 2 コマおきに切り抜いて並べる（<dir>/spool_<ソリ>.png）。
-## 終わりに、鳴った音（両替のチン・財布のチャリ・締めくくり）と、自分の分（ride_pay_one）、財布に入った値打ちを出す。
+## コンボ（ride_combo）が上がった・切れたときは、そこから 3 コマおきに 3 枚撮る（結び目が増える・ほどける所）。
+## 終わりに、鳴った音（コンボ・両替のチン・財布のチャリ・締めくくり）と、コンボの出来事、自分の分（ride_pay_one）、財布に入った値打ちを出す。
 
 const DUMMY_SRC := """extends Node3D
 var sled: Node3D
@@ -82,10 +83,15 @@ func _run() -> void:
 	p._pitch = -0.1
 	var mine: Array = []
 	var marks := [0]
+	var combos: Array = []
+	var combo_shots := [0]
 	var earned := [0]
 	sb.happened.connect(func(ev: Dictionary) -> void:
 		if ev.kind == "ride_mark":
 			marks[0] += 1
+		elif ev.kind == "ride_combo":
+			combos.append("%.1f 秒  コンボ %d" % [_now(), ev.n])
+			combo_shots[0] = 3
 		elif ev.kind == "ride_pay_one" and int(ev.who) == int(p.id):
 			mine.append("%.1f 秒  自分の分 %d（縫い込んだ数 %d）" % [_now(), ev.n, ev.sewn.size()]))
 	main.craft.happened.connect(func(ev: Dictionary) -> void:
@@ -112,6 +118,12 @@ func _run() -> void:
 			next_kick = t + 1.0 / mash
 			sled.kick(p)
 		most = maxi(most, hud.sewn_looks().size())
+		if combo_shots[0] > 0 and _crops.size() < 48:
+			combo_shots[0] -= 1
+			for k in 3:
+				await process_frame
+			await _crop()
+			continue
 		if hud._merge_t0 >= 0.0 and merging_shots < 4 and _crops.size() < 40:
 			merging_shots += 1
 			await _crop()
@@ -138,8 +150,11 @@ func _run() -> void:
 	print("---- 鳴った音（両替・財布・締めくくり）")
 	for e in audio.played:
 		var n: String = e.name
-		if n.begins_with("button_take") or n.begins_with("button_glint") or n.begins_with("button_reward") or n.begins_with("button_chari"):
-			print("%.2f 秒  %s" % [e.t - _t0, n])
+		if n.begins_with("button_combo") or n.begins_with("button_take") or n.begins_with("button_reward"):
+			print("%.2f 秒  %s  （そのときの滑りの風 %.1f dB）" % [e.t - _t0, n, float(e.get("wind", -80.0))])
+	print("---- コンボ")
+	for e in combos:
+		print(e)
 	print("---- 自分の分")
 	for e in mine:
 		print(e)

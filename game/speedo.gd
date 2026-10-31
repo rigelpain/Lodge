@@ -233,6 +233,59 @@ static func draw_stitches(ci: CanvasItem, g: Dictionary, k: float, spin: float, 
 		Icons.thread(ci, PackedVector2Array([p, p + Vector2(sin(i + spin) * 2.0 * u, 11.0 * u)]), col.lightened(0.2), 1.5 * u, a * (1.0 - f))
 
 
+## コンボの結び目（2026-10-31 代表「コンボしていることを、なにかで表示」）: リボンの左の縁を上から下へ、段の数だけ玉結び（フレンチノット）が
+## 縦の糸でつながって並ぶ。結んだばかりはぽんとふくらみ、きらっと光る。段が上がるほど結び目の色が明るい山吹へ寄る。
+## ほどけ始めたら（off）、一つずつ少しずつずれて、結び目がゆるんで輪になり、広がりながら下へふわっと落ちて消える。数字は出さない
+const COMBO_SHOW := 8         # 並べて見せる結び目の数（それより上は、いちばん下の結び目が大きく光る）
+static func draw_combo(ci: CanvasItem, g: Dictionary, knots: Array, now: float, untie_t: float, base: Color, a: float) -> void:
+	if knots.is_empty():
+		return
+	var u: float = g.u
+	var rb: Rect2 = g.ribbon
+	var x := rb.position.x + 7.5 * u
+	var y := float(g.y0) + 3.0 * u
+	var gap := 15.0 * u
+	var n := knots.size()
+	var CI := preload("res://craft_icons.gd")
+	Icons.screen()
+	# つなぐ糸（ほどけていない結び目のあいだ）
+	var tied := 0
+	for e in knots:
+		if float(e.off) < 0.0:
+			tied += 1
+	if tied > 1:
+		Icons.thread(ci, PackedVector2Array([Vector2(x, y), Vector2(x, y + gap * (mini(tied, COMBO_SHOW) - 1))]), base.darkened(0.1), 1.6 * u, a * 0.8)
+	for i in n:
+		var e: Dictionary = knots[i]
+		var slot := mini(i, COMBO_SHOW - 1)
+		var p := Vector2(x, y + gap * slot)
+		var col := base.lerp(BRIGHT, minf(0.3 + 0.1 * i, 0.9)).lightened(0.1)
+		var off: float = e.off
+		if off >= 0.0:
+			var q := clampf((now - off - 0.05 * (n - 1 - i)) / untie_t, 0.0, 1.0)
+			if q >= 1.0:
+				continue
+			# ほどける: ゆるんで輪になり、広がりながら下へ落ちて消える
+			var lr := 5.0 * u * (1.0 + 1.6 * q)
+			var c := p + Vector2(sin(i * 1.7) * 3.0 * u * q, 10.0 * u * q * q)
+			var arc := PackedVector2Array()
+			for k in 13:
+				var t := 0.4 + k * (TAU - 0.9) / 12.0 + q * 2.0
+				arc.append(c + Vector2(cos(t), sin(t) * 0.8) * lr)
+			Icons.thread(ci, arc, col, 1.5 * u, a * (1.0 - q))
+			continue
+		var age := now - float(e.t)
+		var pop := 1.0 + 0.7 * sin(clampf(age / 0.35, 0.0, 1.0) * PI)
+		var r := 5.6 * u * pop * (1.25 if i >= COMBO_SHOW else 1.0)
+		ci.draw_circle(p + Vector2(0.8, 1.2) * u, r * 1.1, Color(Icons.SHADOW, 0.3 * a))
+		ci.draw_circle(p, r * 1.12, Color(col.darkened(0.55), a))   # 縁取り（リボンの生成りと縫い目に埋もれないように）
+		ci.draw_circle(p, r, Color(col.darkened(0.08), a))
+		for k in 3:   # 巻いた糸の筋
+			ci.draw_arc(p, r * (0.75 - k * 0.22), 0.4 + k * 1.3, 3.6 + k * 1.3, 8, Color(col.lightened(0.35), a), 1.1 * u, true)
+		if age < 0.6:
+			CI._glint(ci, p + Vector2(r * 0.9, -r * 0.9), 9.0 * u * (1.0 - age / 0.6 * 0.6), Color(1.0, 0.95, 0.75, a * (1.0 - age / 0.6)))
+
+
 ## 平らなボビン（木の端の板、巻いた糸の縁、三つ穴。速いと穴がぶれて残像になる）
 static func _spool(ci: CanvasItem, c: Vector2, r: float, col: Color, k: float, spin: float, a: float) -> void:
 	var u := r / 44.0

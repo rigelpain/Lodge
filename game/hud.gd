@@ -57,6 +57,23 @@ var _merge_t0 := -1.0         # いま縫い縮まっている両替の始まり
 ## 糸の上の積もったボタンのいちばん上に、小さな糸くずの玉として見せ、たまるほど大きくなる（取りこぼしに見えないように）
 var _lint_frac := 0.0
 var _lint_carry := 0.0
+## コンボ（snow_buttons.gd の ride_combo）: 段が上がるたびに、リボンの左の縁に結び目が一つずつ増え、糸が少し明るくなる。
+## 切れたら、結び目がほどけてふっと消える（speedo.gd の draw_combo）。{t（結んだ時刻）, off（ほどけ始めた時刻。まだなら -1）}
+var _combo_knots: Array = []
+const COMBO_TINT := 0.1       # 一段ごとに、糸の色を明るい山吹へ寄せる割合（5 段で頭打ち）
+const UNTIE_T := 0.7          # ほどけて消えるまで (s)
+
+## 糸の色のもと: ソリのメインカラーを、コンボの段の数だけ明るく
+func thread_base() -> Color:
+	var n := _combo_knots.filter(func(e): return float(e.off) < 0.0).size()
+	return _spd_color.lerp(Speedo.BRIGHT, minf(COMBO_TINT * n, 0.5))
+
+
+## コンボの結び目をほどく（切れた・滑り終わった）
+func _untie() -> void:
+	for e in _combo_knots:
+		if float(e.off) < 0.0:
+			e.off = _clock_now()
 
 func lint() -> float:
 	return _lint_frac + _lint_carry
@@ -502,6 +519,10 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 				_spd_marks[m] = true
 				_cheer()
 	_spd_knots = _spd_knots.filter(func(d): return _spd_dist - d < 60.0)
+	var now := _clock_now()
+	_combo_knots = _combo_knots.filter(func(e): return float(e.off) < 0.0 or now - float(e.off) < UNTIE_T + 0.3)
+	if not on and _spd_a <= 0.0:
+		_untie()
 	if not on and _spd_a <= 0.0 and _reel <= 0.0:
 		_spd_sewn.clear()
 
@@ -531,11 +552,24 @@ func _on_buttons(ev: Dictionary) -> void:
 		"ride_lint":
 			if p.mode == Player.Mode.RIDE:
 				_lint_frac = float(ev.frac)
+		"ride_combo":
+			if p.mode == Player.Mode.RIDE:
+				var audio = main.get_node_or_null("Audio")
+				if int(ev.n) > 0:
+					_combo_knots.append({"t": _clock_now(), "off": -1.0})
+					_spd_pop = 1.0
+				elif _combo_knots.any(func(e): return float(e.off) < 0.0):
+					_untie()
+				else:
+					audio = null
+				if audio:
+					audio.combo(int(ev.n))   # 一段ずつ上がる木琴と鈴・切れたら短く下がる 2 音
 		"ride_pay_one":
 			# 自分の分（止まったとき・途中で降りたとき）: 糸を巻き取って、糸の上のボタンを財布へ。端数は次の滑りへ持ち越す
 			if int(ev.who) == int(p.id):
 				_lint_carry = float(ev.get("carry", 0.0))
 				_lint_frac = 0.0
+				_untie()
 				_exchange(true)   # 縫い縮まっている途中なら、すぐ済ませる（財布へ飛ぶボタンを決める前に）
 				_reel_t = maxf(REEL_T, 1.1 + sewn_looks().size() * 0.065)
 				_reel = _reel_t
@@ -839,7 +873,7 @@ class View extends Control:
 		Icons.printing = part != "" and hud.plates != null
 		if part == "ribbon":
 			var g := Speedo.layout(hud.speedo_box_now(), hud._spd_pop)
-			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, 1.0, false,
+			Speedo.draw_stitches(self, g, Speedo.level_of(hud._spd), hud._spd_spin, hud._spd_dist, hud.thread_base(), hud._spd_knots, 1.0, false,
 					hud._spd_sewn, hud.reel_k(), hud.lint())
 			Icons.printing = false
 			return
@@ -1004,9 +1038,10 @@ class View extends Control:
 			if hud.plates == null:   # 平らなとき: リボンは糸巻きから吊るして揺れる。ボビンは小刻みに
 				var rb: Rect2 = g.ribbon
 				draw_set_transform_matrix(Icons.wind_xform(Vector2(rb.get_center().x, rb.position.y), 6.0, 0.05, 0.05, 1.5 * u))
-				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud._spd_color, hud._spd_knots, e, true, hud._spd_sewn, hud.reel_k(), hud.lint())
+				Speedo.draw_stitches(self, g, k, hud._spd_spin, hud._spd_dist, hud.thread_base(), hud._spd_knots, e, true, hud._spd_sewn, hud.reel_k(), hud.lint())
+			Speedo.draw_combo(self, g, hud._combo_knots, hud._clock_now(), hud.UNTIE_T, hud.thread_base(), e)
 			draw_set_transform_matrix(Icons.wind_xform(g.c, 4.0, 0.0, 0.03, 2.0 * u))
-			Speedo.draw_spool(self, g, k, hud._spd_spin, hud._spd_color, hud.spd_best, hud._spd_pop, e, hud.plates == null)
+			Speedo.draw_spool(self, g, k, hud._spd_spin, hud.thread_base(), hud.spd_best, hud._spd_pop, e, hud.plates == null)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 
 	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。

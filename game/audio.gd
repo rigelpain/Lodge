@@ -530,6 +530,22 @@ func stitch(look: String) -> void:
 			q.finished.connect(q.queue_free)
 
 
+## 止まらずに滑って、距離の節目でコンボが一段上がった（level 1〜）・切れた（level 0）（hud.gd が呼ぶ）。耳元で、滑走の風に埋もれない大きさ。
+## 上がるたびに、木琴と鈴の音が五音音階で一つずつ上がり、段が上がるほどきらめきが増える（8 段より上は 8 段目の音）。
+## 切れたら、短くやさしく下がる 2 音（2026-10-31 代表「コンボしていることを、なにかで表示＋気持ちがいい音を追加で出してほしい」）
+func combo(level: int) -> void:
+	var name_ := "button_combo_%02d" % clampi(level, 1, 8) if level > 0 else "button_combo_break_01"
+	var s := _wav(name_)
+	if s == null:
+		return
+	_note(name_, true, Vector3.ZERO)
+	var p := AudioStreamPlayer.new()
+	p.bus = "Self"
+	add_child(p)
+	_shot2(p, s, 1.0 if level > 0 else -2.0, 1.0)
+	p.finished.connect(p.queue_free)
+
+
 ## 速さの表示の糸の上で、同じ素材が 10 個たまって上の素材に両替された（hud.gd が呼ぶ）。look は変わってできた素材。
 ## その素材の音（真鍮のチン・白蝶貝のシャラン・螺鈿）を少し小さく、きらっを重ねて、耳元で
 func exchange(look: String) -> void:
