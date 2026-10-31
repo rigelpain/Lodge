@@ -1293,14 +1293,20 @@ def build_golem():
     pelvis = part("pelvis", "felt_grey", lambda m: blob(m, V(0, 0.01, 0.42), (0.31, 0.22, 0.12), 3.0, 2.6, 7), fuzz=0.004)
     # 胴: 大きな樽。少し前へかがむ
     torso = part("torso", "felt_grey", lambda m: blob_t(m, V(0, 0.04, 0.77), (0.36, 0.27, 0.33), 2.8, 2.4, 8, taper=-0.14), fuzz=0.004)
+    # 布は 11 種類で、1 段の列も 11 なので、順に配るとどの段でも同じ向きに同じ布が来る（前は濃い色ばかり、背中は明るい柄ばかりになった）。
+    # 一段おきに布の順を半周ずらし、前と背中の継ぎ当てを半分ずつ入れ替える（2026-11-01 代表「前面と背面半分ずつツギハギを交換できないかな」）。
+    # 継ぎ当ての形・大きさ・縫い方は前のまま。前と背中で、明るさ・濃い布・柄の布・十字縫いの数がほぼ同じになる
     k = 0
+    row = 0
     for body, axis_y, rows in ((pelvis, 0.01, ((0.42, 9, 0.12),)), (torso, 0.04, ((0.55, 11, 0.13), (0.67, 11, 0.13), (0.79, 11, 0.13), (0.91, 11, 0.12), (1.01, 9, 0.1)))):
         for z, ncol, hh in rows:
             off = rnd.uniform(0, 360 / ncol)
+            swap = (ncol + 1) // 2 if row % 2 else 0
+            row += 1
             for j in range(ncol):
                 a = math.radians(off + 360 * j / ncol)
                 o = V(math.cos(a), math.sin(a), 0)
-                role, th = PATCH_FABRICS[k % len(PATCH_FABRICS)]
+                role, th = PATCH_FABRICS[(k + swap) % len(PATCH_FABRICS)]
                 w = 2 * math.pi * 0.33 / ncol * rnd.uniform(0.9, 1.1)
                 patch_on("body_patch", role, body, V(0, axis_y, z + rnd.uniform(-0.015, 0.015)) + o * 0.6, -o, V(-o.y, o.x, 0), V(0, 0, 1),
                          w, hh * rnd.uniform(0.9, 1.05), th, style="x" if k % 4 == 3 else "run", lift=0.003 + 0.001 * (k % 4),
