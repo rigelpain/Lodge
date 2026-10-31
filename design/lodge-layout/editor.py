@@ -1,11 +1,11 @@
-"""手で並べ替える平面図（editor.html）を書き出す。
+"""手で並べ替える平面図を、開発ダッシュボードの「間取り」のページ（docs/layout.html）に書き出す。
 
   python3 design/lodge-layout/editor.py
 
 建物（壁・ガラス・窓・風除室・内階段・丸柱）は動かない下絵。家具と施設は動かせる品物。
 品物の初めの並びは plan.py の「今」と「案」。寸法と座標は lodge/ と同じ（x = 東、y = 北、m）。
-editor.html はブラウザで開くだけで動く（外の通信なし）。並べた結果は「書き出し」の JSON か、
-ページの window.getLayout() で読める。
+ページはダッシュボードと同じく docs/ を出すだけで動く。並べた結果は「書き出し」の JSON か、
+ページの window.getLayout() で読める。決めた並びは design/lodge-layout/layout-*.json に残し、ここで始めの並びに足す。
 """
 import json
 import os
@@ -110,7 +110,12 @@ def items(L):
 
 
 def main():
-    data = dict(static=static(), presets={"now": items(now_layout()), "new": items(new_layout())},
+    daihyo = json.load(open(os.path.join(HERE, "layout-daihyo.json"), encoding="utf-8"))
+    presets = {
+        "daihyo": dict(label="代表の並び（10/31）", note="代表が手で並べたもの。これをゲームに入れる", items=daihyo["items"]),
+        "pr68": dict(label="前の並び（#68）", note="暖炉が東寄り、厨房が西寄りだったころ", items=items(now_layout())),
+    }
+    data = dict(static=static(), presets=presets, start="daihyo",
                 bounds=[-31.0, -19.5, 24.5, 17.0], hearth=dict(
                     benches=[[x0 - (CH["x0"] + CH["x1"]) / 2, y0 - (CH["y0"] + Y1 + 1.5) / 2,
                               x1 - (CH["x0"] + CH["x1"]) / 2, y1 - (CH["y0"] + Y1 + 1.5) / 2]
@@ -120,9 +125,10 @@ def main():
                 bar=dict(step=STOOL["step"], r=STOOL["r"]))
     tpl = open(os.path.join(HERE, "editor-template.html"), encoding="utf-8").read()
     html = tpl.replace("/*DATA*/null", json.dumps(data, ensure_ascii=False))
-    with open(os.path.join(HERE, "editor.html"), "w", encoding="utf-8") as f:
+    out = os.path.join(HERE, "..", "..", "docs", "layout.html")
+    with open(out, "w", encoding="utf-8") as f:
         f.write(html)
-    print("wrote", os.path.join(HERE, "editor.html"))
+    print("wrote", os.path.normpath(out))
 
 
 if __name__ == "__main__":

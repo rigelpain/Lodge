@@ -3,19 +3,27 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ロッジの並べ替え</title>
+<title>Lodge 間取り</title>
+<meta name="description" content="ロッジ 1 階の並びを真上から見て、家具と施設を手で動かして考える図。">
+<meta name="color-scheme" content="light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="index.css?v=6">
 <style>
-:root {
+/* 間取りのページ: ダッシュボードのタブと地はそのまま（index.css）。図の色は #app の中だけで決める */
+body.lay-page { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+#app {
   --bg: #f3eee4; --panel: #fbf8f2; --ink: #3b342c; --faint: #c8bfae; --line: #ddd3c2;
   --wall: #262b45; --glass: #9fbbd9; --floor: #ece4d2; --deck: #e6d9bf;
   --sled: #5b7fb8; --sled-bg: #dbe5f2; --food: #d0743c; --food-bg: #f6e1d0;
   --wood: #d9b07a; --wood-d: #b58a55; --chair: #cf8a68; --stone: #c9c3b8; --fire: #3a3030;
   --sel: #c8323c; --note: #f5e08a;
 }
-* { box-sizing: border-box; }
-html, body { margin: 0; height: 100%; background: var(--bg); color: var(--ink);
-  font-family: "Hiragino Sans", "Yu Gothic", system-ui, sans-serif; font-size: 13px; }
-#app { display: flex; height: 100%; }
+#app, #app * { box-sizing: border-box; }
+#app { display: flex; flex: 1; min-height: 0; margin: var(--gutter); border-radius: var(--radius); overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: "Noto Sans JP", system-ui, sans-serif; font-size: 13px; line-height: 1.5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 18px 40px -24px rgba(30, 50, 110, 0.45); }
 #stage { flex: 1; position: relative; overflow: hidden; touch-action: none; }
 svg { width: 100%; height: 100%; display: block; user-select: none; }
 #side { width: 280px; border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 12px 14px; }
@@ -36,7 +44,13 @@ textarea { width: 100%; height: 140px; font: 11px ui-monospace, monospace; borde
 @media (max-width: 700px) { #app { flex-direction: column; } #side { width: 100%; height: 45%; border-left: 0; border-top: 1px solid var(--line); } }
 </style>
 </head>
-<body>
+<body class="lay-page">
+<nav class="tabs" aria-label="ページ">
+  <a href="./" data-page="all">全体</a>
+  <a href="art.html" data-page="art">アート</a>
+  <a href="sound.html" data-page="sound">音</a>
+  <a href="layout.html" data-page="layout" aria-current="page">間取り</a>
+</nav>
 <div id="app">
   <div id="stage">
     <svg id="svg"></svg>
@@ -48,7 +62,7 @@ textarea { width: 100%; height: 140px; font: 11px ui-monospace, monospace; borde
     <div class="hint">真上から見た図。北が上、入口は下。品物をつかんで動かします。</div>
 
     <h2>始めの並び</h2>
-    <div class="row"><button id="pNow">今（#68）</button><button id="pNew">案（暖炉を真ん中）</button></div>
+    <div class="row" id="presets"></div>
 
     <h2>足す</h2>
     <div class="row">
@@ -80,7 +94,7 @@ textarea { width: 100%; height: 140px; font: 11px ui-monospace, monospace; borde
 
     <h2>書き出し</h2>
     <div class="row"><button id="exp" class="main">並びを書き出す</button><button id="copy">コピー</button></div>
-    <textarea id="out" readonly placeholder="ここに並びの JSON が出ます。並びは自動で保存され、Claude もこのページから直接読めます。"></textarea>
+    <textarea id="out" readonly placeholder="ここに並びの JSON が出ます。並びはこのブラウザに自動で保存されます。決めた並びは Claude に渡すと、design/lodge-layout/ に残してゲームに入れます。"></textarea>
   </div>
 </div>
 <script>
@@ -424,10 +438,14 @@ document.getElementById("undo").onclick = undo;
 document.getElementById("redo").onclick = redo;
 function preset(name) {
   if (items.length && !confirm("いまの並びを捨てて、始めの並びに戻しますか？（戻すボタンで取り消せます）")) return;
-  commit(); items = clone(DATA.presets[name]); sel = null; render();
+  commit(); items = clone(DATA.presets[name].items); sel = null; render();
 }
-document.getElementById("pNow").onclick = () => preset("now");
-document.getElementById("pNew").onclick = () => preset("new");
+for (const [key, p] of Object.entries(DATA.presets)) {
+  const b = document.createElement("button");
+  b.textContent = p.label; b.title = p.note || "";
+  b.onclick = () => preset(key);
+  document.getElementById("presets").appendChild(b);
+}
 
 // ---- 書き出し --------------------------------------------------------------------------
 window.getLayout = () => ({ saved: new Date().toISOString(), items: items.map(i => ({ id: i.id, name: i.name, shape: i.shape, kind: i.kind, x: i.x, y: i.y, w: i.w, d: i.d, rot: i.rot })) });
@@ -440,7 +458,7 @@ document.getElementById("copy").onclick = async () => {
 // ---- 始め ------------------------------------------------------------------------------
 gStatic = el("g", {}, svg); gItems = el("g", {}, svg); gLabels = el("g", {}, svg); gSel = el("g", {}, svg);
 drawStatic(gStatic);
-items = load() || clone(DATA.presets.new);
+items = load() || clone(DATA.presets[DATA.start].items);
 setView();
 render();
 </script>
