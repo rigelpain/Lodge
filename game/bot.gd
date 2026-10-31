@@ -3,6 +3,7 @@ extends CharacterBody3D
 const Doll := preload("res://doll.gd")
 const Emotes := preload("res://emotes.gd")
 const Palm := preload("res://palm.gd")
+const Seats := preload("res://seats.gd")
 ## 押すのを手伝う仲間（通信を入れるまでの代わり）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
 ## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手のひらを掲げると、ソリを離して前まで来て、
@@ -13,6 +14,8 @@ const Palm := preload("res://palm.gd")
 ## 一緒に乗っているときは、あなたの体重移動（A/D・前傾・後傾）に LEAN_DELAY 遅れて合わせる（lean_mode = "follow"）。
 ## 体重移動は乗っている一人ひとりの力が足し合わさるので、仲間が合わせると大きいソリもぐっと曲がる。"off" なら何もしない。
 ## 速く下るソリをつかむと引きずられ、引きずられている間は押さずに踏ん張る（止める力は sled.gd がまとめてかける）。
+## lounge の仲間は、ソリを押さずにロッジでくつろぐ: 空いた席（seats.gd）に座り、しばらくすると立って別の空いた席へ歩いて座り直す。
+## あなたが席に座ると、そのそばの空いた席へ寄ってくる（同じ机を囲む）。座る・立つは、あなたと同じ出来事（seats.gd の sit・stand）
 
 enum State { PUSH, WAIT, RIDE }
 
@@ -50,6 +53,20 @@ var _lean_now := Vector3.ZERO
 var _clock := 0.0
 var craft: Node              # 工房の配り役（craft.gd）。仲間も帯にランタンを提げ、暗くなると点ける
 var _lamp_t := 0.0           # ランタンを点けるか見直すまで (s)
+var lounge := false          # ロッジでくつろぐ仲間（ソリは押さない）
+var seats: Node              # ロッジの席の配り役（seats.gd）
+var seat_i := -1             # 座っている席の番号
+var _sit_frame := -1
+var _stand_frame := -1
+var _sit_from := Vector3.ZERO
+var _sit_stage := 0
+var _goal := -1              # 歩いて向かっている席
+var _left := -1              # さっき立った席（すぐには戻らない）
+var _rest := 0.0             # 座っている残り (s)。立っているときは、次の席を選ぶまで
+var _stuck := 0.0            # 歩いても進まない時間 (s)
+var _near_was := false       # あなたが近くの席に座っていた
+const REST := Vector2(25.0, 60.0)   # 一つの席に座っている長さ (s)
+const NEAR_SEAT := 4.0       # あなたの席からこの中の席なら「そば」(m)
 
 
 func _ready() -> void:
@@ -75,6 +92,9 @@ func _ready() -> void:
 	craft = get_parent().get_node_or_null("Craft")
 	if craft and id >= 0:
 		craft.join(id)
+	seats = get_parent().get_node_or_null("Seats")
+	if seats:
+		seats.happened.connect(_on_seat)
 
 
 ## 暗くなったらランタンを点け、明るくなったら消す（あなたと同じ lamp の出来事。見直すたびに少しずつ間をずらす）
@@ -121,6 +141,9 @@ func _physics_process(dt: float) -> void:
 	_update_replies(dt)
 	_mind_lamp(dt)
 	_regrab = maxf(0.0, _regrab - dt)
+	if lounge:
+		_lounge(dt)
+		return
 	if post != null:
 		_stand_at_post(dt)
 		return
@@ -376,7 +399,7 @@ func _on_emote(ev: Dictionary) -> void:
 				_reply(randf_range(0.1, 0.25), {"kind": "hands", "hands": "high_both"})   # 一緒に乗っていれば、一緒に万歳
 				_reply(randf_range(0.35, 0.5), {"kind": "wa"})
 				_lower_t = 3.0
-			elif near < 7.0 and state != State.RIDE:
+			elif near < 7.0 and state != State.RIDE and not lounge:
 				# 手のひらを差し出された: 前まで行って、同じ高さで掲げる（片手か両手かもまねる。片手なら右手）
 				_five_with = who
 				_five_shape = Palm.hands_name(parts[0], "both" if both else "R")
@@ -440,3 +463,145 @@ func _go_five(dt: float) -> void:
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
 	move_and_slide()
 	_pose_doll()
+
+
+# ---------------------------------------------------------------- ロッジでくつろぐ
+
+func _on_seat(ev: Dictionary) -> void:
+	if ev.get("who", -1) != id:
+		return
+	match ev.kind:
+		"sit":
+			seat_i = int(ev.seat)
+			_sit_frame = int(ev.frame)
+			_stand_frame = -1
+			_sit_from = global_position
+			_sit_stage = 0
+			_col.disabled = true
+			velocity = Vector3.ZERO
+			_goal = -1
+			_rest = randf_range(REST.x, REST.y)
+		"stand":
+			_stand_frame = int(ev.frame)
+			_left = seat_i
+
+
+## あなたが座っている席（座っていなければ空）
+func _player_seat() -> Dictionary:
+	if player == null or seats == null or int(player.get("seat_i")) < 0:
+		return {}
+	return seats.seat(int(player.seat_i))
+
+
+func _lounge(dt: float) -> void:
+	if seats == null or seats.seats.is_empty():
+		_pose_lounge()
+		return
+	var mine: Dictionary = _player_seat()
+	if seat_i >= 0:
+		var st: Dictionary = seats.seat(seat_i)
+		var pl: Array = Seats.place(st, _sit_from, Doll.frame_index(), _sit_frame, _stand_frame)
+		_sit_stage = pl[1]
+		if pl[2]:
+			seat_i = -1
+			_sit_stage = 0
+			_col.disabled = false
+			global_position = pl[0] + Vector3.UP * 0.05
+			_rest = randf_range(0.5, 2.0)
+		else:
+			global_position = pl[0]
+			# あなたが近くに座ったら、長く座っている。遠くに座ったら、少しして寄っていく
+			var near: bool = not mine.is_empty() and (mine.pos as Vector3).distance_to(st.pos) < NEAR_SEAT
+			if not mine.is_empty() and not near and not _near_was:
+				_rest = minf(_rest, randf_range(2.0, 6.0))
+			_near_was = not mine.is_empty()
+			_rest -= dt
+			if _rest <= 0.0 and _stand_frame < 0 and _sit_stage == 2:
+				if near:
+					_rest = randf_range(REST.x, REST.y)
+				else:
+					seats.send({"kind": "stand", "who": id, "seat": seat_i})
+		_pose_lounge()
+		return
+	# 立っている: 次の席を選んで歩いて行く
+	if _goal < 0:
+		_rest -= dt
+		if _rest > 0.0:
+			_pose_lounge()
+			return
+		_goal = _pick_seat(mine)
+		_stuck = 0.0
+		if _goal < 0:
+			_rest = 2.0
+			_pose_lounge()
+			return
+		if not _started:
+			# 始まり: 選んだ席のそばから、すぐ座る
+			_started = true
+			global_position = seats.seat(_goal).stand + Vector3.UP * 0.05
+	var goal: Dictionary = seats.seat(_goal)
+	if seats.taken.has(_goal):
+		_goal = -1   # 先に座られた
+		_pose_lounge()
+		return
+	var to: Vector3 = goal.stand - global_position
+	to.y = 0
+	if to.length() < 0.3:
+		if not seats.send({"kind": "sit", "who": id, "seat": _goal}):
+			_goal = -1
+		_pose_lounge()
+		return
+	var dir := _detour(to.normalized())
+	var before := global_position
+	velocity.x = dir.x * SPEED * 0.7
+	velocity.z = dir.z * SPEED * 0.7
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
+	move_and_slide()
+	look_at(global_position + dir, Vector3.UP)
+	# 机などに当たって進めなければ、別の席にする
+	var moved := Vector2(global_position.x - before.x, global_position.z - before.z).length()
+	_stuck = _stuck + dt if moved < SPEED * 0.2 * dt else maxf(0.0, _stuck - dt)
+	if _stuck > 1.5:
+		_left = _goal
+		_goal = -1
+	_pose_lounge()
+
+
+var _started := false
+var _turn_sign := 1.0        # 机をよけて回り込む向き（ふさがれているあいだは同じ向きへ回り続ける）
+
+
+## 行きたい向き want の前がふさがっていれば（机など）、少しずつ向きを振って通れる向きを選ぶ。
+## 前に選んだ回り込みの向きを先に試すので、机の縁に沿って端まで回り込める
+func _detour(want: Vector3) -> Vector3:
+	if not test_move(global_transform, want * 0.35):
+		return want
+	for a in [0.6, 1.1, 1.6, 2.2]:
+		for sg in [_turn_sign, -_turn_sign]:
+			var d := want.rotated(Vector3.UP, a * sg)
+			if not test_move(global_transform, d * 0.35):
+				_turn_sign = sg
+				return d
+	return want
+
+
+## 次に座る席: あなたが座っていれば、そのそばの空いた席。でなければ、近くの空いた席から気まぐれに
+func _pick_seat(mine: Dictionary) -> int:
+	var list: Array = []
+	if not mine.is_empty():
+		list = seats.free_near(mine.stand, 4, NEAR_SEAT).filter(func(i): return i != _left)
+	if list.is_empty():
+		list = seats.free_near(global_position, 8, 14.0).filter(func(i): return i != _left and seats.seat(i).kind != "zabuton")
+	return list[randi() % list.size()] if not list.is_empty() else -1
+
+
+func _pose_lounge() -> void:
+	_pose_doll()
+	doll.airborne = false
+	doll.facing = Vector3.ZERO
+	if seat_i >= 0:
+		var st: Dictionary = seats.seat(seat_i)
+		doll.act = Doll.Act.SIT
+		doll.facing = st.face
+		doll.sit_stage = _sit_stage
+		doll.seat_drop = st.pos.y - st.floor

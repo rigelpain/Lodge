@@ -266,9 +266,12 @@ func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			Player.Mode.GRIP: learn("grab")
 			Player.Mode.ROPE: learn("rope")
 			Player.Mode.RIDE: learn("ride")
+			Player.Mode.SIT: learn("sit")
 			Player.Mode.WALK:
 				if _prev_mode == Player.Mode.RIDE:
 					learn("getoff")
+				elif _prev_mode == Player.Mode.SIT:
+					learn("standup")
 				elif _prev_mode >= 0:
 					learn("letgo")
 		_prev_mode = mode
@@ -300,6 +303,8 @@ func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 				_hint("brake", ["S"], "brake")
 		Player.Mode.WALK:
 			_walk_hints(dt, sled, p)
+		Player.Mode.SIT:
+			_hint("standup", ["F"], "standup")   # ロッジの席から立つ（移動キーでも立てる）
 
 
 ## 押す・引く・体重をかけるは、合わせて need 秒したら 1 回と数える
@@ -348,6 +353,10 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 		var nb = sbn.reachable(p)
 		if nb != null:
 			_hint("shears", ["F"], "shears", nb.at + Vector3.UP * 0.7)
+	# ロッジの席（seats.gd）: 空いた席のそばで、席の方を向いていれば、F と座る絵を席の上に
+	var si: int = p.seat_near()
+	if si >= 0 and not p.rooted():
+		_hint("sit", ["F"], "sit", p.seats.seat(si).pos + Vector3.UP * 0.85)
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)

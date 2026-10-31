@@ -16,6 +16,7 @@ const Look := preload("res://look.gd")
 ##   --stitch=名前  滑りあとの縫い目の差し替え（running なみ縫い・zigzag・chain くさり縫い・saddle サドルステッチ）。既定はソリの大きさで決まる
 ##   --trail-fade=fray|bury  滑りあとの消え方（ほつれる・雪に埋もれる）
 ##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
+##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
@@ -56,6 +57,7 @@ const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
 const CraftUi := preload("res://craft_ui.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
+const Seats := preload("res://seats.gd")
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がロッジの中の側）と向き
 const SHOP_AT := Vector3(2.0, 0, 1.0)
@@ -80,6 +82,7 @@ var craft: Node               # 工房の配り役（craft.gd）: 買う・縫�
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
+var seats: Seats              # ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団）の配り役。人より先に置く
 
 
 static func hill(x: float, z: float) -> float:
@@ -176,6 +179,10 @@ func _ready() -> void:
 	if not args.has("no-lodge"):
 		_make_lodge()
 		_furnish_lodge()
+		seats = Seats.new()
+		seats.name = "Seats"
+		seats.lodge = get_node("Lodge")
+		add_child(seats)
 
 	sled = Sled.new()
 	sled.kind = args.get("sled", "mid")
@@ -210,6 +217,16 @@ func _ready() -> void:
 		b.lean_mode = args.get("bot-lean", "follow")
 		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
 		add_child(b)
+	if seats:
+		# ロッジでくつろぐ仲間: 食堂の空いた席に座った姿で始まる（bot.gd の lounge）
+		for i in int(args.get("lodge-bots", "2")):
+			var b := Bot.new()
+			b.sled = sled
+			b.player = player
+			b.side = 1 if i % 2 == 0 else -1
+			b.lounge = true
+			b.position = get_node("Lodge").to_global(Vector3(6.0 + 3.0 * i, 0.6, -4.0))
+			add_child(b)
 
 	if not args.has("no-buttons"):
 		snow_buttons = SnowButtons.new()

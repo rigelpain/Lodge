@@ -7,6 +7,7 @@ const Emotes := preload("res://emotes.gd")
 const EmoteRing := preload("res://emote_ring.gd")
 const Palm := preload("res://palm.gd")
 const SackLook := preload("res://sack_look.gd")
+const Seats := preload("res://seats.gd")
 ## あなた。一人称で、見えるのは自分の人形と同じ柄の袖口と、紙の手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
@@ -29,6 +30,9 @@ const SackLook := preload("res://sack_look.gd")
 ## どの米袋を装備するかは、I で開く装備の画面（craft_ui.gd）で選ぶ。
 ## ランタンも装備（craft.gd の lanterns）: 帯の左に提げ、R で点ける・消す（2026-10-29 代表。ソリをふもとへ戻すのは Backspace に移した）。
 ## 左クリックの順: 雪玉を持っていれば投げる → 高い両手のひらなら拍手。
+## ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団。seats.gd）: 空いた席のそばで、席の方を向いて F で座る。
+## 椅子の後ろへ歩み寄って向きを変え、腰を下ろす（12 コマ）。目線は座った人形の目の高さへ。もう一度 F か、移動キーで立つ。
+## 座っているあいだも、身ぶり・声・手に持った物は使える。
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
 const DASH := 3.4            # Shift で走る速さ
@@ -41,7 +45,7 @@ const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差�
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
 const LET_GO_SPEED := 5.0    # 紐を持っていて、ソリがこれより速く滑ると手が離れる (m/s)。縁をつかんでいるときはソリが決める（sled.gd の引きずり）
 
-enum Mode { WALK, GRIP, RIDE, ROPE }
+enum Mode { WALK, GRIP, RIDE, ROPE, SIT }
 
 var sled: RigidBody3D
 var cam: Camera3D
@@ -131,6 +135,13 @@ var _pan_acc := 0.0          # 二本指スクロールのたまった量
 const PAN_STEP := 1.5        # これだけたまったら 1 つ持ち替える
 var last_item := {}          # 最後に触ったソリを畳んで持っていれば、その持ち物（last_sled は null）
 const SLED_SWITCH := 0.8     # 近いソリへ持ち替える差 (m)。行ったり来たりしないよう
+var seats: Seats             # ロッジの席の配り役（main.gd が置く。なければ座れない）
+var seat_i := -1             # 座っている席の番号（seats.gd）
+var _sit_frame := -1         # 座る出来事のコマ
+var _stand_frame := -1       # 立つ出来事のコマ（座っているあいだは -1）
+var _sit_from := Vector3.ZERO   # 座ると決めたときの足もと（席の立つ所へ歩み寄る）
+var _sit_stage := 0          # 0 立つ、1 中腰、2 座る（Seats.place）
+var _sit_keys_free := false  # 座ってから、移動キーをいったん離した（押しっぱなしのまま来て、すぐ立たないように）
 
 
 func _ready() -> void:
@@ -210,6 +221,9 @@ func _ready() -> void:
 		craft.happened.connect(_on_craft)
 		_load_tag()
 	last_sled = sled
+	seats = get_parent().get_node_or_null("Seats")
+	if seats:
+		seats.happened.connect(_on_seat)
 
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 
@@ -316,6 +330,9 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_F:
 				if rooted():
 					return
+				if mode == Mode.SIT:
+					stand_up()
+					return
 				if crouching and mode == Mode.WALK and _snow_ahead():
 					emote("make_ball")   # しゃがんで雪面に手を伸ばす: 雪玉を丸める
 					return
@@ -331,6 +348,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					var hud = get_parent().get("hud")
 					if hud:
 						hud.learn("shears")
+					return
+				if mode == Mode.WALK and sit_down():
 					return
 				match mode:
 					Mode.GRIP, Mode.ROPE:
@@ -364,7 +383,7 @@ func _unhandled_input(e: InputEvent) -> void:
 					_exhale_t = 0.0
 					emote("breath")
 			KEY_N:
-				if craft and not menu_open and not rooted():
+				if craft and not menu_open and not rooted() and mode != Mode.SIT:
 					toggle_sack()
 			KEY_R:
 				if craft and not menu_open:
@@ -379,8 +398,73 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_E:
 				if mode == Mode.RIDE:
 					get_off()
-				else:
+				elif mode != Mode.SIT:
 					get_on()
+
+
+## そばの、座れる空いた席の番号（見ている向きにあるもの）。なければ -1
+func seat_near() -> int:
+	if seats == null or mode != Mode.WALK or shopping:
+		return -1
+	return seats.near(global_position, -cam.global_basis.z)
+
+
+## そばの空いた席に座る（出来事を出す。座るのは配られてから）
+func sit_down() -> bool:
+	var i := seat_near()
+	return i >= 0 and seats.send({"kind": "sit", "who": id, "seat": i})
+
+
+## 席から立つ（立つ途中なら何もしない）
+func stand_up() -> void:
+	if seat_i >= 0 and _stand_frame < 0:
+		seats.send({"kind": "stand", "who": id, "seat": seat_i})
+
+
+func _on_seat(ev: Dictionary) -> void:
+	if ev.get("who", -1) != id:
+		return
+	match ev.kind:
+		"sit":
+			if mode == Mode.GRIP or mode == Mode.ROPE:
+				let_go()
+			seat_i = int(ev.seat)
+			_sit_frame = int(ev.frame)
+			_stand_frame = -1
+			_sit_from = global_position
+			_sit_stage = 0
+			_sit_keys_free = false
+			mode = Mode.SIT
+			_col.disabled = true
+			velocity = Vector3.ZERO
+		"stand":
+			_stand_frame = int(ev.frame)
+
+
+## 座る・座っている・立つ（居場所は人形と同じコマで刻む）。立ちきったら歩ける
+func _sit_step(dt: float) -> void:
+	var st := seats.seat(seat_i)
+	var f := Doll.frame_index()
+	var pl: Array = Seats.place(st, _sit_from, f, _sit_frame, _stand_frame)
+	_sit_stage = pl[1]
+	velocity = Vector3.ZERO
+	if pl[2]:
+		mode = Mode.WALK
+		seat_i = -1
+		_sit_stage = 0
+		_col.disabled = false
+		global_position = pl[0] + Vector3.UP * 0.05
+		return
+	global_position = pl[0]
+	if _stand_frame < 0 and f - _sit_frame < Seats.SIT_IN:
+		var face: Vector3 = st.face
+		rotation.y = lerp_angle(rotation.y, atan2(-face.x, -face.z), 1.0 - exp(-dt * 10.0))   # 腰を下ろしながら、目も席の向きへ
+	var moving := Input.is_physical_key_pressed(KEY_W) or Input.is_physical_key_pressed(KEY_A) \
+			or Input.is_physical_key_pressed(KEY_S) or Input.is_physical_key_pressed(KEY_D)
+	if not moving:
+		_sit_keys_free = true
+	elif _sit_keys_free and _sit_stage == 2 and not menu_open and not shopping:
+		stand_up()   # 移動キーでも立つ
 
 
 ## 雪の上の紐の先に近いか
@@ -539,6 +623,8 @@ func _physics_process(dt: float) -> void:
 			_walk(dt, true)
 		Mode.WALK:
 			_walk(dt, false)
+		Mode.SIT:
+			_sit_step(dt)
 	_update_point()
 	_update_emote(dt)
 	_sack_events(dt)
@@ -548,13 +634,18 @@ func _physics_process(dt: float) -> void:
 
 ## 人形に、いまの動きを伝える（姿勢は人形が 12 コマで刻む）。Q を押しているあいだ手を振る（仮のキー）
 func _pose_doll() -> void:
-	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE][mode]
+	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE, Doll.Act.SIT][mode]
 	doll.sled = sled
 	doll.grip = handle if mode == Mode.GRIP else Vector3.INF
 	doll.effort = pushing or pulling
 	doll.dragged = mode == Mode.GRIP and sled.is_dragged(self)
 	doll.airborne = mode == Mode.WALK and not is_on_floor()
 	doll.facing = (sled.global_basis * push_dir) if mode == Mode.GRIP else Vector3.ZERO
+	if mode == Mode.SIT:
+		var st := seats.seat(seat_i)
+		doll.facing = st.face
+		doll.sit_stage = _sit_stage
+		doll.seat_drop = st.pos.y - st.floor
 	# 人形の顔は、カメラの見ている向きの 6 m 先を見る。測る所は、一人称ではカメラ（目）、三人称では頭。
 	# 三人称でカメラから測ると、カメラが 6 m 後ろなら見る先が頭そのものに、9 m なら頭の 3 m 後ろになり、首がねじれていた
 	var from := _gaze_from if third and _gaze_from != Vector3.INF else cam.global_position
@@ -749,6 +840,10 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			if sled.kind == "sack":
 				e += SACK_EYE   # 米袋では少し後ろへもたれる（膝と紐を握った手と袋の前の縁が、画面の下に見える）
 			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * e)
+		elif mode == Mode.SIT and _sit_stage > 0:
+			# ロッジの席: 座った人形の目の所（中腰のあいだは半ば）
+			var e := doll.eye_point(true) if _sit_stage == 2 else doll.eye_point(false).lerp(doll.eye_point(true), 0.55)
+			eye = to_local(Transform3D(doll.global_basis, global_position) * e)
 		eye.y += _cam_em.z
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
 		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0)
@@ -759,6 +854,8 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	# カメラは頭のまわりをマウスの上下で回り、頭を見る向き（basis）を決める。そのあと、人形の目の高さの線が画面の cam_frame の
 	# 高さに来るよう、カメラを自分の上下の向きに平行にずらす（見下ろす角度は変えない。Camera3D の v_offset と同じ）
 	var pivot := Vector3(0, 1.6, 0)
+	if mode == Mode.SIT and _sit_stage > 0:
+		pivot.y -= (doll.eye_point(false).y - doll.eye_point(true).y) * (1.0 if _sit_stage == 2 else 0.55)   # 座った目の高さに合わせて下げる
 	var offset := Vector3(0, CAM_RISE, cam_dist + RIDE_CAM_PUSH * ride_fov / RIDE_FOV_MAX).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
 	var pivot_w := to_global(pivot)
 	_gaze_from = pivot_w
