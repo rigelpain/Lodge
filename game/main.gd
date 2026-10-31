@@ -708,9 +708,10 @@ func _furnish_lodge() -> void:
 		slot.add_child(n)
 		return n
 	# 機械は 2 倍（ミシンは貸出に収まるよう 1.5 倍）の大きさで書き出してある
-	put.call("slot_vending_1", "res://props/misc/vending_red.glb", Vector3.ZERO)
-	put.call("slot_vending_2", "res://props/misc/vending_blue.glb", Vector3.ZERO)
-	put.call("slot_vending_3", "res://props/misc/vending_red.glb", Vector3.ZERO)
+	# 自販機には見た目の大きさの当たりの箱（人がすり抜けず、三人称のカメラも中に埋まらない）
+	_solid(put.call("slot_vending_1", "res://props/misc/vending_red.glb", Vector3.ZERO))
+	_solid(put.call("slot_vending_2", "res://props/misc/vending_blue.glb", Vector3.ZERO))
+	_solid(put.call("slot_vending_3", "res://props/misc/vending_red.glb", Vector3.ZERO))
 	var machine: Node3D = put.call("slot_craft_rental", "res://props/craft_machine.glb", Vector3.ZERO)
 	if machine:   # ミシンの動き（そばで T で縫う。Y でコマ撮り、H で仲間を足踏みに）
 		sewing = SewingMachine.new()
@@ -731,6 +732,29 @@ func _furnish_lodge() -> void:
 		kitchen.add_child(set_node)
 		Props.cook_cycle(set_node)   # 調理の仕組みができるまで: 装置が順に調理して煙を出す
 		_put_snowman(kitchen)
+
+
+## 置いた物 n に、見た目（MeshInstance3D）を包む箱の当たり判定を付ける。null なら何もしない
+func _solid(n: Node3D) -> void:
+	if n == null:
+		return
+	var inv := n.global_transform.affine_inverse()
+	var box := AABB()
+	var first := true
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var b: AABB = inv * (mi as MeshInstance3D).global_transform * (mi as MeshInstance3D).get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	if first:
+		return
+	var body := StaticBody3D.new()
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = box.size
+	col.shape = shape
+	col.position = box.get_center()
+	body.add_child(col)
+	n.add_child(body)
 
 
 ## 厨房の奥の並びのいちばん西（ミシンの右）に、扉を開けた冷蔵庫と、中に立つご飯係の雪だるま（props/build_snowman.py）。
