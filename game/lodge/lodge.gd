@@ -32,13 +32,14 @@ func _ready() -> void:
 		"roof": Look.felt(Color(0.16, 0.20, 0.41), 1.2),    # 藍のフェルト
 		"snow": Look.snow(),
 		"stone": Look.felt(Color(0.50, 0.46, 0.42), 2.0),   # フェルトの小石
-		"post": Look.wood(Color(0.44, 0.27, 0.16)),
-		"door": Look.wood(Color(0.43, 0.29, 0.19)),
-		"board": _planks(Color(0.78, 0.63, 0.42)),          # 2 階の天井の羽目板、カウンター
-		"ceiling": _planks(Color(0.78, 0.63, 0.42)),        # 1 階の天井の羽目板
-		"floor": _planks(Color(0.62, 0.46, 0.30)),          # 1 階の床も、幅の広い荒い板
-		"deck": Look.wood(Color(0.73, 0.58, 0.40)),
-		"rail": Look.wood(Color(0.66, 0.50, 0.31)),
+		# 木はこげ茶（2026-10-31 代表「僕の記憶のロッジはもっともっとこげ茶色だった」）
+		"post": Look.wood(Color(0.24, 0.14, 0.08)),
+		"door": Look.wood(Color(0.27, 0.17, 0.10)),
+		"board": _planks(Color(0.50, 0.35, 0.22)),          # 2 階の天井の羽目板、卓・棚
+		"ceiling": _planks(Color(0.50, 0.35, 0.22)),        # 1 階の天井の羽目板
+		"floor": _planks(Color(0.38, 0.26, 0.16)),          # 1 階の床も、幅の広い荒い板
+		"deck": Look.wood(Color(0.46, 0.33, 0.21)),
+		"rail": Look.wood(Color(0.36, 0.24, 0.14)),
 		"frame": Look.paper(Color(0.93, 0.88, 0.79)),
 		"tatami": Look.paper(Color(0.85, 0.82, 0.66)),
 		"cushion": Look.felt(Color(0.79, 0.54, 0.40)),
@@ -80,14 +81,14 @@ func _ready() -> void:
 	_make_auto_door()
 
 
-const DOOR_BROWN := Color(0.43, 0.29, 0.19)   # 外扉の茶
+const DOOR_BROWN := Color(0.27, 0.17, 0.10)   # 外扉の茶（こげ茶）
 # 丸太の地の色。外扉と同じ値にすると、日なたで明るく赤く（橙に）出るので、日なたで扉の茶に見えるよう暗く、赤みを抑える
-const LOG_BROWN := Color(0.27, 0.21, 0.16)
+const LOG_BROWN := Color(0.15, 0.10, 0.07)   # こげ茶
 
 
 ## 丸太の継ぎ目の綿: 生成りの綿の毛羽。縁がふわっと明るい
 static func _chink() -> StandardMaterial3D:
-	var m := Look.felt(Color(0.66, 0.60, 0.50), 6.0)   # くぼみの陰にあるので、生成りより暗め（明るいと白い縞に見える）
+	var m := Look.felt(Color(0.52, 0.46, 0.38), 6.0)   # くぼみの陰にあるので、生成りより暗め（明るいと白い縞に見える）
 	m.rim = 0.15
 	m.rim_tint = 0.3
 	return m
@@ -98,8 +99,8 @@ shader_type spatial;
 render_mode diffuse_burley;
 uniform sampler2D noise : filter_linear_mipmap, repeat_enable;
 uniform vec3 bark : source_color = vec3(0.27, 0.21, 0.16);
-uniform vec3 wood : source_color = vec3(0.38, 0.29, 0.21);   // 剥いた木肌。明るく赤いと、日なたで橙のれんがに見える
-uniform vec3 core : source_color = vec3(0.66, 0.50, 0.32);
+uniform vec3 wood : source_color = vec3(0.24, 0.16, 0.10);   // 剥いた木肌。明るく赤いと、日なたで橙のれんがに見える
+uniform vec3 core : source_color = vec3(0.50, 0.35, 0.21);
 varying vec3 m_pos;
 varying vec3 m_nrm;
 
