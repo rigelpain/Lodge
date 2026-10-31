@@ -39,6 +39,9 @@ const TURN_SIZE := Vector2i(160, 160)  # 回る図
 const TURN_STEP := 2                   # 何コマごとに回すか（12 コマ／秒の 2 コマ = 6 回／秒）
 const TURN_DEG := 15.0                 # 1 回に回す角度
 const WIDE_SIZE := Vector2i(312, 144)  # HUD の札の、人を乗せて回る図（横長）
+const WIDE_STEP := 2                   # HUD の札の回る図: 12 コマ／秒の 2 コマに 1 回、
+const WIDE_DEG := 5.0                  # 5° ずつ回す（12 秒で 1 周。2026-10-31 代表「タグでのソリの回転はもっとゆっくりに」。前は 4 秒で 1 周）
+const PERSON_SIZE := Vector2i(96, 160) # HUD の札の、持ち主の人型の図
 
 static var _holder: Node
 static var _tags := {}                 # 柄の番号 → ViewportTexture
@@ -1368,23 +1371,41 @@ static func turntable(kind: String, fabric: String) -> Texture2D:
 	return (_turns[key] as Turntable).get_texture()
 
 
-## HUD の札の、人を乗せて回る図（横長。大きさと布の色ごとに 1 つを使い回す）。人は乗せずにソリだけを撮り、
-## 人の形は HUD が turn_project で同じ向きに合わせて上に描く
-static func turntable_wide(kind: String, fabric: String) -> Texture2D:
-	var key := kind + "|" + fabric + "|wide"
+## HUD の札の、人を乗せて回る図（横長。札は一度に一枚なので 1 つを使い回し、ソリの大きさ・布の色が替わったら作り直す）。
+## people は乗せる人 [{key, at（ソリの座標）, pose, col, face（向く向き。ソリの座標）}]。人は 3D の人型（person_icon.gd の model）で、
+## ソリといっしょに回る。名前と王冠は HUD が turn_project で頭の上に描く
+static func turntable_wide(kind: String, fabric: String, people: Array = []) -> Texture2D:
+	var key := "hud|wide"
 	if not _turns.has(key):
 		var t := Turntable.new()
-		t.kind = kind
-		t.fabric = fabric
 		t.wide = true
 		t.size = WIDE_SIZE
+		_root().add_child.call_deferred(t)
+		_turns[key] = t
+	var tt: Turntable = _turns[key]
+	tt.show_sled(kind, fabric)
+	tt.people = people
+	return tt.get_texture()
+
+
+## HUD の札の、持ち主の人型（正面から少し斜め。色ごとに 1 つ）
+static func person_portrait(col: Color) -> Texture2D:
+	var key := "person|" + col.to_html()
+	if not _turns.has(key):
+		var t := Turntable.new()
+		t.kind = ""
+		t.size = PERSON_SIZE
+		t.people = [{"key": 0, "at": Vector3.ZERO, "pose": "stand", "col": col, "face": Vector3(0.35, 0, 1)}]
 		_root().add_child.call_deferred(t)
 		_turns[key] = t
 	return (_turns[key] as Turntable).get_texture()
 
 
-## いまの回る図の向き（度）。12 コマの TURN_STEP コマごとに TURN_DEG ずつ（どの回る図も同じ向き）
-static func turn_deg() -> float:
+## いまの回る図の向き（度）。12 コマの TURN_STEP コマごとに TURN_DEG ずつ（どの回る図も同じ向き）。
+## wide は HUD の札の回る図（WIDE_STEP コマごとに WIDE_DEG ずつ。ゆっくり）
+static func turn_deg(wide := false) -> float:
+	if wide:
+		return WIDE_DEG * (Doll.frame_index() / WIDE_STEP)
 	return TURN_DEG * (Doll.frame_index() / TURN_STEP)
 
 
@@ -1396,15 +1417,15 @@ static func turn_camera(kind: String, wide: bool) -> Array:
 	var pos := Vector3(0, L * 0.9, L * 1.3)
 	var at := Vector3(0, k.box.y * 0.5, 0)
 	var sz := L * 1.25
-	if wide:
-		pos = Vector3(0, L * 0.62, L * 1.2)
-		sz = L * 0.8   # 後ろで押す人・横でつかむ人まで入るように、少し引いて撮る
-		at.y += sz * 0.12
+	if wide:   # 人（1.5 m）が立って入るように、少し引いて撮る。小さいソリでも人の背の分は空ける
+		sz = maxf(L * 0.74, 2.4)
+		pos = Vector3(0, sz * 0.75, sz * 1.45)
+		at.y = sz * 0.2
 	return [Transform3D.IDENTITY.translated(pos).looking_at(at), sz]
 
 
 ## ソリの座標の点 local を、回る図の上の位置（0〜1。左上が 0）にする。z は奥行き（大きいほど手前）
-static func turn_project(kind: String, wide: bool, local: Vector3, deg: float) -> Vector3:
+static func turn_project(kind: String, wide: bool, local: Vector3, deg: float) -> Vector3:   # deg は turn_deg(wide)
 	var cam: Array = turn_camera(kind, wide)
 	var aspect := float(WIDE_SIZE.x) / WIDE_SIZE.y if wide else 1.0
 	var p: Vector3 = (cam[0] as Transform3D).affine_inverse() * (Basis(Vector3.UP, deg_to_rad(deg)) * local)
@@ -1422,10 +1443,14 @@ class TagFace extends Control:
 
 ## 広げた姿を小さな世界に置いて、斜め上から撮る。12 コマに合わせて 15° ずつ回す（人形と同じコマ撮り）
 class Turntable extends SubViewport:
-	var kind := "mid"
+	var kind := "mid"                  # "" ならソリは置かず、人だけ（持ち主の人型の図）
 	var fabric := ""
 	var wide := false
+	var people: Array = []             # 乗せる人（turntable_wide）
 	var _model: Node3D
+	var _look: Node3D
+	var _cam: Camera3D
+	var _figs := {}                    # key → 人型
 	var _frame := -1
 
 	func _init() -> void:
@@ -1435,39 +1460,90 @@ class Turntable extends SubViewport:
 		render_target_update_mode = SubViewport.UPDATE_ALWAYS
 
 	func _ready() -> void:
-		var glb := "res://props/sled_%s.glb" % kind
 		_model = Node3D.new()
 		add_child(_model)
-		if ResourceLoader.exists(glb):
-			var look := preload("res://props.gd").make(glb)
-			preload("res://fabrics.gd").tint(look, kind, fabric)
-			_model.add_child(look)
-		var cam := Camera3D.new()
-		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-		var cs: Array = preload("res://sled_tags.gd").turn_camera(kind, wide)
-		cam.transform = cs[0]
-		cam.size = cs[1]
-		cam.keep_aspect = Camera3D.KEEP_HEIGHT
-		add_child(cam)
+		_cam = Camera3D.new()
+		_cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		_cam.keep_aspect = Camera3D.KEEP_HEIGHT
+		add_child(_cam)
+		_build()
 		var sun := DirectionalLight3D.new()
 		sun.rotation_degrees = Vector3(-50, -30, 0)
-		sun.light_energy = 1.4
+		sun.light_energy = 1.4 if not (wide or kind == "") else 1.7   # 人型の丸みが見えるように、人を乗せる図は陰を濃く
 		add_child(sun)
 		var env := Environment.new()
 		env.background_mode = Environment.BG_CLEAR_COLOR
 		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 		env.ambient_light_color = Color(0.85, 0.88, 0.95)
-		env.ambient_light_energy = 0.7
+		env.ambient_light_energy = 0.7 if not (wide or kind == "") else 0.42
 		var we := WorldEnvironment.new()
 		we.environment = env
 		add_child(we)
 
+	## ソリの大きさ・布の色を替える（替わったときだけ作り直す）
+	func show_sled(k: String, f: String) -> void:
+		if k == kind and f == fabric and _look != null:
+			return
+		kind = k
+		fabric = f
+		if is_node_ready():
+			_build()
+
+	func _build() -> void:
+		if _look:
+			_look.queue_free()
+			_look = null
+		var glb := "res://props/sled_%s.glb" % kind
+		if kind != "" and ResourceLoader.exists(glb):
+			_look = preload("res://props.gd").make(glb)
+			preload("res://fabrics.gd").tint(_look, kind, fabric)
+			_model.add_child(_look)
+		if kind == "":   # 人だけ: 正面から少し上を見下ろす
+			_cam.transform = Transform3D.IDENTITY.translated(Vector3(0, 1.15, 4.0)).looking_at(Vector3(0, 0.8, 0))
+			_cam.size = 1.75
+		else:
+			var cs: Array = preload("res://sled_tags.gd").turn_camera(kind, wide)
+			_cam.transform = cs[0]
+			_cam.size = cs[1]
+
 	func _process(_dt: float) -> void:
-		var fi := preload("res://doll.gd").frame_index() / preload("res://sled_tags.gd").TURN_STEP
-		if fi == _frame or _model == null:
+		if _model == null:
+			return
+		_place_people()
+		if kind == "":
+			return
+		var Tags := preload("res://sled_tags.gd")
+		var fi := preload("res://doll.gd").frame_index() / (Tags.WIDE_STEP if wide else Tags.TURN_STEP)
+		if fi == _frame:
 			return
 		_frame = fi
-		_model.rotation.y = deg_to_rad(preload("res://sled_tags.gd").turn_deg())
+		_model.rotation.y = deg_to_rad(Tags.turn_deg(wide))
+
+	## 人型を置く: ソリの上の、その人の所に、その姿で、向く向きへ（ソリといっしょに回る）
+	func _place_people() -> void:
+		if people.is_empty() and _figs.is_empty():
+			return
+		var PI3 := preload("res://person_icon.gd")
+		var seen := {}
+		for x in people:
+			var key = x.key
+			seen[key] = true
+			if not _figs.has(key):
+				var f := PI3.model(x.col)
+				_model.add_child(f)
+				_figs[key] = f
+			var fig: Node3D = _figs[key]
+			PI3.tint_model(fig, x.col)
+			PI3.pose_model(fig, x.pose)
+			var face: Vector3 = x.get("face", Vector3.FORWARD)
+			face.y = 0.0
+			if face.length() < 0.01:
+				face = Vector3.FORWARD
+			fig.transform = Transform3D(Basis.looking_at(face.normalized(), Vector3.UP), x.at)
+		for key in _figs.keys():
+			if not seen.has(key):
+				_figs[key].queue_free()
+				_figs.erase(key)
 
 
 # ---- 3D のタグ（吊るす） -------------------------------------------------------------------
