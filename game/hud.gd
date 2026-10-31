@@ -7,7 +7,7 @@ extends CanvasLayer
 ##   画面の下のまんなか: つかんでいる・紐を持っている・乗っているときの手引き。ほかの人のそばでは身ぶりの手引き
 ##   Esc: 設定の画面の左に、すべてのキーと絵を並べた札
 ##   確かめ用: --hud-debug か設定の「確かめ用の数字」で、左上の隅に小さな文字で fps と通信の速さ（開発用なので文字でよい）。
-##         押している人数は左下の札の人の形、速さは滑るときの糸巻き（speedo.gd）が伝える
+##         押している人数は左下の札、速さは滑るときの糸巻き（speedo.gd）が伝える
 ## 絵は hud_icons.gd。ミシン（main.sewing）とエモート（main.emotes）は、あればその案内も出す。
 
 const Icons := preload("res://hud_icons.gd")
@@ -88,8 +88,7 @@ var _tag_a := 0.0
 var _flow := 0.0
 var _n_push := 0
 var _push_hold := 0.0
-var _people: Array = []       # [人, 形（"stand" / "push" / "pull" / "sit"）, 色, 力をかけているか]
-var _push_t := {}             # 人 → 押す姿の残り (s)。押した瞬間に入れ、離しても少し残す（1 コマごとのちらつきを消す）
+var _people: Array = []       # [人, 形（"stand" / "sit"）, 色, 力をかけているか]
 var _pop := {}                # 人 → 跳ねの残り（1→0）
 var _chev_pop := 0.0
 var _hints := {}              # 案内 → {keys, icon, world, scr, a, on, bottom}
@@ -235,21 +234,13 @@ func _update_people(dt: float, sled: RigidBody3D, p: Node3D) -> void:
 		if _push_hold <= 0.0:
 			_n_push = raw
 	var list: Array = []
+	var others_push := maxi(0, _n_push - (1 if p and (p.pushing or p.pulling) else 0))
 	var who: Array = sled.holders.keys()
 	if sled.rope_holder and not who.has(sled.rope_holder):
 		who.append(sled.rope_holder)
 	for w in who:
-		# 押しているかは、このコマ押した人（sled._pushed_by）で一人ずつ見る。押している人は前のめりの「押す」姿、
-		# 紐で引いている人は「引く」姿、つかんでいるだけの人は立った姿で薄く（2026-10-31 代表「押してる人数はタグで表示すべき」）
-		if sled._pushed_by.has(w) or (w == sled.rope_holder and w.get("pulling")):
-			_push_t[w] = 0.35
-		var pushing: bool = _push_t.get(w, 0.0) > 0.0
-		var pose := ("pull" if w == sled.rope_holder else "push") if pushing else "stand"
-		list.append([w, pose, _color_of(w), pushing or sled.is_dragged(w)])
-	for k in _push_t.keys():
-		_push_t[k] -= dt
-		if _push_t[k] <= 0.0 or not who.has(k):
-			_push_t.erase(k)
+		var strong: bool = ((w.pushing or w.pulling) if w == p else others_push > 0) or sled.is_dragged(w)
+		list.append([w, "stand", _color_of(w), strong])
 	for w in sled.riders:
 		list.append([w, "sit", _color_of(w), true])
 	var before: Array = _people.map(func(x): return x[0])
@@ -1026,14 +1017,8 @@ class View extends Control:
 			var pop: float = hud._pop.get(x[0], 0.0)
 			var sz := 70.0 * u * (1.0 + 0.35 * sin(pop * PI))
 			var lift := 6.0 * u * sin(pop * PI)
-			if x[1] == "push" or x[1] == "pull":   # 押す・引く姿（Icons.icon の "person" と同じ箱で、姿勢だけ変える）
-				Icons._o = Vector2(px, py - lift)
-				Icons._s = sz / 64.0
-				Icons.doll(self, Vector2(0, 26), x[2], x[1], a)
-				px += 36.0 * u   # 前のめりの手の分だけ空ける
-			else:
-				Icons.icon(self, "person" if x[1] == "stand" else "person_sit", Vector2(px, py - lift), sz, a * (1.0 if x[3] else 0.5), x[2])
-				px += 30.0 * u
+			Icons.icon(self, "person" if x[1] == "stand" else "person_sit", Vector2(px, py - lift), sz, a * (1.0 if x[3] else 0.5), x[2])
+			px += 30.0 * u
 		if sled == null and not item.is_empty():
 			# 畳んだソリは形がわからないので、広げた姿をくるくる回して見せる（タグの窓）
 			var tw := 58.0 * u
