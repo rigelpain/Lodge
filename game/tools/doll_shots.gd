@@ -2,6 +2,7 @@ extends SceneTree
 ## 3 体の人形を並べて撮る（骨と姿勢の確かめ用）。
 ##   Godot --path game -s res://tools/doll_shots.gd -- --out=/path/to.png [--at=秒] [--pose=idle|walk|wave|call|breath]
 ## 並べる人形を替える: --kinds=robo,musha,ningyo,golem（doll.gd の KINDS のどれでも。--kinds=all で 7 体）
+## 向きを回す: --turn=180 で背中をこちらへ（立つ姿のとき）
 ## 息の見本: --pose=breath --close（顔の近くから）[--dark（うしろに暗い壁。ロッジの壁や木の前の見え方）] [--caller=0〜2]
 ## kasa は立ってこちらを見る、origami は手を振る、news は横へ歩く（--pose で全員を同じにもできる）
 ## 指さしの見本: --pose=point（① が赤い玉を指し、② と ③ がそこを見る）
@@ -98,7 +99,7 @@ func _initialize() -> void:
 		host.add_child(d)
 		var to_cam := cam.position - host.position
 		to_cam.y = 0
-		d.facing = to_cam.rotated(Vector3.UP, 0.3)
+		d.facing = to_cam.rotated(Vector3.UP, 0.3 + deg_to_rad(float(args.get("turn", "0"))))
 		d.gaze = cam.position
 		var pose: String = args.get("pose", ["idle", "wave", "walk"][k % 3])
 		match pose:
