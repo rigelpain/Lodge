@@ -13,23 +13,29 @@ voice_oi_01..03   「おーーーい」遠くの人を呼ぶ。お を長く強�
 声帯の音（声門の波を 1 周ずつ作り、揺らぎを入れる）に息を混ぜ、口の形の共鳴（フォルマント）を通す。
 録音も生成サービスも使わない。高さは人ごとに Godot 側で少し変える（pitch_scale）。
 やわらかくするため: 息を多めに混ぜ、高い倍音を落とし、立ち上がりと終わりをなだらかにする。
+
+人の声に聞こえるための 3 つ（earshot で前後を比べて決めた。2026-10-31）:
+- 共鳴は人の喉と同じく縦につなぎ（Klatt の cascade）、幅を子どもの声の 90〜300 Hz にする。
+  幅が 1 kHz 近くあると母音の形がぼやけ、「風船のきしみ」「虫の羽音」に聞かれた
+- 3〜5 kHz に F4・F5 を置く。ないと 4 kHz から上が抜けて、作った音に聞こえる
+- 息のかすれは声門が開いているあいだに強くなる（周期で脈打つ）。揺らぎは人の声の幅（高さ 0.7%・強さ 4%）
 """
 import numpy as np
 from scipy import signal
 
 from lib import SR, bp, fade, hp, lp, n_of, place, write
 
-# 小さな人形の声（子どもの声より少し高め）。母音ごとの共鳴 (Hz) と幅（r）
+# 小さな人形の声（子どもの声より少し高め）。母音ごとの共鳴 F1..F3 (Hz)
 VOWEL = {
-    "w": [(420, 0.94), (900, 0.95), (2600, 0.96)],
-    "u": [(430, 0.94), (1500, 0.95), (2800, 0.96)],
-    "a": [(980, 0.945), (1650, 0.95), (3200, 0.96)],
-    "n": [(280, 0.975), (2300, 0.97), (3300, 0.96)],
-    "o": [(560, 0.94), (950, 0.945), (2800, 0.96)],
-    "i": [(340, 0.95), (2650, 0.955), (3400, 0.96)],
+    "w": [420, 900, 2600],
+    "u": [430, 1500, 2800],
+    "a": [980, 1650, 3200],
+    "n": [280, 2300, 3300],
+    "o": [560, 950, 2800],
+    "i": [340, 2650, 3400],
 }
-GAIN = {"w": [1.0, 0.3, 0.06], "u": [1.0, 0.45, 0.12], "a": [1.0, 1.4, 0.6], "n": [1.0, 0.05, 0.03],
-        "o": [1.0, 0.9, 0.2], "i": [1.0, 0.55, 0.35]}
+BW = [90, 120, 180]                  # 共鳴の幅 (Hz)。子どもの声
+F45 = [(4300, 300), (5200, 300)]     # 母音で動かない F4・F5 (Hz, 幅)
 # 01 ふつう・02 高い・03 低い の、声の高さと口の響きの倍率 [(高さ, 響き), ...]
 SIZES = {
     "wa": [(1.0, 1.0), (1.32, 1.1), (0.68, 0.88)],
@@ -41,10 +47,12 @@ SIZES = {
 }
 
 
-def glottal(f0, rng, jitter=0.012, shimmer=0.06):
-    """声門の波。f0 はサンプルごとの高さ。1 周ずつ Rosenberg の形を置き、高さと強さを少し揺らす"""
+def glottal(f0, rng, jitter=0.007, shimmer=0.04):
+    """声門の波。f0 はサンプルごとの高さ。1 周ずつ Rosenberg の形を置き、高さと強さを少し揺らす。
+    (流れの変化, 声門の開き 0..1) を返す。開きは息のかすれを脈打たせるのに使う"""
     n = len(f0)
     out = np.zeros(n)
+    flow = np.zeros(n)
     i = 0
     while i < n:
         f = f0[min(i, n - 1)] * (1 + rng.normal(0, jitter))
@@ -57,8 +65,24 @@ def glottal(f0, rng, jitter=0.012, shimmer=0.06):
         a = 1 + rng.normal(0, shimmer)
         m = min(period, n - i)
         out[i:i + m] += d[:m] * a
+        flow[i:i + m] = g[:m]
         i += period
-    return out
+    return out, flow
+
+
+def formant(x, fs, bws):
+    """2 極の共鳴 1 つ。fs・bws はサンプルごとの中心と幅 (Hz)。2.5 ms ずつその時の値で。
+    低い所の利得を 1 にそろえる（縦につないだとき、母音ごとの山の高さが自然に決まる）"""
+    n = len(x)
+    blk = n_of(0.0025)
+    y = np.zeros(n)
+    zi = np.zeros(2)
+    for s in range(0, n, blk):
+        e = min(n, s + blk)
+        r = np.exp(-np.pi * bws[s] / SR)
+        a = [1, -2 * r * np.cos(2 * np.pi * fs[s] / SR), r * r]
+        y[s:e], zi = signal.lfilter([sum(a)], a, x[s:e], zi=zi)
+    return y
 
 
 def tract(src, path, form=1.0):
@@ -67,23 +91,13 @@ def tract(src, path, form=1.0):
     n = len(src)
     t = np.arange(n) / SR
     times = [p[0] for p in path]
-    out = np.zeros(n)
+    y = src
     for k in range(3):
-        fs = np.interp(t, times, [VOWEL[v][k][0] for _, v in path]) * form
-        rs = np.interp(t, times, [VOWEL[v][k][1] for _, v in path])
-        gs = np.interp(t, times, [GAIN[v][k] for _, v in path])
-        # 共鳴は 1 ブロック（10 ms）ずつ、その時の中心で
-        blk = n_of(0.01)
-        y = np.zeros(n)
-        zi = np.zeros(2)
-        for s in range(0, n, blk):
-            e = min(n, s + blk)
-            f, r = fs[s], rs[s]
-            w = 2 * np.pi * f / SR
-            b, a = [1 - r], [1, -2 * r * np.cos(w), r * r]
-            y[s:e], zi = signal.lfilter(b, a, src[s:e], zi=zi)
-        out += y * gs
-    return out
+        fs = np.interp(t, times, [VOWEL[v][k] for _, v in path]) * form
+        y = formant(y, fs, np.full(n, BW[k] * form))
+    for f, bw in F45:
+        y = formant(y, np.full(n, f * form), np.full(n, bw * form))
+    return y
 
 
 # 声の素材を替える口（voice_material.py が使う）。None なら人の声（声帯と口の形）。
@@ -100,11 +114,12 @@ def voice(f0_pts, path, dur, rng, breath=0.22, env_pts=None, form=1.0):
     f0 = np.interp(t, [p[0] for p in f0_pts], [p[1] for p in f0_pts])
     # ゆっくりした揺れ（人の声のふらつき）
     f0 *= 1 + 0.012 * np.sin(2 * np.pi * rng.uniform(4.5, 6.0) * t + rng.uniform(0, 6.28))
-    src = glottal(f0, rng)
+    src, flow = glottal(f0, rng)
     src = src - 0.8 * np.concatenate([[0.0], src[:-1]])   # 倍音の傾きを少し起こす（母音が「う」にこもらないように）
     src = lp(src, 3800, 2)
-    # 息: 声と同じ口を通る、かすれ
-    noise = hp(rng.standard_normal(n), 400, 2) * breath * 0.03
+    # 息: 声と同じ口を通る、かすれ。声門が開いているあいだに強く（周期で脈打つ）
+    pulse = 0.3 + 1.4 * flow / (np.max(flow) + 1e-9)
+    noise = hp(rng.standard_normal(n) * pulse, 400, 2) * breath * 0.06
     y = tract(src + noise, path, form)
     env = np.interp(t, [p[0] for p in env_pts], [p[1] for p in env_pts]) if env_pts else np.ones(n)
     y = y * env
@@ -172,7 +187,12 @@ def surprise(rng, pitch=1.0, form=1.0):
         d, rng, breath=0.45, form=form,
         env_pts=[(0, 0), (0.012, 1.0), (0.07, 0.9), (d * 0.6, 0.45), (d, 0)])
     out = np.zeros(gasp + len(y))
-    h = bp(rng.standard_normal(gasp), 1500 * form, 5500, 2) * np.hanning(gasp) * 0.05   # 息をのむ「ひ」
+    if MATERIAL is None:
+        # 息をのむ「ひ」: 息だけが「い」から「あ」へ開く口を通る（帯をそろえたノイズだと太鼓の皮の音に聞かれた）
+        h = lp(tract(rng.standard_normal(gasp) * np.hanning(gasp), [(0, "i"), (gasp / SR, "a")], form), 5200, 2)
+        h *= 0.25 * np.max(np.abs(y)) / (np.max(np.abs(h)) + 1e-9)
+    else:
+        h = bp(rng.standard_normal(gasp), 1500 * form, 5500, 2) * np.hanning(gasp) * 0.05
     place(out, h, 0.0)
     place(out, y, gasp / SR * 0.6)
     return fade(out, 0.003, 0.05)
