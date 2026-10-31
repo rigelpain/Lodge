@@ -102,6 +102,7 @@ var _point_sent := Vector3.ZERO   # 最後に配り役へ送った向き（間�
 var _point_send_t := 0.0
 const POINT_FOLLOW := 10.0   # 指す先が、見ている先へ追いつく速さ（1/s）
 var point_level := true      # 一人称の指さしの手形を、画面の中で床に平行に置く（--point-tilt で前の、腕に沿った斜めの向き）
+var point_depth := 62.0     # 一人称の指さしの手形を、画面の奥（消失点）へ倒す角度（度）。90 で視線と平行（紙が真横で見えない）。--point-depth=度
 const POINT_SEND_DEG := 4.0  # 向きがこれだけ変わったら送る（度）
 const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
@@ -995,9 +996,10 @@ func _pose_hands(dt: float) -> void:
 			target = em_hand
 		var pointing := (s in Palm.sides_of(hand)) and point_at != Vector3.INF and em_hand == Vector3.INF
 		if pointing:
-			# 指さし: 選んだ手の手袋を、指している所の向きへ伸ばす（見回すと、指した向きに残る。後ろなら画面の外）
+			# 指さし: 選んだ手の手袋を、指している所の向きへ伸ばす（指す先は見ている先を追うので、ふだんは画面の右下（左手は左下））。
+			# 手は袖口より手前に出ず、画面の下の隅寄りに置く。人さし指は奥へ倒すので、手が画面のまんなか寄りだと袖口に隠れる
 			var d := cam.global_basis.inverse() * (point_at - cam.global_position).normalized()
-			target = Vector3(0.1 * s, -0.1, 0.0) + d * 0.58
+			target = Vector3(0.17 * s, -0.2, 0.0) + d * 0.46
 		# 手も姿勢と同じ決まり: コマが変わるときだけ置き直す（一人称では揺らさない。目の前でふるえると見ていてつらい）。
 		# ソリをつかんでいる間は、ソリに対しての位置で保つ（ソリが動いても手が縁から離れない）
 		if fi != _hand_frame:
@@ -1079,13 +1081,25 @@ func _place_shapes_fp(em: Array) -> void:
 					var y: Vector3
 					var z: Vector3
 					if point_level:
-						# 人さし指の先を、画面のまんなか（消失点）へ向ける。紙の手形は画面に向けたまま（手の甲が見える）、
-						# 画面の中で、手の所から消失点への向きに回す。親指は内側、小指は外側になる
+						# 人さし指の先を、画面の奥の消失点（画面のまんなか）へ向ける。画面の中で手の所から消失点への向きに回し、
+						# さらに point_depth 度だけ奥へ倒す（どの倒し方でも、指の線は画面のまんなかを通る）。
+						# 画面に平らに貼ると、指が画面の上の一点を指すだけで、奥を指して見えなかった
+						# （2026-10-31 代表「指差しの表示角度がおかしい。人差し指が消失点に向かってほしいのに」）。
+						# 視線の向きまで倒しきると、紙の手形が真横からになって細い線になるので、手前に少し残す。
+						# 手の甲は自分へ向け（目から手への向きを、指に直角にした向きが手のひら側）、親指は内側、小指は外側
 						# （輪郭の親指は右手 +x・左手 -x。x = y × z で、どちらも指の内側に来る）
-						var toward := Vector3(-h.position.x, -h.position.y, 0.0)
-						y = toward.normalized() if toward.length() > 0.01 else Vector3.UP
-						z = Vector3.FORWARD   # 手のひらは向こう（手の甲がこちら）
-						b = Basis(y.cross(z).normalized(), y, z)
+						# 人さし指は手首の真ん中より内側にあるので、指の付け根から向きを決める（2 回で落ち着く）
+						var a := deg_to_rad(point_depth)
+						var root := h.position
+						for _i in 2:
+							var toward := Vector3(-root.x, -root.y, 0.0)
+							toward = toward.normalized() if toward.length() > 0.01 else Vector3.UP
+							y = (toward * cos(a) + Vector3.FORWARD * sin(a)).normalized()
+							var eye := h.position.normalized()
+							z = eye - y * eye.dot(y)
+							z = z.normalized() if z.length() > 0.05 else Vector3.FORWARD   # 手のひらは向こう（手の甲がこちら）
+							b = Basis(y.cross(z).normalized(), y, z)
+							root = h.position + b * (Palm.POINT_ROOT * Vector3(side, 1, 1) - Palm.WRIST)
 					else:
 						y = (h.basis * Vector3.FORWARD).normalized()
 						z = Vector3.UP.cross(y) * float(side)

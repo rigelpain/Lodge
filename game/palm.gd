@@ -8,6 +8,7 @@ const Look := preload("res://look.gd")
 const EDGE := Color(0.22, 0.16, 0.13)
 const BIG := 1.7            # 人形の手の形は、ほんとうの手より大きく（遠くからでも読める）
 const WRIST := Vector3(0, -0.075, 0)   # 手形の手首の真ん中（手形の座標）。腕の先をここに合わせる
+const POINT_ROOT := Vector3(0.026, -0.005, 0)   # 指さしの手形の、人さし指の付け根（右手の座標。左手は x を返す）
 const SHAPES := ["palm", "point"]
 ## 掲げた手の状態（高さ_手）→ [右手, 左手] の高さ。"" は下ろしている。
 ## 高い手のひら: 遠くの人に場所を示す・万歳・ハイタッチ。低い手のひら: おさえて・ストップ・握手
@@ -51,7 +52,7 @@ static func _left(shape: String) -> PackedVector2Array:
 	if shape == "point":
 		# 指さし: 握ったこぶしから人さし指がまっすぐ（+y）。ほかの指は折って節だけ、親指は横に沿う
 		poly = _round_rect(Vector2(0.006, -0.04), Vector2(0.095, 0.09), 0.032)
-		poly = _merge(poly, _capsule(Vector2(-0.026, -0.005), Vector2(-0.026, 0.105), 0.0135))
+		poly = _merge(poly, _capsule(Vector2(-POINT_ROOT.x, POINT_ROOT.y), Vector2(-POINT_ROOT.x, 0.105), 0.0135))
 		for c in [[0.0, 0.012], [0.022, 0.007], [0.042, -0.002]]:
 			poly = _merge(poly, _dot(Vector2(c[0], c[1]), 0.0145))
 		poly = _merge(poly, _capsule(Vector2(-0.046, -0.045), Vector2(-0.044, -0.008), 0.014))
