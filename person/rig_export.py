@@ -4,7 +4,7 @@
 
 1. 曲線は面にし、モディファイアを形に焼き込む（毛羽の毛は落とす。ゲームでは別に描く）
 2. 部品ごとに骨への重みを付ける: 腕・袖・脚は骨に沿って曲がる。胴の服は胴と腰だけ。頭まわりは頭に固定
-3. 全部を 1 つの形にまとめ、UV を開き、Cycles（CPU）で色（光なし）と法線を 1 枚ずつ焼く
+3. 全部を 1 つの形にまとめ、UV を開き、Cycles（CPU）で色（光なし）と法線を 1 枚ずつ焼く。くぼみの陰（AO）も焼いて色に掛ける
 4. 素材を焼いた画像の 1 つにして、骨ごと glb に書き出す
 骨の名前は 3 体で同じ（ゲームの doll.gd が同じ名前で動かす）。
 """
@@ -14,6 +14,8 @@ import os
 import bmesh
 import bpy
 from mathutils import Vector
+
+AO_STRENGTH = 0.55   # くぼみの陰の濃さ（0 で陰なし）
 
 # 関節（Blender の座標。前は +Y）。.R が右（+X）
 JOINTS = {
@@ -158,6 +160,28 @@ def bake_textures(ob, name, px):
             bpy.ops.object.bake(type="NORMAL", normal_space="TANGENT")
         img.pack()
         out[kind] = img
+    # くぼみの陰（頭巾の内側、袖や裾の下、首まわり）を色に掛ける。どんな光の下でも立体として読める
+    ao = bpy.data.images.new("%s_ao" % name, px, px, alpha=False)
+    ao.colorspace_settings.name = "Non-Color"
+    for m in ob.data.materials:
+        n = m.node_tree.nodes["bake_target"]
+        n.image = ao
+        m.node_tree.nodes.active = n
+    sc.cycles.samples = 32
+    if sc.world is None:
+        sc.world = bpy.data.worlds.new("bake")
+    sc.world.light_settings.distance = 0.12   # 陰が届く距離（m）。人形の大きさに合わせて短く
+    bpy.ops.object.bake(type="AO")
+    import numpy as np
+    col = np.empty(px * px * 4, np.float32)
+    out["color"].pixels.foreach_get(col)
+    a = np.empty(px * px * 4, np.float32)
+    ao.pixels.foreach_get(a)
+    shade = 1.0 - AO_STRENGTH * (1.0 - a.reshape(-1, 4)[:, 0])
+    col = col.reshape(-1, 4)
+    col[:, :3] *= shade[:, None]
+    out["color"].pixels.foreach_set(col.ravel())
+    out["color"].pack()
     return out
 
 
