@@ -8,8 +8,10 @@ extends RefCounted
 ##   （craft.gd の tag_owned。手に入れる仕組みはまだなく、値の目安だけ COST に置く）
 ##   広げたソリ: 手すりの前の結び目から、小さなタグを糸で吊るす（hang）
 ##   畳んだソリ: 包みにも同じタグを付け、タグの窓に広げた姿をくるくる回して見せる（turntable。12 コマで回る）
-##   画面の左下の札（hud.gd）: 自分の名札の上に針山の方位磁針
-## 柄の番号はソリの tag（sled.gd）。最初のソリは 0（ロッジの名札）、縫ったソリ・米袋は持ち主の名札。
+##   画面の左下の札（hud.gd）: そのソリの名札の窓に、丘と、人を乗せて回るソリ（turntable_wide）と、王冠を載せた持ち主
+## 柄の番号はソリの tag（sled.gd）。最初のソリは 0（ロッジの名札）、縫ったソリはソリごとの名札（縫ったときは持ち主の「いつもの柄」。
+## 装備の画面でソリごとに替えられる）。米袋には名札を付けない（2026-10-31 代表「タグは米袋には要らない」）。
+## 名札を外したソリは -1（名札なし。札には無地の紙 PLAIN で描く）
 
 const Icons := preload("res://hud_icons.gd")
 const Doll := preload("res://doll.gd")
@@ -36,10 +38,11 @@ const TEX_SIZE := Vector2i(192, 128)   # 吊るすタグの絵
 const TURN_SIZE := Vector2i(160, 160)  # 回る図
 const TURN_STEP := 2                   # 何コマごとに回すか（12 コマ／秒の 2 コマ = 6 回／秒）
 const TURN_DEG := 15.0                 # 1 回に回す角度
+const WIDE_SIZE := Vector2i(312, 144)  # HUD の札の、人を乗せて回る図（横長）
 
 static var _holder: Node
 static var _tags := {}                 # 柄の番号 → ViewportTexture
-static var _turns := {}                # "kind|fabric" → Turntable
+static var _turns := {}                # "kind|fabric"（横長は "kind|fabric|wide"） → Turntable
 static var _geo := {}                  # 形・模様・素材・縁・大きさ → 切り抜いた模様・素材の筋・縁の目（毎回の計算を省く）
 static var _mstyle := "ink"            # 判子の描き方（motif の中で使う）: ink（平らな判子）/ fill（フェルト）/ embroidery（刺繍）/ cutout（切り抜き）
 
@@ -113,6 +116,8 @@ static func cost(part: String, i: int) -> int:
 
 ## 名札の柄を、描くための辞書 {shape, material, paper, pattern, accent, stitch, edge, string, deco, motif, print, layout, ink} にする
 static func design(d) -> Dictionary:
+	if not d is Dictionary and int(d) < 0:   # 名札なし: 無地の紙
+		d = PLAIN
 	if d is Dictionary:
 		var o := {}
 		for part in PARTS:
@@ -135,6 +140,11 @@ static func design(d) -> Dictionary:
 ## 名札があるか（-1 は名札なし）
 static func has_tag(d) -> bool:
 	return d is Dictionary or int(d) >= 0
+
+
+## 名札を外したソリの札に描く、無地の紙（生成りの紙・縫い目なし・判子なし）
+const PLAIN := {"shape": 0, "material": 0, "paper": 0, "pattern": 0, "accent": 0, "stitch": 1, "edge": 0, "string": 2,
+	"deco": 0, "motif": 0, "print": 0, "layout": 0}
 
 
 ## 人の番号から決める、はじめの自分の名札（最初から使える部品だけ。装備の画面で変えられる）
@@ -1358,6 +1368,50 @@ static func turntable(kind: String, fabric: String) -> Texture2D:
 	return (_turns[key] as Turntable).get_texture()
 
 
+## HUD の札の、人を乗せて回る図（横長。大きさと布の色ごとに 1 つを使い回す）。人は乗せずにソリだけを撮り、
+## 人の形は HUD が turn_project で同じ向きに合わせて上に描く
+static func turntable_wide(kind: String, fabric: String) -> Texture2D:
+	var key := kind + "|" + fabric + "|wide"
+	if not _turns.has(key):
+		var t := Turntable.new()
+		t.kind = kind
+		t.fabric = fabric
+		t.wide = true
+		t.size = WIDE_SIZE
+		_root().add_child.call_deferred(t)
+		_turns[key] = t
+	return (_turns[key] as Turntable).get_texture()
+
+
+## いまの回る図の向き（度）。12 コマの TURN_STEP コマごとに TURN_DEG ずつ（どの回る図も同じ向き）
+static func turn_deg() -> float:
+	return TURN_DEG * (Doll.frame_index() / TURN_STEP)
+
+
+## 回る図を撮るカメラ [Transform3D, 縦の幅 (m)]。wide は HUD の札の横長の図（低めから、ソリを下に寄せて人の頭の上を空ける）
+static func turn_camera(kind: String, wide: bool) -> Array:
+	var Sled := preload("res://sled.gd")
+	var k: Dictionary = Sled.KINDS.get(kind, Sled.KINDS["mid"])
+	var L: float = maxf(k.box.z, k.box.x)
+	var pos := Vector3(0, L * 0.9, L * 1.3)
+	var at := Vector3(0, k.box.y * 0.5, 0)
+	var sz := L * 1.25
+	if wide:
+		pos = Vector3(0, L * 0.62, L * 1.2)
+		sz = L * 0.8   # 後ろで押す人・横でつかむ人まで入るように、少し引いて撮る
+		at.y += sz * 0.12
+	return [Transform3D.IDENTITY.translated(pos).looking_at(at), sz]
+
+
+## ソリの座標の点 local を、回る図の上の位置（0〜1。左上が 0）にする。z は奥行き（大きいほど手前）
+static func turn_project(kind: String, wide: bool, local: Vector3, deg: float) -> Vector3:
+	var cam: Array = turn_camera(kind, wide)
+	var aspect := float(WIDE_SIZE.x) / WIDE_SIZE.y if wide else 1.0
+	var p: Vector3 = (cam[0] as Transform3D).affine_inverse() * (Basis(Vector3.UP, deg_to_rad(deg)) * local)
+	var v: float = cam[1]
+	return Vector3(0.5 + p.x / (v * aspect), 0.5 - p.y / v, p.z)
+
+
 class TagFace extends Control:
 	var idx: Variant = 0
 
@@ -1370,6 +1424,7 @@ class TagFace extends Control:
 class Turntable extends SubViewport:
 	var kind := "mid"
 	var fabric := ""
+	var wide := false
 	var _model: Node3D
 	var _frame := -1
 
@@ -1380,8 +1435,6 @@ class Turntable extends SubViewport:
 		render_target_update_mode = SubViewport.UPDATE_ALWAYS
 
 	func _ready() -> void:
-		var Sled := preload("res://sled.gd")
-		var k: Dictionary = Sled.KINDS.get(kind, Sled.KINDS["mid"])
 		var glb := "res://props/sled_%s.glb" % kind
 		_model = Node3D.new()
 		add_child(_model)
@@ -1389,13 +1442,13 @@ class Turntable extends SubViewport:
 			var look := preload("res://props.gd").make(glb)
 			preload("res://fabrics.gd").tint(look, kind, fabric)
 			_model.add_child(look)
-		var L: float = maxf(k.box.z, k.box.x)
 		var cam := Camera3D.new()
 		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
-		cam.size = L * 1.25
-		cam.position = Vector3(0, L * 0.9, L * 1.3)
+		var cs: Array = preload("res://sled_tags.gd").turn_camera(kind, wide)
+		cam.transform = cs[0]
+		cam.size = cs[1]
+		cam.keep_aspect = Camera3D.KEEP_HEIGHT
 		add_child(cam)
-		cam.look_at(Vector3(0, k.box.y * 0.5, 0))
 		var sun := DirectionalLight3D.new()
 		sun.rotation_degrees = Vector3(-50, -30, 0)
 		sun.light_energy = 1.4
@@ -1414,7 +1467,7 @@ class Turntable extends SubViewport:
 		if fi == _frame or _model == null:
 			return
 		_frame = fi
-		_model.rotation.y = deg_to_rad(preload("res://sled_tags.gd").TURN_DEG * fi)
+		_model.rotation.y = deg_to_rad(preload("res://sled_tags.gd").turn_deg())
 
 
 # ---- 3D のタグ（吊るす） -------------------------------------------------------------------

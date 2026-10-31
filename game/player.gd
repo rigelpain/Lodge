@@ -638,6 +638,7 @@ func _physics_process(dt: float) -> void:
 	_update_point(dt)
 	_update_emote(dt)
 	_sack_events(dt)
+	_tag_hold_step(dt)
 	_pose_hands(dt)
 	_pose_doll()
 
@@ -1739,11 +1740,70 @@ func _load_tag() -> void:
 		if cf.has_section_key("tag", part):
 			d[part] = int(cf.get_value("tag", part))
 	craft.send({"kind": "tag_design", "who": id, "design": d})
+	if cf.has_section("profile"):
+		craft.send({"kind": "profile", "who": id, "name": String(cf.get_value("profile", "name", craft.name_of(id))),
+			"color": int(cf.get_value("profile", "color", craft.colors.get(id, 0)))})
 
 
-## 自分の名札を保存する（装備の画面で変えたとき。次に起動しても同じ名札）
+# ---------------------------------------------------------------- 名札を外す・付ける（G を長押し）
+# 自分のソリの名札のそばで G を長押しすると、名札を外して持ち主をやめる（名札は帯の名札入れへ）。
+# 名札入れに名札があれば、持ち主のいない名札なしのソリの結び目のそばで G を長押しすると、名札を付けて持ち主になる
+const TAG_REACH := 2.2         # 名札の結び目からこの距離 (m) の内なら手が届く
+const TAG_HOLD := 0.75         # 長押しの長さ (s)
+var tag_hold := 0.0            # 長押しの進み（0〜1。HUD が輪を描く）
+var _tag_done := false         # 長押しで外した・付けた（G を離すまで、次をしない）
+
+
+## いま G で外せる・付けられるソリと、どちらか [ソリ, "untag" / "tag_on"]。なければ []
+func tag_target() -> Array:
+	if craft == null or mode != Mode.WALK or menu_open or shopping:
+		return []
+	var best: Array = []
+	var near := TAG_REACH
+	for s in get_tree().get_nodes_in_group("sleds"):
+		if not is_instance_valid(s) or not s.visible or s.kind == "sack" or craft.sled_id(s) < 0:
+			continue
+		var d: float = s.tag_point().distance_to(global_position + Vector3.UP * 0.9)
+		if d >= near:
+			continue
+		var Tags := preload("res://sled_tags.gd")
+		if int(s.owner_id) == id and Tags.has_tag(s.tag):
+			best = [s, "untag"]
+			near = d
+		elif int(s.owner_id) < 0 and not Tags.has_tag(s.tag) and not (craft.loose_tags.get(id, []) as Array).is_empty():
+			best = [s, "tag_on"]
+			near = d
+	return best
+
+
+func _tag_hold_step(dt: float) -> void:
+	var down := Input.is_physical_key_pressed(KEY_G) and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED
+	if not down:
+		_tag_done = false
+		tag_hold = 0.0
+		return
+	var tt := tag_target()
+	if tt.is_empty() or _tag_done:
+		tag_hold = 0.0
+		return
+	tag_hold = minf(1.0, tag_hold + dt / TAG_HOLD)
+	if tag_hold >= 1.0:
+		_tag_done = true
+		tag_hold = 0.0
+		var ev := {"kind": tt[1], "who": id, "id": craft.sled_id(tt[0])}
+		if tt[1] == "tag_on":
+			ev["loose"] = (craft.loose_tags[id] as Array).size() - 1   # いちばん最近外した名札
+		craft.send(ev)
+		var hud = get_parent().get("hud")
+		if hud:
+			hud.learn(tt[1])
+
+
+## 自分の名札を保存する（装備の画面で変えたとき。次に起動しても同じ名札）。名前とキャラの色も同じ帳面に
 func save_tag() -> void:
 	var cf := ConfigFile.new()
+	cf.set_value("profile", "name", craft.name_of(id))
+	cf.set_value("profile", "color", int(craft.colors.get(id, 0)))
 	var d: Dictionary = craft.tag_designs.get(id, {})
 	for part in d:
 		cf.set_value("tag", part, d[part])

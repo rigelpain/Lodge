@@ -9,10 +9,13 @@ extends CanvasLayer
 ##     下に自分の持ち物が並び、押すと型紙は型紙の枠、布は布の枠に入る（枠を押すと外す）。開いたときは、手に持っている物か
 ##     最初の型紙・布が入っている。足りない枠は破線の空き枠で、おじさん（売り台の絵）を指す矢印が出る。
 ##     縫うボタンで、型紙と布をいっしょに使って 7 つの場面が始まる（片方だけ使われることはない）
-##   装備の画面（I）: 左に、いま装備している米袋（広げた姿がくるくる回る）を帯に下げて見せる。右の上の段に、持っている米袋
-##     （標準のクラフト紙と、縫った色違い）が並び、装備しているものに赤い糸の印。押すと装備が入れ替わる（N でそれが出る）。
-##     まんなかの段は自分の名札: 左に大きく、右に部品（形・紙の色・縁の糸・吊るす糸・判子）の見本の列。押すと名札が替わり、
-##     自分のソリ・米袋の名札も替わる（保存して、次に起動しても同じ）。
+##   装備の画面（I）: 左の上に自分の名前（打って替える）とキャラの色（12 色から押して選ぶ）。HUD の札の人の形の色と、頭の上の名前になる
+##     （2026-10-31 代表「プレイヤー名はインベントリでじぶんできめれるように」）。その下に、いま装備している米袋（広げた姿がくるくる
+##     回る）を帯に下げて見せる。右の上の段に、持っている米袋（標準のクラフト紙と、縫った色違い）が並び、装備しているものに赤い糸の印。
+##     押すと装備が入れ替わる（N でそれが出る）。米袋に名札は付けない。
+##     まんなかの段は名札: 左に大きく、右に部品（形・紙の色・縁の糸・吊るす糸・判子）の見本の列。名札の下に、どの名札を替えるかの札の列:
+##     いつもの柄（針の印。これから縫うソリに付く）・自分のソリ（回る姿）・畳んだソリ・名札入れの外した名札。
+##     押した札の名札だけが替わる（名札はソリごと。いつもの柄と名前と色は保存して、次に起動しても同じ）。
 ##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
 ##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: 取った所からボタンが画面を飛んで財布へ入り、
@@ -26,6 +29,7 @@ const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
 const Craft := preload("res://craft.gd")
 const Fabrics := preload("res://fabrics.gd")
+const PersonIcon := preload("res://person_icon.gd")
 
 var main: Node3D
 var craft: Node
@@ -38,6 +42,11 @@ var _lamp_rects: Array = []  # 装備の画面の、持っているランタン�
 var _lamp_hover := -1
 var _opt_rects: Array = []   # 装備の画面の、名札の部品の見本 [Rect2, 部品, 番号]（部品 "_page" はページの札、"_dice" はおまかせ）
 var tag_page := 0            # 装備の画面で開いている、名札の部品のページ（sled_tags.gd の PAGES）
+var tag_edit := {}           # 装備の画面で替えている名札: {}（いつもの柄）か {id}（置いてある自分のソリ）・{slot}（畳んだソリ）・{loose}（名札入れ）
+var _edit_rects: Array = []  # 装備の画面の、替える名札を選ぶ札 [Rect2, tag_edit の値]
+var _color_rects: Array = [] # 装備の画面の、キャラの色の見本 [Rect2, 番号]
+var name_edit: LineEdit      # 装備の画面の、名前を打つ欄
+var _name_rect := Rect2()
 var _opt_hover := -1         # 指している見本（_opt_rects の番号）
 var _pick := {"pattern": -1, "fabric": -1}   # ミシンの画面で枠に入れた持ち物の番号
 var _bag_rects: Array = []   # ミシンの画面の持ち物の札
@@ -80,6 +89,23 @@ func _ready() -> void:
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_view)
+	name_edit = LineEdit.new()   # 名前を打つ欄（紙のラベルの見た目。装備の画面のときだけ出す）
+	name_edit.visible = false
+	name_edit.max_length = Craft.NAME_MAX
+	name_edit.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_edit.context_menu_enabled = false
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Icons.PAPER
+	sb.border_color = Icons.PAPER_EDGE
+	sb.set_border_width_all(2)
+	sb.set_corner_radius_all(8)
+	for st in ["normal", "focus", "read_only"]:
+		name_edit.add_theme_stylebox_override(st, sb)
+	name_edit.add_theme_color_override("font_color", Icons.THREAD)
+	name_edit.add_theme_color_override("caret_color", Icons.RED)
+	name_edit.text_submitted.connect(func(_t): name_edit.release_focus())
+	name_edit.focus_exited.connect(_send_name)
+	add_child(name_edit)
 	if craft:
 		craft.happened.connect(_on_craft)
 
@@ -256,14 +282,78 @@ func open_gear() -> void:
 	if shop_open or machine_open or gear_open or player == null:
 		return
 	gear_open = true
+	tag_edit = {}
+	name_edit.text = craft.name_of(_who())
 	_open_panel()
 
 
 func close_gear() -> void:
 	if not gear_open:
 		return
+	if name_edit.has_focus():
+		name_edit.release_focus()   # 打った名前を決める
 	gear_open = false
+	name_edit.visible = false
 	_close_panel()
+
+
+## 名前を決める（打つ欄から離れた・Enter）。空なら前の名前のまま
+func _send_name() -> void:
+	if craft == null or name_edit.text.strip_edges() == "":
+		name_edit.text = craft.name_of(_who()) if craft else ""
+		return
+	set_profile(name_edit.text, int(craft.colors.get(_who(), 0)))
+
+
+## 名前とキャラの色を決める（確かめ用の入口も兼ねる）。保存もする
+func set_profile(nm: String, color: int) -> bool:
+	var ok: bool = craft.send({"kind": "profile", "who": _who(), "name": nm, "color": color})
+	if ok and player.has_method("save_tag"):
+		player.save_tag()
+	if ok:
+		name_edit.text = craft.name_of(_who())
+	return ok
+
+
+## 替えている名札の柄（tag_edit の先がなくなっていれば、いつもの柄に戻す）
+func edit_design() -> Dictionary:
+	var who := _who()
+	var Tags := preload("res://sled_tags.gd")
+	if tag_edit.has("id"):
+		var s = craft.sleds.get(int(tag_edit.id))
+		if s != null and is_instance_valid(s) and int(s.owner_id) == who and s.tag is Dictionary:
+			return s.tag
+	elif tag_edit.has("slot"):
+		var b: Array = craft.bag(who)
+		var i := int(tag_edit.slot)
+		if i >= 0 and i < b.size() and b[i].get("tag", -1) is Dictionary:
+			return b[i].tag
+	elif tag_edit.has("loose"):
+		var lt: Array = craft.loose_tags.get(who, [])
+		var i := int(tag_edit.loose)
+		if i >= 0 and i < lt.size() and lt[i] is Dictionary:
+			return lt[i]
+	tag_edit = {}
+	var d = craft.tag_designs.get(who, {})
+	return d if d is Dictionary else Tags.default_design(who)
+
+
+## 替えられる名札の並び [tag_edit の値, 名札, 絵（{} / {sled, fabric}）]: いつもの柄・置いてある自分のソリ・畳んだソリ・名札入れ
+func edit_targets() -> Array:
+	var who := _who()
+	var out: Array = [[{}, craft.tag_designs.get(who, {}), {}]]
+	for id in craft.sleds:
+		var s = craft.sleds[id]
+		if is_instance_valid(s) and int(s.owner_id) == who and s.kind != "sack" and s.tag is Dictionary:
+			out.append([{"id": id}, s.tag, {"sled": s.kind, "fabric": s.fabric}])
+	var b: Array = craft.bag(who)
+	for i in b.size():
+		if b[i].get("kind") == "folded" and b[i].get("sled") != "sack" and b[i].get("tag", -1) is Dictionary:
+			out.append([{"slot": i}, b[i].tag, {"sled": b[i].sled, "fabric": b[i].fabric, "folded": true}])
+	var lt: Array = craft.loose_tags.get(who, [])
+	for i in lt.size():
+		out.append([{"loose": i}, lt[i], {"loose": true}])
+	return out
 
 
 ## 種類 gear の持っている物の i 番を装備する（確かめ用の入口も兼ねる）。ランタンは -1 で外す
@@ -276,7 +366,7 @@ func set_tag_part(part: String, i: int, save := true) -> bool:
 	if not craft.tag_can_use(_who(), part, i):
 		_shake = 0.4
 		return false
-	var d: Dictionary = craft.tag_designs.get(_who(), {}).duplicate()
+	var d: Dictionary = edit_design().duplicate()
 	d[part] = i
 	return _send_tag(d, save)
 
@@ -301,7 +391,13 @@ func shuffle_tag(save := true) -> bool:
 	return _send_tag(d, save)
 
 
+## 替えている名札（tag_edit）に柄を送る。いつもの柄なら保存もする
 func _send_tag(d: Dictionary, save: bool) -> bool:
+	edit_design()   # 先がなくなっていれば、いつもの柄に戻す
+	if not tag_edit.is_empty():
+		var ev := {"kind": "sled_tag", "who": _who(), "design": d}
+		ev.merge(tag_edit)
+		return craft.send(ev)
 	var ok: bool = craft.send({"kind": "tag_design", "who": _who(), "design": d})
 	if ok and save and player.has_method("save_tag"):
 		player.save_tag()
@@ -309,6 +405,17 @@ func _send_tag(d: Dictionary, save: bool) -> bool:
 
 
 func _gear_input(e: InputEvent) -> void:
+	if name_edit.has_focus():   # 名前を打っているあいだは、キーは打つ欄へ（Esc で打つのをやめる）
+		if e is InputEventKey and e.pressed and e.physical_keycode == KEY_ESCAPE:
+			name_edit.release_focus()
+			get_viewport().set_input_as_handled()
+			return
+		if e is InputEventKey:
+			return
+	if e is InputEventMouseButton and e.pressed and _name_rect.has_point(e.position):
+		return   # 名前の欄を押した: 打つ欄に任せる
+	if e is InputEventMouseButton and e.pressed and name_edit.has_focus():
+		name_edit.release_focus()
 	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode in [KEY_ESCAPE, KEY_I]:
 		close_gear()
 		get_viewport().set_input_as_handled()
@@ -338,6 +445,14 @@ func _gear_input(e: InputEvent) -> void:
 		for i in _lamp_rects.size():
 			if (_lamp_rects[i] as Rect2).has_point(e.position):
 				equip(-1 if i == craft.gear_index(_who(), "lantern") else i, "lantern")   # 提げているのを押すと外す
+				return
+		for c in _color_rects:
+			if (c[0] as Rect2).has_point(e.position):
+				set_profile(craft.name_of(_who()), c[1])
+				return
+		for t in _edit_rects:
+			if (t[0] as Rect2).has_point(e.position):
+				tag_edit = t[1]
 				return
 		for o in _opt_rects:
 			if (o[0] as Rect2).has_point(e.position):
@@ -461,6 +576,11 @@ func _process(dt: float) -> void:
 	_purse_a = move_toward(_purse_a, 1.0 if purse else 0.0, dt * 4.0)
 	for k in _pop.keys():
 		_pop[k] = maxf(0.0, _pop[k] - dt * 2.5)
+	name_edit.visible = gear_open and _name_rect.size.x > 0.0
+	if name_edit.visible:
+		name_edit.position = _name_rect.position
+		name_edit.size = _name_rect.size
+		name_edit.add_theme_font_size_override("font_size", maxi(10, int(_name_rect.size.y * 0.55)))
 	_view.queue_redraw()
 
 
@@ -844,6 +964,42 @@ class View extends Control:
 		Icons.thread(self, PackedVector2Array([Vector2(-12, -12), Vector2(12, 12)]), Icons.THREAD, 4.0, 1.0)
 		Icons.thread(self, PackedVector2Array([Vector2(12, -12), Vector2(-12, 12)]), Icons.THREAD, 4.0, 1.0)
 
+	## どの名札を替えるかの札の列: いつもの柄（針の印。これから縫うソリに付く）・自分のソリ（回る姿）・畳んだソリ（包み）・
+	## 名札入れの外した名札。どれも下に小さく、その名札。替えている札に赤い糸の印
+	func _draw_edit_row(u: float, r: Rect2) -> void:
+		var Tags := preload("res://sled_tags.gd")
+		var list: Array = ui.edit_targets()
+		var gap := 6.0 * u
+		var cw := minf(62.0 * u, (r.size.x - gap * (list.size() - 1)) / maxf(list.size(), 1))
+		var rects: Array = []
+		for i in list.size():
+			var key: Dictionary = list[i][0]
+			var look: Dictionary = list[i][2]
+			var card := Rect2(r.position.x + i * (cw + gap), r.position.y, cw, r.size.y)
+			var picked: bool = key == ui.tag_edit
+			if picked:
+				card.position.y -= 6.0 * u
+			rects.append([card, key])
+			Icons.screen()
+			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, card.size.y, 9.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+			var top := Rect2(card.position + Vector2(2.0, 2.0) * u, Vector2(cw - 4.0 * u, card.size.y * 0.58))
+			if look.has("sled"):   # 自分のソリ・畳んだソリ: 広げた姿がくるくる回る（畳んだソリは包みの色の角を付ける）
+				var tw := minf(top.size.x, top.size.y * 1.3)
+				draw_texture_rect(Tags.turntable(look.sled, look.get("fabric", "")), Rect2(top.get_center() - Vector2(tw, tw) / 2.0, Vector2(tw, tw)), false)
+				if look.get("folded", false):
+					Icons.screen()
+					Icons.patch(self, Icons.xf(Icons.rr(-5, -5, 10, 10, 2), PI / 4, top.position + Vector2(9, 9) * u, u), preload("res://fabrics.gd").color(look.get("fabric", "red")), 1.0, false)
+			elif look.has("loose"):   # 名札入れ: 名札だけ（下に大きめに）
+				pass
+			else:   # いつもの柄: 針の印（これから縫うソリ）
+				Icons.icon(self, "needle", top.get_center(), top.size.y * 1.05, 1.0)
+			var th := card.size.y * (0.62 if look.has("loose") else 0.34)
+			Tags.draw_tag(self, Rect2(card.position.x + 4.0 * u, card.end.y - th - 4.0 * u, cw - 8.0 * u, th), list[i][1], 1.0, false)
+			if picked:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(card.position.x - 3 * u, card.position.y - 3 * u, cw + 6 * u, card.size.y + 6 * u, 11.0 * u), Icons.RED, 2.6 * u, 6.0 * u, 3.5 * u, 1.0, true)
+		ui._edit_rects = rects
+
 	## 装備の画面
 	func _draw_gear_screen(u: float) -> void:
 		var craft: Node = ui.craft
@@ -862,26 +1018,44 @@ class View extends Control:
 		var lw := 280.0 * u
 		var lr := Rect2(r.position.x + 30.0 * u, r.position.y + 40.0 * u, lw, h - 80.0 * u)
 		Icons.patch(self, Icons.rr(lr.position.x, lr.position.y, lw, lr.size.y, 16.0 * u), Icons.PAPER, 0.96, true, Icons.PAPER_EDGE)
-		Icons.patch(self, Icons.rr(lr.position.x + 14.0 * u, lr.position.y + 24.0 * u, lw - 28.0 * u, 16.0 * u, 6.0 * u), Icons.WOOD.darkened(0.2), 1.0, true, Icons.CAP)   # 帯
+		# 左の上: 自分の名前（打って替える）とキャラの色（押して選ぶ）。左に、その色の人の形
+		var mycol: Color = craft.color_of(who)
+		PersonIcon.draw(self, Vector2(lr.position.x + 30.0 * u, lr.position.y + 50.0 * u), 36.0 * u, mycol)
+		ui._name_rect = Rect2(lr.position.x + 52.0 * u, lr.position.y + 16.0 * u, lw - 66.0 * u, 34.0 * u)
+		var crects: Array = []
+		var cs := (lw - 28.0 * u) / Craft.COLORS.size()
+		for i in Craft.COLORS.size():
+			var cc := Vector2(lr.position.x + 14.0 * u + cs * (i + 0.5), lr.position.y + 70.0 * u)
+			draw_circle(cc, cs * 0.40, Craft.COLORS[i])
+			draw_arc(cc, cs * 0.40, 0.0, TAU, 18, Craft.COLORS[i].darkened(0.4), 1.2 * u, true)
+			if i == int(craft.colors.get(who, -1)):
+				Icons.screen()
+				Icons.dashes(self, Icons.circ(cc, cs * 0.52, 18), Icons.RED, 2.0 * u, 3.5 * u, 2.5 * u, 1.0, true)
+			crects.append([Rect2(cc - Vector2(cs, cs) / 2.0, Vector2(cs, cs)), i])
+		ui._color_rects = crects
+		Icons.screen()
+		Icons.thread(self, PackedVector2Array([Vector2(lr.position.x + 18.0 * u, lr.position.y + 88.0 * u), Vector2(lr.end.x - 18.0 * u, lr.position.y + 88.0 * u)]), Icons.PAPER_EDGE, 1.5 * u, 0.8)
+		var py := 84.0 * u   # 名前と色の分だけ、帯から下を下げる
+		Icons.patch(self, Icons.rr(lr.position.x + 14.0 * u, lr.position.y + py + 24.0 * u, lw - 28.0 * u, 16.0 * u, 6.0 * u), Icons.WOOD.darkened(0.2), 1.0, true, Icons.CAP)   # 帯
 		var lamps: Array = craft.gear_list(who, "lantern")
 		var lamp_on: int = craft.gear_index(who, "lantern")
 		if on >= 0 and on < list.size():   # 帯の右に米袋、左にランタンを下げる（人形と同じ側）
 			var spec: Dictionary = list[on]
-			CraftIcons._at(Vector2(lr.position.x + lw * 0.7, lr.position.y + 82.0 * u), 64.0 * u * 1.3)
+			CraftIcons._at(Vector2(lr.position.x + lw * 0.7, lr.position.y + py + 82.0 * u), 64.0 * u * 1.3)
 			Icons.thread(self, PackedVector2Array([Vector2(0, -36), Vector2(0, -22)]), Icons.WOOD, 2.0, 1.0)
 			CraftIcons.rice_sack(self, Vector2.ZERO, 1.0, CraftIcons.sack_body(spec), CraftIcons.sack_band(spec), 1.0)
 			var tw := lw * 0.6
-			draw_texture_rect(Tags.turntable("sack", spec.get("fabric", "")), Rect2(Vector2(lr.position.x + lw * 0.62 - tw / 2.0, lr.position.y + 128.0 * u), Vector2(tw, tw)), false)
-			Icons.keycap(self, "N", Vector2(lr.position.x + 36.0 * u, lr.position.y + 214.0 * u), 30.0 * u, 1.0)
+			draw_texture_rect(Tags.turntable("sack", spec.get("fabric", "")), Rect2(Vector2(lr.position.x + lw * 0.62 - tw / 2.0, lr.position.y + py + 128.0 * u), Vector2(tw, tw)), false)
+			Icons.keycap(self, "N", Vector2(lr.position.x + 36.0 * u, lr.position.y + py + 214.0 * u), 30.0 * u, 1.0)
 		if lamp_on >= 0 and lamp_on < lamps.size():
-			CraftIcons._at(Vector2(lr.position.x + lw * 0.28, lr.position.y + 84.0 * u), 64.0 * u * 1.3)
+			CraftIcons._at(Vector2(lr.position.x + lw * 0.28, lr.position.y + py + 84.0 * u), 64.0 * u * 1.3)
 			Icons.thread(self, PackedVector2Array([Vector2(0, -36), Vector2(0, -28)]), Icons.WOOD, 2.0, 1.0)
 			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[lamp_on].get("look", "box"), craft.lamp_on(who), 1.0)
 		# 左の下: 持っているランタン。押すと提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
 		var lrects: Array = []
 		var lcw := 104.0 * u
 		var lch := 128.0 * u
-		var ly := lr.position.y + 330.0 * u
+		var ly := lr.position.y + py + 316.0 * u
 		Icons.screen()
 		Icons.thread(self, PackedVector2Array([Vector2(lr.position.x + 18.0 * u, ly - 18.0 * u), Vector2(lr.end.x - 18.0 * u, ly - 18.0 * u)]), Icons.PAPER_EDGE, 1.5 * u, 0.8)
 		for i in lamps.size():
@@ -918,17 +1092,16 @@ class View extends Control:
 			rects.append(card)
 			Icons.screen()
 			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
-			var tw := cw * 0.92
-			draw_texture_rect(Tags.turntable("sack", spec.get("fabric", "")), Rect2(Vector2(card.get_center().x - tw / 2.0, card.position.y + 2.0 * u), Vector2(tw, tw)), false)
-			# 名札の柄（小さく）
-			Tags.draw_tag(self, Rect2(card.position.x + 12.0 * u, card.end.y - 36.0 * u, cw - 24.0 * u, 28.0 * u), craft.tag_designs.get(who, 0), 1.0, false)   # 持ち主の名札
+			var tw := cw * 0.98
+			draw_texture_rect(Tags.turntable("sack", spec.get("fabric", "")), Rect2(Vector2(card.get_center().x - tw / 2.0, card.get_center().y - tw / 2.0), Vector2(tw, tw)), false)   # 米袋に名札は付けない
 			if picked:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
 				Icons.chevron(self, Vector2(card.get_center().x, card.position.y - 14.0 * u), 18.0 * u, Icons.RED, 1.0, PI / 2, 3.0 * u)
 		ui._gear_rects = rects
-		# まんなか: 自分の名札（左に大きく）と、部品の見本（押すと替わる）。部品は 4 ページ（形と素材・模様・縁と糸・飾りと判子）
-		var mine: Dictionary = craft.tag_designs.get(who, {})
+		# まんなか: 替えている名札（左に大きく）と、部品の見本（押すと替わる）。部品は 4 ページ（形と素材・模様・縁と糸・飾りと判子）。
+		# 名札の下に、どの名札を替えるかの札の列（いつもの柄・自分のソリ・畳んだソリ・名札入れ）
+		var mine: Dictionary = ui.edit_design()
 		var ty := r.position.y + 218.0 * u
 		Tags.draw_tag(self, Rect2(x0 + 50.0 * u, ty + 26.0 * u, 210.0 * u, 128.0 * u), mine, 1.0, true)
 		var opts: Array = []
@@ -981,6 +1154,7 @@ class View extends Control:
 				opts.append([sr, part, i])
 			oy += ceili(float(n) / per) * (sw + 9.0 * u) + 8.0 * u
 		ui._opt_rects = opts
+		_draw_edit_row(u, Rect2(x0, ty + 226.0 * u, 272.0 * u, 76.0 * u))
 		# 右下: 持ち物（見るだけ）
 		var bag: Array = craft.bag(who)
 		var by := r.end.y - 40.0 * u - 104.0 * u

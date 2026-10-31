@@ -1,8 +1,14 @@
 extends CanvasLayer
 ## 画面の表示（HUD）。文字を使わず、アイコン・矢印・形で伝える。決まりと場面ごとの絵は design/hud.md。
-##   左下: ソリの札。最後に触ったソリ（つかむ・紐・乗る・広げる）のタグの柄で描く（sled_tags.gd）。丘の断面の上をソリの印が動き、
-##         登った分だけ赤い糸が伸びる。下に、いまソリにいる人の形と、押している人の数だけの糸の矢印。
-##         そのソリを畳んで持っていれば、印は持っている人の所で、人の横に広げた姿がくるくる回る図
+##   左下: ソリの札。最後に触ったソリ（つかむ・紐・乗る・広げる）の名札の柄で描く（sled_tags.gd。名札はソリごと）。
+##         上は丘の断面: ソリの印が動き、登った分だけ赤い糸が伸びる。
+##         下の左はそのソリがくるくる回る図（12 コマの刻み）。いま触れている人・乗っている人を、そのソリの上の実際の所に
+##         人の形で乗せて、いっしょに回す（座る・押す・紐で引く・つかむ。人の形はキャラの色、頭の上に名前）。
+##         下の右に王冠を載せた持ち主（名札を持っている人。ロッジのソリは家、名札を外したソリは空の輪）。
+##         （2026-10-31 代表「タグにはそのタグが付いたソリがくるくる 360° 回転するアニメーションと、誰がインタラクトしてるか、
+##         乗ってるか、だれがオーナーか」「押してる乗ってる表示は回転してるソリに、乗ってる位置押してる位置実態に合わせて」
+##         「オーナーは王冠表示」「シンプルな人型アイコンにキャラカラー、プレイヤー名を頭の上に」）
+##         そのソリを畳んで持っていれば、印は持っている人の所で、回る図に人は乗せない
 ##   物の上: 近づいたときだけ、キーの形と動きの絵のワッペン。3 回したら（覚えたら）もう出さない
 ##   画面の下のまんなか: つかんでいる・紐を持っている・乗っているときの手引き。ほかの人のそばでは身ぶりの手引き
 ##   Esc: 設定の画面の左に、すべてのキーと絵を並べた札
@@ -14,6 +20,7 @@ const Speedo := preload("res://speedo.gd")
 const RideWind := preload("res://ride_wind.gd")
 const Plates := preload("res://hud_plates.gd")
 const SledTags := preload("res://sled_tags.gd")
+const PersonIcon := preload("res://person_icon.gd")
 const Player := preload("res://player.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
 const TAG_NEAR := 30.0        # ソリからこの距離より近いと札を出す (m)
@@ -84,12 +91,9 @@ var _ride_sled := ""          # 最後に乗っていたソリの名前（米袋
 const REEL_T := 1.6
 var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
 var _tag_a := 0.0
-var _flow := 0.0
-var _n_push := 0
-var _push_hold := 0.0
-var _people: Array = []       # [人, 形（"stand" / "sit"）, 色, 力をかけているか]
+var _people: Array = []       # 札のソリにいる人 {who, pose（"stand" / "push" / "pull" / "sit"）, at（ソリの座標）, col, name, strong}
+var _push_t := {}             # 人 → 押す姿の残り (s)。押した瞬間に入れ、離しても少し残す（1 コマごとのちらつきを消す）
 var _pop := {}                # 人 → 跳ねの残り（1→0）
-var _chev_pop := 0.0
 var _hints := {}              # 案内 → {keys, icon, world, scr, a, on, bottom}
 var _order: Array = []        # いまのコマの、画面の下の案内の並び
 var _prev_mode := -1
@@ -99,11 +103,12 @@ var _meet_n := 0
 var _meeting := false
 var _still_t := 0.0
 var _seen_back := false
-const TAG_K := 1.4            # 名札の大きさ（2026-10-29 代表「名札もっと大きくていい」。HUD の大きさの設定にも合わせて変わる）
+const TAG_K := 1.82           # 名札の大きさ（2026-10-29 代表「名札もっと大きくていい」。2026-10-31 回るソリと人を載せるので 1.3 倍に。
+                              # HUD の大きさの設定にも合わせて変わる）
 const FLIP_LEN := 0.42        # 札をめくる長さ (s)
 const FLIP_HOLD := 6.0        # 手でめくったあと、遠くのソリの札でも出しておく長さ (s)
-var cards: Array = []         # 名札の束: [{sled, item, design, key}]。自分の名札を付けたソリ（置いた・畳んで持つ・帯の米袋）と、
-                              # 持ち主のいないソリに触ったときはロッジの名札を先頭に（hud.gd の _update_cards）
+var cards: Array = []         # 名札の束: [{sled, item, design, key}]。自分が持ち主のソリ（置いた・畳んで持つ）と、持ち主のいないソリに
+                              # 触ったときはそのソリの札（ロッジの名札か、名札を外したソリは無地）を先頭に（_update_cards）。米袋は入れない
 var _card := 0                # いま前の札（めくった先）
 var _card_key := ""
 var _shown_key := ""          # めくっている途中で、前に見えている札（半分めくるまでは前の札）
@@ -216,47 +221,68 @@ func _process(dt: float) -> void:
 
 # ---- ソリの札 ------------------------------------------------------------------------
 
-func _update_people(dt: float, sled: RigidBody3D, p: Node3D) -> void:
-	if sled == null:   # 畳んだソリ: 持っている人だけ
-		_n_push = 0
-		_people = [[p, "stand", Icons.RED, true]] if p else []
-		_flow += dt * 0.4
+func _update_people(dt: float, sled: RigidBody3D, _p: Node3D) -> void:
+	if sled == null:   # 畳んだソリ: 回る図に人は乗せない
+		_people = []
 		return
-	var raw: int = sled.pushers
-	if raw >= _n_push:
-		if raw > _n_push and _n_push >= 0:
-			_chev_pop = 1.0
-		_n_push = raw
-		_push_hold = 0.35
-	else:
-		_push_hold -= dt
-		if _push_hold <= 0.0:
-			_n_push = raw
 	var list: Array = []
-	var others_push := maxi(0, _n_push - (1 if p and (p.pushing or p.pulling) else 0))
 	var who: Array = sled.holders.keys()
 	if sled.rope_holder and not who.has(sled.rope_holder):
 		who.append(sled.rope_holder)
 	for w in who:
-		var strong: bool = ((w.pushing or w.pulling) if w == p else others_push > 0) or sled.is_dragged(w)
-		list.append([w, "stand", _color_of(w), strong])
+		if not is_instance_valid(w):
+			continue
+		# 押しているかは、このコマ押した人（sled._pushed_by）で一人ずつ見る。押している人は前のめりの「押す」姿、
+		# 紐で引いている人は「引く」姿、つかんでいるだけの人は立った姿で薄く
+		var rope: bool = w == sled.rope_holder
+		if sled._pushed_by.has(w) or (rope and w.get("pulling")):
+			_push_t[w] = 0.35
+		var pushing: bool = _push_t.get(w, 0.0) > 0.0
+		var at: Vector3 = sled.to_local(w.global_position)
+		at.y = 0.0   # 足もとは雪の上
+		list.append({"who": w, "pose": ("pull" if rope else "push") if pushing else "stand", "at": at,
+			"col": _color_of(w), "name": _name_of(w), "strong": pushing or sled.is_dragged(w)})
+	for k in _push_t.keys():
+		_push_t[k] -= dt
+		if _push_t[k] <= 0.0 or not who.has(k):
+			_push_t.erase(k)
 	for w in sled.riders:
-		list.append([w, "sit", _color_of(w), true])
-	var before: Array = _people.map(func(x): return x[0])
+		if is_instance_valid(w):
+			list.append({"who": w, "pose": "sit", "at": sled.to_local(w.global_position), "col": _color_of(w), "name": _name_of(w), "strong": true})
+	var before: Array = _people.map(func(x): return x.who)
 	for x in list:
-		if not before.has(x[0]):
-			_pop[x[0]] = 1.0
+		if not before.has(x.who):
+			_pop[x.who] = 1.0
 	_people = list
 	for k in _pop.keys():
 		_pop[k] = maxf(0.0, _pop[k] - dt * 2.5)
-	_chev_pop = maxf(0.0, _chev_pop - dt * 2.0)
-	_flow += dt * (0.4 + clampf(sled.linear_velocity.length(), 0.0, 6.0) * 0.9)
 
 
+## その人のキャラの色（装備の画面で決める。craft.gd の colors）。工房がなければ、前の決まり（あなたは赤、仲間は藍・からし）
 func _color_of(w: Node) -> Color:
+	var craft = main.get("craft")
+	var id: int = int(w.get("id")) if w and w.get("id") != null else -1
+	if craft and craft.colors.has(id):
+		return craft.color_of(id)
 	if w == main.player:
 		return Icons.RED
 	return Icons.NAVY if int(w.get("side")) >= 0 else Icons.MUSTARD
+
+
+## その人の名前（装備の画面で決める。craft.gd の names）
+func _name_of(w: Node) -> String:
+	var craft = main.get("craft")
+	var id: int = int(w.get("id")) if w and w.get("id") != null else -1
+	return craft.name_of(id) if craft else ""
+
+
+## 札のソリの持ち主の番号（-1 は持ち主なし）。畳んで持っている包みは、持っている人（あなた）
+func tag_owner() -> int:
+	if _tag_sled:
+		return int(_tag_sled.get("owner_id"))
+	if not _tag_item.is_empty() and SledTags.has_tag(_tag_item.get("tag", -1)) and main.player:
+		return int(main.player.get("id"))
+	return -1
 
 
 # ---- 手引き --------------------------------------------------------------------------
@@ -377,6 +403,11 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
+
+	# 名札の結び目のそば: G の長押しで、自分のソリの名札を外す・名札入れの名札を持ち主のいないソリに付ける
+	var tt: Array = p.tag_target() if p.has_method("tag_target") else []
+	if not tt.is_empty():
+		_hint(tt[1], ["G"], tt[1], tt[0].tag_point() + Vector3.UP * 0.45)
 
 	# ほかの人のそば: 手を振る・指さす・声
 	var someone := false
@@ -693,31 +724,24 @@ func _update_cards(dt: float, p: Node) -> void:
 	var craft = main.get("craft")
 	var me: int = int(p.get("id")) if p else -1
 	var mine = craft.tag_designs.get(me, 0) if craft else 0
-	if craft and p:
+	if craft and p:   # 名札はソリごと（2026-10-31 代表「タグはソリごとにデザインできるべき」）。米袋には名札がないので札にしない
 		for s in craft.sleds.values():
-			if is_instance_valid(s) and s.visible and int(s.get("owner_id")) == me:
-				list.append({"sled": s, "item": {}, "design": mine, "key": "s%d" % s.get_instance_id()})
+			if is_instance_valid(s) and s.visible and int(s.get("owner_id")) == me and s.kind != "sack":
+				list.append({"sled": s, "item": {}, "design": s.tag, "key": "s%d" % s.get_instance_id()})
 		var bag: Array = craft.bag(me)
 		for i in bag.size():
-			if bag[i] is Dictionary and bag[i].has("sled"):
-				list.append({"sled": null, "item": bag[i], "design": mine, "key": "i%d" % i})
-		var sacks: Array = craft.sacks.get(me, [])
-		var out = craft.sack_out.get(me)
-		for i in sacks.size():
-			if i == int(craft.sack_sel.get(me, 0)) and out != null and is_instance_valid(out):
-				continue   # 出している米袋は、置いてあるソリとして入っている
-			list.append({"sled": null, "item": {"sled": "sack", "fabric": sacks[i].get("fabric", "")}, "design": mine, "key": "k%d" % i})
+			if bag[i] is Dictionary and bag[i].has("sled") and bag[i].sled != "sack":
+				list.append({"sled": null, "item": bag[i], "design": bag[i].get("tag", -1), "key": "i%d" % i})
 	var last = p.get("last_sled") if p else null
 	var lodge: RigidBody3D = null
-	if last != null and is_instance_valid(last) and last.visible and int(last.get("owner_id")) < 0:
+	if last != null and is_instance_valid(last) and last.visible and int(last.get("owner_id")) < 0 and last.get("kind") != "sack":
 		lodge = last
 	elif list.is_empty() and p == null:
 		lodge = main.sled   # あなたのいない確かめ用の場面
 	if list.is_empty() and lodge == null:   # 自分のソリが 1 台もなく、ほかのソリにも触っていない: 自分の名札だけ（窓は空の丘）
 		list.append({"sled": null, "item": {}, "design": mine, "key": "me", "empty": true})
-	if lodge:
-		var t = lodge.get("tag")
-		list.push_front({"sled": lodge, "item": {}, "design": t if not (t is int and int(t) < 0) else 0, "key": "lodge%d" % lodge.get_instance_id()})
+	if lodge:   # 持ち主のいないソリ: ロッジのソリはロッジの名札、名札を外したソリは無地（-1）
+		list.push_front({"sled": lodge, "item": {}, "design": lodge.get("tag"), "key": "lodge%d" % lodge.get_instance_id()})
 	cards = list
 	# 最後に触ったソリの札
 	var lk := ""
@@ -909,6 +933,7 @@ class View extends Control:
 			if h.a < 0.02 or not h.get("shown", false):
 				continue
 			Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, ease(h.a, 0.5))   # 操作のための表示なので、平らで、風でも揺らさない
+		_draw_tag_hold(u)
 		_draw_hoop(u)
 		_draw_pip_back(u)
 		if hud._spd_a > 0.01:
@@ -918,6 +943,20 @@ class View extends Control:
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 		if hud.main.settings and hud.main.settings.is_open:
 			_draw_card(u)
+
+	## G の長押しの進み: 名札の結び目のまわりに、赤い糸の輪が満ちていく（満ちたら外れる・付く。player.gd の tag_hold）
+	func _draw_tag_hold(u: float) -> void:
+		var p = hud.main.player
+		if p == null or float(p.get("tag_hold")) <= 0.0:
+			return
+		var tt: Array = p.tag_target()
+		var cam := get_viewport().get_camera_3d()
+		if tt.is_empty() or cam == null or cam.is_position_behind(tt[0].tag_point()):
+			return
+		var c := cam.unproject_position(tt[0].tag_point())
+		var r := 22.0 * u
+		draw_arc(c, r, 0.0, TAU, 40, Color(Icons.PAPER, 0.75), 6.0 * u, true)
+		draw_arc(c, r, -PI / 2.0, -PI / 2.0 + TAU * float(p.tag_hold), 40, Icons.RED, 4.0 * u, true)
 
 	## 左下の札: 自分の名札（形・色・柄・素材は自分の名札のデザイン）の中に無地の窓を敷き（sled_tags.gd の window_rect）、
 	## その窓に、いま関わっているソリ（最後に触ったソリ）の丘の断面・印・人の形・糸の矢印を描く（_draw_tag_info）。
@@ -959,15 +998,16 @@ class View extends Control:
 		draw_set_transform(Vector2.ZERO)
 		Icons.screen()
 
-	## 窓の中の絵（左上を原点に fw × fh）: 丘の断面の上をソリの印が進み、ふもとからの赤い糸が登った分だけ伸びる。
-	## 下に、そのソリにいる人の形と、押している人の数だけの糸の矢印。窓の地はいつも明るいので、線は濃く、印には白い縁
+	## 窓の中の絵（左上を原点に fw × fh）。上の段は丘の断面: ソリの印が進み、ふもとからの赤い糸が登った分だけ伸びる。
+	## 下の段の左は、そのソリがくるくる回る図に、いま触れている人・乗っている人を実際の所に乗せたもの（_draw_turn）。
+	## 下の段の右は、王冠を載せた持ち主（_draw_owner）。窓の地はいつも明るいので、線は濃く、印には白い縁
 	func _draw_tag_info(u: float, a: float, fw: float, fh: float, sled: RigidBody3D, item: Dictionary) -> void:
 		var main: Node3D = hud.main
 		# 丘の断面（頂上から PROFILE_R までの右半分と、頂上の向こうを少し）
 		var x0 := 6.0 * u
 		var x1 := fw - 6.0 * u
-		var yb := 64.0 * u
-		var yt := 7.0 * u
+		var yb := 40.0 * u
+		var yt := 6.0 * u
 		var rmin := -14.0
 		var to_x := func(rr: float) -> float: return lerpf(x0, x1, (rr - rmin) / (PROFILE_R - rmin))
 		var to_y := func(hh: float) -> float: return lerpf(yb, yt, hh / main.HILL_H)
@@ -976,20 +1016,23 @@ class View extends Control:
 			var rr := lerpf(rmin, PROFILE_R, i / 32.0)
 			prof.append(Vector2(to_x.call(rr), to_y.call(main.hill(rr, 0.0))))
 		var mound := prof.duplicate()
-		mound.append(Vector2(x1, yb + 4.0 * u))
-		mound.append(Vector2(x0, yb + 4.0 * u))
+		mound.append(Vector2(x1, yb + 3.0 * u))
+		mound.append(Vector2(x0, yb + 3.0 * u))
 		Icons.screen()
 		Icons.patch(self, mound, Color(0.74, 0.83, 0.95), a, false)
-		Icons.thread(self, prof, Icons.THREAD, 1.5 * u, a)
+		Icons.thread(self, prof, Icons.THREAD, 1.4 * u, a)
 		# 頂上の旗とふもとのロッジ
 		var top := Vector2(to_x.call(0.0), to_y.call(main.HILL_H))
-		Icons.thread(self, PackedVector2Array([top, top - Vector2(0, 16) * u]), Icons.WOOD.darkened(0.2), 1.6 * u, a)
-		Icons.patch(self, PackedVector2Array([top - Vector2(0, 16) * u, top + Vector2(11, -12.5) * u, top - Vector2(0, 9) * u]), Icons.RED, a, false)
-		var lodge := Vector2(x1 - 6.0 * u, yb)
-		Icons.patch(self, PackedVector2Array([lodge + Vector2(-7, 0) * u, lodge + Vector2(7, 0) * u, lodge + Vector2(7, -8) * u,
-			lodge + Vector2(0, -14) * u, lodge + Vector2(-7, -8) * u]), Icons.WOOD, a, false)
-		draw_rect(Rect2(lodge + Vector2(-2.2, -6.5) * u, Vector2(4.4, 4.0) * u), Color(1.0, 0.72, 0.30, a))
-		if hud.shown_card().get("empty", false):   # 自分のソリがまだない: 空の丘だけ
+		Icons.thread(self, PackedVector2Array([top, top - Vector2(0, 12) * u]), Icons.WOOD.darkened(0.2), 1.4 * u, a)
+		Icons.patch(self, PackedVector2Array([top - Vector2(0, 12) * u, top + Vector2(8.5, -9.5) * u, top - Vector2(0, 7) * u]), Icons.RED, a, false)
+		var lodge := Vector2(x1 - 5.0 * u, yb)
+		Icons.patch(self, PackedVector2Array([lodge + Vector2(-5.5, 0) * u, lodge + Vector2(5.5, 0) * u, lodge + Vector2(5.5, -6) * u,
+			lodge + Vector2(0, -11) * u, lodge + Vector2(-5.5, -6) * u]), Icons.WOOD, a, false)
+		draw_rect(Rect2(lodge + Vector2(-1.7, -5) * u, Vector2(3.4, 3.0) * u), Color(1.0, 0.72, 0.30, a))
+		var tw := Rect2(Vector2(4.0, 46.0) * u, Vector2(150.0, 71.0) * u)   # 回る図の窓
+		if hud.shown_card().get("empty", false):   # 自分のソリがまだない: 空の丘と、空の窓だけ
+			Icons.screen()
+			Icons.dashes(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Icons.PAPER_EDGE, 1.4 * u, 5.0 * u, 3.5 * u, a, true)
 			return
 		# ソリの印と、ふもとからソリまでの赤い糸（畳んでいれば、持っている人の所）
 		var sp: Vector3 = sled.global_position if sled else (main.player.global_position if main.player else Vector3.ZERO)
@@ -998,45 +1041,86 @@ class View extends Control:
 		for i in 25:
 			var rr := lerpf(PROFILE_R, sr, i / 24.0)
 			climbed.append(Vector2(to_x.call(rr), to_y.call(main.hill(rr, 0.0)) - 1.0 * u))
-		Icons.thread(self, climbed, Icons.RED, 2.2 * u, a)
+		Icons.thread(self, climbed, Icons.RED, 2.0 * u, a)
 		var mark := Vector2(to_x.call(sr), to_y.call(main.hill(sr, 0.0)))
 		var slope := atan2(to_y.call(main.hill(sr + 1.0, 0.0)) - to_y.call(main.hill(sr - 1.0, 0.0)), to_x.call(sr + 1.0) - to_x.call(sr - 1.0))
-		var mc := mark + Vector2(0, -6.0 * u).rotated(slope)
-		draw_circle(mc, 10.5 * u, Color(1, 1, 1, 0.8 * a))   # 印の白い縁（丘の線や雪から浮かせる）
+		var mc := mark + Vector2(0, -5.0 * u).rotated(slope)
+		draw_circle(mc, 8.5 * u, Color(1, 1, 1, 0.8 * a))   # 印の白い縁（丘の線や雪から浮かせる）
 		Icons._o = mc
-		Icons._s = 0.5 * u
+		Icons._s = 0.4 * u
 		if sled:
 			Icons.sled_side(self, Vector2.ZERO, 1.0, a, slope, true)   # 前は左（頂上）
 		else:   # 畳んだ包み
 			Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
-		# いまソリにいる人と、押している人の数だけの糸の矢印
-		var px := 14.0 * u
-		var py := fh - 29.0 * u   # 人形の箱の中心（足もとが窓の下の縁の少し上）
-		var ppl: Array = hud._people
-		if ppl.is_empty():
-			Icons.icon(self, "person", Vector2(px, py), 70.0 * u, 0.3 * a, Icons.PAPER_EDGE.darkened(0.2))
-			px += 30.0 * u
-		for x in ppl:
-			var pop: float = hud._pop.get(x[0], 0.0)
-			var sz := 70.0 * u * (1.0 + 0.35 * sin(pop * PI))
-			var lift := 6.0 * u * sin(pop * PI)
-			Icons.icon(self, "person" if x[1] == "stand" else "person_sit", Vector2(px, py - lift), sz, a * (1.0 if x[3] else 0.5), x[2])
-			px += 30.0 * u
-		if sled == null and not item.is_empty():
-			# 畳んだソリは形がわからないので、広げた姿をくるくる回して見せる（タグの窓）
-			var tw := 58.0 * u
-			var tr := Rect2(Vector2(fw - tw - 4.0 * u, fh - tw - 2.0 * u), Vector2(tw, tw))
-			Icons.screen()
-			Icons.patch(self, Icons.rr(tr.position.x, tr.position.y, tw, tw, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, Icons.THREAD)
-			draw_texture_rect(SledTags.turntable(item.get("sled", "mid"), item.get("fabric", "")), tr.grow(-3.0 * u), false, Color(1, 1, 1, a))
-			return
+		_draw_turn(u, a, tw, sled, item)
+		_draw_owner(u, a, Rect2(Vector2(158.0, 46.0) * u, Vector2(fw - 160.0 * u, 71.0 * u)), sled)
+
+	## 回る図の窓: ソリがくるくる回り（sled_tags.gd の turntable_wide。12 コマの刻み）、いま触れている人・乗っている人を、
+	## そのソリの上の実際の所に人の形で乗せて、いっしょに回す。奥の人から描く。持ち主の頭には王冠
+	func _draw_turn(u: float, a: float, tw: Rect2, sled: RigidBody3D, item: Dictionary) -> void:
 		Icons.screen()
-		var n: int = mini(hud._n_push, 5)
-		px += 8.0 * u
-		for i in n:
-			var wave := 0.5 + 0.5 * sin((hud._flow - i * 0.3) * TAU)
-			var big: float = 1.0 + 0.5 * hud._chev_pop * float(i == n - 1)
-			Icons.chevron(self, Vector2(px + i * 16.0 * u, py + 6.0 * u), 20.0 * u * big, Icons.THREAD, a * (0.55 + 0.45 * wave), 0.0, 3.0 * u)
+		Icons.patch(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, Icons.THREAD)
+		var kind: String = sled.kind if sled else String(item.get("sled", "mid"))
+		var fabric: String = sled.fabric if sled else String(item.get("fabric", ""))
+		var ar := float(SledTags.WIDE_SIZE.x) / SledTags.WIDE_SIZE.y
+		var ih := tw.size.y - 3.0 * u
+		var img := Rect2(tw.get_center() - Vector2(ih * ar, ih) / 2.0, Vector2(ih * ar, ih))
+		draw_texture_rect(SledTags.turntable_wide(kind, fabric), img, false, Color(1, 1, 1, a))
+		if sled == null:
+			return
+		var deg := SledTags.turn_deg()
+		var at := func(v: Vector3) -> Vector3:   # ソリの座標 → 窓の上の px と奥行き
+			var q := SledTags.turn_project(kind, true, v, deg)
+			return Vector3(img.position.x + q.x * img.size.x, img.position.y + q.y * img.size.y, q.z)
+		var cen: Vector3 = at.call(Vector3.ZERO)
+		var fwd: Vector3 = at.call(Vector3(0, 0, -1))   # ソリの前は -Z
+		var owner: int = hud.tag_owner()
+		var list: Array = []
+		for x in hud._people:
+			list.append([x, at.call(x.at)])
+		list.sort_custom(func(m, n): return m[1].z < n[1].z)   # 奥（カメラから遠い）から
+		var h := ih * 0.46   # 人の背の高さ（どの大きさのソリでも読める大きさにそろえる）
+		var lo := tw.position.x + h * 0.3
+		var hi := tw.end.x - h * 0.3
+		for m in list:
+			var x: Dictionary = m[0]
+			var q: Vector3 = m[1]
+			var face := 1.0
+			match x.pose:
+				"sit": face = signf(fwd.x - cen.x)
+				"pull": face = signf(q.x - cen.x)
+				_: face = signf(cen.x - q.x)
+			if face == 0.0:
+				face = 1.0
+			var pop: float = hud._pop.get(x.who, 0.0)
+			# 窓からはみ出す人（紐の先で引く人など）は、窓の縁の内に寄せる
+			var feet := Vector2(clampf(q.x, lo, hi), clampf(q.y, tw.position.y + h * 0.95, tw.end.y - 2.0 * u) - 4.0 * u * sin(pop * PI))
+			var id: int = int(x.who.get("id")) if x.who.get("id") != null else -2
+			PersonIcon.person(self, feet, h * (1.0 + 0.3 * sin(pop * PI)), x.col, x.pose, face, a * (1.0 if x.strong else 0.55),
+				id == owner, x.name, 10.0 * u)
+
+	## 持ち主（名札を持っている人）: 王冠を載せた人の形と、頭の上に名前。ロッジのソリは王冠を載せた家、名札を外したソリは空の輪
+	func _draw_owner(u: float, a: float, r: Rect2, sled: RigidBody3D) -> void:
+		var owner: int = hud.tag_owner()
+		var c := Vector2(r.get_center().x, r.end.y - 4.0 * u)
+		Icons.screen()
+		if owner >= 0:
+			var craft = hud.main.get("craft")
+			var who: Node = null
+			var hub = hud.main.get_node_or_null("Emotes")
+			if hub:
+				who = hub.who_of(owner)
+			var col: Color = craft.color_of(owner) if craft else (hud._color_of(who) if who else Icons.RED)
+			var nm: String = craft.name_of(owner) if craft else ""
+			PersonIcon.person(self, c, r.size.y * 0.62, col, "stand", 1.0, a, true, nm, 10.0 * u)
+		elif sled and SledTags.has_tag(sled.get("tag")):   # ロッジのソリ
+			var hc := c - Vector2(0, 2.0 * u)
+			Icons.patch(self, PackedVector2Array([hc + Vector2(-13, 0) * u, hc + Vector2(13, 0) * u, hc + Vector2(13, -15) * u,
+				hc + Vector2(0, -27) * u, hc + Vector2(-13, -15) * u]), Icons.WOOD, a, false)
+			draw_rect(Rect2(hc + Vector2(-4, -12) * u, Vector2(8, 7) * u), Color(1.0, 0.72, 0.30, a))
+			PersonIcon.crown(self, hc + Vector2(0, -29.0 * u), 15.0 * u, a)
+		else:   # 名札を外したソリ: 持ち主はいない
+			Icons.dashes(self, Icons.circ(c - Vector2(0, r.size.y * 0.32), r.size.y * 0.2, 20), Icons.PAPER_EDGE, 1.5 * u, 4.0 * u, 3.0 * u, a, true)
 
 	## 乗って滑っているときの速さ（ボビン。数字は出さない）
 	func _draw_speedo(u: float) -> void:
