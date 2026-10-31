@@ -6,7 +6,7 @@ extends SceneTree
 ##   05 紐で引く  06 ロッジのソリ（持ち主はロッジ）
 ##   07〜09 名札を外す（G を長押しの途中の輪・外したあとの無地の札）、付け直す
 ##   10 装備の画面（名前・キャラの色・替える名札の列）  11 米袋に名札がない（三人称）
-## 回る図の向きが変わるのを見るため、01 は 4 コマ続けて撮る
+## 回る図の向きが変わるのを見るため、01 は 1 秒おきに 4 枚撮る（回る図は 12 秒で 1 周）
 
 const Bot := preload("res://bot.gd")
 
@@ -45,6 +45,13 @@ func _hold(k: Key, down: bool) -> void:
 	e.keycode = k
 	e.pressed = down
 	Input.parse_input_event(e)
+
+
+## キーを押したままにする（窓が前に出ていないと押した印が消えることがあるので、毎コマ押し直す）
+func _keep(k: Key, t: float) -> void:
+	for i in int(t * Engine.physics_ticks_per_second):
+		_hold(k, true)
+		await physics_frame
 
 
 func _shot(name: String) -> void:
@@ -111,13 +118,13 @@ func _run() -> void:
 	p.global_position = sled.to_global(Vector3(0, 0, sled.HALF.y + 0.6)) + Vector3.UP * 0.2
 	_face(sled.global_position, -0.15)
 	p.grab()
-	_hold(KEY_W, true)
-	await _wait(4.0)
-	for k in 4:   # 回る図が 15° ずつ回る
+	await _keep(KEY_W, 4.0)
+	_say("押している: pushing %s 押した人 %s" % [p.pushing, sled._pushed_by.has(p)])
+	for k in 4:   # 回る図がゆっくり回る（1 秒に 30°）
 		await _shot("01_push_fp_%d" % k)
-		await _wait(0.17)
+		await _keep(KEY_W, 1.0)
 	p.set_third(true)
-	await _wait(0.6)
+	await _keep(KEY_W, 0.6)
 	await _shot("02_push_3p")
 	_hold(KEY_W, false)
 	p.let_go()
@@ -153,8 +160,7 @@ func _run() -> void:
 	p.global_position = sled.rope.end_point() + Vector3.UP * 0.2
 	_face(sled.global_position + (-sled.global_basis.z) * 10.0, -0.1)
 	p.grab_rope()
-	_hold(KEY_W, true)
-	await _wait(1.2)
+	await _keep(KEY_W, 1.2)
 	await _shot("05_rope_3p")
 	_hold(KEY_W, false)
 	p.let_go()
