@@ -23,7 +23,6 @@ var _mash_n := -1
 var _frame_k := -1
 var _flips := 0
 var _balls_set := false
-var _side: Camera3D
 
 
 func _initialize() -> void:
@@ -172,8 +171,6 @@ func _process(dt: float) -> bool:
 		if t > pt0 + 0.3 and args.has("sweep"):
 			p.rotation.y += deg_to_rad(float(args["sweep"])) * dt
 			p._pitch = -0.1 + 0.15 * sin((t - pt0) * 1.3)
-		elif t > pt0 + 0.3 and args.has("look"):   # --look=rad: 指さしたまま、見上げる（正）・見下ろす（負）
-			p._pitch = float(args["look"])
 	if _set and args.has("point") and args.has("log-point") and int(t * 2.0) != int((t - dt) * 2.0) and p.point_at != Vector3.INF:
 		var head: Vector3 = p.global_position + Vector3.UP * 1.55
 		var hub = main.get_node_or_null("Emotes")
@@ -206,16 +203,6 @@ func _process(dt: float) -> bool:
 			print("保存: %d 枚  速さ: %.1f" % [n, sled.linear_velocity.length()])
 			return true
 		return false
-	if args.has("side-cam") and _set:   # --side-cam: 人形を真横から撮る別のカメラ（指す腕の向きを見る）
-		if _side == null:
-			_side = Camera3D.new()
-			_side.fov = 40.0
-			root.add_child(_side)
-		var c: Vector3 = p.global_position + Vector3.UP * 1.3
-		var side: Vector3 = p.global_basis.x
-		_side.look_at_from_position(c + side * 4.5 + Vector3.UP * 0.3, c)
-		_side.current = true
-		main.hud.visible = false
 	if t > float(args.get("at", "4")):
 		var out: String = args.get("out", "/tmp/hud.png")
 		root.get_texture().get_image().save_png(out)
