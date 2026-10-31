@@ -348,7 +348,9 @@
 
 代表「ご飯係の雪だるまの制作も始めましょう。冷蔵庫と雪だるまのモデリングをしてください」から。ロッジの食べ物・飲み物は雪玉で払い、店番は雪だるま。ロッジは暖かいので、雪だるまは扉を開けっぱなしにした冷蔵庫の中に立つ（[game-design.md](../design/game-design.md)「雪玉で払う」）。`build_snowman.py`、書き出しは `game/props/snowman.glb` と `game/props/snowman_fridge.glb`。
 
-![冷蔵庫の中の雪だるま](renders/30-snowman-fridge-quarter.png)
+![冷蔵庫の中の雪だるま](../docs/shots/snowman-fridge/12-blender-quarter.png)
+
+![人形と並べる（ゲーム）](../docs/shots/snowman-fridge/04-dolls.png)
 
 | 名前 | 形 | 大きさ | 三角形（書き出し） |
 |---|---|---|---|
@@ -360,7 +362,7 @@
 - **冷蔵庫の節点と目印**: `door`（原点は蝶番の軸。`rotation.y` を 0 にすると閉まる）。`snowman_spot`（中の床。雪だるまの原点をここに）、`chill_spot`（口の縁の下。冷気の粒子や、寒い所の目安を足すとき）。根元の extras: `box`（当たり判定の箱の幅・高さ・奥行き）、`door_open`（扉の開きの角度）
 - 書き出しは節点ごとに軽い形へ焼く（`export_tree`）。焼くあいだは雪だるまと冷蔵庫を離す（同じ所にあると、互いのくぼみの陰が焼き込まれる）
 - 描く: `Blender -b -P props/build_snowman.py -- --views front,quarter,side,door,face --prefix props/renders/30-snowman-fridge`。雪だるまだけを冷蔵庫の外に出して描くときは `--apart --views s_front,s_quarter,s_side,s_back`
-- ゲームで撮る: `Godot --path game -s res://tools/snowman_shots.gd -- --out=… --view=front|quarter|side|dolls|bow`（`dolls` は人形 3 体と並べる、`bow` は節点を回したおじぎの見本）。撮った絵は [docs/shots/snowman-fridge/](../docs/shots/snowman-fridge/)
+- ゲームで撮る: `Godot --path game -s res://tools/snowman_shots.gd -- --out=… --view=front|quarter|side|dolls|bow`（`dolls` は人形 3 体と並べる、`bow` は節点を回したおじぎの見本）。撮った絵は [docs/shots/snowman-fridge/](../docs/shots/snowman-fridge/)（`0*` がゲーム、`1*` が Blender）
 
 ### 置き場所の案（代表と相談する材料。まだ置いていない）
 
