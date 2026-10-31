@@ -4,7 +4,8 @@ extends CanvasLayer
 ##         上は丘の断面: ソリの印が動き、登った分だけ赤い糸が伸びる。
 ##         下の左はそのソリがゆっくり回る図（12 コマの刻みで 12 秒で 1 周）。いま触れている人・乗っている人を、そのソリの上の
 ##         実際の所に 3D の人型で乗せて、いっしょに回す（座る・押す・紐で引く・つかむ。人型はキャラの色、頭の上に名前）。
-##         下の右に王冠を載せた持ち主（名札を持っている人。ロッジのソリは家、名札を外したソリは空の輪）。
+##         下の右に王冠を載せた持ち主（名札を持っている人。名札を外したソリは空の輪）。ロッジのソリは持ち主の欄を出さず、
+##         回る図の窓を右いっぱいに広げる（2026-11-01 代表「オーナーのロッジ表示やめてほしい。どこにいるかじゃなくてだれかがだいじだから」）。
 ##         （2026-10-31 代表「タグにはそのタグが付いたソリがくるくる 360° 回転するアニメーションと、誰がインタラクトしてるか、
 ##         乗ってるか、だれがオーナーか」「押してる乗ってる表示は回転してるソリに、乗ってる位置押してる位置実態に合わせて」
 ##         「オーナーは王冠表示」「シンプルな人型アイコンにキャラカラー、プレイヤー名を頭の上に」）
@@ -1000,7 +1001,8 @@ class View extends Control:
 
 	## 窓の中の絵（左上を原点に fw × fh）。上の段は丘の断面: ソリの印が進み、ふもとからの赤い糸が登った分だけ伸びる。
 	## 下の段の左は、そのソリがくるくる回る図に、いま触れている人・乗っている人を実際の所に乗せたもの（_draw_turn）。
-	## 下の段の右は、王冠を載せた持ち主（_draw_owner）。窓の地はいつも明るいので、線は濃く、印には白い縁
+	## 下の段の右は、王冠を載せた持ち主（_draw_owner）。ロッジのソリは持ち主の欄を出さず、回る図の窓を右いっぱいに広げる。
+	## 窓の地はいつも明るいので、線は濃く、印には白い縁
 	func _draw_tag_info(u: float, a: float, fw: float, fh: float, sled: RigidBody3D, item: Dictionary) -> void:
 		var main: Node3D = hud.main
 		# 丘の断面（頂上から PROFILE_R までの右半分と、頂上の向こうを少し）
@@ -1029,7 +1031,8 @@ class View extends Control:
 		Icons.patch(self, PackedVector2Array([lodge + Vector2(-5.5, 0) * u, lodge + Vector2(5.5, 0) * u, lodge + Vector2(5.5, -6) * u,
 			lodge + Vector2(0, -11) * u, lodge + Vector2(-5.5, -6) * u]), Icons.WOOD, a, false)
 		draw_rect(Rect2(lodge + Vector2(-1.7, -5) * u, Vector2(3.4, 3.0) * u), Color(1.0, 0.72, 0.30, a))
-		var tw := Rect2(Vector2(4.0, 46.0) * u, Vector2(150.0, 71.0) * u)   # 回る図の窓
+		var lodge_sled: bool = sled != null and hud.tag_owner() < 0 and SledTags.has_tag(sled.get("tag"))
+		var tw := Rect2(Vector2(4.0, 46.0) * u, Vector2(fw / u - 8.0 if lodge_sled else 150.0, 71.0) * u)   # 回る図の窓
 		if hud.shown_card().get("empty", false):   # 自分のソリがまだない: 空の丘と、空の窓だけ
 			Icons.screen()
 			Icons.dashes(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Icons.PAPER_EDGE, 1.4 * u, 5.0 * u, 3.5 * u, a, true)
@@ -1053,7 +1056,8 @@ class View extends Control:
 		else:   # 畳んだ包み
 			Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
 		_draw_turn(u, a, tw, sled, item)
-		_draw_owner(u, a, Rect2(Vector2(158.0, 46.0) * u, Vector2(fw - 160.0 * u, 71.0 * u)), sled)
+		if not lodge_sled:
+			_draw_owner(u, a, Rect2(Vector2(158.0, 46.0) * u, Vector2(fw - 160.0 * u, 71.0 * u)), sled)
 
 	## 回る図の窓: ソリがゆっくり回り（sled_tags.gd の turntable_wide。12 コマの刻みで 5° ずつ、12 秒で 1 周）、いま触れている人・
 	## 乗っている人を、そのソリの上の実際の所に 3D の人型（person_icon.gd の model。キャラの色）で乗せて、いっしょに回す。
@@ -1104,7 +1108,7 @@ class View extends Control:
 			PersonIcon.name_label(self, String(x.name), c - Vector2(0, 1.0 * u), 10.0 * u, x.col, a)
 
 	## 持ち主（名札を持っている人）: 3D の人型を正面から少し斜めに撮った図（キャラの色）に王冠と、頭の上に名前。
-	## ロッジのソリは王冠を載せた家、名札を外したソリは空の輪
+	## 名札を外したソリは空の輪（ロッジのソリには、この欄を出さない）
 	func _draw_owner(u: float, a: float, r: Rect2, sled: RigidBody3D) -> void:
 		var owner: int = hud.tag_owner()
 		var c := Vector2(r.get_center().x, r.end.y - 4.0 * u)
@@ -1124,12 +1128,6 @@ class View extends Control:
 			var top := Vector2(c.x, pr.position.y + ph * 0.12)
 			PersonIcon.crown(self, top, 13.0 * u, a)
 			PersonIcon.name_label(self, nm, top - Vector2(0, 10.0 * u), 10.0 * u, col, a)
-		elif sled and SledTags.has_tag(sled.get("tag")):   # ロッジのソリ
-			var hc := c - Vector2(0, 2.0 * u)
-			Icons.patch(self, PackedVector2Array([hc + Vector2(-13, 0) * u, hc + Vector2(13, 0) * u, hc + Vector2(13, -15) * u,
-				hc + Vector2(0, -27) * u, hc + Vector2(-13, -15) * u]), Icons.WOOD, a, false)
-			draw_rect(Rect2(hc + Vector2(-4, -12) * u, Vector2(8, 7) * u), Color(1.0, 0.72, 0.30, a))
-			PersonIcon.crown(self, hc + Vector2(0, -29.0 * u), 15.0 * u, a)
 		else:   # 名札を外したソリ: 持ち主はいない
 			Icons.dashes(self, Icons.circ(c - Vector2(0, r.size.y * 0.32), r.size.y * 0.2, 20), Icons.PAPER_EDGE, 1.5 * u, 4.0 * u, 3.0 * u, a, true)
 
