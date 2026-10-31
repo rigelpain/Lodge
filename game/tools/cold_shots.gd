@@ -1,6 +1,7 @@
 extends SceneTree
 ## 寒さのふるえと、暖かいロッジでのゆっくりした揺れを撮る（確かめ用）。
 ##   Godot --path game --resolution 960x540 -s res://tools/cold_shots.gd -- --dir=/path [--place=foot,door,inside] [--time=14]
+##   7 体を並べて: Godot --path game --resolution 1280x540 -s res://tools/cold_shots.gd -- --lineup --no-pip --dir=/path [--place=foot,inside]
 ## 場所ごとに、仲間（2.2 m 先でこちらを向いて立つ）を正面から 12 コマ（1 秒）続けて撮り、一人称（fp）と三人称（tp）も 1 枚ずつ撮る。
 ## 名前は 場所_seq_00.png 〜 場所_seq_11.png、場所_fp.png、場所_tp.png。
 ## 揺れの大きさ（胸と手の、コマごとの動き）と、気温・ふるえ・落ち着きを出す。
@@ -52,6 +53,10 @@ func _run() -> void:
 		root.get_node("DayCycle").hour = float(args["time"])
 	if args.has("move"):
 		await _move()
+		quit()
+		return
+	if args.has("lineup"):
+		await _lineup()
 		quit()
 		return
 	var dir: String = args.get("dir", "/tmp")
@@ -159,6 +164,83 @@ func _place_pos(place: String) -> Vector3:
 			return Vector3(d.x, main.height(d.x, d.z) + 0.05, d.z)
 	var base := Vector3(6.0, 0, 30.0)
 	return Vector3(base.x, main.height(base.x, base.z) + 0.05, base.z)
+
+
+## 7 体の人形（doll.gd の KINDS）を横一列に並べ、正面から撮る。場所ごとに、続けて 6 コマと、大きく息を吐かせて 0.6 秒後の 1 枚。
+## 人形ごとの揺れの大きさと、ふるえ・落ち着き・白い息を出す。名前は lineup_場所.png、lineup_場所_seq_00.png 〜
+func _lineup() -> void:
+	var dir: String = args.get("dir", "/tmp")
+	DirAccess.make_dir_recursive_absolute(dir)
+	var lodge: Node3D = main.get_node("Lodge")
+	# あなたと仲間は写らない所へ（右上の小窓は --no-pip で消す）
+	for n in [p] + _bots():
+		n.global_position = Vector3(60, main.height(60, 60) + 0.1, 60)
+	var places: Array = args.get("place", "foot,inside").split(",")
+	for place in places:
+		var hosts := []
+		var center: Vector3
+		var face: Vector3   # 人形が向く向き（カメラのほう）
+		if place == "inside":
+			center = lodge.to_global(Vector3(0.0, 0.05, 6.0))   # 柱より手前
+			face = lodge.global_basis.z
+		else:
+			center = _place_pos(place)
+			face = Vector3(center.x - 1.5, 0, center.z).normalized()   # 丘と反対（空のほう）を背に
+			face = -face
+		var side := face.cross(Vector3.UP).normalized()
+		for i in Doll.KINDS.size():
+			var h := Node3D.new()
+			root.add_child(h)
+			var at := center + side * (i - 3) * 1.05
+			if place != "inside":
+				at.y = main.height(at.x, at.z) + 0.02
+			else:
+				var hit := root.world_3d.direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(at + Vector3.UP * 1.5, at - Vector3.UP * 3.0))
+				if hit:
+					at.y = hit.position.y + 0.02   # 床の上
+			h.global_position = at
+			h.look_at(at + face, Vector3.UP)
+			var d := Doll.new()
+			d.kind = Doll.KINDS[i]
+			h.add_child(d)
+			hosts.append(h)
+		var floor_y: float = (hosts[3] as Node3D).global_position.y
+		center.y = floor_y
+		cam.look_at_from_position(center + face * (6.6 if place == "inside" else 7.0) + Vector3.UP * 1.1, center + Vector3.UP * 0.7)
+		cam.current = true
+		await _frames(150)   # 気温がなじむ（はじめはその場の値から）、glb を読む
+		var last := {}
+		var moves := {}
+		for k in 6:
+			await _next_frame()
+			await process_frame
+			RenderingServer.force_draw()
+			root.get_texture().get_image().save_png(dir.path_join("lineup_%s_seq_%02d.png" % [place, k]))
+			for h in hosts:
+				var d: Node3D = h.get_child(0)
+				var now := _marks(d)
+				if last.has(d):
+					var m := 0.0
+					for i in now.size():
+						m += (now[i] as Vector3).distance_to(last[d][i])
+					moves[d] = moves.get(d, 0.0) + m / now.size() * 1000.0 / 5.0
+				last[d] = now
+		for h in hosts:
+			(h.get_child(0) as Node3D)._puff(1.7, 1.3)   # 声の息の大きさで（身ぶりはさせない: 腕が上がるとふるえの形が見えない）
+		var t0 := Time.get_ticks_msec()
+		while Time.get_ticks_msec() - t0 < 600:
+			await process_frame
+		RenderingServer.force_draw()
+		root.get_texture().get_image().save_png(dir.path_join("lineup_%s.png" % place))
+		var tn := root.get_node("Temperature")
+		for h in hosts:
+			var d: Node3D = h.get_child(0)
+			print("%s %-8s 気温=%5.1f ふるえ=%.2f 落ち着き=%.2f 白い息=%.2f 吐いている=%s コマごとの動き=%.1f mm" % [
+				place, d.kind, tn.at(d._long.global_position), d._shiver, d._calm, d._cold,
+				d._streams["big"].emitting, moves.get(d, 0.0)])
+		for h in hosts:
+			h.queue_free()
+		await _frames(5)
 
 
 ## ロッジの中から戸口の外へ出て、なじむ様子を出す

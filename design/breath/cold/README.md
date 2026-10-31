@@ -8,6 +8,8 @@
 | `views.jpg` | 一人称（左）と三人称（右）。上からふもと・ロッジの戸口の外・ロッジの中 |
 | `rise_long.jpg` | B の長い息を顔の横から、吐きはじめから 0.5・1.2・2.0・2.8 秒。上の段が前、下の段が今。前へ伸びてから斜め上へ昇り、広がって薄く透け、ほどけて消える |
 | `rise_normal.jpg` | ふだんの息で同じく |
+| `lineup.jpg` | 7 体（左から golem・ningyo・musha・robo・news・origami・kasa）を並べて、大きく息を吐かせて 0.6 秒後。上の段はふもと（−6.6 °C）。どの人形も背を丸めて手を胸の前に寄せ、白い息が出る（コマごとの動き 8〜36 mm。golem は大きいので動きも大きい）。下の段はロッジの中（18 °C）。腕を下ろして落ち着き（0.4〜1.8 mm）、白い息は出ない |
+| `lineup_shiver.jpg` | ふもとの 7 体を続けて 3 コマ（ふるえ） |
 
 撮り直すには:
 
@@ -15,4 +17,4 @@
 /Applications/Godot.app/Contents/MacOS/Godot --path game --resolution 960x540 -s res://tools/cold_shots.gd -- --dir="$PWD/design/breath/cold/raw"
 ```
 
-`--place=foot,door,inside` で場所、`--time=23` で夜、`--move` でロッジの中から外へ出たときのなじみ方（ふるえ・落ち着き・白い息を 0.5 秒おき）を出す。白い息の昇り方は `tools/breath_shots.gd` に `--when=0.5,1.2,2.0,2.8`。気温ごとのふるえと落ち着きは `tools/temperature_check.gd` の表に出る。
+7 体を並べるのは `-- --lineup --no-pip --dir=...`（`--resolution 1280x540`）。`--place=foot,door,inside` で場所、`--time=23` で夜、`--move` でロッジの中から外へ出たときのなじみ方（ふるえ・落ち着き・白い息を 0.5 秒おき）を出す。白い息の昇り方は `tools/breath_shots.gd` に `--when=0.5,1.2,2.0,2.8`。気温ごとのふるえと落ち着きは `tools/temperature_check.gd` の表に出る。
