@@ -7,9 +7,10 @@ voice_unq_<人形>  「ウン？」たずねる・首をかしげる。鼻の声
 voice_surprise_<人形>  びっくり（雪玉が当たったとき）。息を吸うかすれから、高い「あ」が短く跳ねる
 voice_oi_<人形>   「おーーーい」遠くの人を呼ぶ。お を高めで平らに長く伸ばし、最後の い で下がって終わる
 
-<人形> は kasa・origami・news。声の高さは人形の性別と身長で決める（voices()。上がり下がりの形と長さは同じ）。
-女性で背が低いほど高く、男性で背が高いほど低い（代表の言葉、2026-10-31）。身長は game/doll.gd から読む。
-口の響きは体の大きさについていく（小さな体ほど響きが高い。男性は少し低い）。
+<人形> は game/doll.gd の VOICE の人形（まだゲームにいない人形も）。上がり下がりの形と長さは人形どうしで同じ。
+声の高さは、性別と身長で決める（女性で背が低いほど高く、男性で背が高いほど低い。代表の言葉、2026-10-31）か、
+VOICE に書いた高さにする。口の響きは体の大きさについていく（小さな体ほど響きが高い。男性は少し低い）。
+声色（COLORS）は、ロボット・鋭い・丸い・獣のカタコト。ふつうの声は声色を足さない。
 
 声帯の音（声門の波を 1 周ずつ作り、揺らぎを入れる）に息を混ぜ、口の形の共鳴（フォルマント）を通す。
 録音も生成サービスも使わない。高さは wav に焼き込み、Godot 側の pitch_scale では変えない（速さと口の響きが崩れるので）。
@@ -21,7 +22,7 @@ import re
 import numpy as np
 from scipy import signal
 
-from lib import SR, bp, fade, hp, lp, n_of, place, write
+from lib import SR, bp, db, fade, hp, lp, n_of, place, rms_db, write
 
 # 小さな人形の声（子どもの声より少し高め）。母音ごとの共鳴 (Hz) と幅（r）
 VOWEL = {
@@ -34,7 +35,7 @@ VOWEL = {
 }
 GAIN = {"w": [1.0, 0.3, 0.06], "u": [1.0, 0.45, 0.12], "a": [1.0, 1.4, 0.6], "n": [1.0, 0.05, 0.03],
         "o": [1.0, 0.9, 0.2], "i": [1.0, 0.55, 0.35]}
-# 人形の性別と身長は game/doll.gd から読む（SEX、TOP（人形の頭の高さ）× SCALE（ゲームでの大きさ））。人形を足すときもそちらに書く
+# 人形の声（性別・高さ・声色）と身長は game/doll.gd から読む（VOICE、TOP（人形の頭の高さ）× SCALE（ゲームでの大きさ））。人形を足すときもそちらに書く
 SEX_PITCH = {"女": 1.0, "男": 0.6}    # 男性は約 9 半音低く
 SEX_FORM = {"女": 1.0, "男": 0.9}     # 男性は口の響きも少し低く
 HEIGHT_PITCH = 0.75    # 身長が半分なら、高さは 2^0.75 = 1.68 倍
@@ -42,39 +43,61 @@ HEIGHT_FORM = 0.5      # 口の響きは、体の大きさにゆるくついて�
 
 
 def dolls():
-    """game/doll.gd から、人形ごとの (性別, 身長 (m))。身長は TOP × SCALE"""
+    """game/doll.gd から、人形ごとの (性別, 高さ, 声色, 身長 (m) か None)。身長は TOP × SCALE（まだゲームにいない人形は None）"""
     src = (pathlib.Path(__file__).resolve().parents[2] / "game" / "doll.gd").read_text()
-    def table(name, val):
+    def table(name):
         body = re.search(rf"^const {name} := \{{(.*?)\}}", src, re.M).group(1)
-        return {k: v for k, v in re.findall(rf'"(\w+)":\s*{val}', body)}
-    sex, top, scale = table("SEX", '"(.+?)"'), table("TOP", r"([\d.]+)"), table("SCALE", r"([\d.]+)")
-    return {k: (sex[k], float(top[k]) * float(scale[k])) for k in sex}
+        return {k: float(v) for k, v in re.findall(r'"(\w+)":\s*([\d.]+)', body)}
+    top, scale = table("TOP"), table("SCALE")
+    body = re.search(r"^const VOICE := \{(.*?)^\}", src, re.M | re.S).group(1)
+    return {k: (sex, float(pitch), color, top[k] * scale[k] if k in top and k in scale else None)
+            for k, sex, pitch, color in re.findall(r'"(\w+)":\s*\["(.*?)",\s*([\d.]+),\s*"(.*?)"\]', body)}
 
 
 def voices():
-    """人形ごとの (身長, 声の高さの倍率, 口の響きの倍率)"""
+    """人形ごとの (身長, 声の高さの倍率, 口の響きの倍率, 声色)。あなた（kasa）の声を 1.0 にする"""
     ds = dolls()
     out = {}
-    for k, (sex, h) in ds.items():
-        r = ds["kasa"][1] / h   # あなた（kasa）の声を 1.0 にする
-        out[k] = (h, SEX_PITCH[sex] * r ** HEIGHT_PITCH, SEX_FORM[sex] * r ** HEIGHT_FORM)
+    for k, (sex, pitch, color, h) in ds.items():
+        if pitch > 0:
+            # 高さを書いた人形: 口の響きも高さにゆるくついていく
+            out[k] = (h, pitch, pitch ** HEIGHT_FORM, color)
+        else:
+            r = ds["kasa"][3] / h
+            out[k] = (h, SEX_PITCH[sex] * r ** HEIGHT_PITCH, SEX_FORM[sex] * r ** HEIGHT_FORM, color)
     return out
 
 
-def glottal(f0, rng, jitter=0.012, shimmer=0.06):
-    """声門の波。f0 はサンプルごとの高さ。1 周ずつ Rosenberg の形を置き、高さと強さを少し揺らす"""
+# 声色。voice() が使う（COLOR に入れる）。どれも、ふつうの声からの変え方
+COLORS = {
+    # ロボット: 揺れをなくし、高さを 70 ms ずつの段にする（抑揚の形は残す）。段ボールの箱の響き（短いくし形）と、金属っぽい振幅の変調
+    "robot": dict(jitter=0.0, shimmer=0.0, wobble=0.0, step=0.07, comb=(0.0028, 0.55), ring=(55.0, 0.35)),
+    # 鋭い: 声門をすばやく閉じて倍音を増やし、息を少なく、高い所を落とさない
+    "sharp": dict(tn=0.07, breath=0.5, src_lp=6000, out_lp=7500, tilt=0.9),
+    # 丸い: 声門をゆっくり閉じて倍音を減らし、息を少し多く、高い所を早めに落とす
+    "round": dict(tp=0.5, tn=0.32, breath=1.3, src_lp=2400, out_lp=3600, tilt=0.6),
+    # 獣のカタコト: 1 周おきに声門の強さを落とすうなり（周期が倍に聞こえる）、大きな揺れ、かすれ。長い声は途中で何度か詰まる
+    "beast": dict(jitter=0.03, shimmer=0.16, alt=0.45, breath=1.6, out_lp=4200, chop=(0.19, 0.8)),
+}
+COLOR = None
+
+
+def glottal(f0, rng, jitter=0.012, shimmer=0.06, tp=0.42, tn=0.16, alt=0.0):
+    """声門の波。f0 はサンプルごとの高さ。1 周ずつ Rosenberg の形を置き、高さと強さを少し揺らす。
+    tp・tn は開く・閉じる割合（閉じるのが速いほど倍音が多い）。alt は 1 周おきに強さを落とす割合（うなり）"""
     n = len(f0)
     out = np.zeros(n)
     i = 0
+    k = 0
     while i < n:
         f = f0[min(i, n - 1)] * (1 + rng.normal(0, jitter))
         period = max(8, int(SR / max(f, 40)))
-        tp, tn = 0.42, 0.16   # 開く・閉じる割合
         t = np.arange(period) / period
         g = np.where(t < tp, 0.5 * (1 - np.cos(np.pi * t / tp)),
                      np.where(t < tp + tn, np.cos(np.pi / 2 * (t - tp) / tn), 0.0))
         d = np.diff(g, prepend=0.0)   # 口から出るのは流れの変化（微分）
-        a = 1 + rng.normal(0, shimmer)
+        a = (1 + rng.normal(0, shimmer)) * (1 - alt if k % 2 else 1.0)
+        k += 1
         m = min(period, n - i)
         out[i:i + m] += d[:m] * a
         i += period
@@ -115,21 +138,39 @@ def voice(f0_pts, path, dur, rng, breath=0.22, env_pts=None, form=1.0):
     """高さの点 [(秒, Hz)] と口の形の点で、声を 1 つ作る"""
     if MATERIAL is not None:
         return MATERIAL(f0_pts, path, dur, rng, env_pts, form)
+    c = COLOR or {}
     n = n_of(dur)
     t = np.arange(n) / SR
     f0 = np.interp(t, [p[0] for p in f0_pts], [p[1] for p in f0_pts])
+    if c.get("step"):
+        # 高さを段にする（段の中ほどの高さで止める）
+        h = n_of(c["step"])
+        f0 = np.repeat(f0[np.minimum(np.arange(0, n, h) + h // 2, n - 1)], h)[:n]
     # ゆっくりした揺れ（人の声のふらつき）
-    f0 *= 1 + 0.012 * np.sin(2 * np.pi * rng.uniform(4.5, 6.0) * t + rng.uniform(0, 6.28))
-    src = glottal(f0, rng)
-    src = src - 0.8 * np.concatenate([[0.0], src[:-1]])   # 倍音の傾きを少し起こす（母音が「う」にこもらないように）
-    src = lp(src, 3800, 2)
+    f0 *= 1 + c.get("wobble", 0.012) * np.sin(2 * np.pi * rng.uniform(4.5, 6.0) * t + rng.uniform(0, 6.28))
+    src = glottal(f0, rng, c.get("jitter", 0.012), c.get("shimmer", 0.06), c.get("tp", 0.42), c.get("tn", 0.16), c.get("alt", 0.0))
+    src = src - c.get("tilt", 0.8) * np.concatenate([[0.0], src[:-1]])   # 倍音の傾きを少し起こす（母音が「う」にこもらないように）
+    src = lp(src, c.get("src_lp", 3800), 2)
     # 息: 声と同じ口を通る、かすれ
-    noise = hp(rng.standard_normal(n), 400, 2) * breath * 0.03
+    noise = hp(rng.standard_normal(n), 400, 2) * breath * c.get("breath", 1.0) * 0.03
     y = tract(src + noise, path, form)
     env = np.interp(t, [p[0] for p in env_pts], [p[1] for p in env_pts]) if env_pts else np.ones(n)
+    if c.get("chop") and dur > 0.45:
+        # カタコト: 一定の間で、声を短く詰まらせる（なめらかにへこませる）
+        gap, depth = c["chop"]
+        dip = np.zeros(n)
+        for s in np.arange(gap, dur - 0.12, gap):
+            dip = np.maximum(dip, np.exp(-0.5 * ((t - s) / 0.018) ** 2))
+        env = env * (1 - depth * dip)
     y = y * env
+    if c.get("comb"):
+        d, g = c["comb"]
+        y = y + g * np.concatenate([np.zeros(n_of(d)), y[:-n_of(d)]])
+    if c.get("ring"):
+        f, depth = c["ring"]
+        y = y * (1 - depth + depth * np.sin(2 * np.pi * f * t))
     y = hp(y, 120, 2)
-    y = lp(y, 5200, 2)   # やわらかく
+    y = lp(y, c.get("out_lp", 5200), 2)   # やわらかく
     return fade(y, 0.01, 0.06)
 
 
@@ -220,5 +261,15 @@ if __name__ == "__main__":
     for name, fn, seed, peak in [("wa", wa, 700, -6), ("un", un, 710, -7), ("nn", nn, 720, -7),
                                  ("unq", unq, 730, -7), ("surprise", surprise, 740, -6), ("oi", oi, 750, -5)]:
         # 人形どうしで同じ乱数にして、長さと抑揚をそろえる（ちがうのは高さと口の響きだけ）
-        for doll, (_, pitch, form) in voices().items():
-            write(f"voice_{name}_{doll}.wav", fn(np.random.default_rng(seed), pitch, form), peak)
+        base = None
+        for doll, (_, pitch, form, color) in voices().items():
+            COLOR = COLORS.get(color)
+            x = fn(np.random.default_rng(seed), pitch, form)
+            if COLOR is None:
+                x = write(f"voice_{name}_{doll}.wav", x, peak)
+                base = rms_db(x) if doll == "kasa" else base
+            else:
+                # 声色を変えた声は、ピークでなく聞こえの大きさ（実効値）をあなたの声にそろえる。ピークは -1 dB まで
+                x = x * db(base - rms_db(x))
+                write(f"voice_{name}_{doll}.wav", x / max(1.0, np.max(np.abs(x)) / db(-1.0)), None)
+    COLOR = None
