@@ -17,7 +17,14 @@ extends Node
 ##   sack_out  {at, yaw, up, v}  装備の米袋（いま選んでいるもの）を足もとに出す（2026-10-29 代表: 米袋は装備。持ち物の列は使わない）。
 ##                             v は出した人の勢い（初めの速さ。走りながら出すと滑り出す）
 ##   sack_in   {}              出している米袋を、くるっと丸めて帯に戻す
-##   tag_design {design}       自分の名札のデザインを決める（装備の画面）。持ち主の印として、その人のソリ・米袋の名札が替わる
+##   tag_design {design}       自分の「いつもの柄」を決める（装備の画面）。これから縫うソリに付く名札。いまあるソリの名札は替えない
+##   sled_tag {design, id | slot | loose}  ソリごとの名札の柄を替える（装備の画面）。id は置いてある自分のソリ、slot は持ち物の
+##                             畳んだソリ、loose は名札入れの外した名札の番号（2026-10-31 代表「タグはソリごとにデザインできるべき」）
+##   untag     {id}            自分のソリから名札を外して、持ち主をやめる（ソリの名札のそばで G を長押し）。名札は帯の名札入れに戻り、
+##                             ソリは持ち主のいないソリ（名札なし）になる。だれでも乗れて、畳める
+##   tag_on    {id, loose}     名札入れの名札を、持ち主のいない名札なしのソリに付けて、持ち主になる（同じく G を長押し）。
+##                             ロッジのソリ（ロッジの名札が付いている）には付けられない
+##   profile   {name, color}   自分の名前と、キャラの色（COLORS の番号）を決める（装備の画面）。HUD の札で、人の形の色と頭の上の名前になる
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
@@ -61,13 +68,23 @@ var _next_sled := 1
 const GEARS := ["sack", "lantern"]   # 装備の種類（装備の画面の並び）
 var tag_designs := {}          # 人の番号 → 自分の名札（sled_tags.gd の部品の辞書）。通信では「誰が」の印として配る
 var tag_owned := {}            # 人の番号 → 手に入れた「あとで手に入る」名札の部品 {部品: [番号, ...]}（最初から使える部品は書かない）
-var sacks := {}                # 人の番号 → 持っている米袋の配列 [{fabric, tag}]（0 番は標準）
+var sacks := {}                # 人の番号 → 持っている米袋の配列 [{fabric}]（0 番は標準。米袋に名札は付けない）
+var loose_tags := {}           # 人の番号 → 帯の名札入れの、外した名札の柄の配列（付け直せる）
+var names := {}                # 人の番号 → 名前（装備の画面で決める。HUD の札で頭の上に出す）
+var colors := {}               # 人の番号 → キャラの色（COLORS の番号）
 var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
 var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
 var lanterns := {}             # 人の番号 → 持っているランタンの配列 [{look}]（0 番は標準）
 var lantern_sel := {}          # 人の番号 → 提げているランタンの番号（-1 は外している）
 var lamps := {}                # 人の番号 → ランタンが点いているか
+## キャラの色（装備の画面で選ぶ。はじめは人の番号の順に、赤・藍・からし…）。フェルトの色で、名札の窓の生成りの上で見分けられる濃さ
+const COLORS := [Color(0.80, 0.24, 0.20), Color(0.24, 0.32, 0.55), Color(0.88, 0.66, 0.20), Color(0.25, 0.52, 0.34),
+	Color(0.55, 0.30, 0.58), Color(0.92, 0.50, 0.22), Color(0.22, 0.58, 0.66), Color(0.84, 0.40, 0.56),
+	Color(0.45, 0.30, 0.18), Color(0.40, 0.62, 0.22), Color(0.30, 0.30, 0.36), Color(0.62, 0.70, 0.86)]
+## はじめの名前（人の番号の順）。装備の画面で替えられる
+const NAMES := ["ゆき", "そら", "こはる", "わた", "つむぎ", "もみじ", "あられ", "ひなた", "みぞれ", "こまち", "すず", "はる"]
+const NAME_MAX := 10           # 名前の字の数の上限
 const SACK_FAR := 30.0         # 誰も乗っていない米袋から持ち主がこれより離れて…
 const SACK_FAR_T := 4.0        # …この秒たつと、ひとりでに帯に戻る
 
@@ -81,7 +98,10 @@ func join(who: int) -> void:
 	hands[who] = -1
 	tag_designs[who] = preload("res://sled_tags.gd").default_design(who)
 	tag_owned[who] = {}
-	sacks[who] = [{"fabric": "", "tag": 0}]   # 標準の米袋（名札は持ち主の名札）
+	sacks[who] = [{"fabric": ""}]   # 標準の米袋
+	loose_tags[who] = []
+	names[who] = NAMES[posmod(who - 1, NAMES.size())]
+	colors[who] = posmod(who - 1, COLORS.size())
 	sack_sel[who] = 0
 	lanterns[who] = [{"look": "box"}, {"look": "paper"}]
 	lantern_sel[who] = 0
@@ -110,7 +130,24 @@ func gear_index(who: int, gear: String) -> int:
 	return -1
 
 
-## いま呼び出す米袋 {fabric, tag}
+## その人のキャラの色と名前（知らない人は灰色・名前なし）
+func color_of(who: int) -> Color:
+	return COLORS[posmod(int(colors[who]), COLORS.size())] if colors.has(who) else Color(0.55, 0.55, 0.58)
+
+
+func name_of(who: int) -> String:
+	return String(names.get(who, ""))
+
+
+## 置いてあるソリの番号（_place の番号。なければ -1）
+func sled_id(s: Node) -> int:
+	for id in sleds:
+		if sleds[id] == s:
+			return id
+	return -1
+
+
+## いま呼び出す米袋 {fabric}
 func sack(who: int) -> Dictionary:
 	var list: Array = sacks.get(who, [])
 	return list[clampi(sack_sel.get(who, 0), 0, list.size() - 1)] if not list.is_empty() else {}
@@ -220,8 +257,9 @@ func _apply(ev: Dictionary) -> bool:
 		"sewn":
 			ev["tag"] = tag_designs.get(who, 0)   # 持ち主の印: 縫った人の名札
 			if ev.sled == "sack" and sacks.has(who):
-				# 米袋は装備: 床には出さず、装備の枠に入れて、呼び出す米袋にする
-				sacks[who].append({"fabric": ev.fabric, "tag": 0})
+				# 米袋は装備: 床には出さず、装備の枠に入れて、呼び出す米袋にする（名札は付けない）
+				ev["tag"] = -1
+				sacks[who].append({"fabric": ev.fabric})
 				sack_sel[who] = sacks[who].size() - 1
 				ev["gear"] = true
 			elif ev.sled in OUT_FRONT and world and world.has_method("delivery_spot"):
@@ -239,7 +277,7 @@ func _apply(ev: Dictionary) -> bool:
 			var spec := sack(who)
 			if spec.is_empty() or sack_sled(who) != null:
 				return false
-			var gid := _place("sack", spec.fabric, ev.at, ev.yaw, 0, ev.get("up", Vector3.UP), tag_designs.get(who, 0), false, who)
+			var gid := _place("sack", spec.fabric, ev.at, ev.yaw, 0, ev.get("up", Vector3.UP), -1, false, who)
 			var gs: RigidBody3D = sleds[gid]
 			sleds.erase(gid)   # 装備の米袋は畳むソリの数に入れない
 			gs.crafted = false
@@ -262,7 +300,7 @@ func _apply(ev: Dictionary) -> bool:
 					h.let_go()
 			if gs.rope_holder and gs.rope_holder.has_method("let_go"):
 				gs.rope_holder.let_go()
-			ev["item"] = {"kind": "folded", "sled": "sack", "fabric": gs.fabric, "tag": gs.tag}
+			ev["item"] = {"kind": "folded", "sled": "sack", "fabric": gs.fabric, "tag": -1}
 			_origami(ev, false, gs.global_transform, true, 3.0)   # くるっと丸めて、持ち主の帯へ飛ぶ（速回し。10 コマで、人形のしまう動き doll.gd の SACK_IN と同じ）
 			sack_out.erase(who)
 			if world:   # この米袋を相手にしていた人（と人形）は、もとのソリへ
@@ -297,10 +335,64 @@ func _apply(ev: Dictionary) -> bool:
 					i = int(old.get(part, Tags.DEFAULT[part]))
 				d[part] = i
 			ev["design"] = d
-			tag_designs[who] = d
-			for s in get_tree().get_nodes_in_group("sleds"):   # その人のソリの名札を付け替える
-				if is_instance_valid(s) and int(s.get("owner_id")) == who:
-					s.retag(d)
+			tag_designs[who] = d   # いつもの柄（これから縫うソリに付く）。いまあるソリの名札はソリごと（sled_tag）
+		"sled_tag":
+			var d := _usable_design(who, ev.design, {})
+			if ev.has("id"):
+				var s: Node3D = sleds.get(int(ev.id))
+				if s == null or not is_instance_valid(s) or int(s.owner_id) != who or not preload("res://sled_tags.gd").has_tag(s.tag):
+					return false
+				d = _usable_design(who, ev.design, s.tag if s.tag is Dictionary else {})
+				s.retag(d)
+			elif ev.has("slot"):
+				var b: Array = bags[who]
+				var i := int(ev.slot)
+				if i < 0 or i >= b.size() or b[i].get("kind") != "folded" or b[i].get("sled") == "sack" or not preload("res://sled_tags.gd").has_tag(b[i].get("tag", -1)):
+					return false
+				var it: Dictionary = b[i].duplicate()
+				d = _usable_design(who, ev.design, it.tag if it.tag is Dictionary else {})
+				it["tag"] = d
+				b[i] = it
+			elif ev.has("loose"):
+				var lt: Array = loose_tags.get(who, [])
+				var i := int(ev.loose)
+				if i < 0 or i >= lt.size():
+					return false
+				d = _usable_design(who, ev.design, lt[i] if lt[i] is Dictionary else {})
+				lt[i] = d
+			else:
+				return false
+			ev["design"] = d
+		"untag":
+			var s: Node3D = sleds.get(int(ev.get("id", -1)))
+			if s == null or not is_instance_valid(s) or int(s.owner_id) != who or s.kind == "sack" or not preload("res://sled_tags.gd").has_tag(s.tag):
+				return false
+			ev["design"] = s.tag
+			ev["at"] = s.tag_point()
+			loose_tags[who].append(s.tag)
+			s.owner_id = -1
+			s.retag(-1)
+			_fly_tag(ev.design, ev.at, who, null)   # 結び目がほどけ、名札が帯へ飛んで戻る
+		"tag_on":
+			var s: Node3D = sleds.get(int(ev.get("id", -1)))
+			var lt: Array = loose_tags.get(who, [])
+			var i := int(ev.get("loose", 0))
+			if s == null or not is_instance_valid(s) or int(s.owner_id) >= 0 or s.kind == "sack" or preload("res://sled_tags.gd").has_tag(s.tag) \
+					or i < 0 or i >= lt.size():
+				return false
+			ev["design"] = lt[i]
+			lt.remove_at(i)
+			s.owner_id = who
+			s.tag = ev.design
+			_fly_tag(ev.design, s.tag_point(), who, s)   # 帯から名札が飛んで、結び目に結ばれる（着いたら吊るす）
+		"profile":
+			var nm := String(ev.get("name", names.get(who, ""))).strip_edges().left(NAME_MAX)
+			if nm == "":
+				nm = NAMES[posmod(who - 1, NAMES.size())]
+			ev["name"] = nm
+			ev["color"] = posmod(int(ev.get("color", colors.get(who, 0))), COLORS.size())
+			names[who] = nm
+			colors[who] = int(ev.color)
 		"equip":
 			var list := gear_list(who, String(ev.get("gear", "")))
 			var i := int(ev.index)
@@ -324,7 +416,7 @@ func _apply(ev: Dictionary) -> bool:
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):
 				return false
-			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag}
+			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag}   # 名札はソリごと（外したソリは -1 のまま）
 			ev["at"] = s.global_position
 			ev["yaw"] = s.rotation.y
 			sleds.erase(int(ev.id))
@@ -337,10 +429,25 @@ func _apply(ev: Dictionary) -> bool:
 			if not _take(who, int(ev.slot), ev.item):
 				return false
 			var up: Vector3 = ev.get("up", Vector3.UP)
-			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, tag_designs.get(who, 0), true, who)
+			# 名札は包みに付いていた名札。名札のない（持ち主をやめた）ソリは、広げても持ち主のいないソリのまま
+			var t = ev.item.get("tag", -1)
+			var Tags := preload("res://sled_tags.gd")
+			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, t, true, who if Tags.has_tag(t) else -1)
 			_origami(ev, true, Transform3D(_basis(ev.yaw, up), ev.at))
 	happened.emit(ev)
 	return true
+
+
+## 名札の柄を、手に入れた部品だけの辞書にする（書いていない部品・まだ手に入れていない部品は old のまま、old にもなければ DEFAULT）
+func _usable_design(who: int, want: Dictionary, old: Dictionary) -> Dictionary:
+	var Tags := preload("res://sled_tags.gd")
+	var d := {}
+	for part in Tags.PARTS:
+		var i := posmod(int(want.get(part, old.get(part, Tags.DEFAULT[part]))), Tags.part_count(part))
+		if not tag_can_use(who, part, i):
+			i = int(old.get(part, Tags.DEFAULT[part]))
+		d[part] = i
+	return d
 
 
 ## 持ち物の slot 番目が item なら取り出す。手は素手に戻す
@@ -395,6 +502,35 @@ func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up
 	if room:
 		_make_room(s)
 	return id
+
+
+## 名札が、ソリの結び目と人の帯のあいだを飛ぶ（見た目だけ。12 コマで 6 コマ、少し弧を描く）。
+## onto があれば帯から結び目へ飛び、着いたらそのソリに名札を吊るす。なければ結び目から帯へ飛んで消える
+func _fly_tag(design, knot: Vector3, who: int, onto: Node3D) -> void:
+	var hub: Node = world.get_node_or_null("Emotes") if world else null
+	var person: Node3D = hub.who_of(who) if hub else null
+	var belt: Vector3 = person.global_position + Vector3.UP * 0.95 if person else knot + Vector3.UP
+	var tex: Texture2D = preload("res://sled_tags.gd").texture(design)
+	var sp := Sprite3D.new()
+	sp.texture = tex
+	sp.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	sp.pixel_size = 0.2 / maxf(tex.get_width(), 1.0) if tex else 0.001
+	sp.alpha_cut = SpriteBase3D.ALPHA_CUT_DISCARD
+	sp.name = "FlyingTag"
+	(world if world else get_parent()).add_child(sp)
+	var a := belt if onto else knot
+	var b := knot if onto else belt
+	const N := 6
+	for i in N + 1:
+		var t := float(i) / N
+		sp.global_position = a.lerp(b, t) + Vector3.UP * sin(t * PI) * 0.35
+		sp.scale = Vector3.ONE * lerpf(1.0, 0.6, t if not onto else 1.0 - t)
+		await get_tree().create_timer(1.0 / 12.0).timeout
+		if not is_instance_valid(sp):
+			return
+	sp.queue_free()
+	if onto and is_instance_valid(onto) and onto.tag is Dictionary and onto.tag == design:
+		onto.retag(design)
 
 
 ## 米袋が足もとに、ぽんと出る（見た目だけ。12 コマで 4 コマ: ふくらんで、少し行き過ぎて戻る）

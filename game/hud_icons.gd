@@ -20,7 +20,7 @@ const LEG := Color(0.28, 0.27, 0.32)
 
 const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "sit", "standup", "lean_l", "lean_r", "brake",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
-	"cam_dist", "cam_frame", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "mouse_pinch", "mouse_pan", "back"]
+	"cam_dist", "cam_frame", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "mouse_pinch", "mouse_pan", "back", "untag", "tag_on"]
 
 ## HUD の物が受ける風（hud.gd が毎コマ入れる。0〜1.6 ほど）。設定「HUD が風で揺れる」を切ると 0、「視点の揺れ」を切ると小さく
 static var wind := 0.0
@@ -295,6 +295,8 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"mouse_pinch": _pinch(ci, a)
 		"mouse_pan": _pan(ci, a)
 		"back": _back(ci, a)
+		"untag": _tag_move(ci, a, true)
+		"tag_on": _tag_move(ci, a, false)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
 		_:   # 工房の絵（型紙・布・畳む・広げる。craft_icons.gd）
@@ -804,6 +806,23 @@ static func _hourglass(ci: CanvasItem, a: float) -> void:
 		patch(ci, rr(-15, y, 30, 4, 1.5), WOOD, a, false)
 	for x: float in [-13.0, 13.0]:
 		thread(ci, PackedVector2Array([Vector2(x, -18), Vector2(x, 18)]), WOOD, 2.0, a)
+
+
+## 名札を外す（off: 結び目からほどけた名札が、弧を描いて手もとへ）・付ける（手もとの名札が、弧を描いて結び目へ）。
+## 左上の木の棒が手すりの結び目
+static func _tag_move(ci: CanvasItem, a: float, off: bool) -> void:
+	thread(ci, PackedVector2Array([Vector2(-28, -22), Vector2(-4, -22)]), WOOD, 3.4, a)
+	var c := Vector2(12, 10) if off else Vector2(-14, -2)
+	var rot := 0.35 if off else 1.45
+	if not off:   # 結び目から吊るした糸
+		thread(ci, PackedVector2Array([Vector2(-16, -21), Vector2(-14, -12)]), RED, 1.6, a)
+	var body := xf(PackedVector2Array([Vector2(-8, -6), Vector2(14, -6), Vector2(14, 6), Vector2(-8, 6), Vector2(-13, 0)]), rot, c)
+	patch(ci, body, PAPER, a, true, THREAD)
+	ci.draw_circle(_o + xf(PackedVector2Array([Vector2(-8, 0)]), rot, c)[0] * _s, 1.6 * _s, Color(THREAD, a))
+	if off:
+		arc_arrow(ci, Vector2(-4, 6), 18.0, -PI * 0.75, -PI * 0.15, RED, a, 2.2)
+	else:
+		arc_arrow(ci, Vector2(4, 4), 18.0, PI * 0.35, -PI * 0.55, RED, a, 2.2)
 
 
 ## 名札の束（めくる）: 少しずつずらした 3 枚の札と、めくる弧
