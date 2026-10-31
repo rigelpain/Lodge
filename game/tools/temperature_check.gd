@@ -1,5 +1,5 @@
 extends SceneTree
-## 気温と白い息の見え方を、場所と時刻ごとに出す（確かめ用）。
+## 気温と白い息の見え方・体のふるえ・暖かさの落ち着きを、場所と時刻ごとに出す（確かめ用）。
 ##   Godot --headless --path game -s res://tools/temperature_check.gd
 ## 場所: ふもと（はじまりの所）・丘の頂上・風除室・ロッジの中（食堂のまんなか）・暖炉のそば。時刻: 14 時・18 時・22 時・4 時
 
@@ -31,13 +31,13 @@ func _run() -> void:
 	]
 	var head := "場所          "
 	for h in [14.0, 18.0, 22.0, 4.0]:
-		head += "  %2d 時（°C / 息）" % int(h)
+		head += "  %2d 時（°C / 息 / ふるえ / 落ち着き）" % int(h)
 	print(head)
 	for sp in spots:
 		var line := "%-8s %5.1f m" % [sp[0], (sp[1] as Vector3).y]
 		for h in [14.0, 18.0, 22.0, 4.0]:
 			dc.hour = h
 			var t: float = temp.at(sp[1])
-			line += "   %6.1f / %4.2f" % [t, Temperature.breath_of(t)]
+			line += "   %6.1f / %4.2f / %4.2f / %4.2f" % [t, Temperature.breath_of(t), Temperature.shiver_of(t), Temperature.calm_of(t)]
 		print(line)
 	quit()

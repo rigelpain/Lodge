@@ -6,6 +6,7 @@ extends Node
 ##   - ロッジの中は暖かく、暖炉のそばはもっと暖かい。風除室はそのあいだ。中か外かは、音の屋内の判定（audio.gd の zone_at）と同じ
 ##   - 天気が足す寒さ（weather_chill。いまは 0。吹雪なら -8 など）
 ## breath(位置) は、その気温で白い息がどれだけ見えるか（0 見えない 〜 1 ふつうの寒さ 〜 1.6 とても寒い）。
+## shiver_of(気温) は寒さのふるえ（0 〜 1）、calm_of(気温) は暖かさの落ち着き（0 〜 1。人形の揺れがゆっくりになる）。
 ## ロッジに置く巨大な温度計（チャコペンのモチーフ、案）も、この値を指す
 
 const Audio := preload("res://audio.gd")
@@ -20,6 +21,10 @@ const FIRE_R := 5.0          # 暖炉の暖かさが届く (m)
 const FIRE_FALLBACK := Vector3(10.9, 1.0, -10.8)   # 暖炉の目印が見つからないときの所（ロッジの座標。audio.gd と同じ）
 const BREATH_WARM := 8.0     # これより暖かいと、白い息は見えない
 const BREATH_SPAN := 12.0    # そこから 12 °C 寒くなると、ふつうの白い息（1）
+const SHIVER_FROM := 4.0     # これより寒いと、人形がふるえはじめる
+const SHIVER_FULL := -8.0    # ここで、いちばん強くふるえる（ふもとの昼 −2 °C で半分、夜や丘の頂上でほぼいっぱい）
+const CALM_FROM := 8.0       # これより暖かいと、人形の揺れがゆっくりになりはじめる
+const CALM_FULL := 16.0      # ここで、いちばんゆっくり（ロッジの中）
 
 var weather_chill := 0.0     # 天気が足す寒さ (°C、負で寒い)。吹雪などの天気ができたら、そこから入れる
 
@@ -57,6 +62,16 @@ func breath(pos: Vector3) -> float:
 
 static func breath_of(temp: float) -> float:
 	return clampf((BREATH_WARM - temp) / BREATH_SPAN, 0.0, 1.6)
+
+
+## その気温で、人形がどれだけふるえるか（0 〜 1）
+static func shiver_of(temp: float) -> float:
+	return smoothstep(SHIVER_FROM, SHIVER_FULL, temp)
+
+
+## その気温で、人形の揺れがどれだけゆっくり落ち着くか（0 〜 1）
+static func calm_of(temp: float) -> float:
+	return smoothstep(CALM_FROM, CALM_FULL, temp)
 
 
 func _find_lodge() -> Node3D:
