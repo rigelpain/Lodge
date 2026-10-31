@@ -34,7 +34,7 @@ const ITEMS := [
 	["hints", "操作の手引き（近づいたときのアイコン）", "bool", true, null],
 	["speedo", "滑る速さの表示（糸巻き）", "bool", true, null],
 	["hud_wind", "HUD が風で揺れる（滑るとき）", "bool", true, null],
-	["hud_debug", "確かめ用の数字（fps・高さ）", "bool", false, null],
+	["hud_debug", "確かめ用の数字（fps・通信）", "bool", false, null],
 	["menu_scale", "メニューの大きさ", "float", 1.0, [0.7, 1.6, 0.05]],
 	["hud_scale", "HUD の大きさ", "float", 1.0, [0.7, 1.6, 0.05]],
 ]

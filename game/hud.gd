@@ -6,7 +6,8 @@ extends CanvasLayer
 ##   物の上: 近づいたときだけ、キーの形と動きの絵のワッペン。3 回したら（覚えたら）もう出さない
 ##   画面の下のまんなか: つかんでいる・紐を持っている・乗っているときの手引き。ほかの人のそばでは身ぶりの手引き
 ##   Esc: 設定の画面の左に、すべてのキーと絵を並べた札
-##   確かめ用: --hud-debug か設定の「確かめ用の数字」で、左上にこれまでの文字（人数・高さ・速さ・fps）
+##   確かめ用: --hud-debug か設定の「確かめ用の数字」で、左上の隅に小さな文字で fps と通信の速さ（開発用なので文字でよい）。
+##         押している人数は左下の札の人の形、速さは滑るときの糸巻き（speedo.gd）が伝える
 ## 絵は hud_icons.gd。ミシン（main.sewing）とエモート（main.emotes）は、あればその案内も出す。
 
 const Icons := preload("res://hud_icons.gd")
@@ -82,12 +83,13 @@ var _reel_t := 1.6            # この巻き取りの長さ (s)。ボタンが�
 var _ride_seen := -99.0       # 最後に乗っていた時刻（止まってすぐ降りても、巻き取りを見せる）
 var _ride_sled := ""          # 最後に乗っていたソリの名前（米袋をしまってソリが消えても、自分の分の出来事を見分ける）
 const REEL_T := 1.6
-var _dbg := {}                # 確かめ用の札に出す値（_debug_values）
+var _dbg := {}                # 左上の確かめ用の数字（_debug_values）
 var _tag_a := 0.0
 var _flow := 0.0
 var _n_push := 0
 var _push_hold := 0.0
-var _people: Array = []       # [人, 形（"stand" / "sit"）, 色, 力をかけているか]
+var _people: Array = []       # [人, 形（"stand" / "push" / "pull" / "sit"）, 色, 力をかけているか]
+var _push_t := {}             # 人 → 押す姿の残り (s)。押した瞬間に入れ、離しても少し残す（1 コマごとのちらつきを消す）
 var _pop := {}                # 人 → 跳ねの残り（1→0）
 var _chev_pop := 0.0
 var _hints := {}              # 案内 → {keys, icon, world, scr, a, on, bottom}
@@ -207,7 +209,7 @@ func _process(dt: float) -> void:
 	_layout_bottom()
 	_place_hints()
 	if debug_on:
-		_dbg = _debug_values(sled, p)
+		_dbg = _debug_values()
 	_update_speedo(dt, p, menu)
 	if plates:
 		_update_plates()
@@ -233,13 +235,21 @@ func _update_people(dt: float, sled: RigidBody3D, p: Node3D) -> void:
 		if _push_hold <= 0.0:
 			_n_push = raw
 	var list: Array = []
-	var others_push := maxi(0, _n_push - (1 if p and (p.pushing or p.pulling) else 0))
 	var who: Array = sled.holders.keys()
 	if sled.rope_holder and not who.has(sled.rope_holder):
 		who.append(sled.rope_holder)
 	for w in who:
-		var strong: bool = ((w.pushing or w.pulling) if w == p else others_push > 0) or sled.is_dragged(w)
-		list.append([w, "stand", _color_of(w), strong])
+		# 押しているかは、このコマ押した人（sled._pushed_by）で一人ずつ見る。押している人は前のめりの「押す」姿、
+		# 紐で引いている人は「引く」姿、つかんでいるだけの人は立った姿で薄く（2026-10-31 代表「押してる人数はタグで表示すべき」）
+		if sled._pushed_by.has(w) or (w == sled.rope_holder and w.get("pulling")):
+			_push_t[w] = 0.35
+		var pushing: bool = _push_t.get(w, 0.0) > 0.0
+		var pose := ("pull" if w == sled.rope_holder else "push") if pushing else "stand"
+		list.append([w, pose, _color_of(w), pushing or sled.is_dragged(w)])
+	for k in _push_t.keys():
+		_push_t[k] -= dt
+		if _push_t[k] <= 0.0 or not who.has(k):
+			_push_t.erase(k)
 	for w in sled.riders:
 		list.append([w, "sit", _color_of(w), true])
 	var before: Array = _people.map(func(x): return x[0])
@@ -833,16 +843,11 @@ func _painter(part: String) -> Control:
 	return v
 
 
-## 吊るした札（確かめ用）の場所
-func debug_rect(u: float) -> Rect2:
-	return Rect2(18.0 * u, 26.0 * u, 176.0 * u, 30.0 * u + 34.0 * u * 5.0 + 12.0 * u)
-
-
-## 速さの表示の置き場（画面の px）: 画面の左側の縦の帯。左上の確かめ用の札の下から、左下の名札の束の上まで
+## 速さの表示の置き場（画面の px）: 画面の左側の縦の帯。上の端は前の確かめ用の札の下の所（256）のまま、左下の名札の束の上まで
 func speedo_box() -> Rect2:
 	var u := ui()
 	var vs := _view.size
-	var top := 26.0 * u + debug_rect(u).size.y + 18.0 * u        # 確かめ用の札の下（出していなくても同じ所）
+	var top := 256.0 * u
 	var bottom: float = (_view.tag_rect(u) as Rect2).position.y - 30.0 * u         # 名札（束の後ろの札の縁も）の上
 	return Rect2(22.0 * u, top, 126.0 * u, maxf(bottom - top, 200.0 * u))
 
@@ -854,21 +859,22 @@ func speedo_box_now() -> Rect2:
 	return r
 
 
-## 確かめ用の札に出す値: 押している人数・ソリの高さ（頂上まで）・速さ・fps・いまの状態・覚えた案内の数
-func _debug_values(sled: RigidBody3D, p: Node) -> Dictionary:
-	var known_n := 0
-	for id in uses:
-		if known(id):
-			known_n += 1
-	return {
-		"push": sled.pushers,
-		"h": sled.global_position.y,
-		"top": main.HILL_H,
-		"speed": sled.linear_velocity.length(),
-		"fps": int(Engine.get_frames_per_second()),
-		"mode": p.mode if p else -1,
-		"known": known_n,
-	}
+## 左上の確かめ用の数字: fps と通信の往復の時間（ms。つながっていなければ -1）
+## （2026-10-31 代表「押してる人数はタグで表示すべきだし、速度は糸巻き、fps や通信速度は残しましょう。もっと小さい HUD で間に合うはず」。
+## 人数・高さ・速さ・いまの状態・覚えた案内の数は、札と糸巻きと手引きが伝えるので出さない）
+func _debug_values() -> Dictionary:
+	return {"fps": int(Engine.get_frames_per_second()), "ms": _net_ms()}
+
+
+## 通信の往復の時間 (ms)。ENet でつながっている相手のうち、いちばん遅い相手。ひとりで遊んでいるときは -1
+func _net_ms() -> int:
+	var mp := multiplayer.multiplayer_peer as ENetMultiplayerPeer
+	if mp == null or mp.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED or mp.host == null:
+		return -1
+	var ms := -1
+	for pp in mp.host.get_peers():
+		ms = maxi(ms, int(pp.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME)))
+	return ms
 
 
 # ---- 描く ----------------------------------------------------------------------------
@@ -1020,8 +1026,14 @@ class View extends Control:
 			var pop: float = hud._pop.get(x[0], 0.0)
 			var sz := 70.0 * u * (1.0 + 0.35 * sin(pop * PI))
 			var lift := 6.0 * u * sin(pop * PI)
-			Icons.icon(self, "person" if x[1] == "stand" else "person_sit", Vector2(px, py - lift), sz, a * (1.0 if x[3] else 0.5), x[2])
-			px += 30.0 * u
+			if x[1] == "push" or x[1] == "pull":   # 押す・引く姿（Icons.icon の "person" と同じ箱で、姿勢だけ変える）
+				Icons._o = Vector2(px, py - lift)
+				Icons._s = sz / 64.0
+				Icons.doll(self, Vector2(0, 26), x[2], x[1], a)
+				px += 36.0 * u   # 前のめりの手の分だけ空ける
+			else:
+				Icons.icon(self, "person" if x[1] == "stand" else "person_sit", Vector2(px, py - lift), sz, a * (1.0 if x[3] else 0.5), x[2])
+				px += 30.0 * u
 		if sled == null and not item.is_empty():
 			# 畳んだソリは形がわからないので、広げた姿をくるくる回して見せる（タグの窓）
 			var tw := 58.0 * u
@@ -1053,57 +1065,20 @@ class View extends Control:
 			Speedo.draw_spool(self, g, k, hud._spd_spin, hud.thread_base(), hud.spd_best, hud._spd_pop, e, hud.plates == null)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 
-	## 確かめ用の札（設定の「確かめ用の数字」か --hud-debug のとき）: 左上に、画面の上の縁から赤い糸で吊るした紙の札。
-	## 段ごとに絵と数字: 人の形（押している人数）、丘（ソリの高さ／頂上）、風（速さ）、砂時計（fps）、いまの状態の絵と、
-	## 覚えた案内の数だけの玉止め。地は無地の生成りで、外側に影と藍の縁取り（雪・空・ロッジの中でも読める）
+	## 確かめ用の数字（設定の「確かめ用の数字」か --hud-debug のとき）: 左上の隅に、小さな素の文字で「60 fps  12 ms」。
+	## 開発用なので、絵にせず目立たなくする（藍の字に白いふち。雪・空・ロッジの中のどれでも読める。fps が 30 より下なら赤、
+	## ひとりのときの通信は「-- ms」）
 	func _draw_debug(u: float) -> void:
 		var d: Dictionary = hud._dbg
-		var row := 34.0 * u
-		var w := 176.0 * u
-		var top := 30.0 * u
-		var h := top + row * 5.0 + 12.0 * u
-		var x0 := 18.0 * u
-		var y0 := 26.0 * u
-		var hole := Vector2(x0 + w / 2.0, y0 + 13.0 * u)
-		# 吊るす糸（画面の上の縁から、はとめへ）
-		Icons.screen()
-		Icons.thread(self, PackedVector2Array([Vector2(hole.x - 10.0 * u, -2.0), hole + Vector2(0, -4.0 * u), Vector2(hole.x + 10.0 * u, -2.0)]),
-			Icons.RED, 1.8 * u, 1.0)
-		# 吊るした札は、はとめを支点に、風で外（左）へなびいて揺れる
-		draw_set_transform_matrix(Icons.wind_xform(hole, 2.0, 0.14, 0.06, 1.5 * u))
-		Icons.paper_tag(self, Rect2(x0, y0, w, h), 10.0 * u, u)
-		draw_circle(hole, 5.0 * u, Icons.PAPER_EDGE)
-		draw_circle(hole, 3.2 * u, Color(0.35, 0.30, 0.28, 0.9))
-		var lx := x0 + 30.0 * u
-		var tx := x0 + 58.0 * u
-		var y := y0 + top + row / 2.0
-		var main: Node3D = hud.main
-		var lines := [
-			["person", str(d.push), "", Icons.RED],
-			["hill", "%.1f" % d.h, "/%d m" % int(d.top), Icons.THREAD],
-			["speed", "%.1f" % d.speed, "m/s", Icons.THREAD],
-			["hourglass", str(d.fps), "fps", Icons.RED if d.fps < 30 else Icons.THREAD],
-		]
-		for i in lines.size():
-			var ln: Array = lines[i]
-			Icons.icon(self, ln[0], Vector2(lx, y - (5.0 * u if ln[0] == "person" else 0.0)), (48.0 if ln[0] == "person" else 40.0) * u, 1.0)
-			var nw := Icons.stitched_text(self, ln[1], Vector2(tx, y), 20.0 * u, ln[3])
-			if ln[2] != "":
-				Icons.stitched_text(self, ln[2], Vector2(tx + nw + 4.0 * u, y + 2.0 * u), 12.0 * u, Icons.THREAD.lightened(0.25), false)
-			Icons.screen()
-			Icons.dashes(self, PackedVector2Array([Vector2(x0 + 12.0 * u, y + row / 2.0), Vector2(x0 + w - 12.0 * u, y + row / 2.0)]),
-				Icons.PAPER_EDGE, 1.0 * u, 3.0 * u, 3.0 * u, 0.9)
-			y += row
-		# いまの状態（歩く・つかむ・乗る・紐）の絵と、覚えた案内の数だけの玉止め
-		var mode: int = d.mode
-		if mode >= 0:
-			var st: String = ["walk", "grab", "ride", "rope"][mini(mode, 3)]
-			Icons.icon(self, st, Vector2(lx, y + (6.0 * u if st == "walk" else 0.0)), (60.0 if st == "walk" else 46.0) * u, 1.0)
-		for k in mini(int(d.known), 12):
-			var c := Vector2(tx + 4.0 * u + (k % 6) * 15.0 * u, y - 5.0 * u + (k / 6) * 12.0 * u)
-			draw_circle(c + Vector2(0.6, 1.0) * u, 4.2 * u, Color(Icons.SHADOW, 0.25))
-			draw_circle(c, 4.2 * u, Icons.RED)
-			draw_arc(c, 2.4 * u, 0.4, 4.0, 8, Icons.RED.lightened(0.35), 1.0 * u, true)   # 糸の巻き
+		var font := ThemeDB.fallback_font
+		var fs := int(round(14.0 * u))
+		var at := Vector2(10.0, 6.0) * u + Vector2(0, font.get_ascent(fs))
+		var parts := [["%d fps" % d.fps, Icons.RED if d.fps < 30 else Icons.THREAD],
+			["%s ms" % (str(d.ms) if d.ms >= 0 else "--"), Icons.THREAD]]
+		for x in parts:
+			draw_string_outline(font, at, x[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(2, int(3.0 * u)), Color(1, 1, 1, 0.55))
+			draw_string(font, at, x[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(x[1], 0.8))
+			at.x += font.get_string_size(x[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs).x + 10.0 * u
 
 	## 右下の小窓の刺繍枠: Blender で本物らしく作って正面から撮った絵（props/build_hud.py の --hoop-png）を、画面の解像度のまま重ねる
 	## （2026-10-29 代表「刺繍小窓の刺繍枠をリアルな木枠にしてほしい。いまなんかぼやぼやしてモチーフが伝わらない」）。
