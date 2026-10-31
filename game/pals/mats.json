@@ -1,0 +1,223 @@
+{
+ "chiyo_red": [
+  "paper",
+  "B8473A",
+  [
+   "seigaiha",
+   "E8A07A",
+   null
+  ]
+ ],
+ "chiyo_orange": [
+  "paper",
+  "D9772E",
+  [
+   "shippo",
+   "F2C27A",
+   null
+  ]
+ ],
+ "chiyo_sakura": [
+  "paper",
+  "B8352B",
+  [
+   "sakura",
+   "F1D9C9",
+   "5D7A4A"
+  ]
+ ],
+ "moon": [
+  "paper",
+  "E2C27A",
+  [
+   "sumi",
+   "3A2B22",
+   null
+  ]
+ ],
+ "white": [
+  "paper",
+  "F4F0E8",
+  null
+ ],
+ "cream": [
+  "paper",
+  "F2EBDD",
+  null
+ ],
+ "ink": [
+  "plain",
+  "1E1A18",
+  null
+ ],
+ "beak": [
+  "paper",
+  "D9A42C",
+  null
+ ],
+ "sky": [
+  "paper",
+  "86C3DE",
+  null
+ ],
+ "teal": [
+  "paper",
+  "2FA4A8",
+  null
+ ],
+ "pink": [
+  "paper",
+  "F2B7BE",
+  null
+ ],
+ "fox": [
+  "paper",
+  "D27330",
+  null
+ ],
+ "fox_dark": [
+  "paper",
+  "4A3326",
+  null
+ ],
+ "squirrel": [
+  "paper",
+  "9A6A43",
+  null
+ ],
+ "chame": [
+  "paper",
+  "4E9A3A",
+  null
+ ],
+ "chame_lite": [
+  "paper",
+  "9CCB5A",
+  null
+ ],
+ "phoenix_r": [
+  "paper",
+  "C8322A",
+  null
+ ],
+ "phoenix_o": [
+  "paper",
+  "E8822E",
+  null
+ ],
+ "phoenix_y": [
+  "paper",
+  "F0C23E",
+  null
+ ],
+ "acorn_cap": [
+  "paper",
+  "7A4A2A",
+  null
+ ],
+ "acorn_nut": [
+  "paper",
+  "D8B48A",
+  null
+ ],
+ "pumpkin": [
+  "paper",
+  "E58A2E",
+  null
+ ],
+ "stem": [
+  "paper",
+  "6E5A2E",
+  null
+ ],
+ "maple_r": [
+  "felt",
+  "C8452A",
+  null
+ ],
+ "maple_o": [
+  "felt",
+  "E07B2E",
+  null
+ ],
+ "maple_y": [
+  "felt",
+  "E8B03A",
+  null
+ ],
+ "frog": [
+  "paper",
+  "5FA03C",
+  null
+ ],
+ "frog_lite": [
+  "paper",
+  "B5D66A",
+  null
+ ],
+ "peacock": [
+  "paper",
+  "2C5F8A",
+  null
+ ],
+ "peacock_g": [
+  "paper",
+  "2E7A6A",
+  null
+ ],
+ "peacock_eye_o": [
+  "paper",
+  "E8A63A",
+  null
+ ],
+ "peacock_eye_b": [
+  "paper",
+  "1E3A6A",
+  null
+ ],
+ "pony": [
+  "felt",
+  "3E7F86",
+  null
+ ],
+ "pony_dark": [
+  "felt",
+  "2C5A60",
+  null
+ ],
+ "pony_saddle": [
+  "felt",
+  "C9A86A",
+  null
+ ],
+ "brass": [
+  "plain",
+  "C79A42",
+  null
+ ],
+ "wood_btn": [
+  "plain",
+  "8A5A34",
+  null
+ ],
+ "yarn_mane": [
+  "yarn",
+  "E8DCC2",
+  null
+ ],
+ "yarn_red": [
+  "yarn",
+  "B8352B",
+  null
+ ],
+ "thread_cream": [
+  "plain",
+  "EFE6D2",
+  null
+ ],
+ "thread_red": [
+  "plain",
+  "B8352B",
+  null
+ ]
+}
