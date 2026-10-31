@@ -982,13 +982,18 @@ func _place_shapes_fp(em: Array) -> void:
 					var y: Vector3
 					var z: Vector3
 					if point_level:
-						y = Vector3(-0.8 * side, 0.0, -0.6).normalized()
-						z = (Vector3.BACK - y * Vector3.BACK.dot(y)).normalized()
+						# 人さし指の先を、画面のまんなか（消失点）へ向ける。紙の手形は画面に向けたまま（手の甲が見える）、
+						# 画面の中で、手の所から消失点への向きに回す。親指は内側、小指は外側になる
+						# （輪郭の親指は右手 +x・左手 -x。x = y × z で、どちらも指の内側に来る）
+						var toward := Vector3(-h.position.x, -h.position.y, 0.0)
+						y = toward.normalized() if toward.length() > 0.01 else Vector3.UP
+						z = Vector3.FORWARD   # 手のひらは向こう（手の甲がこちら）
+						b = Basis(y.cross(z).normalized(), y, z)
 					else:
 						y = (h.basis * Vector3.FORWARD).normalized()
 						z = Vector3.UP.cross(y) * float(side)
 						z = z.normalized() if z.length() > 0.05 else Vector3.BACK
-					b = Palm.thumb_up(Basis(y.cross(z).normalized(), y, z), side)   # 親指は上
+						b = Palm.thumb_up(Basis(y.cross(z).normalized(), y, z), side)   # 親指は上
 					size = 1.0
 				"low":
 					b = b * Basis(Vector3.RIGHT, -0.65)   # 下へ向けて、おさえる
