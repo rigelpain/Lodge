@@ -4,9 +4,11 @@
 
 1. 曲線は面にし、モディファイアを形に焼き込む（毛羽の毛は落とす。ゲームでは別に描く）
 2. 部品ごとに骨への重みを付ける: 腕・袖・脚は骨に沿って曲がる。胴の服は胴と腰だけ。頭まわりは頭に固定
-3. 全部を 1 つの形にまとめ、UV を開き、Cycles（CPU）で色（光なし）と法線を 1 枚ずつ焼く
+3. 全部を 1 つの形にまとめ、UV を開き、Cycles（CPU）で色（光なし）と法線を 1 枚ずつ焼く。くぼみの陰（AO）も焼いて色に掛ける
 4. 素材を焼いた画像の 1 つにして、骨ごと glb に書き出す
-骨の名前は 3 体で同じ（ゲームの doll.gd が同じ名前で動かす）。
+骨の名前は 7 体で同じ（ゲームの doll.gd が同じ名前で動かす）。
+4 回目のキャラ案の 4 体（robo・musha・ningyo・golem）は person/ideas/characters/roughs.py の --export から呼ぶ。
+部品の名前がちがうので、重みの付け方は RULES に人形ごとに書く。
 """
 import math
 import os
@@ -14,6 +16,8 @@ import os
 import bmesh
 import bpy
 from mathutils import Vector
+
+AO_STRENGTH = 0.55   # くぼみの陰の濃さ（0 で陰なし）
 
 # 関節（Blender の座標。前は +Y）。.R が右（+X）
 JOINTS = {
@@ -26,6 +30,72 @@ JOINTS = {
     "news": {"pelvis": (0, 0, 0.3), "chest": (0, 0, 0.46), "neck": (0, 0, 0.56), "head": (0, 0, 0.6), "top": (0, 0, 1.0),
              "shoulder": (0.15, 0, 0.56), "elbow": (0.22, 0.03, 0.42), "wrist": (0.25, 0.07, 0.29), "hand": (0.255, 0.075, 0.2),
              "hip": (0.08, 0, 0.14), "knee": (0.083, 0.005, 0.085), "ankle": (0.085, 0.01, 0.035), "toe": (0.085, 0.1, 0.02)},
+    # 紙のロボット: 箱の頭は 0.565〜0.775。蛇腹の腕の先に大きなこぶし、短く太い脚
+    "robo": {"pelvis": (0, 0, 0.26), "chest": (0, 0, 0.42), "neck": (0, 0, 0.53), "head": (0, 0, 0.575), "top": (0, 0, 0.92),
+             "shoulder": (0.19, 0, 0.49), "elbow": (0.215, 0.02, 0.39), "wrist": (0.228, 0.035, 0.3), "hand": (0.232, 0.047, 0.2),
+             "hip": (0.088, 0, 0.23), "knee": (0.088, 0, 0.155), "ankle": (0.088, 0, 0.07), "toe": (0.088, 0.11, 0.03)},
+    # 折り紙の武者: 2.5 頭身。顔は 0.435〜0.685、三日月の先が 0.9。脚は袴の下で短い
+    "musha": {"pelvis": (0, 0, 0.28), "chest": (0, 0, 0.39), "neck": (0, 0, 0.44), "head": (0, 0, 0.46), "top": (0, 0, 0.9),
+              "shoulder": (0.13, 0, 0.44), "elbow": (0.19, 0.045, 0.33), "wrist": (0.172, 0.11, 0.265), "hand": (0.172, 0.125, 0.21),
+              "hip": (0.066, 0, 0.2), "knee": (0.066, 0.004, 0.13), "ankle": (0.066, 0.008, 0.05), "toe": (0.066, 0.09, 0.02)},
+    # 絹の人形: 脚は裙の中で見えない。靴の先だけ前に出る
+    "ningyo": {"pelvis": (0, 0, 0.4), "chest": (0, 0, 0.55), "neck": (0, 0, 0.63), "head": (0, 0, 0.65), "top": (0, 0, 0.95),
+               "shoulder": (0.11, 0, 0.6), "elbow": (0.2, 0.035, 0.47), "wrist": (0.19, 0.115, 0.4), "hand": (0.185, 0.15, 0.37),
+               "hip": (0.06, 0.02, 0.36), "knee": (0.06, 0.08, 0.2), "ankle": (0.06, 0.16, 0.035), "toe": (0.06, 0.235, 0.02)},
+    # 継ぎはぎの巨人: 頭は肩のあいだに低く小さく。腕は太く長い
+    "golem": {"pelvis": (0, 0.01, 0.45), "chest": (0, 0.04, 0.75), "neck": (0, 0.1, 1.04), "head": (0, 0.12, 1.06), "top": (0, 0.12, 1.25),
+              "shoulder": (0.42, 0.04, 0.94), "elbow": (0.47, 0.1, 0.69), "wrist": (0.45, 0.19, 0.46), "hand": (0.45, 0.22, 0.33),
+              "hip": (0.17, 0, 0.36), "knee": (0.17, 0, 0.24), "ankle": (0.17, 0.02, 0.11), "toe": (0.17, 0.2, 0.04)},
+}
+
+# 4 回目のキャラ案の部品の名前 → 重みの付け方。上から順に、名前の頭が合ったものを使う。
+# ("side", 骨) は左右の骨のうち形の真ん中に近い側に固定。合うものがなければ ("near",)
+RULES = {
+    "robo": [
+        (("head", "eyehole", "eye_frame", "box_flap", "antenna"), ("rigid", "head")),
+        (("neck",), ("rigid", "neck")),
+        (("torso", "chest_"), ("rigid", "chest")),
+        (("pelvis", "waist_rope", "rope_"), ("rigid", "hips")),
+        (("shoulder", "split_pin"), ("side", "upper_arm")),
+        (("arm",), ("arm",)),
+        (("wrist_twine",), ("side", "forearm")),
+        (("fist", "thumb", "finger_line"), ("side", "hand")),
+        (("leg", "knee_twine"), ("leg",)),
+        (("foot",), ("side", "foot")),
+    ],
+    "musha": [
+        (("head", "eye", "kabuto", "suji", "hoshi", "rim_st", "tehen", "visor", "shikoro", "fukigaeshi", "fk_", "maedate", "shinobi"), ("rigid", "head")),
+        (("do_", "munaita"), ("bend", ["chest", "hips"])),
+        (("watagami", "sode"), ("side", "upper_arm")),
+        (("kote",), ("arm",)),
+        (("tekkou",), ("side", "forearm")),
+        (("fist",), ("side", "hand")),
+        (("kusazuri", "obi", "hakama"), ("rigid", "hips")),
+        (("suneate", "sune_"), ("side", "shin")),
+        (("tabi", "waraji"), ("side", "foot")),
+    ],
+    "ningyo": [
+        (("head", "eye", "hair", "bun", "buyao", "pearl", "silk_flower"), ("rigid", "head")),
+        (("ru", "eri", "bow_knot", "bow_loop", "pibo"), ("rigid", "chest")),
+        (("qun", "bow_tail"), ("bend", ["chest", "hips"])),
+        (("jade", "jinbu"), ("rigid", "hips")),
+        (("xiu",), ("arm",)),
+        (("hand",), ("side", "hand")),
+        (("shoe",), ("side", "foot")),
+    ],
+    "golem": [
+        (("head", "eye", "snow_head"), ("rigid", "head")),
+        (("scarf",), ("rigid", "neck")),
+        (("pelvis", "waist_rope", "rope_"), ("rigid", "hips")),
+        (("torso", "body_patch"), ("bend", ["chest", "hips"])),
+        (("shoulder", "snow_sh", "arm_seam"), ("side", "upper_arm")),
+        (("wrist_seam",), ("side", "forearm")),
+        (("arm",), ("arm",)),
+        (("fist", "thumb"), ("side", "hand")),
+        (("hip_seam",), ("side", "thigh")),
+        (("leg",), ("leg",)),
+        (("foot",), ("side", "foot")),
+    ],
 }
 
 
@@ -96,10 +166,21 @@ def realize(ob):
     return new
 
 
-def weigh(ob, J, B):
+def doll_rule(doll, name):
+    n = name.lower()
+    for heads, r in RULES.get(doll, []):
+        if n.startswith(heads):
+            return r
+    return ("near",) if doll in RULES else rule(name)
+
+
+def weigh(ob, J, B, doll=""):
     for name in B:
         ob.vertex_groups.new(name=name)
-    r = rule(ob.name)
+    r = doll_rule(doll, ob.name)
+    if r[0] == "side":
+        c = sum((v.co for v in ob.data.vertices), Vector()) / max(1, len(ob.data.vertices))
+        r = ("rigid", r[1] + (".R" if c.x > 0 else ".L"))
     if r[0] == "near":
         c = sum((v.co for v in ob.data.vertices), Vector()) / max(1, len(ob.data.vertices))
         best = min(B, key=lambda n: seg_dist(c, J[B[n][0]], J[B[n][1]]))
@@ -158,6 +239,28 @@ def bake_textures(ob, name, px):
             bpy.ops.object.bake(type="NORMAL", normal_space="TANGENT")
         img.pack()
         out[kind] = img
+    # くぼみの陰（頭巾の内側、袖や裾の下、首まわり）を色に掛ける。どんな光の下でも立体として読める
+    ao = bpy.data.images.new("%s_ao" % name, px, px, alpha=False)
+    ao.colorspace_settings.name = "Non-Color"
+    for m in ob.data.materials:
+        n = m.node_tree.nodes["bake_target"]
+        n.image = ao
+        m.node_tree.nodes.active = n
+    sc.cycles.samples = 32
+    if sc.world is None:
+        sc.world = bpy.data.worlds.new("bake")
+    sc.world.light_settings.distance = 0.12   # 陰が届く距離（m）。人形の大きさに合わせて短く
+    bpy.ops.object.bake(type="AO")
+    import numpy as np
+    col = np.empty(px * px * 4, np.float32)
+    out["color"].pixels.foreach_get(col)
+    a = np.empty(px * px * 4, np.float32)
+    ao.pixels.foreach_get(a)
+    shade = 1.0 - AO_STRENGTH * (1.0 - a.reshape(-1, 4)[:, 0])
+    col = col.reshape(-1, 4)
+    col[:, :3] *= shade[:, None]
+    out["color"].pixels.foreach_set(col.ravel())
+    out["color"].pack()
     return out
 
 
@@ -171,10 +274,11 @@ def export(doll, folder, px=2048):
             bpy.data.objects.remove(ob)
     parts = []
     for ob in list(sc.objects):
-        if ob.type in ("MESH", "CURVE"):
+        if ob.type in ("MESH", "CURVE", "META"):
             parts.append(realize(ob))
+    parts = [ob for ob in parts if len(ob.data.vertices) > 0]   # 融け合った綿の雪（メタボール）は 1 つにまとまり、残りは空になる
     for ob in parts:
-        weigh(ob, J, B)
+        weigh(ob, J, B, doll)
     # 1 つにまとめる
     bpy.ops.object.select_all(action="DESELECT")
     for ob in parts:

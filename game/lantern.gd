@@ -17,9 +17,10 @@ const ATTEN := 1.2
 const FADE := 0.35                       # 点け消しにかかる秒
 const FAR := 40.0                        # この距離から先は灯りを薄くして消す
 ## 帯の左の腰の少し後ろ（glb の座標、人形の大きさのまま）。doll.gd の BELT（右）を左右に返す。後ろから（三人称で）見えるように外へ出す
-const BELT := {"kasa": Vector3(-0.25, 0.6, 0.07), "origami": Vector3(-0.26, 0.8, 0.07), "news": Vector3(-0.27, 0.34, 0.07)}
+const BELT := {"kasa": Vector3(-0.25, 0.6, 0.07), "origami": Vector3(-0.26, 0.8, 0.07), "news": Vector3(-0.27, 0.34, 0.07),
+	"robo": Vector3(-0.21, 0.27, 0.07), "musha": Vector3(-0.19, 0.28, 0.07), "ningyo": Vector3(-0.21, 0.42, 0.07), "golem": Vector3(-0.38, 0.45, 0.1)}
 ## 人形の大きさに対するランタンの大きさ（小さい人形の足もとに着かないように）
-const SIZE := {"kasa": 0.95, "origami": 1.0, "news": 0.72}
+const SIZE := {"kasa": 0.95, "origami": 1.0, "news": 0.72, "robo": 0.75, "musha": 0.72, "ningyo": 0.75, "golem": 1.0}
 
 var doll: Node3D
 var _anchor: Node3D            # 帯の所（腰の骨に付ける）

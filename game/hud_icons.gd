@@ -297,6 +297,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"back": _back(ci, a)
 		"untag": _tag_move(ci, a, true)
 		"tag_on": _tag_move(ci, a, false)
+		"wardrobe": _wardrobe(ci, a, tint)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
 		_:   # 工房の絵（型紙・布・畳む・広げる。craft_icons.gd）
@@ -744,6 +745,20 @@ static func _needle(ci: CanvasItem, a: float) -> void:
 		var t := i / 15.0
 		th.append(p1 - d * 1.0 + Vector2(10 * sin(t * PI * 1.4), 6 + t * 26.0 - 10 * sin(t * PI)))
 	thread(ci, th, RED, 1.8, a)
+
+
+## 衣装掛け（2 階）: 木のハンガーに掛けた人形と、入れ替わる矢印。F で人形を選び直す
+static func _wardrobe(ci: CanvasItem, a: float, col: Color) -> void:
+	var hook := PackedVector2Array()   # ハンガーのかぎ
+	for i in 9:
+		var t := i / 8.0
+		hook.append(Vector2(-4, -22) + Vector2(cos(-PI * 0.2 + t * PI * 1.4), sin(-PI * 0.2 + t * PI * 1.4)) * 5.0)
+	hook.append(Vector2(-4, -14))
+	thread(ci, hook, Color(0.42, 0.42, 0.46), 2.2, a)
+	patch(ci, PackedVector2Array([Vector2(-4, -15), Vector2(16, -5), Vector2(14, -2), Vector2(-4, -11), Vector2(-22, -2), Vector2(-24, -5)]), WOOD, a, false)
+	doll(ci, Vector2(-4, 24), col, "stand", a, 0.8)
+	arc_arrow(ci, Vector2(-4, 6), 25.0, -0.35, 0.9, THREAD, a, 2.2)
+	arc_arrow(ci, Vector2(-4, 6), 25.0, PI - 0.35, PI + 0.9, THREAD, a, 2.2)
 
 
 static func _return(ci: CanvasItem, a: float) -> void:

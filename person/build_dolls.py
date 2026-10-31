@@ -681,53 +681,71 @@ def build_news():
     news = newsprint_paste("p_news", img)
     green = burlap("burlap_green", "66773F", 520.0)
     brown = burlap("burlap_brown", "5A4634", 600.0)
-    strap = plain("strap", "8A4E2E", 0.55)
+    strap = plain("strap", "8A4E2E", 0.7)
     button = plain("button", "0B0B0C", 0.18, coat=1.0)
     thread = plain("thread", "C9B48A", 0.9)
-    # 2.5 頭身、背 1.0 m。頭は直径 0.4 m の張り子の球
-    hc = V(0, 0.0, 0.76)
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=40, ring_count=24, radius=0.2, location=hc)
+    shine = plain("eye_shine", "FFFFFF", 0.3)
+    dark = plain("sleeve_in", "2A2016", 0.95)
+    # 2.5 頭身、背 1.0 m。頭は少し前後につぶれた張り子の丸。頭巾に包まれ、新聞紙は顔の窓にだけ見える
+    hc = V(0, 0.0, 0.73)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=40, ring_count=24, radius=0.175, location=hc)
     head = bpy.context.object
     head.name = "head"
-    head.scale = (1.0, 0.96, 1.0)
+    head.scale = (1.0, 0.9, 0.95)
     finish(head, news, smooth=True, seed=1)
-    # 目: 大きな丸い黒いボタン（顔の幅の 1/5）。少し下め、少し離して
+    face_y = 0.175 * 0.9
+    # 目: つやのある黒いボタン。顔の幅の 1/5 ほど、少し離して、顔のまん中より少し下。
+    # 光の点を描き込む（ゲームの光でも、いつも目が濡れて見えるように）
     for s in (1, -1):
-        p = hc + V(s * 0.075, 0.165, -0.005)
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, radius=0.042, location=p)
+        p = hc + V(s * 0.07, face_y - 0.014, -0.028)
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=24, ring_count=12, radius=0.034, location=p)
         e = bpy.context.object
-        e.scale = (1, 0.55, 1)
+        e.name = "eye"
+        e.scale = (1, 0.5, 1)
         d = (p - hc).normalized()
         e.rotation_euler = Vector((0, 1, 0)).rotation_difference(d).to_euler()
         finish(e, button, smooth=True)
-    # 頭巾: 麻布。頭を包み、先はとがって上うしろへ、顔のまわりは開いて縁を折り返す
-    bpy.ops.mesh.primitive_uv_sphere_add(segments=32, ring_count=20, radius=1.0)
+        for off, r in ((V(-0.011, 0.0, 0.012), 0.0085), (V(0.008, 0.0, -0.009), 0.004)):
+            bpy.ops.mesh.primitive_uv_sphere_add(segments=12, ring_count=6, radius=r, location=p + d * 0.016 + off)
+            h = bpy.context.object
+            h.name = "eyeshine"
+            h.scale = (1, 0.4, 1)
+            finish(h, shine, smooth=True)
+    # 頭巾: 麻布。頭をふっくら丸く包む厚い頭巾で、ふちは前へ張り出し、顔は奥まった丸い窓からのぞく。
+    # とんがりは、うしろの上から出て、うしろへ折れて垂れる
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=40, ring_count=24, radius=1.0)
     hd = bpy.context.object
     hd.name = "hood"
+    tipdir = V(0, -0.55, 0.84).normalized()
+    R = 0.212
     bm = bmesh.new()
     bm.from_mesh(hd.data)
     for v in bm.verts:
-        x, y, z = v.co
-        if z > 0.15:
-            t = (z - 0.15) / 0.85
-            x *= 1 - 0.8 * t
-            y = y * (1 - 0.8 * t) - 0.45 * t * t
-            z = z + 0.75 * t * t
-        v.co = V(x * 0.235, y * 0.23 - 0.02, z * 0.235)
-    kill = [f for f in bm.faces if (f.calc_center_median().y > 0.07 and -0.17 < f.calc_center_median().z < 0.065) or f.calc_center_median().z < -0.2]
+        c = v.co.copy()
+        if c.y > 0.35:
+            c.y += (c.y - 0.35) * 0.55   # ふちを前へ
+        a_ = c.normalized().dot(tipdir)
+        if a_ > 0.8:
+            t = (a_ - 0.8) / 0.2
+            c += tipdir * 1.0 * t * t
+            c.y -= 0.6 * t ** 3          # うしろへ折れて垂れる
+            c.z -= 0.35 * t ** 3
+        v.co = V(c.x * R, c.y * R * 0.95, c.z * R)
+    kill = [f for f in bm.faces if (f.calc_center_median().y > 0.1 and f.calc_center_median().x ** 2 + ((f.calc_center_median().z + 0.01) / 1.05) ** 2 < 0.122 ** 2)
+            or f.calc_center_median().z < -0.165]
     bmesh.ops.delete(bm, geom=kill, context="FACES")
     bm.to_mesh(hd.data)
     bm.free()
-    hd.location = hc + V(0, 0, 0.01)
+    hd.location = hc + V(0, -0.004, 0.018)
     finish(hd, green, smooth=True, seed=2)
     m = hd.modifiers.new("sol", "SOLIDIFY")
-    m.thickness = 0.018
+    m.thickness = 0.03
     m.offset = 1.0
     m2 = hd.modifiers.new("sub", "SUBSURF")
     m2.levels = 1
     m2.render_levels = 2
-    # 上着: 麻布の短いケープ（肩から腰まで）、袖は太い筒で、先はふさがった手
-    bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=0.24, radius2=0.1, depth=0.26, location=(0, 0, 0.47))
+    # 上着: 麻布の短いケープ（肩から腰まで）
+    bpy.ops.mesh.primitive_cone_add(vertices=24, radius1=0.245, radius2=0.1, depth=0.25, location=(0, 0, 0.46))
     cape = bpy.context.object
     cape.name = "cape"
     finish(cape, green, smooth=True, seed=3)
@@ -744,30 +762,114 @@ def build_news():
     m2 = cape.modifiers.new("sub", "SUBSURF")
     m2.levels = 1
     m2.render_levels = 2
-    # 体とスカート: 新聞紙の張り子。すそが広がる
-    bpy.ops.mesh.primitive_cone_add(vertices=28, radius1=0.25, radius2=0.12, depth=0.36, location=(0, 0, 0.27))
+    # 体とスカート: 新聞紙の張り子。すそへ広がり、ひだが寄る
+    bpy.ops.mesh.primitive_cone_add(vertices=40, radius1=0.24, radius2=0.125, depth=0.37, end_fill_type="NOTHING", location=(0, 0, 0.275))
     body = bpy.context.object
     body.name = "body"
+    bm = bmesh.new()
+    bm.from_mesh(body.data)
+    bmesh.ops.subdivide_edges(bm, edges=[e for e in bm.edges if abs(e.verts[0].co.z - e.verts[1].co.z) > 0.1], cuts=4)
+    for v in bm.verts:
+        r = math.hypot(v.co.x, v.co.y)
+        if r < 1e-4:
+            continue
+        th = math.atan2(v.co.y, v.co.x)
+        k = (0.185 - v.co.z) / 0.37   # すそほど深いひだ
+        f = 1.0 + 0.075 * k * math.sin(11 * th + 0.4 * math.sin(3 * th))
+        v.co.x *= f
+        v.co.y *= f
+    bm.to_mesh(body.data)
+    bm.free()
     finish(body, news, smooth=True, seed=4)
+    m = body.modifiers.new("sol", "SOLIDIFY")
+    m.thickness = 0.008
     m2 = body.modifiers.new("sub", "SUBSURF")
     m2.levels = 1
     m2.render_levels = 1
     for s in (1, -1):
-        tube("sleeve", [V(0.15 * s, 0, 0.56), V(0.22 * s, 0.03, 0.42), V(0.25 * s, 0.07, 0.27)], [0.06, 0.06, 0.058], 12, green, flat=False)
-        bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.055, location=(0.255 * s, 0.075, 0.25))
-        finish(bpy.context.object, brown, smooth=True)
+        # 袖: 肩から垂れて、先が少し広がり、手を隠す。袖口の奥は暗い
+        tube("sleeve", [V(0.15 * s, 0, 0.55), V(0.215 * s, 0.03, 0.41), V(0.235 * s, 0.065, 0.245)], [0.058, 0.064, 0.078], 14, green, flat=False)
+        bpy.ops.mesh.primitive_uv_sphere_add(segments=14, ring_count=8, radius=0.05, location=(0.236 * s, 0.066, 0.24))
+        inner = bpy.context.object
+        inner.name = "sleeve_in"
+        inner.scale = (1, 1, 0.35)
+        finish(inner, dark, smooth=True)
         # 脚: 麻布を巻いた短い脚と、丸い足
         tube("leg", [V(0.08 * s, 0, 0.12), V(0.085 * s, 0.01, 0.03)], [0.045, 0.048], 12, brown, flat=False)
         bpy.ops.mesh.primitive_uv_sphere_add(segments=16, ring_count=10, radius=0.055, location=(0.085 * s, 0.03, 0.025))
         f = bpy.context.object
         f.scale = (1, 1.35, 0.6)
         finish(f, brown, smooth=True)
-    # 肩から斜めの革のたすき
-    bpy.ops.mesh.primitive_torus_add(major_radius=0.25, minor_radius=0.012, major_segments=40, minor_segments=6, location=(0, 0.0, 0.42))
-    t = bpy.context.object
-    t.scale = (0.78, 0.6, 1.0)
-    t.rotation_euler = (math.radians(8), math.radians(-38), 0)
-    finish(t, strap, smooth=True)
+    # 背中の小さなリュック（麻布の袋に革のふた）と、そこにつながる革の肩紐
+    def cape_r(z):
+        return 0.245 + (0.1 - 0.245) * (z - 0.335) / 0.25
+
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, -cape_r(0.45) - 0.028, 0.45))
+    pack = bpy.context.object
+    pack.name = "pack"
+    pack.scale = (0.2, 0.085, 0.17)
+    bev = pack.modifiers.new("bev", "BEVEL")
+    bev.width = 0.02
+    bev.segments = 3
+    sub = pack.modifiers.new("sub", "SUBSURF")
+    sub.levels = 1
+    sub.render_levels = 2
+    finish(pack, brown, smooth=True, seed=5)
+    bpy.ops.mesh.primitive_cube_add(size=1, location=(0, -cape_r(0.45) - 0.072, 0.5))
+    flap = bpy.context.object
+    flap.name = "pack_flap"
+    flap.scale = (0.19, 0.012, 0.085)
+    flap.rotation_euler = (math.radians(-8), 0, 0)
+    bev = flap.modifiers.new("bev", "BEVEL")
+    bev.width = 0.004
+    finish(flap, strap, smooth=True, seed=6)
+
+    def band(name, path, width=0.034, thick=0.006, per=8):
+        """上着の表面に沿う平たい帯。path は (角度°, 高さ, 浮かせる量)。角度は +X から反時計回り（+Y が前）"""
+        def at(th, z, off):
+            r = cape_r(z) + off
+            a = math.radians(th)
+            return V(math.cos(a) * r, math.sin(a) * r, z), V(math.cos(a), math.sin(a), 0.35).normalized()
+        pts = []
+        for i in range(len(path) - 1):
+            for k in range(per):
+                u = k / per
+                q = [path[max(0, i - 1)], path[i], path[i + 1], path[min(len(path) - 1, i + 2)]]
+                # 角度・高さ・浮きを Catmull-Rom でなめらかに
+                vals = [0.5 * ((2 * q[1][j]) + (-q[0][j] + q[2][j]) * u + (2 * q[0][j] - 5 * q[1][j] + 4 * q[2][j] - q[3][j]) * u * u
+                              + (-q[0][j] + 3 * q[1][j] - 3 * q[2][j] + q[3][j]) * u ** 3) for j in range(3)]
+                pts.append(at(*vals))
+        pts.append(at(*path[-1]))
+        verts, faces = [], []
+        for i, (p_, n_) in enumerate(pts):
+            nxt = pts[min(i + 1, len(pts) - 1)][0]
+            prv = pts[max(i - 1, 0)][0]
+            tdir = (nxt - prv).normalized()
+            w = tdir.cross(n_).normalized() * width * 0.5
+            for side in (w, -w):
+                verts.append(p_ + side)
+                verts.append(p_ + side + n_ * thick)
+        for i in range(len(pts) - 1):
+            a0 = i * 4
+            b0 = a0 + 4
+            faces += [(a0 + 1, a0 + 3, b0 + 3, b0 + 1), (a0, b0, b0 + 2, a0 + 2), (a0, a0 + 1, b0 + 1, b0), (a0 + 2, b0 + 2, b0 + 3, a0 + 3)]
+        ob = mesh(name, verts, faces, strap, smooth=True, seed=7)
+        bm = bmesh.new()
+        bm.from_mesh(ob.data)
+        bmesh.ops.recalc_face_normals(bm, faces=bm.faces[:])
+        bm.to_mesh(ob.data)
+        bm.free()
+        for pl in ob.data.polygons:
+            pl.use_smooth = True
+        return ob
+
+    for s in (1, -1):
+        # 右（s=1）: リュックの上 → 肩を越えて（頭巾の下）→ 胸の前を下りる → 脇の下（袖の内側）→ リュックの下
+        path = [(-78, 0.55, 0.05), (-35, 0.585, 0.012), (15, 0.575, 0.012), (58, 0.5, 0.012), (52, 0.42, 0.012),
+                (20, 0.37, 0.006), (-35, 0.37, 0.01), (-72, 0.4, 0.05)]
+        if s < 0:
+            path = [(180 - th, z, off) for th, z, off in path]
+        band("strap", path)
     # 毛羽: 麻布から短い繊維がはみ出す
     for ob in (hd, cape):
         ps_mod = ob.modifiers.new("fuzz", "PARTICLE_SYSTEM")

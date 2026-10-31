@@ -398,6 +398,9 @@ func _sync_held() -> void:
 	var doll = player.doll
 	var it: Dictionary = player.held()
 	var key := "" if it.is_empty() else "%s/%s/%s/%s" % [it.get("kind", ""), it.get("fabric", ""), it.get("tag", ""), it.get("sled", "")]
+	if _held != null and not is_instance_valid(_held):   # 着替えると、前の体の手に付けていた物は体と一緒に消える。新しい体に付け直す
+		_held = null
+		_held_key = "-"
 	if key != _held_key:
 		_held_key = key
 		if _held:

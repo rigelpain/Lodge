@@ -404,6 +404,9 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
+	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
+	if p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
+		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)
 
 	# 名札の結び目のそば: G の長押しで、自分のソリの名札を外す・名札入れの名札を持ち主のいないソリに付ける
 	var tt: Array = p.tag_target() if p.has_method("tag_target") else []
