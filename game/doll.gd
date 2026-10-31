@@ -1690,7 +1690,7 @@ func _plan_palms(kind_: String, k: int) -> void:
 					b = _face_basis(-global_basis.z, 0.45 if k < 3 else 0.0)   # 引くと、手のひらが少し上を向く
 				else:
 					var g: Vector3 = grip_at[side]
-					b = _face_basis(g - sh_w, 0.0)
+					b = _face_basis(emote.get("fwd", g - sh_w), 0.0)   # 手のひらは相手の体へ（配り役が決める）
 					if k < 6:
 						origin = g   # 叩きつける: 手形を合う所に
 			"whiff":
