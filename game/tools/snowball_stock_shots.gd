@@ -1,5 +1,5 @@
 extends SceneTree
-## 持っている雪玉の数の見え方を撮る（確かめ用）。帯の袋（ほかの人から・右下の小窓から）と、一人称の右手のそばの粒。
+## 持っている雪玉の数の見え方を撮る（確かめ用）。左の袖のストック（ほかの人から・右下の小窓から）と、一人称の左の袖口。
 ##   Godot --path game --resolution 960x540 -s res://tools/snowball_stock_shots.gd -- --dir=/path [--place=foot|inside]
 ## 撮るもの: 数 0〜5 を前から（front_N）と一人称（fp_N）。3 つ持って投げるところを前から（throw_秒）。
 ## --place=inside でロッジの中（5 つ持ち込んだところ）
@@ -51,7 +51,7 @@ func _save(name: String) -> void:
 	var dir: String = args.get("dir", "/tmp")
 	var path := dir.path_join(name + ".png")
 	root.get_texture().get_image().save_png(path)
-	print("保存: ", name, "  雪玉=", p.ball_count(), " 手=", p.holding_ball, " 袋=", p.doll.pouch_balls)
+	print("保存: ", name, "  雪玉=", p.ball_count(), " 手=", p.holding_ball, " 袖=", p.doll.sleeve_balls)
 
 
 func _run() -> void:
@@ -113,7 +113,7 @@ func _stage(place: String) -> void:
 	p.velocity = Vector3.ZERO
 
 
-## 前から、少し左から、帯の高さを見る（袋と右手の雪玉が両方写る）
+## 前から、少し左から、腰の高さを見る（左の袖のストックと右手の雪玉が両方写る）
 func _front() -> void:
 	var d: Node3D = p.doll
 	var fwd: Vector3 = -d.global_basis.z

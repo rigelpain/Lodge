@@ -1,9 +1,8 @@
 extends RefCounted
-## 手の形のアップリケ。紙を切った手の形（手のひら・指さし）に墨色の縁を付けた、平たい板。
+## 手の形の刺繍ワッペン。手の形（手のひら・指さし）をサテン縫いの糸で埋め、墨色の糸で縁をかがった、平たい板。
 ## 遠くからでも形が読めるよう、ほんとうの手より大きく作る。人形の手（doll.gd）と、一人称の手（player.gd）に付ける。
 ## ハイタッチが合ったときに飛び散る、千代紙の紙吹雪と紙の星もここで作る。
 
-const Look := preload("res://look.gd")
 
 const EDGE := Color(0.22, 0.16, 0.13)
 const BIG := 1.7            # 人形の手の形は、ほんとうの手より大きく（遠くからでも読める）
@@ -31,6 +30,76 @@ static func sides_of(hand: String) -> Array:
 const CONFETTI := [Color(0.82, 0.25, 0.2), Color(0.22, 0.32, 0.6), Color(0.93, 0.72, 0.2), Color(0.97, 0.94, 0.86), Color(0.36, 0.6, 0.5)]
 
 static var _meshes := {}     # "形_側" → [板, 縁]
+static var _satin: Shader
+
+## 刺繍糸の艶（2026-10-31 代表「手のワッペンは刺繍ワッペンとして刺繍糸特有の光沢があってほしい」）。
+## サテン縫い: 糸を並べて面を埋め、一本ずつの丸みと、糸の向きに沿って伸びる光り（髪と同じ Kajiya-Kay の光り方）を付ける。
+## 糸の向きは場所で変わる: 指は手首の下から指先へ放射、手のひらは横（境は長短の目のようにゆらぐ）、縁は外へ巻く。
+## だから見る角度と光の向きで、指の一本ずつ・手のひら・縁の明るさが別々に変わる。遠くでは糸の筋をならす（ちらつかないよう）
+const SATIN_SHADER := """
+shader_type spatial;
+render_mode cull_disabled;
+uniform vec3 color : source_color;
+uniform bool border = false;
+uniform float strand = 0.002;   // 糸 1 本の幅（手形の座標、m）
+uniform float sheen = 1.0;      // 艶の強さ
+varying vec3 obj;
+varying vec3 tang;
+varying float crest;
+
+float hash(float n) { return fract(sin(n * 12.9898) * 43758.5453); }
+
+void vertex() {
+	obj = VERTEX;
+}
+
+void fragment() {
+	vec2 p = obj.xy;
+	vec2 d;
+	float coord;
+	if (border) {
+		d = normalize(p - vec2(0.0, -0.005) + vec2(1e-5));
+		coord = atan(p.x, p.y + 0.005) * 0.06;
+	} else if (p.y > -0.012 + 0.003 * sin(p.x * 420.0)) {
+		vec2 c = vec2(0.0, -0.13);
+		d = normalize(p - c);
+		coord = atan(p.x - c.x, p.y - c.y) * 0.13;
+	} else {
+		d = vec2(1.0, 0.0);
+		coord = p.y + 0.37;
+	}
+	float f = fract(coord / strand);
+	float id = floor(coord / strand);
+	float fine = 1.0 - smoothstep(0.12, 0.45, fwidth(coord) / strand);   // 遠くでは糸の筋をならす
+	vec3 N = NORMAL;
+	vec3 T = (VIEW_MATRIX * MODEL_MATRIX * vec4(d, 0.0, 0.0)).xyz;
+	T = normalize(T - N * dot(T, N));
+	vec3 B = cross(N, T);
+	NORMAL = normalize(N + B * cos(f * PI) * 0.5 * fine);
+	tang = T;
+	crest = mix(1.0, 0.45 + 0.55 * sin(f * PI), fine);   // 光るのは糸の背
+	// 空の光の照り返し: 上からの光が糸に沿って伸びる（日が背にあっても、見る向きで糸ごとにきらっとする）
+	vec3 up = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
+	float ts = dot(T, normalize(VIEW + up));
+	float sky = sqrt(max(1.0 - ts * ts, 0.0));
+	EMISSION = mix(vec3(1.0), color, 0.5) * (pow(sky, 24.0) * 0.6 + pow(sky, 5.0) * 0.1) * sheen * crest;
+	float shade = mix(1.0, 0.8 + 0.2 * sin(f * PI), fine);   // 糸と糸のあいだの溝は少し暗い
+	shade *= 0.94 + 0.06 * hash(id + (border ? 31.0 : 0.0));
+	ALBEDO = color * shade;
+	ROUGHNESS = 0.55;
+	SPECULAR = 0.25;
+}
+
+void light() {
+	float nl = clamp(dot(NORMAL, LIGHT), 0.0, 1.0);
+	DIFFUSE_LIGHT += nl * ATTENUATION * LIGHT_COLOR / PI;
+	vec3 H = normalize(LIGHT + VIEW);
+	float th = dot(tang, H);
+	float s = sqrt(max(1.0 - th * th, 0.0));
+	float spec = pow(s, 90.0) * 0.8 + pow(s, 16.0) * 0.18;
+	SPECULAR_LIGHT += spec * sheen * crest * smoothstep(0.0, 0.25, nl) * ATTENUATION * LIGHT_COLOR / PI * mix(vec3(1.0), ALBEDO, 0.4);
+}
+"""
 
 
 ## 手の形の輪郭（m、指は +y、手のひらは +z を向く）。side 1 右手、-1 左手。
@@ -129,27 +198,33 @@ static func make(shape: String, side: int, color: Color, layers: int) -> Node3D:
 		var poly := outline(shape, side)
 		_meshes[key] = [_slab(poly, -0.003, 0.003), _slab(Geometry2D.offset_polygon(poly, 0.007)[0], -0.002, 0.002)]
 	var root := Node3D.new()
-	var paper := Look.paper(color)
-	paper.cull_mode = BaseMaterial3D.CULL_DISABLED
 	var face := MeshInstance3D.new()
 	face.mesh = _meshes[key][0]
-	face.material_override = paper
+	face.material_override = satin(color, false)
 	face.layers = layers
 	face.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(face)
-	# 墨色の縁: 少し大きな板を、紙の厚みの中に挟む（表からも裏からも、縁だけが見える）
+	# 墨色の糸でかがった縁: 少し大きな板を、ワッペンの厚みの中に挟む（表からも裏からも、縁だけが見える）
 	var edge := MeshInstance3D.new()
 	edge.mesh = _meshes[key][1]
-	var em := StandardMaterial3D.new()
-	em.albedo_color = EDGE
-	em.roughness = 1.0
-	em.cull_mode = BaseMaterial3D.CULL_DISABLED
-	edge.material_override = em
+	edge.material_override = satin(EDGE, true)
 	edge.layers = layers
 	edge.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(edge)
 	root.visible = false
 	return root
+
+
+## サテン縫いの糸の面。border は縁のかがり（糸が外へ巻く）
+static func satin(color: Color, border: bool) -> ShaderMaterial:
+	if _satin == null:
+		_satin = Shader.new()
+		_satin.code = SATIN_SHADER
+	var m := ShaderMaterial.new()
+	m.shader = _satin
+	m.set_shader_parameter("color", color)
+	m.set_shader_parameter("border", border)
+	return m
 
 
 ## 人や一人称の手に付ける、形ごと・左右ごとの板の組。shapes[形][側] で引く（側は 1 右、-1 左）

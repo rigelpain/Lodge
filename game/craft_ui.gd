@@ -26,6 +26,7 @@ const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
 const Craft := preload("res://craft.gd")
 const Fabrics := preload("res://fabrics.gd")
+const Doll := preload("res://doll.gd")
 
 var main: Node3D
 var craft: Node
@@ -52,6 +53,7 @@ var _pop := {}               # 持ち物の番号 → 跳ねの残り
 var _coin_pop := 0.0
 var _balls := -1             # 前に見た雪玉の数（増えた・減ったで弾ませる）
 var _ball_pop := 0.0
+var _ball_dir := 0           # 増えた (1)・減った (-1)
 var _flies: Array = []       # 財布へ飛んでいるボタン 1 枚ずつ {from（画面の px）, t（0→1）, look（段）, v（値打ち）, sewn（速さの表示の糸の上の番号。なければ -1）}
 var _pending := 0            # 飛んでいて、まだ財布に描かない値打ち（木のボタンの何個分）
 var _tier_at := {}           # 段 → 財布のその段の山の、次の 1 枚が載る所（画面の px。描くときに決まる）
@@ -428,6 +430,7 @@ func _process(dt: float) -> void:
 	var nb: int = player.ball_count() if player.has_method("ball_count") else 0
 	if _balls >= 0 and nb != _balls:
 		_ball_pop = 1.0
+		_ball_dir = signi(nb - _balls)
 	_balls = nb
 	_ball_pop = maxf(0.0, _ball_pop - dt * 2.5)
 	var hud = main.get("hud") if main else null
@@ -525,11 +528,14 @@ class View extends Control:
 					CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamp.get("look", "box"), craft.lamp_on(who), 1.0, lamp.is_empty())
 			Icons.keycap(self, cards[i][0], r.position + Vector2(13.0 * u, 13.0 * u), 22.0 * u, 1.0)
 
-	## 雪玉の数: I・N・R の札の上に、持っている数だけ雪玉の粒が並ぶ細い札（文字・数字なし）。5 つまでの空きは点線の丸。
-	## 0 個のときは出さない。数が変わると、増えた・減った端の粒がぽんと弾む（2026-10-31 代表「三人称でもわかるように、雪玉ストック数の HUD がほしい」）
+	## 雪玉の数: I・N・R の札の上の、藍のフェルトのリボン。結び玉から縫い針まで赤い糸で縫ってあり、持っている数だけ綿の雪玉が糸に通る。
+	## 玉のない所（5 つまでの空き）は、なみ縫いの目だけ。文字・数字なし。0 個のときは出さない。増えると新しい玉がぽんと弾み、
+	## 減ると抜けた玉が上へ浮いて消える（2026-10-31 代表「三人称でもわかるように、雪玉ストック数の HUD がほしい」。
+	## はじめの粒の札は「ダサい」と言われ、アートコンセプトから出した 3 案から代表が選んだ。design/hud.md）
 	func _draw_balls(u: float) -> void:
 		var n: int = ui._balls
-		if n <= 0 or ui.shop_open or ui.machine_open or ui.gear_open:
+		var gone: bool = ui._ball_dir < 0 and ui._ball_pop > 0.0   # 減った直後は、抜けた玉が消えるまで出しておく
+		if (n <= 0 and not gone) or ui.shop_open or ui.machine_open or ui.gear_open:
 			return
 		var cw := 70.0 * u
 		var gap := 10.0 * u
@@ -541,25 +547,86 @@ class View extends Control:
 			var fr: Control = sc._frame
 			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
 			bottom = fr.position.y - 44.0 * u
-		var top := bottom - 78.0 * u - 10.0 * u   # I・N・R の札の上
-		var h := 40.0 * u
-		var r := Rect2(cx - total / 2.0, top - h, total, h)
+		var h := 46.0 * u
+		var x0 := cx - total / 2.0
+		var y := bottom - 78.0 * u - 10.0 * u - 8.0 * u - h / 2.0   # I・N・R の札の上
+		var navy := Doll.STOCK_NAVY   # 人形の袖のストックと同じ藍のフェルト（白い雪の上でも、白い雪玉が映える）
+		var hemp := Color(0.70, 0.57, 0.38)
+		var red := Doll.STOCK_RED
+		var holes := Color(navy.darkened(0.5), 0.8)
 		Icons.screen()
-		Icons.patch(self, Icons.rr(r.position.x, r.position.y, r.size.x, h, 14.0 * u), Icons.PAPER, 0.88, true, Icons.PAPER_EDGE)
-		var mx: int = 5
-		var step := (r.size.x - 36.0 * u) / float(mx - 1)
-		for i in mx:
-			var c := Vector2(r.position.x + 18.0 * u + i * step, r.get_center().y)
-			if i < n:
-				var pop: float = ui._ball_pop if i == n - 1 else 0.0
-				var rad := 11.0 * u * (1.0 + 0.4 * sin(pop * PI))
-				c.y -= 6.0 * u * sin(pop * PI)
-				draw_circle(c + Vector2(1.0, 1.6) * u, rad, Color(Icons.SHADOW, 0.25))
-				draw_circle(c, rad, Icons.SNOW)
-				draw_arc(c, rad, 0, TAU, 24, Color(0.62, 0.70, 0.84), 1.4 * u, true)
-				draw_circle(c + Vector2(-0.35, -0.35) * rad, rad * 0.32, Color(1, 1, 1, 0.9))   # つや
-			else:
-				Icons.dashes(self, Icons.circ(c, 9.0 * u, 16), Color(Icons.PAPER_EDGE, 0.9), 1.2 * u, 2.6 * u, 2.2 * u, 1.0, true)
+		Icons.patch(self, Icons.rr(x0, y - h / 2.0, total, h, 10.0 * u), navy, 1.0, true, hemp)
+		var step := 34.0 * u
+		var bx := x0 + 30.0 * u
+		var eye := Vector2(x0 + total - 44.0 * u, y)
+		# 結び玉から、玉の並びの手前まで
+		draw_circle(Vector2(x0 + 12.0 * u, y), 4.0 * u, red.darkened(0.2))
+		Icons.thread(self, PackedVector2Array([Vector2(x0 + 12.0 * u, y), Vector2(bx - 8.0 * u, y)]), red, 2.6 * u)
+		# 空き: なみ縫いの目と、両端の針穴
+		for i in range(n, 5):
+			var c := Vector2(bx + step * i, y)
+			Icons.thread(self, PackedVector2Array([c + Vector2(-8.0 * u, 0), c + Vector2(8.0 * u, 0)]), red, 2.6 * u)
+			for e in [-1.0, 1.0]:
+				draw_circle(c + Vector2(e * 13.0 * u, 0), 1.3 * u, holes)
+		# 最後の玉から針の穴まで
+		var last := bx + step * 4.0 + 14.0 * u
+		Icons.thread(self, PackedVector2Array([Vector2(last, y), eye]), red, 2.6 * u)
+		# 糸に通った雪玉（糸は玉の中を通る）
+		for i in mini(n, 5):
+			var c := Vector2(bx + step * i, y)
+			Icons.thread(self, PackedVector2Array([c + Vector2(-17.0 * u, 0), c + Vector2(17.0 * u, 0)]), red, 2.6 * u)
+			var pp := sin(ui._ball_pop * PI) if ui._ball_dir > 0 and i == n - 1 else 0.0
+			_cotton(c - Vector2(0, 7.0 * u * pp), 14.0 * u * (1.0 + 0.2 * pp), i + 1)
+		if gone and n < 5:
+			var t: float = 1.0 - ui._ball_pop
+			_cotton(Vector2(bx + step * n, y - 16.0 * u * t), 14.0 * u * (1.0 - 0.3 * t), n + 1, 1.0 - t)
+		# 縫い針（右へ、少し上向き。先はリボンの縁から外へ）
+		var rot := -0.18
+		var nd := PackedVector2Array([Vector2(-4, -2.4), Vector2(30, -1.4), Vector2(44, 0), Vector2(30, 1.4), Vector2(-4, 2.4), Vector2(-6, 0)])
+		for k in nd.size():
+			nd[k] *= u
+		draw_colored_polygon(Icons.xf(nd, rot, eye + Vector2(1.2, 2.4) * u), Color(Icons.SHADOW, 0.35))
+		draw_colored_polygon(Icons.xf(nd, rot, eye), Color(0.80, 0.82, 0.86))
+		draw_line(eye + Vector2(-2, -1.0).rotated(rot) * u, eye + Vector2(36, -0.4).rotated(rot) * u, Color(1, 1, 1, 0.9), 1.0 * u, true)
+		draw_colored_polygon(Icons.xf(Icons.ell(Vector2.ZERO, 2.8 * u, 0.9 * u, 10), rot, eye), Color(0.30, 0.32, 0.38))   # 針の穴
+
+	## 綿の雪玉: ちぎった綿を丸めた、角のある毛玉。下側に雪の影の青、縁から繊維がほつれて出る（3D の雪玉と同じ形の考え）
+	func _cotton(c: Vector2, r: float, seed: int, a := 1.0) -> void:
+		var pts := PackedVector2Array()
+		var m := 13
+		for k in m:
+			var t := TAU * k / m + seed * 0.7
+			var w := 1.0 + 0.06 * sin(seed * 12.9898 + k * 78.233) + 0.03 * cos(seed * 4.1 + k * 2.3)
+			pts.append(c + Vector2(cos(t), sin(t)) * r * w)
+		var sh := PackedVector2Array()
+		for q in pts:
+			sh.append(q + Vector2(1.2, 2.2) * r / 12.0)
+		draw_colored_polygon(sh, Color(Icons.SHADOW, 0.35 * a))
+		var uv := PackedVector2Array()
+		for q in pts:
+			uv.append((q - c) / (r * 1.6) + Vector2(seed * 0.37, seed * 0.21))
+		draw_colored_polygon(pts, Color(0.98, 0.98, 0.96, a), uv, Icons.felt())
+		# 下の陰（雪の影の青）
+		var low := PackedVector2Array()
+		for k in m:
+			if pts[k].y > c.y - r * 0.15:
+				low.append(pts[k])
+		if low.size() >= 3:
+			var crescent := low.duplicate()
+			for k in range(low.size() - 1, -1, -1):
+				crescent.append(c + (low[k] - c) * Vector2(0.9, 0.5) + Vector2(-r * 0.08, r * 0.05))
+			if Geometry2D.triangulate_polygon(crescent).size() > 0:
+				draw_colored_polygon(crescent, Color(0.66, 0.74, 0.90, 0.75 * a))
+		var edge := pts.duplicate()
+		edge.append(pts[0])
+		draw_polyline(edge, Color(0.55, 0.62, 0.78, 0.7 * a), maxf(0.9, r / 11.0), true)
+		# ほつれた繊維
+		for k in 7:
+			var t := TAU * k / 7.0 + seed * 1.3 + 0.3 * sin(k * 3.1)
+			var d := Vector2(cos(t), sin(t))
+			var p0 := c + d * r * 0.95
+			var p1 := p0 + d.rotated(0.9 * sin(k + seed)) * r * (0.08 + 0.08 * absf(sin(k * 1.7 + seed)))
+			draw_line(p0, p1, Color(0.97, 0.97, 0.95, 0.7 * a), maxf(0.7, r / 18.0), true)
 
 	## 持ち物の列
 	func _draw_bar(u: float, a: float) -> void:

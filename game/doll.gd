@@ -35,12 +35,12 @@ const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.
 ## 頭のいちばん上（glb の座標、人形の大きさのまま）。雪玉の当たりの背丈と、ハイタッチの手の高さに
 const TOP := {"kasa": 1.372, "origami": 1.49, "news": 0.955}
 const BALL_R := 0.075        # 雪玉の半径 (m)
-const BALL_BACK := 4         # 投げてから、次の雪玉が帯の袋から右手に出るコマ
-## 雪玉入れ: 帯の前に並べた、口の開いたフェルトの小さな袋（1 つに雪玉 1 つ）。帯の高さと、体のまわりの半径（glb の座標、人形の大きさのまま）
-const POCKET_BELT := {"kasa": Vector2(0.6, 0.2), "origami": Vector2(0.8, 0.21), "news": Vector2(0.34, 0.23)}
-## 袋の並ぶ向き（真正面から左回り、度）。右の前から左の脇へ、この順に詰める。数えられるよう、前から見て重ならない
-const POCKET_ANGLES := [-44.0, -18.0, 8.0, 34.0, 60.0]
-const POCKET_BALL := 0.62    # 袋の雪玉の大きさ（手の雪玉に比べて）
+const BALL_BACK := 4         # 投げてから、次の雪玉が左の袖から右手に出るコマ
+## 雪玉のストック: 左の袖（前腕）の外側に縫い付けた、藍のフェルトの細い帯。赤い糸に、持っている数だけ綿の雪玉が通る（右下の HUD と同じ形）。
+## 人形ごとに [前腕のどこからどこまで（肘 0〜手首 1）, 腕の芯から外へ (m)]
+const SLEEVE_STOCK := {"kasa": [0.15, 0.95, 0.05], "origami": [0.15, 0.95, 0.05], "news": [0.15, 0.95, 0.05]}
+const STOCK_NAVY := Color(0.16, 0.21, 0.38)   # 藍のフェルト（白い雪玉が映える）
+const STOCK_RED := Color(0.82, 0.27, 0.22)    # 縫う糸（あなたの赤）
 ## 米袋の動きのコマ数（12 コマ／秒）。乗る・降りるは押した瞬間に済んでいて、見た目だけがこのコマで追いつく
 ## （乗り込みの途中でも滑り出せる。足で蹴ると、残りを飛ばしてすぐ座る）
 ##   out: 0 右手を帯へ / 1 引き抜いて胸の前で両手に / 2 ばさっと前へ広げて落とす / 3 しゃがむ / 4 腰を下ろす（ぽふっ） / 5〜 座って紐を握る
@@ -85,7 +85,7 @@ var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標�
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
 var lean := Vector2.ZERO     # 乗っているときの体重移動（x 右、y 前）
 var holding_ball := false    # 右手に雪玉を持っている
-var pouch_balls := 0         # 帯の袋の雪玉の数（持ち主が毎フレーム入れる）
+var sleeve_balls := 0        # 左の袖に縫い付けた雪玉の数（持ち主が毎フレーム入れる）
 var emote := {}              # いまの身ぶり（emotes.gd の出来事）。終わると空になる
 var crouch := false          # しゃがんでいる（持ち主が毎フレーム入れる）
 var hand_shapes := ["", ""]  # 掲げている手の高さ [右手, 左手]（"high" 高い手のひら、"low" 低い手のひら、"" は下ろす）
@@ -119,8 +119,7 @@ var _rng := RandomNumberGenerator.new()
 var _scale := 1.0
 var _long: CPUParticles3D    # B の長い息・おーい（_streams["long"]）
 var _ball: Node3D            # 右手の雪玉
-var _pockets: Array[Node3D] = []        # 帯の雪玉入れの袋（雪玉がなければ隠す）
-var _pocket_balls: Array[Node3D] = []   # 袋の中の雪玉
+var _stock: Node3D          # 左の袖の雪玉のストック（雪玉がなければ隠す）
 var _shapes := {}            # 手の形のアップリケ: 形 → {1: 右手, -1: 左手}
 var _palm_goal := {}         # 側 → [形, 手形の置き所（人形の座標）]。コマで決め、腕はその手首へ伸ばす
 var _hands_frame := 0        # 手の形を変えたコマ（ぽんと出る大きさに）
@@ -156,7 +155,7 @@ func _ready() -> void:
 	_order.sort_custom(func(a, b): return depth.call(a) < depth.call(b))
 	_make_breath()
 	_make_ball()
-	_make_pouch()
+	_make_stock()
 	_make_roll()
 	_lantern = Lantern.new(self)
 	add_child(_lantern)
@@ -778,10 +777,10 @@ func _pose() -> void:
 	if em[0] == "make_ball" and em[1] >= 4:
 		ball_k = clampf((em[1] - 4) / 12.0, 0.0, 1.0) * 0.6 + 0.4
 	elif holding_ball and not (em[0] == "throw" and em[1] < BALL_BACK):
-		ball_k = 1.0   # 投げたあとは、次の雪玉を袋から出すまで少し空く
+		ball_k = 1.0   # 投げたあとは、次の雪玉を袖から取るまで少し空く
 	_ball.visible = ball_k > 0.0
 	_ball.scale = Vector3.ONE * maxf(ball_k, 0.01)
-	_place_pouch(em)
+	_place_stock(em)
 	_place_roll()
 	# 帯のランタン: 歩みで前後に揺れ、速さの変わり目で振られる（人形の向きの座標で、x 右・y 前）
 	var acc := (_vel - _lantern_v) * FPS
@@ -1411,74 +1410,92 @@ func _make_ball() -> void:
 	_ball.visible = false
 
 
-## 帯の雪玉入れ: 帯の前に、口の開いた藍のフェルトの小さな袋を 5 つ並べ、持っている数だけ雪玉が上からのぞく
-## （文字なしで数が分かる。空の袋で、あといくつ持てるかも分かる。ほかの人からも、右下の自分の小窓からも見える）。
-## 雪玉を一つも持っていなければ、袋ごと隠す
-func _make_pouch() -> void:
-	var hips := _id("hips")
-	if hips < 0:
+## 左の袖の雪玉のストック: 前腕の外側（体の横から見える側）に、肘から手首へ帯を縫い付ける。
+## 文字なしで数が分かり、玉のない縫い目で、あといくつ持てるかも分かる。ほかの人からも、右下の自分の小窓からも見える
+func _make_stock() -> void:
+	var fo := _id("forearm.L")
+	if fo < 0:
 		return
 	var at := BoneAttachment3D.new()
-	at.bone_name = "hips"
+	at.bone_name = "forearm.L"
 	skel.add_child(at)
-	var belt: Vector2 = POCKET_BELT.get(kind, POCKET_BELT["kasa"])
-	var to_hips := skel.get_bone_global_rest(hips).affine_inverse()
-	var felt := Look.felt(Color(0.16, 0.21, 0.38), 6.0)   # 藍のフェルト（白い雪玉が映える）
-	felt.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var thread := Look.felt(Color(0.62, 0.5, 0.34), 4.0)   # 口の縁の、麻ひもの縫い目（雪玉と見分けやすく）
-	var cm := CylinderMesh.new()   # 口が少し広い、浅い袋
-	cm.top_radius = 0.044
-	cm.bottom_radius = 0.034
-	cm.height = 0.05
-	cm.radial_segments = 7
-	cm.rings = 1
-	cm.cap_top = false
-	var tm := TorusMesh.new()
-	tm.inner_radius = 0.041
-	tm.outer_radius = 0.048
-	tm.rings = 8
-	tm.ring_segments = 4
-	for a in POCKET_ANGLES:
-		var r := deg_to_rad(a)
-		var pos := Vector3(-sin(r) * belt.y, belt.x, -cos(r) * belt.y)   # 正面は -z、左は -x
-		var pocket := Node3D.new()
-		pocket.transform = Transform3D(Basis(Vector3.UP, r), to_hips * pos)
-		at.add_child(pocket)
-		var inner := Node3D.new()   # ここから下は m で
-		inner.scale = Vector3.ONE / _scale
-		pocket.add_child(inner)
-		var bag := MeshInstance3D.new()
-		bag.mesh = cm
-		bag.material_override = felt
-		bag.layers = layers
-		inner.add_child(bag)
-		var rim := MeshInstance3D.new()
-		rim.mesh = tm
-		rim.material_override = thread
-		rim.position.y = 0.025
-		rim.layers = layers
-		inner.add_child(rim)
-		var b := MeshInstance3D.new()
-		b.mesh = ball_mesh()
-		b.material_override = ball_material()
-		b.scale = Vector3.ONE * POCKET_BALL
-		b.position = Vector3(0, 0.038, 0)
-		b.layers = layers
-		inner.add_child(b)
-		pocket.visible = false
-		_pockets.append(pocket)
-		_pocket_balls.append(b)
+	var spec: Array = SLEEVE_STOCK.get(kind, SLEEVE_STOCK["kasa"])
+	var rest := skel.get_bone_global_rest(fo)
+	var along := Vector3.UP   # 骨の y が肘から手首へ
+	var out := rest.basis.inverse() * Vector3.LEFT   # 人形の左（-x）を骨の座標へ。腕に沿う分を除いて、腕の外側
+	out = (out - along * out.dot(along)).normalized()
+	var length: float = _len(fo) * _scale * (float(spec[1]) - float(spec[0]))
+	_stock = stock_strip(length, layers)
+	_stock.transform = Transform3D(Basis(along.cross(out), along, out), along * _len(fo) * float(spec[0]) + out * float(spec[2]) / _scale)
+	_stock.scale = Vector3.ONE / _scale
+	at.add_child(_stock)
+	_stock.visible = false
 
 
-## 雪玉入れをコマごとに。投げた直後は、次に手に持つ分がまだ袋にある（数が飛ばないよう）
-func _place_pouch(em: Array) -> void:
-	var n := pouch_balls
+## 雪玉のストックをコマごとに。投げた直後は、次に手に持つ分がまだ袖にある（数が飛ばないよう）
+func _place_stock(em: Array) -> void:
+	if _stock == null:
+		return
+	var n := sleeve_balls
 	if holding_ball and em[0] == "throw" and em[1] < BALL_BACK:
 		n += 1
-	var show := n > 0 or holding_ball
-	for i in _pockets.size():
-		_pockets[i].visible = show
-		_pocket_balls[i].visible = i < n
+	_stock.visible = n > 0 or holding_ball
+	stock_count(_stock, n)
+
+
+## 袖に縫い付けた雪玉のストック（人形の袖と一人称の袖口で同じもの）。藍のフェルトの細い帯に赤い糸を縫い、玉の所は糸が雪玉の中を通る。
+## 玉のない所（5 つまでの空き）は、なみ縫いの目だけ。帯は +y 向きに length (m)、表は +z。数は stock_count で
+static func stock_strip(length: float, layers_: int) -> Node3D:
+	var root := Node3D.new()
+	var step := length / 5.0
+	var r := step * 0.42
+	var felt := Look.felt(STOCK_NAVY, 6.0)
+	var red := Look.felt(STOCK_RED, 4.0)
+	var bm := BoxMesh.new()
+	bm.size = Vector3(r * 2.3, length + step * 0.25, r * 0.22)
+	var band := MeshInstance3D.new()
+	band.mesh = bm
+	band.material_override = felt
+	band.position = Vector3(0, length * 0.5, 0)
+	band.layers = layers_
+	root.add_child(band)
+	var through := BoxMesh.new()   # 玉を通る糸（玉と玉のあいだに見える）
+	through.size = Vector3(r * 0.22, step, r * 0.18)
+	var stitch := BoxMesh.new()    # 空きのなみ縫いの目
+	stitch.size = Vector3(r * 0.24, step * 0.5, r * 0.2)
+	for i in 5:
+		var y := step * (i + 0.5)
+		var t := MeshInstance3D.new()
+		t.name = "t%d" % i
+		t.mesh = through
+		t.material_override = red
+		t.position = Vector3(0, y, r * 0.15)
+		t.layers = layers_
+		root.add_child(t)
+		var st := MeshInstance3D.new()
+		st.name = "s%d" % i
+		st.mesh = stitch
+		st.material_override = red
+		st.position = Vector3(0, y, r * 0.15)
+		st.layers = layers_
+		root.add_child(st)
+		var b := MeshInstance3D.new()
+		b.name = "b%d" % i
+		b.mesh = ball_mesh()
+		b.material_override = ball_material()
+		b.scale = Vector3.ONE * (r / BALL_R)
+		b.position = Vector3(0, y, r * 0.9)
+		b.layers = layers_
+		root.add_child(b)
+	return root
+
+
+## ストックに数を入れる: n 個は玉と通る糸、残りはなみ縫いの目
+static func stock_count(strip: Node3D, n: int) -> void:
+	for i in 5:
+		strip.get_node("b%d" % i).visible = i < n
+		strip.get_node("t%d" % i).visible = i < n
+		strip.get_node("s%d" % i).visible = i >= n
 
 
 # ---------------------------------------------------------------- 米袋を出す・しまう

@@ -49,7 +49,7 @@ const WHIFF_REACH := 1.0     # 片方だけが向かってこの中まで寄る�
 const FIVE_HIT := 3          # high_five の何コマ目に手が合うか（その前の 3 コマが、引くため）
 const MAKE_READY := 16       # 雪玉ができて手に持つコマ（make_ball の中で）
 const EXHALE_MAX := 5.0      # 息が続く長さ (s)
-const BALL_MAX := 5          # 持てる雪玉の数（右手に 1 つ、残りは帯の袋）
+const BALL_MAX := 5          # 持てる雪玉の数（右手に 1 つ、残りは左の袖に縫い付けたストック）
 
 var balls := {}              # 番号 → 持っている雪玉の数
 var _making := {}            # 番号 → 丸めている雪玉ができるコマ（MAKE_READY。それまでにのけぞると、できない）

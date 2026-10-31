@@ -115,7 +115,7 @@ var _em := {}                # いまの自分の身ぶり（出来事）
 var _winding := false
 var _wind_t := 0.0
 var _ball_fp: MeshInstance3D # 一人称の右手の雪玉
-var _beads_fp: Array[MeshInstance3D] = []   # 一人称の、帯の袋の雪玉の粒
+var _stock_fp: Node3D        # 一人称の、左の袖口に縫い付けた雪玉のストック
 var _shapes_fp := {}         # 一人称の手の形のアップリケ: 形 → {1: 右手, -1: 左手}
 var hands_name := ""         # いま掲げている手（Palm.HANDS の名前。"high_R" など。"" は下ろしている）
 var hand := "R"              # 身ぶりに使う手（"R" "L" "both"）。Q で片手⇄両手、X で右⇄左
@@ -134,10 +134,9 @@ var _held_key := ""
 const HELD_TILT := 0.12      # 畳んだソリの包みの名札の面を、まっすぐより少し上へ傾ける (rad)
 const HELD_TURN := 0.0     # 少し内へ回す (rad)
 const HELD_SCALE := 1.25     # 一人称で持つ包みの大きさ
-const BEAD := 0.32           # 一人称の、左手に抱える雪玉の粒の大きさ（右手の雪玉に比べて）
-## 左手に抱える雪玉の山の並び（左手の座標。下の段に 3 つ、その上に 2 つ）
-const BEAD_HEAP := [Vector3(0.0, 0.03, -0.07), Vector3(0.026, 0.027, -0.065), Vector3(-0.024, 0.027, -0.068),
-	Vector3(0.013, 0.052, -0.07), Vector3(-0.011, 0.052, -0.066)]
+## 一人称の左の袖に縫い付けたストックの、袖の上の始めと終わり（手の所から肩のほうへ, m）
+const STOCK_Z := Vector2(0.05, 0.23)
+const STOCK_HAND := Vector3(-0.2, -0.04, -0.5)   # ストックを見せる左手の所（腕は画面の下の肩から伸びるので、袖が目のほうへ寝る）
 var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
 var _pan_acc := 0.0          # 二本指スクロールのたまった量
 const PAN_STEP := 1.5        # これだけたまったら 1 つ持ち替える
@@ -198,18 +197,14 @@ func _ready() -> void:
 			_ball_fp.visible = false
 			h.add_child(_ball_fp)
 		else:
-			# 残りの雪玉（帯の袋の分）は、投げない左手の手のひらに小さな山にして抱える（一人称では帯が見えないので）。
+			# 残りの雪玉は、投げない左手の袖口に縫い付けたストックに通っている（人形の左の袖と同じ。右下の HUD とも同じ形）。
 			# 2026-10-31 代表「投げる方の手にくっついてしまっているから、左手にストックはくっつけてほしい」
-			for i in Emotes.BALL_MAX:
-				var bead := MeshInstance3D.new()
-				bead.mesh = Doll.ball_mesh()
-				bead.material_override = Doll.ball_material()
-				bead.layers = 1 << 2
-				bead.scale = Vector3.ONE * BEAD
-				bead.position = BEAD_HEAP[i]
-				bead.visible = false
-				h.add_child(bead)
-				_beads_fp.append(bead)
+			# →「左手の袖に縫い付けるような感じでキャラにもストックさせましょう」「一人称でそのストック雪玉見える角度にしてほしい」
+			var dz := STOCK_Z.y - STOCK_Z.x
+			var dr := FpHands.sleeve_r(STOCK_Z.y) - FpHands.sleeve_r(STOCK_Z.x)
+			_stock_fp = Doll.stock_strip(sqrt(dz * dz + dr * dr), 1 << 2)
+			_stock_fp.visible = false
+			h.add_child(_stock_fp)
 
 	_shapes_fp = Palm.make_set(Color(FpHands.STYLE.get(doll.kind, FpHands.STYLE["kasa"]).hand), 1 << 2)
 	for sh in _shapes_fp:
@@ -665,7 +660,7 @@ func _pose_doll() -> void:
 	doll.point_sides = Palm.sides_of(hand)
 	holding_ball = ball_count() > 0 and held().is_empty()
 	doll.holding_ball = holding_ball
-	doll.pouch_balls = ball_count() - (1 if holding_ball else 0)
+	doll.sleeve_balls = ball_count() - (1 if holding_ball else 0)
 	doll.crouch = crouching
 	doll.point = point_at
 	if craft:
@@ -987,9 +982,9 @@ func _pose_hands(dt: float) -> void:
 					target = Vector3(0.28 * s, -0.32, -0.35)
 			_:
 				target = Vector3(0.27 * s, -0.25 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.48)
-				if s < 0 and doll.pouch_balls > 0:
-					# 雪玉を抱えた左手は、胸の前へ少し上げる（左下の名札に隠れず、手のひらの山が見えるように）
-					target = Vector3(-0.2, -0.16 + sin(_t * 6.0) * 0.006 * velocity.length(), -0.44)
+				if s < 0 and doll.sleeve_balls > 0:
+					# 雪玉のストックを縫い付けた左の袖は、腕時計を見るように前へ上げて、袖の上の雪玉の並びが目に入る角度に
+					target = STOCK_HAND + Vector3(0, sin(_t * 6.0) * 0.006 * velocity.length(), 0)
 		var em_hand := _emote_hand(s)
 		if em_hand != Vector3.INF:
 			target = em_hand
@@ -1017,19 +1012,29 @@ func _pose_hands(dt: float) -> void:
 	if em[0] == "make_ball" and em[1] >= 4:
 		grow = clampf((em[1] - 4) / 12.0, 0.0, 1.0) * 0.6 + 0.4
 	elif holding_ball and not (em[0] == "throw" and em[1] < Doll.BALL_BACK):
-		grow = 1.0   # 投げたあとは、次の雪玉を帯の袋から出すまで少し空く
+		grow = 1.0   # 投げたあとは、次の雪玉を左の袖から取るまで少し空く
 	_ball_fp.visible = grow > 0.0
 	_ball_fp.scale = Vector3.ONE * maxf(grow, 0.01)
-	var beads := doll.pouch_balls + (1 if holding_ball and grow == 0.0 else 0)   # 投げた直後は、次の玉もまだ左手に
-	# 左手がほかのことに使われているあいだ（ソリの縁を握る・米袋の耳を握る・身ぶり・指さし）は、袋にしまってあることにして出さない
-	var left_busy: bool = mode == Mode.GRIP or (mode == Mode.RIDE and sled.kind == "sack") \
-		or (-1 in Palm.sides_of(hand) and point_at != Vector3.INF) \
-		or (_emote_hand(-1) != Vector3.INF and not _winding and em[0] != "throw")
-	for i in _beads_fp.size():
-		_beads_fp[i].visible = i < beads and not left_busy
+	var stock := doll.sleeve_balls + (1 if holding_ball and grow == 0.0 else 0)   # 投げた直後は、次の玉もまだ袖に
+	_stock_fp.visible = stock > 0 or holding_ball
+	Doll.stock_count(_stock_fp, stock)
+	_face_stock_fp()
 	_place_held_fp(grow > 0.0)
 	_face_held_fp()
 	_place_shapes_fp(em)
+
+
+## 一人称の左の袖口のストックを、袖の筒の上で目のほうへ向ける（袖のどこが見えていても、雪玉の並びが見える）
+func _face_stock_fp() -> void:
+	var h: Node3D = _stock_fp.get_parent()
+	var to_eye := h.basis.inverse() * -h.position
+	var d := Vector3(to_eye.x, to_eye.y, 0.0)
+	d = d.normalized() if d.length() > 0.001 else Vector3.UP
+	var p0 := d * (FpHands.sleeve_r(STOCK_Z.x) + 0.002) + Vector3(0, 0, STOCK_Z.x)
+	var p1 := d * (FpHands.sleeve_r(STOCK_Z.y) + 0.002) + Vector3(0, 0, STOCK_Z.y)
+	var along := (p1 - p0).normalized()
+	var out := d - along * d.dot(along)
+	_stock_fp.transform = Transform3D(Basis(along.cross(out.normalized()), along, out.normalized()), p0)
 
 
 ## 一人称の手形: 手の先に置く。手のひらは前（相手）へ向け（自分からは手の甲が見える）、低い手のひらは下へ向ける。
@@ -1212,7 +1217,7 @@ func _on_emote(ev: Dictionary) -> void:
 				let_go()
 
 
-## 持っている雪玉の数（配り役が数える。帯の袋と右手の分を合わせて）
+## 持っている雪玉の数（配り役が数える。左の袖のストックと右手の分を合わせて）
 func ball_count() -> int:
 	return hub.balls_of(id) if hub else 0
 
@@ -1364,9 +1369,9 @@ func _emote_hand(s: int) -> Vector3:
 				if k < 3:
 					return Vector3(-0.04, -0.34, -0.56)
 				if k < Doll.BALL_BACK + 1 and ball_count() > 0:
-					return Vector3(-0.14, -0.2, -0.47)   # 左手の山から次の 1 つを取る
+					return Vector3(-0.08, -0.17, -0.4)   # 左の袖のストックから次の 1 つを取る
 			elif k >= 2 and k < Doll.BALL_BACK + 1 and ball_count() > 0:
-				return Vector3(-0.2, -0.22, -0.48)   # 左手は少し寄せて、右手に差し出す
+				return STOCK_HAND + Vector3(-0.04, -0.06, 0.04)   # 左の袖は少し寄せて、右手に差し出す
 		"hit":
 			if k < 8:
 				return Vector3(s * 0.26, 0.0, -0.4)
