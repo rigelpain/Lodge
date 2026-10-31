@@ -3,7 +3,7 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 -s res://tools/wardrobe_shots.gd -- --spawn=wardrobe --doll=kasa --dir=/path/shots [--kinds=robo,golem]
 ## 撮るもの:
 ##   rack.png        衣装掛けの前（F の案内。いま着ている人形のハンガーは空）
-##   menu.png        F で開いた、人形を選ぶ画面
+##   menu.png        F で開いた、人形を選ぶ画面（menu_golem.png・menu_news.png はその札を選んだところ）
 ##   <人形>_fp.png   その人形に着替えた一人称（袖と手、左の袖の雪玉のストック、右上の小窓）
 ##   <人形>_tp.png   同じく三人称（うしろから、少し横に回って）
 ## 着替えは画面と同じく craft.gd の出来事 doll で送る（保存はしない。--doll で始めの人形を決める）
@@ -57,6 +57,10 @@ func _run() -> void:
 	main.wardrobe_ui.open()
 	await _wait(1.2)
 	await _shot("menu")
+	for k in ["golem", "news"]:   # 選ぶ札を替えると、頭の高さの赤い糸が動く
+		main.wardrobe_ui._sel = Doll.KINDS.find(k)
+		await _wait(0.4)
+		await _shot("menu_" + k)
 	main.wardrobe_ui.close()
 	main.emotes.balls[p.id] = 3   # 左の袖のストックに雪玉を 3 つ
 	var kinds: Array = Doll.KINDS if not args.has("kinds") else Array(String(args.kinds).split(","))
