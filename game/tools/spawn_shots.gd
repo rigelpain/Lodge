@@ -11,6 +11,8 @@ const LOOKS := [
 	["look_kitchen", Vector3(3.5, 2.5, 3.0), Vector3(3.5, 10.5, 1.2)],          # 炉の右の厨房
 	["look_machine", Vector3(-9.0, -3.4, 3.0), Vector3(-19.0, -4.5, 1.0)],      # 南西の隅のミシンと売り子
 	["look_hall", Vector3(20.0, -11.0, 4.6), Vector3(-6.0, 4.0, 0.5)],          # 南東の隅から 1 階ぜんぶ
+	["look_bandai_seller", Vector3(-14.6, -8.0, 1.7), Vector3(-18.0, -8.7, 1.1)],   # おじいさんの番台（客の側から）
+	["look_bandai_snowman", Vector3(-2.4, 4.8, 1.7), Vector3(-1.6, 8.6, 1.5)],      # 雪だるまの番台（客の側から）
 ]
 
 var args := {}

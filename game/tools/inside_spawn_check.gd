@@ -153,7 +153,7 @@ func _run() -> void:
 	# 2. 歩く: ミシンの前（南西の隅、正面は東）→ 冷蔵庫の前 → アイロン台の前 → プレス機の前 → 乾燥機の前（炉の右の並びの前）、
 	# そして帰り。場所はロッジの座標（2026-10-31 代表の並び: design/lodge-layout/layout-daihyo.json）
 	p.set_third(false)
-	var stops := [["ミシン", Vector2(-15.4, -3.4)], ["冷蔵庫", Vector2(-1.6, 7.4)], ["アイロン台", Vector2(2.0, 7.4)],
+	var stops := [["ミシン", Vector2(-15.4, -3.4)], ["冷蔵庫", Vector2(-1.6, 6.8)], ["アイロン台", Vector2(2.0, 7.4)],
 		["プレス機", Vector2(5.5, 7.4)], ["乾燥機", Vector2(8.5, 7.4)]]
 	var pts := []
 	for s in stops:

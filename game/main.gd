@@ -63,12 +63,23 @@ const Seats := preload("res://seats.gd")
 ## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
 ## （2026-10-31 代表の並び: design/lodge-layout/layout-daihyo.json）
 const SHOP_AT := Vector3(-5.3, 0, -0.1)
-const SHOP_YAW := PI - 0.5
+const SHOP_YAW := PI          # 真東（番台の向こうの客）を向く
 ## ご飯係の雪だるまの冷蔵庫の立つ所（厨房の目印 slot_food_kitchen の座標。厨房の奥の並びのいちばん西＝炉の右。
 ## 厨房の装置は props/build_scenes.py）と大きさ（ミシンと同じくらいの高さ 3.7 m）。当たり判定の箱は倍率 1 の幅・高さ・奥行き
 const SNOWMAN_AT := Vector3(-4.6, 0, 0.5)
 const SNOWMAN_SCALE := 1.85
 const FRIDGE_BOX := Vector3(1.1, 2.0, 0.85)
+## 番台（店番の商人のカウンターとレジ。2026-10-31 代表「パッチワークおじいさんにも、雪だるまにも、番台的なカウンターとレジを」）。
+## [カウンター, レジ, お皿に盛る物, ロッジの座標 (x, y), 正面（客の側）の向き（度。0 = 南、90 = 東。lodge/dims.py の SLOTS と同じ）]。
+## おじいさんは真東を向いて番台の後ろに立ち、雪だるまは冷蔵庫の中から番台ごしに食堂を向く。置き方は design/lodge-layout/
+const BANDAI := [
+	["counter_patch", "register", "buttons", Vector2(-17.55, -8.7), 90.0],
+	["counter_indigo", "register_navy", "snowballs", Vector2(-1.6, 7.95), 0.0],
+]
+## カウンターは 2 倍で書き出してあるので、人の大きさに戻す。高さは店番のおじいさんの胸の下（0.84 m）まで低くする
+const BANDAI_SCALE := Vector3(0.5, 0.4, 0.5)
+const BANDAI_BOX := Vector3(1.8, 0.84, 0.68)
+const LODGE_FLOOR := 0.45     # ロッジの 1 階の床の高さ（lodge/dims.py の FL1）
 
 var sled: RigidBody3D
 var player: CharacterBody3D
@@ -304,7 +315,7 @@ func _ready() -> void:
 		craft_ui.player = player
 		add_child(craft_ui)
 		if args.get("spawn", "") == "shop" and shopkeeper:   # --spawn=shop: 売り子のおじさんの前から始める
-			var at := shopkeeper.to_global(Vector3(0, 0.1, -1.6))
+			var at := shopkeeper.to_global(Vector3(0, 0.1, -1.9))   # 番台の向こう（客の側）。話しかけられる距離（2.2 m）の内
 			player.global_position = at
 			var to := shopkeeper.global_position
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
@@ -734,6 +745,60 @@ func _furnish_lodge() -> void:
 		kitchen.add_child(set_node)
 		Props.cook_cycle(set_node)   # 調理の仕組みができるまで: 装置が順に調理して煙を出す
 		_put_snowman(kitchen)
+	for b in BANDAI:
+		_put_bandai(lodge, b)
+
+
+## 番台 1 つ: パッチワーク（または藍）のフェルトを張った木のカウンター。上に、店番の側を向いたレジと、払いを受けるお皿。
+## お皿には、おじいさんはお金のボタン、雪だるまは雪玉を盛る（文字は使わない）。カウンターに当たりの箱
+func _put_bandai(lodge: Node3D, b: Array) -> void:
+	var at: Vector2 = b[3]
+	var root := Node3D.new()
+	root.name = "Bandai_" + String(b[0])
+	root.position = Vector3(at.x, LODGE_FLOOR, -at.y)
+	root.rotation.y = deg_to_rad(b[4]) + PI   # 模型の正面は -Z
+	lodge.add_child(root)
+	var counter := Props.make("res://props/counter/%s.glb" % b[0])
+	counter.scale = BANDAI_SCALE
+	root.add_child(counter)
+	var top := BANDAI_BOX.y
+	var reg := Props.make("res://props/counter/%s.glb" % b[1])
+	reg.scale = Vector3.ONE * 0.45
+	reg.position = Vector3(0.6, top, 0.06)
+	reg.rotation.y = PI + 0.25                # 打ち鍵を店番の側へ
+	root.add_child(reg)
+	var dish := Props.make("res://props/counter/tray_round_red.glb")
+	dish.scale = Vector3.ONE * 0.5
+	dish.position = Vector3(-0.5, top, -0.08)
+	root.add_child(dish)
+	var heap := Node3D.new()
+	heap.position = dish.position + Vector3.UP * 0.03
+	root.add_child(heap)
+	if b[2] == "buttons":   # 木・真鍮・白蝶貝のボタンを重ねて
+		for i in 3:
+			var btn := Props.make("res://props/snow_button/%s.glb" % ["snow_button", "snow_button_brass", "snow_button_pearl"][i])
+			btn.scale = Vector3.ONE * 0.24
+			btn.position = Vector3(-0.05 + 0.06 * i, 0.012 * i, 0.03 * (i % 2))
+			btn.rotation = Vector3(0.12 * (i - 1), 0.9 * i, 0.0)
+			heap.add_child(btn)
+	else:                   # 羊毛の雪玉を 3 つ
+		var ball := SphereMesh.new()
+		ball.radius = 0.065
+		ball.height = 0.13
+		ball.material = Look.snow()
+		for p in [Vector3(-0.05, 0.06, 0.0), Vector3(0.07, 0.06, 0.03), Vector3(0.01, 0.17, 0.01)]:
+			var mi := MeshInstance3D.new()
+			mi.mesh = ball
+			mi.position = p
+			heap.add_child(mi)
+	var body := StaticBody3D.new()
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = BANDAI_BOX
+	col.shape = box
+	col.position.y = BANDAI_BOX.y / 2.0
+	body.add_child(col)
+	root.add_child(body)
 
 
 ## 置いた物 n に、見た目（MeshInstance3D）を包む箱の当たり判定を付ける。null なら何もしない

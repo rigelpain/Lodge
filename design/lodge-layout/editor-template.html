@@ -458,7 +458,14 @@ document.getElementById("copy").onclick = async () => {
 // ---- 始め ------------------------------------------------------------------------------
 gStatic = el("g", {}, svg); gItems = el("g", {}, svg); gLabels = el("g", {}, svg); gSel = el("g", {}, svg);
 drawStatic(gStatic);
-items = load() || clone(DATA.presets[DATA.start].items);
+// ?preset=<名前> でその始めの並びを開く（保存した並びより先）。&print=1 で操作の欄とタブを隠し、建物いっぱいに映す（絵に撮る用）
+const Q = new URLSearchParams(location.search);
+if (Q.has("print")) {
+  document.getElementById("side").style.display = "none";
+  document.querySelector(".tabs").style.display = "none";
+  view = { x: -30.5, y: -15.5, w: 54, h: 34 };
+}
+items = (Q.has("preset") && DATA.presets[Q.get("preset")]) ? clone(DATA.presets[Q.get("preset")].items) : (load() || clone(DATA.presets[DATA.start].items));
 setView();
 render();
 </script>

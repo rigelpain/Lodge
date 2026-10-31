@@ -145,6 +145,12 @@ def game_items():
             add("door1", "勝手口", "door", c, Y1 - 0.15, DOOR1["w"], 0.3, "door")
     for i, (x, y) in enumerate(TABLES):   # TABLES は卓の南西の角
         add("table%d" % i, "食卓", "table", x + TABLE["w"] / 2, y + TABLE["d"] / 2, TABLE["w"], TABLE["d"], "seat")
+    src = open(os.path.join(ROOT, "game", "main.gd"), encoding="utf-8").read()   # 番台（main.gd の BANDAI）
+    for m in re.finditer(r'\["(counter_\w+)", "\w+", "(\w+)", Vector2\(([^)]*)\), ([-\d.]+)\]', src):
+        x, y = (float(v) for v in m.group(3).split(","))
+        who = "おじいさん" if m.group(2) == "buttons" else "雪だるま"
+        add("counter_" + ("seller" if m.group(2) == "buttons" else "snowman"), who + "の番台\n（レジ・お皿）", "box", x, y,
+            1.8, 0.68, "sled" if m.group(2) == "buttons" else "food", round(float(m.group(4))))
     WB = WINDOW_BAR
     add("window_bar", "窓向きのカウンター", "bar", (WB["x0"] + WB["x1"]) / 2, WB["y0"] + 0.5,
         WB["x1"] - WB["x0"], 1.0, "seat")
@@ -160,6 +166,7 @@ def main():
     game = game_items() + [i for i in daihyo["items"] if i["shape"] == "zone"]   # 区分けは代表の並びから
     presets = {
         "game": dict(label="ゲームの今", note="いまのコード（lodge/dims.py ほか）から作った並び", items=game),
+        "bandai": dict(label="番台の案", note="おじいさんと雪だるまの前に、店番のカウンターとレジ", items=_saved("layout-bandai-an.json")["items"]),
         "daihyo": dict(label="代表の並び（10/31）", note="代表が手で並べたもの", items=daihyo["items"]),
         "pr68": dict(label="前の並び（#68）", note="暖炉が東寄り、厨房が西寄りだったころ", items=_saved("layout-pr68.json")["items"]),
     }
