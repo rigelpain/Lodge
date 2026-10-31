@@ -2,8 +2,8 @@ extends CanvasLayer
 ## 画面の表示（HUD）。文字を使わず、アイコン・矢印・形で伝える。決まりと場面ごとの絵は design/hud.md。
 ##   左下: ソリの札。最後に触ったソリ（つかむ・紐・乗る・広げる）の名札の柄で描く（sled_tags.gd。名札はソリごと）。
 ##         上は丘の断面: ソリの印が動き、登った分だけ赤い糸が伸びる。
-##         下の左はそのソリがくるくる回る図（12 コマの刻み）。いま触れている人・乗っている人を、そのソリの上の実際の所に
-##         人の形で乗せて、いっしょに回す（座る・押す・紐で引く・つかむ。人の形はキャラの色、頭の上に名前）。
+##         下の左はそのソリがゆっくり回る図（12 コマの刻みで 12 秒で 1 周）。いま触れている人・乗っている人を、そのソリの上の
+##         実際の所に 3D の人型で乗せて、いっしょに回す（座る・押す・紐で引く・つかむ。人型はキャラの色、頭の上に名前）。
 ##         下の右に王冠を載せた持ち主（名札を持っている人。ロッジのソリは家、名札を外したソリは空の輪）。
 ##         （2026-10-31 代表「タグにはそのタグが付いたソリがくるくる 360° 回転するアニメーションと、誰がインタラクトしてるか、
 ##         乗ってるか、だれがオーナーか」「押してる乗ってる表示は回転してるソリに、乗ってる位置押してる位置実態に合わせて」
@@ -404,6 +404,9 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
+	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
+	if p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
+		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)
 
 	# 名札の結び目のそば: G の長押しで、自分のソリの名札を外す・名札入れの名札を持ち主のいないソリに付ける
 	var tt: Array = p.tag_target() if p.has_method("tag_target") else []
@@ -1052,8 +1055,9 @@ class View extends Control:
 		_draw_turn(u, a, tw, sled, item)
 		_draw_owner(u, a, Rect2(Vector2(158.0, 46.0) * u, Vector2(fw - 160.0 * u, 71.0 * u)), sled)
 
-	## 回る図の窓: ソリがくるくる回り（sled_tags.gd の turntable_wide。12 コマの刻み）、いま触れている人・乗っている人を、
-	## そのソリの上の実際の所に人の形で乗せて、いっしょに回す。奥の人から描く。持ち主の頭には王冠
+	## 回る図の窓: ソリがゆっくり回り（sled_tags.gd の turntable_wide。12 コマの刻みで 5° ずつ、12 秒で 1 周）、いま触れている人・
+	## 乗っている人を、そのソリの上の実際の所に 3D の人型（person_icon.gd の model。キャラの色）で乗せて、いっしょに回す。
+	## どの向きから見ても人型は正しく見え、ソリの陰にも隠れる。頭の上の名前と、持ち主の王冠は、ここで上に描く
 	func _draw_turn(u: float, a: float, tw: Rect2, sled: RigidBody3D, item: Dictionary) -> void:
 		Icons.screen()
 		Icons.patch(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, Icons.THREAD)
@@ -1062,41 +1066,45 @@ class View extends Control:
 		var ar := float(SledTags.WIDE_SIZE.x) / SledTags.WIDE_SIZE.y
 		var ih := tw.size.y - 3.0 * u
 		var img := Rect2(tw.get_center() - Vector2(ih * ar, ih) / 2.0, Vector2(ih * ar, ih))
-		draw_texture_rect(SledTags.turntable_wide(kind, fabric), img, false, Color(1, 1, 1, a))
+		# 乗せる人: 窓から出る遠くの人（紐の先で引く人など）は、ソリの近くへ寄せる
+		var reach: float = (sled.HALF.y + 0.9) if sled else 0.0
+		var list: Array = []
+		for x in (hud._people if sled else []):
+			var at: Vector3 = x.at
+			var flat := Vector3(at.x, 0, at.z)
+			if x.pose != "sit" and flat.length() > reach:
+				at = flat.normalized() * reach
+			var face := Vector3(0, 0, -1)   # 座る人はソリの前を向く
+			match x.pose:
+				"pull": face = flat   # 引く人はソリから離れる向き（紐を後ろに持つ）
+				"push", "stand": face = -flat   # 押す・つかむ人はソリを向く
+			var id: int = int(x.who.get("id")) if x.who.get("id") != null else x.who.get_instance_id()
+			var col: Color = x.col if x.strong else x.col.lerp(Color(0.95, 0.95, 0.97), 0.45)   # つかんでいるだけの人は淡く
+			list.append({"key": id, "at": at, "pose": x.pose, "col": col, "face": face, "name": x.name, "who": x.who})
+		draw_texture_rect(SledTags.turntable_wide(kind, fabric, list), img, false, Color(1, 1, 1, a))
 		if sled == null:
 			return
-		var deg := SledTags.turn_deg()
-		var at := func(v: Vector3) -> Vector3:   # ソリの座標 → 窓の上の px と奥行き
-			var q := SledTags.turn_project(kind, true, v, deg)
-			return Vector3(img.position.x + q.x * img.size.x, img.position.y + q.y * img.size.y, q.z)
-		var cen: Vector3 = at.call(Vector3.ZERO)
-		var fwd: Vector3 = at.call(Vector3(0, 0, -1))   # ソリの前は -Z
+		# 頭の上の名前と、持ち主の王冠（手前の人を後に）
+		var deg := SledTags.turn_deg(true)
 		var owner: int = hud.tag_owner()
-		var list: Array = []
-		for x in hud._people:
-			list.append([x, at.call(x.at)])
-		list.sort_custom(func(m, n): return m[1].z < n[1].z)   # 奥（カメラから遠い）から
-		var h := ih * 0.46   # 人の背の高さ（どの大きさのソリでも読める大きさにそろえる）
-		var lo := tw.position.x + h * 0.3
-		var hi := tw.end.x - h * 0.3
-		for m in list:
+		var tops: Array = []
+		for x in list:
+			var top: Vector3 = x.at + Vector3(0, 0.95 if x.pose == "sit" else 1.62, 0)
+			var q := SledTags.turn_project(kind, true, top, deg)
+			tops.append([x, Vector2(img.position.x + q.x * img.size.x, img.position.y + q.y * img.size.y), q.z])
+		tops.sort_custom(func(m, n): return m[2] < n[2])
+		for m in tops:
 			var x: Dictionary = m[0]
-			var q: Vector3 = m[1]
-			var face := 1.0
-			match x.pose:
-				"sit": face = signf(fwd.x - cen.x)
-				"pull": face = signf(q.x - cen.x)
-				_: face = signf(cen.x - q.x)
-			if face == 0.0:
-				face = 1.0
-			var pop: float = hud._pop.get(x.who, 0.0)
-			# 窓からはみ出す人（紐の先で引く人など）は、窓の縁の内に寄せる
-			var feet := Vector2(clampf(q.x, lo, hi), clampf(q.y, tw.position.y + h * 0.95, tw.end.y - 2.0 * u) - 4.0 * u * sin(pop * PI))
-			var id: int = int(x.who.get("id")) if x.who.get("id") != null else -2
-			PersonIcon.person(self, feet, h * (1.0 + 0.3 * sin(pop * PI)), x.col, x.pose, face, a * (1.0 if x.strong else 0.55),
-				id == owner, x.name, 10.0 * u)
+			var c: Vector2 = m[1]
+			c.x = clampf(c.x, tw.position.x + 10.0 * u, tw.end.x - 10.0 * u)
+			c.y = maxf(c.y, tw.position.y + 22.0 * u)
+			if int(x.key) == owner:
+				PersonIcon.crown(self, c, 11.0 * u, a)
+				c.y -= 8.0 * u
+			PersonIcon.name_label(self, String(x.name), c - Vector2(0, 1.0 * u), 10.0 * u, x.col, a)
 
-	## 持ち主（名札を持っている人）: 王冠を載せた人の形と、頭の上に名前。ロッジのソリは王冠を載せた家、名札を外したソリは空の輪
+	## 持ち主（名札を持っている人）: 3D の人型を正面から少し斜めに撮った図（キャラの色）に王冠と、頭の上に名前。
+	## ロッジのソリは王冠を載せた家、名札を外したソリは空の輪
 	func _draw_owner(u: float, a: float, r: Rect2, sled: RigidBody3D) -> void:
 		var owner: int = hud.tag_owner()
 		var c := Vector2(r.get_center().x, r.end.y - 4.0 * u)
@@ -1109,7 +1117,13 @@ class View extends Control:
 				who = hub.who_of(owner)
 			var col: Color = craft.color_of(owner) if craft else (hud._color_of(who) if who else Icons.RED)
 			var nm: String = craft.name_of(owner) if craft else ""
-			PersonIcon.person(self, c, r.size.y * 0.62, col, "stand", 1.0, a, true, nm, 10.0 * u)
+			var ph := r.size.y * 0.82
+			var pw := ph * SledTags.PERSON_SIZE.x / SledTags.PERSON_SIZE.y
+			var pr := Rect2(Vector2(c.x - pw / 2.0, r.end.y - ph), Vector2(pw, ph))
+			draw_texture_rect(SledTags.person_portrait(col), pr, false, Color(1, 1, 1, a))
+			var top := Vector2(c.x, pr.position.y + ph * 0.12)
+			PersonIcon.crown(self, top, 13.0 * u, a)
+			PersonIcon.name_label(self, nm, top - Vector2(0, 10.0 * u), 10.0 * u, col, a)
 		elif sled and SledTags.has_tag(sled.get("tag")):   # ロッジのソリ
 			var hc := c - Vector2(0, 2.0 * u)
 			Icons.patch(self, PackedVector2Array([hc + Vector2(-13, 0) * u, hc + Vector2(13, 0) * u, hc + Vector2(13, -15) * u,

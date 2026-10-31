@@ -12,8 +12,9 @@ const BIRD := preload("res://companions/bird.glb")
 const KIT := preload("res://companions/kit.glb")
 
 ## 人形ごとの、頭のいちばん上（glb の座標、人形の大きさのまま）。小鳥が止まる所。
-## kasa は笠の先、origami は頭巾の上、news は頭巾の前寄りの上
-const PERCH := {"kasa": Vector3(0, 1.372, 0.0), "origami": Vector3(0, 1.49, 0.0), "news": Vector3(0, 0.955, -0.04)}
+## kasa は笠の先、origami は頭巾の上、news は頭巾の前寄りの上。robo は箱の頭の上、musha は兜の鉢、ningyo は髪の上、golem は小さな頭の雪の上
+const PERCH := {"kasa": Vector3(0, 1.372, 0.0), "origami": Vector3(0, 1.49, 0.0), "news": Vector3(0, 0.955, -0.04),
+	"robo": Vector3(0, 0.79, 0.03), "musha": Vector3(0, 0.745, 0.02), "ningyo": Vector3(0, 0.89, 0.02), "golem": Vector3(0, 1.235, -0.12)}
 ## 子狐の立ち位置（持ち主の座標。右の少しうしろ）
 const HEEL := Vector3(0.75, 0.0, 0.2)
 const KIT_SCALE := 1.4       # glb の大きさ（座って 0.4 m）からの倍率
@@ -247,6 +248,10 @@ func _pose_kit() -> void:
 # ---------------------------------------------------------------- 時計
 
 func _physics_process(dt: float) -> void:
+	if host.get("doll") != _doll and is_instance_valid(host.get("doll")):   # 衣装掛けで着替えた: 新しい頭に小鳥を止め直す（前の小鳥は前の体と消えた）
+		_doll = host.get("doll")
+		if bird_on:
+			_make_bird()
 	if _doll == null or not is_instance_valid(_doll):
 		return
 	var pointing := _doll.point != Vector3.INF

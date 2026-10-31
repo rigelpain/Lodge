@@ -110,3 +110,100 @@ static func _bar(ci: CanvasItem, p: Vector2, q: Vector2, w: float, c: Color) -> 
 	ci.draw_line(p, q, c, w, true)
 	ci.draw_circle(p, w / 2.0, c)
 	ci.draw_circle(q, w / 2.0, c)
+
+
+# ---- 3D の人型（HUD の札の回る図に乗せる。どの向きから見ても正しく見えるように、絵でなく模型にする）-----------------
+# 2026-10-31 代表「タグでのソリの回転はもっとゆっくりにして人形もちゃんと全角度のイラストなりモデル形を用意してほしい」。
+# 紙人形（person/）は笠と服があるので使わず（「傘とか服とか付けずに」）、丸い頭と太い円柱の胴・腕・脚だけの人型を、
+# キャラの色のフェルトで作る。足もとが原点、前は -Z、背の高さは 1.5 m ほど（座る姿は原点が尻）
+
+const PARTS3D := ["head", "body", "arm_l", "arm_r", "leg_l", "leg_r", "shin_l", "shin_r"]
+
+
+## 人型の模型を作る（姿は pose_model で決める）
+static func model(col: Color) -> Node3D:
+	var root := Node3D.new()
+	var mat := preload("res://look.gd").felt(col, 3.0)
+	# 縁: 少しふくらませた裏面を濃い色で（同じ色のソリの上でも、人の形が浮いて見えるように）
+	var rim := StandardMaterial3D.new()
+	rim.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	rim.cull_mode = BaseMaterial3D.CULL_FRONT
+	rim.grow = true
+	rim.grow_amount = 0.022
+	rim.albedo_color = col.darkened(0.6)
+	mat.next_pass = rim
+	for n in PARTS3D:
+		var mi := MeshInstance3D.new()
+		mi.name = n
+		mi.material_override = mat
+		if n == "head":
+			var sm := SphereMesh.new()
+			sm.radius = 0.15
+			sm.height = 0.30
+			mi.mesh = sm
+		else:
+			mi.mesh = CapsuleMesh.new()
+		root.add_child(mi)
+	root.set_meta("pose", "")
+	return root
+
+
+## 模型の色を替える
+static func tint_model(root: Node3D, col: Color) -> void:
+	var m := (root.get_node("head") as MeshInstance3D).material_override as StandardMaterial3D
+	if m and m.albedo_color != col:
+		m.albedo_color = col
+		(m.next_pass as StandardMaterial3D).albedo_color = col.darkened(0.6)
+
+
+## 模型の姿: stand（立つ）/ push（前のめりで両手を前へ）/ pull（前のめりで片手を後ろへ）/ sit（座る。原点が尻）
+static func pose_model(root: Node3D, pose: String) -> void:
+	if root.get_meta("pose", "") == pose:
+		return
+	root.set_meta("pose", pose)
+	var lean := 0.0
+	var hip := Vector3(0, 0.78, 0)
+	var neck := Vector3(0, 1.20, 0)
+	var head := Vector3(0, 1.38, 0)
+	var arms := [[Vector3(-0.17, 1.14, 0), Vector3(-0.22, 0.78, 0.02)], [Vector3(0.17, 1.14, 0), Vector3(0.22, 0.78, 0.02)]]
+	var legs := [[Vector3(-0.09, 0.78, 0), Vector3(-0.10, 0.06, 0)], [Vector3(0.09, 0.78, 0), Vector3(0.10, 0.06, 0)]]
+	var shins := []
+	match pose:
+		"push":
+			lean = 0.45
+			arms = [[Vector3(-0.17, 1.14, 0), Vector3(-0.15, 1.10, -0.46)], [Vector3(0.17, 1.14, 0), Vector3(0.15, 1.08, -0.46)]]
+			legs = [[Vector3(-0.09, 0.78, 0), Vector3(-0.10, 0.06, 0.30)], [Vector3(0.09, 0.78, 0), Vector3(0.10, 0.06, -0.12)]]
+		"pull":
+			lean = 0.35
+			arms = [[Vector3(-0.17, 1.14, 0), Vector3(-0.18, 0.86, 0.38)], [Vector3(0.17, 1.14, 0), Vector3(0.22, 0.86, -0.14)]]
+			legs = [[Vector3(-0.09, 0.78, 0), Vector3(-0.10, 0.06, 0.28)], [Vector3(0.09, 0.78, 0), Vector3(0.10, 0.06, -0.14)]]
+		"sit":
+			hip = Vector3(0, 0.08, 0)
+			neck = Vector3(0, 0.52, 0.02)
+			head = Vector3(0, 0.70, 0.02)
+			arms = [[Vector3(-0.17, 0.46, 0), Vector3(-0.20, 0.22, -0.26)], [Vector3(0.17, 0.46, 0), Vector3(0.20, 0.22, -0.26)]]
+			legs = [[Vector3(-0.10, 0.08, 0), Vector3(-0.11, 0.06, -0.40)], [Vector3(0.10, 0.08, 0), Vector3(0.11, 0.06, -0.40)]]
+			shins = [[Vector3(-0.11, 0.06, -0.40), Vector3(-0.12, -0.30, -0.46)], [Vector3(0.11, 0.06, -0.40), Vector3(0.12, -0.30, -0.46)]]
+	# 前のめり: 足もとを支点に、上の体を前（-Z）へ倒す（脚は倒さない）
+	var tilt := Basis(Vector3.RIGHT, -lean)
+	var up := func(v: Vector3) -> Vector3: return hip + tilt * (v - hip) if v.y > hip.y - 0.001 else v
+	_seg(root.get_node("body"), up.call(hip), up.call(neck), 0.14)
+	(root.get_node("head") as Node3D).position = up.call(head)
+	for i in 2:
+		_seg(root.get_node(["arm_l", "arm_r"][i]), up.call(arms[i][0]), up.call(arms[i][1]), 0.065)
+		_seg(root.get_node(["leg_l", "leg_r"][i]), legs[i][0], legs[i][1], 0.075)
+		var sh: Node3D = root.get_node(["shin_l", "shin_r"][i])
+		sh.visible = not shins.is_empty()
+		if sh.visible:
+			_seg(sh, shins[i][0], shins[i][1], 0.07)
+
+
+## 円柱（両端が丸い）を a から b へ渡す
+static func _seg(mi: MeshInstance3D, a: Vector3, b: Vector3, r: float) -> void:
+	var d := b - a
+	var cm := mi.mesh as CapsuleMesh
+	cm.radius = r
+	cm.height = d.length() + r * 2.0
+	var y := d.normalized() if d.length() > 0.001 else Vector3.UP
+	var x := y.cross(Vector3.FORWARD if absf(y.dot(Vector3.FORWARD)) < 0.9 else Vector3.RIGHT).normalized()
+	mi.transform = Transform3D(Basis(x, y, x.cross(y)), (a + b) / 2.0)

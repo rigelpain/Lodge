@@ -110,8 +110,6 @@ const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
-var voice_pitch := 1.0       # 声の高さ（人ごとに少し変える）
-var voice_size := 1          # 声の大きさ（sound/wav/voice_*_01 ふつう・02 高い・03 低い）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
 var ring: EmoteRing
 var _em := {}                # いまの自分の身ぶり（出来事）
@@ -173,9 +171,38 @@ func _ready() -> void:
 	add_child(cam)
 	cam.make_current()
 
+	var a = get_parent().get("args")
+	_make_body(String(a.get("doll", "kasa")) if a is Dictionary else "kasa")   # --doll=<人形> で始めの人形
+
+	hub = get_parent().get_node_or_null("Emotes")
+	if hub:
+		id = hub.join(self)
+		hub.happened.connect(_on_emote)
+		var layer := CanvasLayer.new()
+		layer.layer = 5
+		add_child(layer)
+		ring = EmoteRing.new()
+		layer.add_child(ring)
+	craft = get_parent().get_node_or_null("Craft")
+	if craft and id >= 0:
+		craft.join(id)
+		craft.happened.connect(_on_craft)
+		_load_tag()
+		if craft.doll_of(id) == "":
+			craft.send({"kind": "doll", "who": id, "doll": doll.kind})   # いまの人形をみんなに知らせる
+	last_sled = sled
+	seats = get_parent().get_node_or_null("Seats")
+	if seats:
+		seats.happened.connect(_on_seat)
+
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+
+
+## 自分の体（人形）と、一人称の手・袖・脚を作る。人形を替えるときは、前のを捨てて作り直す（set_doll）
+func _make_body(kind: String) -> void:
 	# 自分の体。一人称の画面には映さず、右上のライブ映像と影にだけ出る（層 2）
 	doll = Doll.new()
-	doll.kind = "kasa"
+	doll.kind = kind if kind in Doll.KINDS else "kasa"
 	doll.layers = 1 << 1
 	add_child(doll)
 
@@ -204,7 +231,7 @@ func _ready() -> void:
 			# 2026-10-31 代表「投げる方の手にくっついてしまっているから、左手にストックはくっつけてほしい」
 			# →「左手の袖に縫い付けるような感じでキャラにもストックさせましょう」「一人称でそのストック雪玉見える角度にしてほしい」
 			var dz := STOCK_Z.y - STOCK_Z.x
-			var dr := FpHands.sleeve_r(STOCK_Z.y) - FpHands.sleeve_r(STOCK_Z.x)
+			var dr := FpHands.sleeve_r(STOCK_Z.y, doll.kind) - FpHands.sleeve_r(STOCK_Z.x, doll.kind)
 			_stock_fp = Doll.stock_strip(sqrt(dz * dz + dr * dr), 1 << 2)
 			_stock_fp.visible = false
 			h.add_child(_stock_fp)
@@ -214,26 +241,25 @@ func _ready() -> void:
 		for n in _shapes_fp[sh].values():
 			cam.add_child(n)
 
-	hub = get_parent().get_node_or_null("Emotes")
-	if hub:
-		id = hub.join(self)
-		hub.happened.connect(_on_emote)
-		var layer := CanvasLayer.new()
-		layer.layer = 5
-		add_child(layer)
-		ring = EmoteRing.new()
-		layer.add_child(ring)
-	craft = get_parent().get_node_or_null("Craft")
-	if craft and id >= 0:
-		craft.join(id)
-		craft.happened.connect(_on_craft)
-		_load_tag()
-	last_sled = sled
-	seats = get_parent().get_node_or_null("Seats")
-	if seats:
-		seats.happened.connect(_on_seat)
 
-	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+## 人形を替える（衣装掛けで選んだ出来事が配られてから）。体・一人称の袖と手・米袋の脚・手のアップリケを作り直す。
+## 持っている物・雪玉・名札・ランタンは人ではなく工房と配り役が持っているので、そのまま新しい体に付く
+func set_doll(kind: String) -> void:
+	if doll and doll.kind == kind or not kind in Doll.KINDS:
+		return
+	var at := doll.global_transform if doll else global_transform
+	for n in [doll, _fp_legs] + hands:
+		if n:
+			n.queue_free()
+	hands.clear()
+	for sh in _shapes_fp:
+		for n in _shapes_fp[sh].values():
+			n.queue_free()
+	_shapes_fp = {}
+	_held_fp = null   # 一人称の手に持った物は手と一緒に消えた。次のコマで新しい手に持ち直す
+	_held_key = "-"
+	_make_body(kind)
+	doll.global_transform = at
 
 
 ## トラックパッドのピンチ（2026-10-30 代表「ピンチイン・アウトはカメラ距離の調整」）。指を閉じると引き、開くと寄る。
@@ -349,6 +375,9 @@ func _unhandled_input(e: InputEvent) -> void:
 					return
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
+					return
+				if mode == Mode.WALK and wardrobe_near():
+					get_parent().wardrobe_ui.open()   # 2 階の衣装掛け: 人形を選び直す
 					return
 				var sb = get_parent().get("snow_buttons")
 				if mode == Mode.WALK and sb and sb.reachable(self) != null and sb.request_cut(id):
@@ -1035,8 +1064,8 @@ func _face_stock_fp() -> void:
 	var to_eye := h.basis.inverse() * -h.position
 	var d := Vector3(to_eye.x, to_eye.y, 0.0)
 	d = d.normalized() if d.length() > 0.001 else Vector3.UP
-	var p0 := d * (FpHands.sleeve_r(STOCK_Z.x) + 0.002) + Vector3(0, 0, STOCK_Z.x)
-	var p1 := d * (FpHands.sleeve_r(STOCK_Z.y) + 0.002) + Vector3(0, 0, STOCK_Z.y)
+	var p0 := d * (FpHands.sleeve_r(STOCK_Z.x, doll.kind) + 0.002) + Vector3(0, 0, STOCK_Z.x)
+	var p1 := d * (FpHands.sleeve_r(STOCK_Z.y, doll.kind) + 0.002) + Vector3(0, 0, STOCK_Z.y)
 	var along := (p1 - p0).normalized()
 	var out := d - along * d.dot(along)
 	_stock_fp.transform = Transform3D(Basis(along.cross(out.normalized()), along, out.normalized()), p0)
@@ -1477,6 +1506,8 @@ func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != id:
 		return
 	match ev.kind:
+		"doll":   # 衣装掛けで選んだ人形に着替える
+			set_doll(String(ev.doll))
 		"sewn":   # 自分の縫ったソリが、最後に触ったソリになる（左下の札がその場所を出す）
 			var made: RigidBody3D = craft.sleds.get(int(ev.id))
 			if made:
@@ -1524,6 +1555,12 @@ func shop_near() -> bool:
 	var d: Vector3 = sk.global_position - global_position
 	d.y = 0
 	return d.length() < 0.6 or (-global_basis.z).dot(d.normalized()) > 0.4
+
+
+## 2 階の衣装掛けの前で、竿の方を向いているか
+func wardrobe_near() -> bool:
+	var w = get_parent().get("wardrobe")
+	return w != null and get_parent().get("wardrobe_ui") != null and not menu_open and w.can_use(self)
 
 
 ## ミシンの前（立つ所のそば）で、ミシンの方を向いていて、縫い始められるか
@@ -1774,6 +1811,9 @@ func _load_tag() -> void:
 	if cf.has_section("profile"):
 		craft.send({"kind": "profile", "who": id, "name": String(cf.get_value("profile", "name", craft.name_of(id))),
 			"color": int(cf.get_value("profile", "color", craft.colors.get(id, 0)))})
+	var a = get_parent().get("args")
+	if cf.has_section_key("profile", "doll") and not (a is Dictionary and a.has("doll")):   # --doll を付けたときは、そちらが勝つ
+		craft.send({"kind": "doll", "who": id, "doll": String(cf.get_value("profile", "doll"))})
 
 
 # ---------------------------------------------------------------- 名札を外す・付ける（G を長押し）
@@ -1835,6 +1875,7 @@ func save_tag() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("profile", "name", craft.name_of(id))
 	cf.set_value("profile", "color", int(craft.colors.get(id, 0)))
+	cf.set_value("profile", "doll", doll.kind)
 	var d: Dictionary = craft.tag_designs.get(id, {})
 	for part in d:
 		cf.set_value("tag", part, d[part])

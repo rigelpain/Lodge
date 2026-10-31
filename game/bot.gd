@@ -30,7 +30,8 @@ var side := 1
 var state := State.PUSH
 var seat := Vector3.INF
 var handle := Vector3.INF   # つかんでいる所（ソリの座標）
-var doll: Doll               # 見た目の人形（右側の仲間は折り紙、左側は新聞紙）
+var doll: Doll               # 見た目の人形（右側の仲間は折り紙、左側は新聞紙。doll_kind で替えられる）
+var doll_kind := ""          # 始めの人形（doll.gd の KINDS。"" なら右は折り紙、左は新聞紙。main.gd が入れる）
 var debug := ""
 var post: Node3D = null      # 持ち場（ミシンの足踏みなど）。あればソリを押さず、そこに立って post_look を向く
 var post_look := Vector3.INF
@@ -39,8 +40,6 @@ var _still := 0.0
 var _wait := 0.0
 var hub: Emotes
 var id := -1
-var voice_pitch := 1.0
-var voice_size := 1
 var _replies: Array = []     # [残り秒, 身ぶり]
 var _five_with := -1         # ハイタッチをしにいく相手の番号
 var _five_until := 0         # このコマまでに届かなければやめる
@@ -79,11 +78,8 @@ func _ready() -> void:
 	add_child(_col)
 
 	doll = Doll.new()
-	doll.kind = "origami" if side > 0 else "news"
+	doll.kind = doll_kind if doll_kind in Doll.KINDS else ("origami" if side > 0 else "news")
 	add_child(doll)
-	# 声: 背の高い折り紙は低い声（03）、いちばん小さい新聞紙は高い声（02）。そこから少しだけずらす
-	voice_size = 3 if side > 0 else 2
-	voice_pitch = 0.97 if side > 0 else 1.04
 
 	hub = get_parent().get_node_or_null("Emotes")
 	if hub:
@@ -92,9 +88,23 @@ func _ready() -> void:
 	craft = get_parent().get_node_or_null("Craft")
 	if craft and id >= 0:
 		craft.join(id)
+		craft.happened.connect(_on_craft)
+		craft.send({"kind": "doll", "who": id, "doll": doll.kind})   # いまの人形をみんなに知らせる
 	seats = get_parent().get_node_or_null("Seats")
 	if seats:
 		seats.happened.connect(_on_seat)
+
+
+## 人形を替える出来事（通信では、ほかの人が衣装掛けで選んだ人形がここに届く）。人形を作り直す
+func _on_craft(ev: Dictionary) -> void:
+	if ev.get("who", -1) != id or ev.kind != "doll" or doll.kind == ev.doll:
+		return
+	var at := doll.global_transform
+	doll.queue_free()
+	doll = Doll.new()
+	doll.kind = String(ev.doll)
+	add_child(doll)
+	doll.global_transform = at
 
 
 ## 暗くなったらランタンを点け、明るくなったら消す（あなたと同じ lamp の出来事。見直すたびに少しずつ間をずらす）
