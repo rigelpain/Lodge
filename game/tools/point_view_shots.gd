@@ -75,12 +75,15 @@ func _next(p) -> void:
 func _finger(p) -> String:
 	var out := ""
 	if SHOTS[_i][3]:
-		# 三人称: 人形の右腕（肩→手首）と、肩から指す所への向きの角度
+		# 三人称: 人形の指している腕（肩→手首）と、肩から指す所への向きの角度
 		var d = p.doll
 		var sk: Skeleton3D = d.skel
-		var sh: Vector3 = sk.global_transform * d._head_of(d._id("upper_arm.R"))
-		var hand: Vector3 = sk.global_transform * sk.get_bone_global_pose(d._id("hand.R")).origin
-		return "  人形の腕と、肩から指す所への向きのずれ %.1f°" % rad_to_deg((hand - sh).angle_to(p.point_at - sh))
+		for side in Palm.sides_of(p.hand):
+			var lr := "R" if side > 0 else "L"
+			var sh: Vector3 = sk.global_transform * d._head_of(d._id("upper_arm." + lr))
+			var hand: Vector3 = sk.global_transform * sk.get_bone_global_pose(d._id("hand." + lr)).origin
+			out += "  人形の%s腕と、肩から指す所への向きのずれ %.1f°" % ["右" if side > 0 else "左", rad_to_deg((hand - sh).angle_to(p.point_at - sh))]
+		return out
 	for side in [1, -1]:
 		var node: Node3D = p._shapes_fp["point"][side]
 		if not node.visible:

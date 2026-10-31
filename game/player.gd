@@ -101,8 +101,10 @@ var pointing := false        # 指さしを入れているか（右クリック�
 var _point_sent := Vector3.ZERO   # 最後に配り役へ送った向き（間引くため）
 var _point_send_t := 0.0
 const POINT_FOLLOW := 10.0   # 指す先が、見ている先へ追いつく速さ（1/s）
+const POINT_FP_SIZE := 1.6  # 一人称の指さしの手形の大きさ（奥へ伸ばすと縮んで見えるので、ほかの手形より大きく）
+const POINT_FP_OUT := 0.04  # 一人称の指さしの手形の手首を、袖口から前へ出す (m)
 var point_level := true      # 一人称の指さしの手形を、画面の中で床に平行に置く（--point-tilt で前の、腕に沿った斜めの向き）
-var point_depth := 62.0     # 一人称の指さしの手形を、画面の奥（消失点）へ倒す角度（度）。90 で視線と平行（紙が真横で見えない）。--point-depth=度
+var point_lift := 20.0     # 一人称の指さしの手形（床に平行）を、目のほうへ起こす角度（度）。90 で甲がまっすぐこちら。--point-lift=度
 const POINT_SEND_DEG := 4.0  # 向きがこれだけ変わったら送る（度）
 const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
@@ -1063,6 +1065,11 @@ func _place_shapes_fp(em: Array) -> void:
 				mode[int(gr[0])] = kind
 	elif (k >= 0 and kind in Doll.ARM_EMOTES) or _winding:
 		want = {1: "", -1: ""}
+	# 指さしの手形を出している手は、袖口の紙のミトンを隠す（奥へ伸ばした手形のこぶしを、手前のミトンがふさぐので）
+	for hh in hands:
+		var mitt: bool = want[int(hh.get_meta("side"))] != "point"
+		hh.get_node("Mitten").visible = mitt
+		hh.get_node("MittenThumb").visible = mitt
 	for sh in _shapes_fp:
 		for side in [1, -1]:
 			var node: Node3D = _shapes_fp[sh][side]
@@ -1073,6 +1080,7 @@ func _place_shapes_fp(em: Array) -> void:
 			var size := Palm.pop(Doll.frame_index() - doll._hands_frame)
 			var b := Basis(Vector3.UP, PI)
 			var h: Node3D = hands[0] if hands[0].get_meta("side") == side else hands[1]
+			var wrist := h.position   # 手形の手首の真ん中を置く所
 			match mode[side]:
 				"point":
 					# 人さし指の手形は、画面の中で床に平行に（水平に、画面のまんなかの側へ）向け、手の甲を自分へ向ける。
@@ -1081,31 +1089,35 @@ func _place_shapes_fp(em: Array) -> void:
 					var y: Vector3
 					var z: Vector3
 					if point_level:
-						# 人さし指の先を、画面の奥の消失点（画面のまんなか）へ向ける。画面の中で手の所から消失点への向きに回し、
-						# さらに point_depth 度だけ奥へ倒す（どの倒し方でも、指の線は画面のまんなかを通る）。
-						# 画面に平らに貼ると、指が画面の上の一点を指すだけで、奥を指して見えなかった
-						# （2026-10-31 代表「指差しの表示角度がおかしい。人差し指が消失点に向かってほしいのに」）。
-						# 視線の向きまで倒しきると、紙の手形が真横からになって細い線になるので、手前に少し残す。
-						# 手の甲は自分へ向け（目から手への向きを、指に直角にした向きが手のひら側）、親指は内側、小指は外側
-						# （輪郭の親指は右手 +x・左手 -x。x = y × z で、どちらも指の内側に来る）
+						# 人さし指を、一人称のパースに沿わせて奥へ伸ばす: 指の向きは、カメラの座標での「人さし指の付け根 → 指している所」の
+						# 3D の向きそのもの。指している所は画面のまんなかの奥なので、指は遠くへ縮み、指の線は画面のまんなかを通る
+						# （2026-10-31 代表「人差し指が消失点に向かってほしい」「消失点は平面でなく立体で捉えて、3D パースに添わせてほしい」。
+						# 前の、画面の中で消失点へ回してから決まった角度だけ奥へ倒す作りはやめた）。
+						# 手形の面は床に平行（手のひらが下、甲が上。手は目より下なので、上から甲が見える）。浅く見えて細すぎるので、
+						# point_lift 度だけ面を目のほうへ起こす。親指は内側、小指は外側（輪郭の親指は右手 +x・左手 -x。x = y × z で内側に来る）。
 						# 人さし指は手首の真ん中より内側にあるので、指の付け根から向きを決める（2 回で落ち着く）
-						var a := deg_to_rad(point_depth)
+						var aim := cam.to_local(point_at)
+						var down := cam.global_basis.inverse() * Vector3.DOWN
+						var lift := deg_to_rad(point_lift)
 						var root := h.position
+						size = POINT_FP_SIZE
 						for _i in 2:
-							var toward := Vector3(-root.x, -root.y, 0.0)
-							toward = toward.normalized() if toward.length() > 0.01 else Vector3.UP
-							y = (toward * cos(a) + Vector3.FORWARD * sin(a)).normalized()
+							y = (aim - root).normalized() if aim.distance_to(root) > 0.05 else Vector3.FORWARD
+							var flat := down - y * down.dot(y)   # 手のひらを下へ（指に直角に）
+							flat = flat.normalized() if flat.length() > 0.05 else Vector3.FORWARD
 							var eye := h.position.normalized()
-							z = eye - y * eye.dot(y)
-							z = z.normalized() if z.length() > 0.05 else Vector3.FORWARD   # 手のひらは向こう（手の甲がこちら）
+							var face := eye - y * eye.dot(y)     # 手のひらを目から向こうへ（甲をこちらへ）
+							face = face.normalized() if face.length() > 0.05 else flat
+							z = (flat * cos(lift) + face * sin(lift)).normalized()
 							b = Basis(y.cross(z).normalized(), y, z)
-							root = h.position + b * (Palm.POINT_ROOT * Vector3(side, 1, 1) - Palm.WRIST)
+							wrist = h.position + y * POINT_FP_OUT   # 手首を袖口から少し前へ出す（こぶしが袖口に隠れないように）
+							root = wrist + b * (Palm.POINT_ROOT * Vector3(side, 1, 1) - Palm.WRIST) * size
 					else:
 						y = (h.basis * Vector3.FORWARD).normalized()
 						z = Vector3.UP.cross(y) * float(side)
 						z = z.normalized() if z.length() > 0.05 else Vector3.BACK
 						b = Palm.thumb_up(Basis(y.cross(z).normalized(), y, z), side)   # 親指は上
-					size = 1.0
+						size = 1.0
 				"low":
 					b = b * Basis(Vector3.RIGHT, -0.65)   # 下へ向けて、おさえる
 				"shake":
@@ -1122,7 +1134,7 @@ func _place_shapes_fp(em: Array) -> void:
 					size = 1.25 if k == 3 and kind == "high_five" else 1.0
 			# 手形の手首の真ん中を、袖の先（手の所）に合わせる
 			var bs := b.scaled(Vector3.ONE * size)
-			node.transform = Transform3D(bs, h.position - bs * Palm.WRIST)
+			node.transform = Transform3D(bs, wrist - bs * Palm.WRIST)
 
 
 # ---------------------------------------------------------------- 身ぶり（emotes.gd）
