@@ -125,7 +125,7 @@ if __name__ == "__main__":
                 "<h1>Lodge の音 — 聞いて確かめる</h1><p><small>合成の台本は gen/、音は wav/。表の数字は summary.md と同じ。"
                 "「使う所」は design/sound-concept.md の「音の一覧」から。</small></p>"]
         # 聞き比べ: 同じ声（同じ抑揚）を、人の声と素材の声で横に並べる（voice_material.py の候補があるとき）
-        mats = [("人の声", "voice_{}_01.wav"), ("紙", "voice_paper_{}_01.wav"), ("フェルト", "voice_felt_{}_01.wav"), ("紙の櫛笛", "voice_kazoo_{}_01.wav")]
+        mats = [("人の声", "voice_{}_kasa.wav"), ("紙", "voice_paper_{}_01.wav"), ("フェルト", "voice_felt_{}_01.wav"), ("紙の櫛笛", "voice_kazoo_{}_01.wav")]
         if (WAV / "voice_paper_wa_01.wav").exists():
             html.append("<section><h2>聞き比べ: 素材で喋る声 <small>同じ抑揚を、人の声・紙・フェルト・紙の櫛笛で</small></h2>"
                         "<table style='border-collapse:collapse'><tr><th></th>" + "".join(f"<th style='padding:4px 8px'>{m}</th>" for m, _ in mats) + "</tr>")

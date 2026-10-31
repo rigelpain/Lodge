@@ -1,19 +1,23 @@
 """言葉にならない声。紙の人形の、小さくてやわらかい声。言葉ではない。
 
-voice_wa_01..03   「ワ〜」うれしい・解放。う の口から あ へ開き、高く上がってから下りる
-voice_un_01..03   「ウン」うなずき・了解。口を閉じた鼻の声で、短く下がる
-voice_nn_01..03   「ンーン」いやいや・ちがう。鼻の声が 2 つ。高いほうから低いほうへ
-voice_unq_01..03  「ウン？」たずねる・首をかしげる。鼻の声で、後半が上がる
-voice_surprise_01..03  びっくり（雪玉が当たったとき）。息を吸うかすれから、高い「あ」が短く跳ねる
-voice_oi_01..03   「おーーーい」遠くの人を呼ぶ。お を高めで平らに長く伸ばし、最後の い で下がって終わる
+voice_wa_<人形>   「ワ〜」うれしい・解放。う の口から あ へ開き、高く上がってから下りる
+voice_un_<人形>   「ウン」うなずき・了解。口を閉じた鼻の声で、短く下がる
+voice_nn_<人形>   「ンーン」いやいや・ちがう。鼻の声が 2 つ。高いほうから低いほうへ
+voice_unq_<人形>  「ウン？」たずねる・首をかしげる。鼻の声で、後半が上がる
+voice_surprise_<人形>  びっくり（雪玉が当たったとき）。息を吸うかすれから、高い「あ」が短く跳ねる
+voice_oi_<人形>   「おーーーい」遠くの人を呼ぶ。お を高めで平らに長く伸ばし、最後の い で下がって終わる
 
-どれも 01 がふつう、02 が全体に高い声、03 が全体に低い声（上がり下がりの形は同じ。SIZES）。
-高い声は口の響きも少し上げて小さな体に、低い声は響きも下げて大きな体に聞こえるようにする。
+<人形> は kasa・origami・news。声の高さは人形の性別と身長で決める（voices()。上がり下がりの形と長さは同じ）。
+女性で背が低いほど高く、男性で背が高いほど低い（代表の言葉、2026-10-31）。身長は game/doll.gd から読む。
+口の響きは体の大きさについていく（小さな体ほど響きが高い。男性は少し低い）。
 
 声帯の音（声門の波を 1 周ずつ作り、揺らぎを入れる）に息を混ぜ、口の形の共鳴（フォルマント）を通す。
-録音も生成サービスも使わない。高さは人ごとに Godot 側で少し変える（pitch_scale）。
+録音も生成サービスも使わない。高さは wav に焼き込み、Godot 側の pitch_scale では変えない（速さと口の響きが崩れるので）。
 やわらかくするため: 息を多めに混ぜ、高い倍音を落とし、立ち上がりと終わりをなだらかにする。
 """
+import pathlib
+import re
+
 import numpy as np
 from scipy import signal
 
@@ -30,15 +34,32 @@ VOWEL = {
 }
 GAIN = {"w": [1.0, 0.3, 0.06], "u": [1.0, 0.45, 0.12], "a": [1.0, 1.4, 0.6], "n": [1.0, 0.05, 0.03],
         "o": [1.0, 0.9, 0.2], "i": [1.0, 0.55, 0.35]}
-# 01 ふつう・02 高い・03 低い の、声の高さと口の響きの倍率 [(高さ, 響き), ...]
-SIZES = {
-    "wa": [(1.0, 1.0), (1.32, 1.1), (0.68, 0.88)],
-    "un": [(1.0, 1.0), (1.32, 1.1), (0.68, 0.88)],
-    "nn": [(1.0, 1.0), (1.42, 1.12), (0.52, 0.82)],   # 03 はがっつり低く
-    "unq": [(1.0, 1.0), (1.32, 1.1), (0.68, 0.88)],
-    "surprise": [(1.0, 1.0), (1.25, 1.08), (0.72, 0.9)],
-    "oi": [(1.0, 1.0), (1.32, 1.1), (0.68, 0.88)],
-}
+# 人形の性別。身長は game/doll.gd の TOP（人形の頭の高さ）× SCALE（ゲームでの大きさ）
+SEX = {"kasa": "女", "origami": "女", "news": "男"}
+SEX_PITCH = {"女": 1.0, "男": 0.6}    # 男性は約 9 半音低く
+SEX_FORM = {"女": 1.0, "男": 0.9}     # 男性は口の響きも少し低く
+HEIGHT_PITCH = 0.75    # 身長が半分なら、高さは 2^0.75 = 1.68 倍
+HEIGHT_FORM = 0.5      # 口の響きは、体の大きさにゆるくついていく
+
+
+def heights():
+    """game/doll.gd の TOP × SCALE。人形ごとの身長 (m)"""
+    src = (pathlib.Path(__file__).resolve().parents[2] / "game" / "doll.gd").read_text()
+    def table(name):
+        body = re.search(rf"^const {name} := \{{(.*?)\}}", src, re.M).group(1)
+        return {k: float(v) for k, v in re.findall(r'"(\w+)":\s*([\d.]+)', body)}
+    top, scale = table("TOP"), table("SCALE")
+    return {k: top[k] * scale[k] for k in SEX}
+
+
+def voices():
+    """人形ごとの (身長, 声の高さの倍率, 口の響きの倍率)"""
+    hs = heights()
+    out = {}
+    for k, h in hs.items():
+        r = hs["kasa"] / h   # あなた（kasa）の声を 1.0 にする
+        out[k] = (h, SEX_PITCH[SEX[k]] * r ** HEIGHT_PITCH, SEX_FORM[SEX[k]] * r ** HEIGHT_FORM)
+    return out
 
 
 def glottal(f0, rng, jitter=0.012, shimmer=0.06):
@@ -199,5 +220,6 @@ def oi(rng, pitch=1.0, form=1.0):
 if __name__ == "__main__":
     for name, fn, seed, peak in [("wa", wa, 700, -6), ("un", un, 710, -7), ("nn", nn, 720, -7),
                                  ("unq", unq, 730, -7), ("surprise", surprise, 740, -6), ("oi", oi, 750, -5)]:
-        for i, (pitch, form) in enumerate(SIZES[name]):
-            write(f"voice_{name}_{i + 1:02d}.wav", fn(np.random.default_rng(seed + i), pitch, form), peak)
+        # 人形どうしで同じ乱数にして、長さと抑揚をそろえる（ちがうのは高さと口の響きだけ）
+        for doll, (_, pitch, form) in voices().items():
+            write(f"voice_{name}_{doll}.wav", fn(np.random.default_rng(seed), pitch, form), peak)

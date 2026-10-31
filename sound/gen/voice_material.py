@@ -102,7 +102,7 @@ if __name__ == "__main__":
         V.MATERIAL = mat
         for name, fn, seed in [("wa", V.wa, 700), ("un", V.un, 710), ("nn", V.nn, 720),
                                ("unq", V.unq, 730), ("surprise", V.surprise, 740)]:
-            pitch, form = V.SIZES[name][0]
+            _, pitch, form = V.voices()["kasa"]
             x = fn(np.random.default_rng(seed), pitch, form)
             # 聞き比べのため、素材どうしで聞こえの大きさ（実効値）をそろえる。ピークは -2 dB まで
             x = x * db(-21.0 - rms_db(x))
