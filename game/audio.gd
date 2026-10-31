@@ -796,8 +796,8 @@ func _on_emote(ev: Dictionary) -> void:
 	var hub: Node = world.get_node("Emotes")
 	var who: Node3D = hub.who_of(ev.get("who", -1)) if ev.has("who") else null
 	var is_self: bool = who != null and who == player
-	var pitch: float = who.get("voice_pitch") if who and who.get("voice_pitch") != null else 1.0
-	var size: int = who.get("voice_size") if who and who.get("voice_size") != null else 1
+	# 声は人形ごとの wav（sound/wav/voice_*_<人形>。高さは性別と身長で wav に焼き込んである）
+	var doll_kind: String = (who.get("doll") as Doll).kind if who and who.get("doll") != null else "kasa"
 	match ev.kind:
 		"high_five", "shake":
 			# 二人に配られるので、片方のぶんだけ鳴らす。手が合う所で（握手は低く、そっと握る音）
@@ -822,9 +822,9 @@ func _on_emote(ev: Dictionary) -> void:
 		return
 	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "oi", "hit", "breath"]
 	for s in EMOTE_SOUNDS[ev.kind]:
-		var p: float = s[4] * (pitch * rng.randf_range(0.98, 1.02) if voice else rng.randf_range(0.95, 1.05))
-		# 声（voice_*）は人ごとに決まった大きさの 1 つ（01 ふつう・02 高い・03 低い）。ほかの音は毎回選ぶ
-		var fixed: int = size if (s[1] as String).begins_with("voice_") else 0
+		var p: float = s[4] * (rng.randf_range(0.98, 1.02) if voice else rng.randf_range(0.95, 1.05))
+		# 声（voice_*）はその人形の 1 つ。ほかの音は毎回選ぶ
+		var fixed: String = doll_kind if (s[1] as String).begins_with("voice_") else ""
 		_emote_sound(ev, s[0], s[1], s[2], s[3], p, who.global_position + Vector3.UP * 1.0, is_self, "Voice" if voice else "", fixed)
 
 
@@ -835,11 +835,13 @@ func _note(name_: String, near: bool, at: Vector3) -> void:
 				"dist": 0.0 if near else _listener().distance_to(at), "wind": _wind_rush.volume_db if _wind_rush else -80.0})
 
 
-func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "", fixed := 0) -> void:
+func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "", fixed := "") -> void:
 	var tps := Engine.physics_ticks_per_second
 	var tick := (int(ev.frame) + k) * tps / Doll.FPS
 	var wait := maxf(0.0, float(tick - Engine.get_physics_frames()) / tps)
-	var s := _wav("%s_%02d" % [name_, fixed]) if fixed > 0 else _pick(name_, count)
+	var s := _wav("%s_%s" % [name_, fixed]) if fixed != "" else _pick(name_, count)
+	if s == null and fixed != "":
+		s = _wav("%s_kasa" % name_)   # 声をまだ作っていない人形は、あなたの声で
 	if s == null:
 		return
 	if wait > 0.0:

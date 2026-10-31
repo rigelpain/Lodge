@@ -40,8 +40,6 @@ var _still := 0.0
 var _wait := 0.0
 var hub: Emotes
 var id := -1
-var voice_pitch := 1.0
-var voice_size := 1
 var _replies: Array = []     # [残り秒, 身ぶり]
 var _five_with := -1         # ハイタッチをしにいく相手の番号
 var _five_until := 0         # このコマまでに届かなければやめる
@@ -82,9 +80,6 @@ func _ready() -> void:
 	doll = Doll.new()
 	doll.kind = doll_kind if doll_kind in Doll.KINDS else ("origami" if side > 0 else "news")
 	add_child(doll)
-	# 声: 背の高い折り紙は低い声（03）、いちばん小さい新聞紙は高い声（02）。そこから少しだけずらす
-	voice_size = 3 if side > 0 else 2
-	voice_pitch = 0.97 if side > 0 else 1.04
 
 	hub = get_parent().get_node_or_null("Emotes")
 	if hub:

@@ -110,8 +110,6 @@ const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
-var voice_pitch := 1.0       # 声の高さ（人ごとに少し変える）
-var voice_size := 1          # 声の大きさ（sound/wav/voice_*_01 ふつう・02 高い・03 低い）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
 var ring: EmoteRing
 var _em := {}                # いまの自分の身ぶり（出来事）
