@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lodge 間取り</title>
+<meta name="description" content="ロッジ 1 階の並びを真上から見て、家具と施設を手で動かして考える図。">
+<meta name="color-scheme" content="light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="index.css?v=6">
+<style>
+/* 間取りのページ: ダッシュボードのタブと地はそのまま（index.css）。図の色は #app の中だけで決める */
+body.lay-page { height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+#app {
+  --bg: #f3eee4; --panel: #fbf8f2; --ink: #3b342c; --faint: #c8bfae; --line: #ddd3c2;
+  --wall: #262b45; --glass: #9fbbd9; --floor: #ece4d2; --deck: #e6d9bf;
+  --sled: #5b7fb8; --sled-bg: #dbe5f2; --food: #d0743c; --food-bg: #f6e1d0;
+  --wood: #d9b07a; --wood-d: #b58a55; --chair: #cf8a68; --stone: #c9c3b8; --fire: #3a3030;
+  --sel: #c8323c; --note: #f5e08a;
+}
+#app, #app * { box-sizing: border-box; }
+#app { display: flex; flex: 1; min-height: 0; margin: var(--gutter); border-radius: var(--radius); overflow: hidden;
+  background: var(--bg); color: var(--ink); font-family: "Noto Sans JP", system-ui, sans-serif; font-size: 13px; line-height: 1.5;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9), 0 18px 40px -24px rgba(30, 50, 110, 0.45); }
+#stage { flex: 1; position: relative; overflow: hidden; touch-action: none; }
+svg { width: 100%; height: 100%; display: block; user-select: none; }
+#side { width: 280px; border-left: 1px solid var(--line); background: var(--panel); overflow-y: auto; padding: 12px 14px; }
+h1 { font-size: 15px; margin: 0 0 6px; }
+h2 { font-size: 12px; margin: 16px 0 6px; color: #7a6f60; font-weight: 600; }
+.row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+button { font: inherit; padding: 5px 9px; border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; color: var(--ink); }
+button:hover { border-color: #a99c86; }
+button.main { background: var(--ink); color: #fff; border-color: var(--ink); }
+label.f { display: grid; grid-template-columns: 56px 1fr; align-items: center; gap: 6px; margin-bottom: 5px; }
+input[type=text], input[type=number] { font: inherit; padding: 4px 6px; border: 1px solid var(--line); border-radius: 5px; width: 100%; }
+textarea { width: 100%; height: 140px; font: 11px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 5px; }
+.hint { color: #7a6f60; line-height: 1.6; font-size: 12px; }
+.hint kbd { border: 1px solid var(--line); border-radius: 3px; padding: 0 4px; background: #fff; font-size: 11px; }
+#readout { position: absolute; left: 10px; bottom: 8px; background: rgba(251,248,242,.9); padding: 3px 8px; border-radius: 5px; font-size: 12px; }
+#warn { position: absolute; left: 10px; top: 8px; background: rgba(251,248,242,.92); padding: 4px 8px; border-radius: 5px; font-size: 12px; color: var(--sel); display: none; }
+.empty { color: #9a8f7e; }
+@media (max-width: 700px) { #app { flex-direction: column; } #side { width: 100%; height: 45%; border-left: 0; border-top: 1px solid var(--line); } }
+</style>
+</head>
+<body class="lay-page">
+<nav class="tabs" aria-label="ページ">
+  <a href="./" data-page="all">全体</a>
+  <a href="art.html" data-page="art">アート</a>
+  <a href="sound.html" data-page="sound">音</a>
+  <a href="layout.html" data-page="layout" aria-current="page">間取り</a>
+</nav>
+<div id="app">
+  <div id="stage">
+    <svg id="svg"></svg>
+    <div id="warn"></div>
+    <div id="readout"></div>
+  </div>
+  <div id="side">
+    <h1>ロッジ 1 階の並べ替え</h1>
+    <div class="hint">真上から見た図。北が上、入口は下。品物をつかんで動かします。</div>
+
+    <h2>始めの並び</h2>
+    <div class="row" id="presets"></div>
+
+    <h2>足す</h2>
+    <div class="row">
+      <button data-add="note">メモ</button>
+      <button data-add="facility">新しい施設</button>
+      <button data-add="table">食卓</button>
+      <button data-add="vend">自販機</button>
+    </div>
+    <div class="row">
+      <button data-add="zone_sled">区分け（ソリ・装備）</button>
+      <button data-add="zone_food">区分け（食べ物）</button>
+    </div>
+
+    <h2>選んでいる品物</h2>
+    <div id="props"><div class="empty">品物をクリックすると、ここで名前・大きさ・向きを変えられます。</div></div>
+
+    <h2>操作</h2>
+    <div class="row"><button id="undo">↶ 戻す</button><button id="redo">↷ やり直す</button></div>
+    <label class="f" style="grid-template-columns:auto 1fr"><input type="checkbox" id="snapBig"> 0.5 m ごとに揃える（ふだんは 0.1 m）</label>
+    <div class="hint">
+      <kbd>R</kbd> 90° 回す　<kbd>Q</kbd>/<kbd>E</kbd> 15° 回す<br>
+      <kbd>矢印</kbd> 0.1 m ずらす（<kbd>Shift</kbd> で 1 m）<br>
+      <kbd>D</kbd> 複製　<kbd>Delete</kbd> 消す<br>
+      <kbd>⌘Z</kbd> 戻す　<kbd>⌘⇧Z</kbd> やり直す<br>
+      ダブルクリックで名前を変える。右下の角の丸で大きさを変える。<br>
+      ホイールで寄る・引く。何もない所をつかむと図が動く。<br>
+      重なった品物は赤い点線になります。
+    </div>
+
+    <h2>書き出し</h2>
+    <div class="row"><button id="exp" class="main">並びを書き出す</button><button id="copy">コピー</button></div>
+    <textarea id="out" readonly placeholder="ここに並びの JSON が出ます。並びはこのブラウザに自動で保存されます。決めた並びは Claude に渡すと、design/lodge-layout/ に残してゲームに入れます。"></textarea>
+  </div>
+</div>
+<script>
+const DATA = {"static": [["grid", -21.816000000000003, -19.226, -21.816000000000003, 14.726], ["grid", -18.180000000000003, -19.226, -18.180000000000003, 14.726], ["grid", -14.544000000000002, -19.226, -14.544000000000002, 14.726], ["grid", -10.908000000000001, -19.226, -10.908000000000001, 14.726], ["grid", -7.272000000000002, -19.226, -7.272000000000002, 14.726], ["grid", -3.636000000000003, -19.226, -3.636000000000003, 14.726], ["grid", 0.0, -19.226, 0.0, 14.726], ["grid", 3.6359999999999992, -19.226, 3.6359999999999992, 14.726], ["grid", 7.2719999999999985, -19.226, 7.2719999999999985, 14.726], ["grid", 10.908000000000001, -19.226, 10.908000000000001, 14.726], ["grid", 14.543999999999997, -19.226, 14.543999999999997, 14.726], ["grid", 18.18, -19.226, 18.18, 14.726], ["grid", 21.816000000000003, -19.226, 21.816000000000003, 14.726], ["grid", -30.816000000000003, 12.726, 23.816000000000003, 12.726], ["grid", -30.816000000000003, 9.09, 23.816000000000003, 9.09], ["grid", -30.816000000000003, 5.454000000000001, 23.816000000000003, 5.454000000000001], ["grid", -30.816000000000003, 1.8179999999999996, 23.816000000000003, 1.8179999999999996], ["grid", -30.816000000000003, -1.8179999999999996, 23.816000000000003, -1.8179999999999996], ["grid", -30.816000000000003, -5.453999999999999, 23.816000000000003, -5.453999999999999], ["grid", -30.816000000000003, -9.090000000000002, 23.816000000000003, -9.090000000000002], ["grid", -30.816000000000003, -12.726, 23.816000000000003, -12.726], ["rect", -30.178800000000003, -12.9078, -21.816000000000003, 12.907800000000002, "lean"], ["label", -25.3974, 0.0, "貸出（屋根のみ）", 0.55], ["rect", -27.270000000000003, -15.453000000000001, 0.0, -12.726, "deck"], ["label", -4.695000000000001, -14.089500000000001, "デッキ", 0.55], ["rect", -21.458000000000002, -23.876, -8.590000000000002, -17.726, "deck"], ["rect", -21.816000000000003, -12.726, 21.816000000000003, 12.726, "floor"], ["rect", -17.39, -17.726, -9.390000000000002, -12.726, "floor"], ["wall", -15.190000000000001, -17.726, -17.39, -17.726], ["wall", -17.39, -17.726, -17.39, -12.726], ["wall", -11.59, -17.726, -9.390000000000002, -17.726], ["wall", -9.390000000000002, -17.726, -9.390000000000002, -12.726], ["rect", -16.93, -13.526000000000002, -15.93, -12.776000000000002, "vend"], ["rect", -15.85, -13.526000000000002, -14.85, -12.776000000000002, "vend"], ["label", -12.790000000000001, -15.726, "風除室（自販機 2 台）", 0.55], ["label", -13.39, -18.726, "入口 ▲", 0.75], ["wall", -21.816000000000003, 12.726, 21.816000000000003, 12.726], ["wall", 21.816000000000003, 12.726, 21.816000000000003, -12.726], ["wall", -21.816000000000003, -12.726, -9.090000000000002, -12.726], ["glass", -9.090000000000002, -12.726, 21.816000000000003, -12.726], ["glass", -21.816000000000003, -12.726, -21.816000000000003, 12.726], ["autodoor", -14.89, -12.726, -11.89, -12.726], ["post", -9.090000000000002, -12.726], ["post", -5.999400000000003, -12.726], ["post", -2.908800000000003, -12.726], ["post", 0.18179999999999907, -12.726], ["post", 3.272400000000001, -12.726], ["post", 6.3629999999999995, -12.726], ["post", 9.453599999999998, -12.726], ["post", 12.544199999999996, -12.726], ["post", 15.634799999999998, -12.726], ["post", 18.725399999999993, -12.726], ["post", 21.816000000000003, -12.726], ["post", -21.816000000000003, 12.726], ["post", -21.816000000000003, 10.180800000000001], ["post", -21.816000000000003, 7.635600000000001], ["post", -21.816000000000003, 5.090400000000002], ["post", -21.816000000000003, 2.5452000000000012], ["post", -21.816000000000003, 0.0], ["post", -21.816000000000003, -2.5451999999999977], ["post", -21.816000000000003, -5.090399999999997], ["post", -21.816000000000003, -7.635599999999998], ["post", -21.816000000000003, -10.1808], ["post", -21.816000000000003, -12.726], ["win", -6.453900000000003, 12.726, -3.7269000000000023, 12.726], ["win", 14.998500000000002, 12.726, 17.725500000000004, 12.726], ["win", 21.816000000000003, -2.8179, 21.816000000000003, -0.09089999999999954], ["win", 21.816000000000003, -8.6355, 21.816000000000003, -5.9085], ["opening", -21.816000000000003, 10.3808, -21.816000000000003, 12.526000000000002], ["label", -23.116000000000003, 11.453400000000002, "戸", 0.5], ["stair", 18.436, 7.306000000000001, 21.636000000000003, 12.546000000000001, 20.036, 0.26, 15, 10.946000000000002], ["label", 20.036, 6.506000000000001, "内階段（2 階へ）", 0.5], ["col", -14.544000000000002, -5.253999999999999, 0.25], ["col", -7.272000000000002, -5.253999999999999, 0.25], ["col", 0.0, -5.253999999999999, 0.25], ["col", 7.2719999999999985, -5.253999999999999, 0.25], ["col", 14.543999999999997, -5.253999999999999, 0.25], ["label", 23.416000000000004, 14.326, "北 ▲", 0.7]], "presets": {"game": {"label": "ゲームの今", "note": "いまのコード（lodge/dims.py ほか）から作った並び", "items": [{"id": "hearth", "name": "暖炉", "shape": "hearth", "x": -10.4, "y": 12.68, "w": 3.3, "d": 3.1, "rot": 0, "kind": "fire"}, {"id": "machine", "name": "大きなミシン", "shape": "box", "x": -18.3, "y": -3.4, "w": 4.2, "d": 1.8, "rot": 90, "kind": "sled"}, {"id": "seller", "name": "売り子", "shape": "person", "x": -18.4, "y": -8.7, "w": 0.9, "d": 0.9, "rot": 0, "kind": "sled"}, {"id": "rental_shelf", "name": "貸出の棚", "shape": "box", "x": -21.17, "y": -8.9, "w": 4.54, "d": 0.7, "rot": 90, "kind": "sled"}, {"id": "ski_rack", "name": "スキー置場", "shape": "rack", "x": -27.7, "y": 3.8, "w": 0.7, "d": 12.72, "rot": 0, "kind": "sled"}, {"id": "fridge", "name": "雪だるまの冷蔵庫", "shape": "fridge", "x": -1.6, "y": 9.5, "w": 2.0, "d": 1.6, "rot": 0, "kind": "food"}, {"id": "board", "name": "巨大アイロン台", "shape": "box", "x": 2.0, "y": 9.4, "w": 3.8, "d": 1.24, "rot": 0, "kind": "food"}, {"id": "press", "name": "プレス機", "shape": "box", "x": 5.5, "y": 9.7, "w": 1.6, "d": 1.96, "rot": 0, "kind": "food"}, {"id": "dryer", "name": "乾燥機", "shape": "box", "x": 8.5, "y": 10.2, "w": 2.7, "d": 2.7, "rot": 0, "kind": "food"}, {"id": "sack0", "name": "麻袋", "shape": "sack", "x": 13.6, "y": 3.6, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack1", "name": "麻袋", "shape": "sack", "x": 10.7, "y": 2.7, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack2", "name": "麻袋", "shape": "sack", "x": 12.0, "y": 2.8, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack3", "name": "麻袋", "shape": "sack", "x": 11.3, "y": 2.9, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "back", "name": "厨房の奥の台", "shape": "box", "x": 4.1, "y": 12.2, "w": 13.6, "d": 0.7, "rot": 0, "kind": "wood"}, {"id": "vend0", "name": "自販機", "shape": "box", "x": -20.6, "y": 4.2, "w": 2.1, "d": 1.8, "rot": 90, "kind": "food"}, {"id": "vend1", "name": "自販機", "shape": "box", "x": 20.6, "y": 3.5, "w": 2.1, "d": 1.8, "rot": 270, "kind": "food"}, {"id": "door1", "name": "勝手口", "shape": "door", "x": 11.9, "y": 12.58, "w": 1.2, "d": 0.3, "rot": 0, "kind": "door"}, {"id": "table0", "name": "食卓", "shape": "table", "x": -3.65, "y": -2.8, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table1", "name": "食卓", "shape": "table", "x": 3.55, "y": -2.8, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table2", "name": "食卓", "shape": "table", "x": 10.35, "y": -2.8, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table3", "name": "食卓", "shape": "table", "x": 17.15, "y": -2.8, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table4", "name": "食卓", "shape": "table", "x": -3.65, "y": -7.85, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table5", "name": "食卓", "shape": "table", "x": 3.55, "y": -7.85, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table6", "name": "食卓", "shape": "table", "x": 10.35, "y": -7.85, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table7", "name": "食卓", "shape": "table", "x": 17.15, "y": -7.85, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "counter_seller", "name": "おじいさんの番台\n（レジ・お皿）", "shape": "box", "x": -17.55, "y": -8.7, "w": 1.8, "d": 0.68, "rot": 90, "kind": "sled"}, {"id": "counter_snowman", "name": "雪だるまの番台\n（レジ・お皿）", "shape": "box", "x": -1.6, "y": 7.95, "w": 1.8, "d": 0.68, "rot": 0, "kind": "food"}, {"id": "window_bar", "name": "窓向きのカウンター", "shape": "bar", "x": 6.42, "y": -11.95, "w": 30.33, "d": 1.0, "rot": 0, "kind": "seat"}, {"id": "zone_sled", "name": "ソリ・装備", "shape": "zone", "kind": "sled", "x": -18.4, "y": -6.2, "w": 6.6, "d": 12.5, "rot": 0}, {"id": "zone_food", "name": "食べ物", "shape": "zone", "kind": "food", "x": 5, "y": 8.7, "w": 15.6, "d": 7.6, "rot": 0}]}, "bandai": {"label": "番台の案", "note": "おじいさんと雪だるまの前に、店番のカウンターとレジ", "items": [{"id": "hearth", "name": "暖炉", "shape": "hearth", "x": -10.4, "y": 12.68, "w": 3.3, "d": 3.1, "rot": 0, "kind": "fire"}, {"id": "machine", "name": "大きなミシン", "shape": "box", "x": -18.3, "y": -3.4, "w": 4.2, "d": 1.8, "rot": 90, "kind": "sled"}, {"id": "seller", "name": "売り子", "shape": "person", "x": -18.4, "y": -8.7, "w": 0.9, "d": 0.9, "rot": 0, "kind": "sled"}, {"id": "rental_shelf", "name": "貸出の棚", "shape": "box", "x": -21.17, "y": -8.9, "w": 4.54, "d": 0.7, "rot": 90, "kind": "sled"}, {"id": "ski_rack", "name": "スキー置場", "shape": "rack", "x": -27.7, "y": 3.8, "w": 0.7, "d": 12.72, "rot": 0, "kind": "sled"}, {"id": "fridge", "name": "雪だるまの冷蔵庫", "shape": "fridge", "x": -1.6, "y": 9.5, "w": 2.0, "d": 1.6, "rot": 0, "kind": "food"}, {"id": "board", "name": "巨大アイロン台", "shape": "box", "x": 2.0, "y": 9.4, "w": 3.8, "d": 1.24, "rot": 0, "kind": "food"}, {"id": "press", "name": "プレス機", "shape": "box", "x": 5.5, "y": 9.7, "w": 1.6, "d": 1.96, "rot": 0, "kind": "food"}, {"id": "dryer", "name": "乾燥機", "shape": "box", "x": 8.5, "y": 10.2, "w": 2.7, "d": 2.7, "rot": 0, "kind": "food"}, {"id": "sack0", "name": "麻袋", "shape": "sack", "x": 13.6, "y": 3.6, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack1", "name": "麻袋", "shape": "sack", "x": 10.7, "y": 2.7, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack2", "name": "麻袋", "shape": "sack", "x": 12.0, "y": 2.8, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack3", "name": "麻袋", "shape": "sack", "x": 11.3, "y": 2.9, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "back", "name": "厨房の奥の台", "shape": "box", "x": 4.1, "y": 12.2, "w": 13.6, "d": 0.7, "rot": 0, "kind": "wood"}, {"id": "vend0", "name": "自販機", "shape": "box", "x": -20.6, "y": 4.2, "w": 2.1, "d": 1.8, "rot": 90, "kind": "food"}, {"id": "vend1", "name": "自販機", "shape": "box", "x": 20.6, "y": 3.5, "w": 2.1, "d": 1.8, "rot": 270, "kind": "food"}, {"id": "door1", "name": "勝手口", "shape": "door", "x": 11.9, "y": 12.58, "w": 1.2, "d": 0.3, "rot": 0, "kind": "door"}, {"id": "table0", "name": "食卓", "shape": "table", "x": -3.65, "y": -2.8, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table1", "name": "食卓", "shape": "table", "x": 3.55, "y": -2.8, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table2", "name": "食卓", "shape": "table", "x": 10.35, "y": -2.8, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table3", "name": "食卓", "shape": "table", "x": 17.15, "y": -2.8, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table4", "name": "食卓", "shape": "table", "x": -3.65, "y": -7.85, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table5", "name": "食卓", "shape": "table", "x": 3.55, "y": -7.85, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table6", "name": "食卓", "shape": "table", "x": 10.35, "y": -7.85, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table7", "name": "食卓", "shape": "table", "x": 17.15, "y": -7.85, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "window_bar", "name": "窓向きのカウンター", "shape": "bar", "x": 6.42, "y": -11.95, "w": 30.33, "d": 1.0, "rot": 0, "kind": "seat"}, {"id": "zone_sled", "name": "ソリ・装備", "shape": "zone", "kind": "sled", "x": -18.4, "y": -6.2, "w": 6.6, "d": 12.5, "rot": 0}, {"id": "zone_food", "name": "食べ物", "shape": "zone", "kind": "food", "x": 5, "y": 8.7, "w": 15.6, "d": 7.6, "rot": 0}, {"id": "counter_seller", "name": "おじいさんの番台\n（レジ・ボタンのお皿）", "shape": "box", "kind": "sled", "x": -17.55, "y": -8.7, "w": 1.8, "d": 0.6, "rot": 90}, {"id": "counter_snowman", "name": "雪だるまの番台\n（レジ・雪玉のお皿）", "shape": "box", "kind": "food", "x": -1.6, "y": 7.95, "w": 1.8, "d": 0.6, "rot": 0}]}, "daihyo": {"label": "代表の並び（10/31）", "note": "代表が手で並べたもの", "items": [{"id": "hearth", "name": "暖炉", "shape": "hearth", "kind": "fire", "x": -10.4, "y": 12.6, "w": 3.3, "d": 3.1, "rot": 0}, {"id": "machine", "name": "大きなミシン", "shape": "box", "kind": "sled", "x": -18.3, "y": -3.4, "w": 4.2, "d": 1.8, "rot": 90}, {"id": "seller", "name": "売り子", "shape": "person", "kind": "sled", "x": -18.4, "y": -8.7, "w": 0.9, "d": 0.9, "rot": 0}, {"id": "rental_shelf", "name": "貸出の棚", "shape": "box", "kind": "sled", "x": -20.8, "y": -8.9, "w": 4.54, "d": 0.7, "rot": 90}, {"id": "ski_rack", "name": "スキー置場", "shape": "rack", "kind": "sled", "x": -27.7, "y": 3.8, "w": 0.7, "d": 12.73, "rot": 0}, {"id": "fridge", "name": "雪だるまの冷蔵庫", "shape": "fridge", "kind": "food", "x": -1.6, "y": 9.5, "w": 2, "d": 1.6, "rot": 0}, {"id": "board", "name": "巨大アイロン台", "shape": "box", "kind": "food", "x": 2, "y": 9.4, "w": 3.8, "d": 1.24, "rot": 0}, {"id": "press", "name": "プレス機", "shape": "box", "kind": "food", "x": 5.5, "y": 9.7, "w": 1.6, "d": 2, "rot": 0}, {"id": "dryer", "name": "乾燥機", "shape": "box", "kind": "food", "x": 8.5, "y": 10.2, "w": 2.9, "d": 2.7, "rot": 0}, {"id": "sack0", "name": "麻袋", "shape": "sack", "kind": "food", "x": 13.6, "y": 3.6, "w": 0.7, "d": 0.7, "rot": 0}, {"id": "sack1", "name": "麻袋", "shape": "sack", "kind": "food", "x": 10.7, "y": 2.7, "w": 0.7, "d": 0.7, "rot": 0}, {"id": "sack2", "name": "麻袋", "shape": "sack", "kind": "food", "x": 12, "y": 2.8, "w": 0.7, "d": 0.7, "rot": 0}, {"id": "sack3", "name": "麻袋", "shape": "sack", "kind": "food", "x": 11.3, "y": 2.9, "w": 0.7, "d": 0.7, "rot": 0}, {"id": "back", "name": "厨房の奥の台", "shape": "box", "kind": "wood", "x": 4.1, "y": 12.2, "w": 13.59, "d": 0.7, "rot": 0}, {"id": "vend0", "name": "自販機", "shape": "box", "kind": "food", "x": -20.6, "y": 4.2, "w": 2.1, "d": 1.8, "rot": 270}, {"id": "vend1", "name": "自販機", "shape": "box", "kind": "food", "x": 20.74, "y": 3.5, "w": 2.1, "d": 1.8, "rot": 90}, {"id": "door1", "name": "勝手口", "shape": "door", "kind": "door", "x": 11.9, "y": 12.58, "w": 1.2, "d": 0.3, "rot": 0}, {"id": "table1", "name": "食卓", "shape": "table", "kind": "seat", "x": -3.7, "y": -2.6, "w": 3.64, "d": 1.09, "rot": 0}, {"id": "table2", "name": "食卓", "shape": "table", "kind": "seat", "x": 3.5, "y": -2.7, "w": 3.64, "d": 1.09, "rot": 0}, {"id": "table3", "name": "食卓", "shape": "table", "kind": "seat", "x": 10.3, "y": -3, "w": 3.64, "d": 1.09, "rot": 0}, {"id": "table4", "name": "食卓", "shape": "table", "kind": "seat", "x": 17.1, "y": -3, "w": 3.64, "d": 1.09, "rot": 0}, {"id": "table13", "name": "食卓", "shape": "table", "kind": "seat", "x": -3.6, "y": -7.7, "w": 3.64, "d": 1.09, "rot": 0}, {"id": "table14", "name": "食卓", "shape": "table", "kind": "seat", "x": 3.6, "y": -7.8, "w": 3.64, "d": 1.09, "rot": 0}, {"id": "table15", "name": "食卓", "shape": "table", "kind": "seat", "x": 10.4, "y": -8, "w": 3.64, "d": 1.09, "rot": 0}, {"id": "table16", "name": "食卓", "shape": "table", "kind": "seat", "x": 17.2, "y": -7.9, "w": 3.64, "d": 1.09, "rot": 0}, {"id": "window_bar", "name": "窓向きのカウンター", "shape": "bar", "kind": "seat", "x": 6.4, "y": -11.9, "w": 30.33, "d": 1, "rot": 0}, {"id": "zone_sled", "name": "ソリ・装備", "shape": "zone", "kind": "sled", "x": -18.4, "y": -6.2, "w": 6.6, "d": 12.5, "rot": 0}, {"id": "zone_food", "name": "食べ物", "shape": "zone", "kind": "food", "x": 5, "y": 8.7, "w": 15.6, "d": 7.6, "rot": 0}]}, "pr68": {"label": "前の並び（#68）", "note": "暖炉が東寄り、厨房が西寄りだったころ", "items": [{"id": "hearth", "name": "暖炉", "shape": "hearth", "x": 10.91, "y": 12.68, "w": 5.09, "d": 3.1, "rot": 0, "kind": "fire"}, {"id": "machine", "name": "大きなミシン", "shape": "box", "x": -19.09, "y": 10.0, "w": 4.2, "d": 1.8, "rot": 0, "kind": "sled"}, {"id": "seller", "name": "売り子", "shape": "person", "x": -17.09, "y": 9.0, "w": 0.9, "d": 0.9, "rot": 0, "kind": "sled"}, {"id": "rental_shelf", "name": "貸出の棚", "shape": "box", "x": -19.0, "y": 12.2, "w": 4.54, "d": 0.7, "rot": 0, "kind": "sled"}, {"id": "ski_rack", "name": "スキー置場", "shape": "rack", "x": -20.79, "y": -0.55, "w": 0.7, "d": 12.73, "rot": 0, "kind": "sled"}, {"id": "fridge", "name": "雪だるまの冷蔵庫", "shape": "fridge", "x": -15.33, "y": 11.07, "w": 2.0, "d": 1.6, "rot": 0, "kind": "food"}, {"id": "board", "name": "巨大アイロン台", "shape": "box", "x": -8.98, "y": 10.6, "w": 3.8, "d": 1.24, "rot": 0, "kind": "food"}, {"id": "press", "name": "プレス機", "shape": "box", "x": -5.18, "y": 10.8, "w": 1.6, "d": 2.0, "rot": 0, "kind": "food"}, {"id": "dryer", "name": "乾燥機", "shape": "box", "x": -1.93, "y": 10.5, "w": 2.7, "d": 2.7, "rot": 0, "kind": "food"}, {"id": "sack0", "name": "麻袋", "shape": "sack", "x": -13.08, "y": 9.4, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack1", "name": "麻袋", "shape": "sack", "x": -12.68, "y": 9.0, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack2", "name": "麻袋", "shape": "sack", "x": -12.88, "y": 11.2, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "sack3", "name": "麻袋", "shape": "sack", "x": -12.08, "y": 11.3, "w": 0.7, "d": 0.7, "rot": 0, "kind": "food"}, {"id": "back", "name": "厨房の奥の台", "shape": "box", "x": -8.18, "y": 12.2, "w": 15.63, "d": 0.7, "rot": 0, "kind": "wood"}, {"id": "vend0", "name": "自販機", "shape": "box", "x": 2.0, "y": 11.54, "w": 2.1, "d": 1.8, "rot": 0, "kind": "food"}, {"id": "vend1", "name": "自販機", "shape": "box", "x": 4.18, "y": 11.54, "w": 2.1, "d": 1.8, "rot": 0, "kind": "food"}, {"id": "partition0", "name": "間仕切り", "shape": "box", "x": 0.0, "y": 10.0, "w": 0.12, "d": 5.45, "rot": 0, "kind": "wall"}, {"id": "door1", "name": "勝手口", "shape": "door", "x": -11.71, "y": 12.58, "w": 1.2, "d": 0.3, "rot": 0, "kind": "door"}, {"id": "table0", "name": "食卓", "shape": "table", "x": -6.18, "y": 0.91, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table1", "name": "食卓", "shape": "table", "x": -1.45, "y": 0.91, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table2", "name": "食卓", "shape": "table", "x": 3.27, "y": 0.91, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table3", "name": "食卓", "shape": "table", "x": 8.0, "y": 0.91, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table4", "name": "食卓", "shape": "table", "x": 12.73, "y": 0.91, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table5", "name": "食卓", "shape": "table", "x": 17.45, "y": 0.91, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table6", "name": "食卓", "shape": "table", "x": -6.18, "y": -3.45, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table7", "name": "食卓", "shape": "table", "x": -1.45, "y": -3.45, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table8", "name": "食卓", "shape": "table", "x": 3.27, "y": -3.45, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table9", "name": "食卓", "shape": "table", "x": 8.0, "y": -3.45, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table10", "name": "食卓", "shape": "table", "x": 12.73, "y": -3.45, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table11", "name": "食卓", "shape": "table", "x": 17.45, "y": -3.45, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table12", "name": "食卓", "shape": "table", "x": -6.18, "y": -8.54, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table13", "name": "食卓", "shape": "table", "x": -1.45, "y": -8.54, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table14", "name": "食卓", "shape": "table", "x": 3.27, "y": -8.54, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table15", "name": "食卓", "shape": "table", "x": 8.0, "y": -8.54, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table16", "name": "食卓", "shape": "table", "x": 12.73, "y": -8.54, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "table17", "name": "食卓", "shape": "table", "x": 17.45, "y": -8.54, "w": 3.64, "d": 1.09, "rot": 0, "kind": "seat"}, {"id": "window_bar", "name": "窓向きのカウンター", "shape": "bar", "x": 6.42, "y": -11.95, "w": 30.33, "d": 1.0, "rot": 0, "kind": "seat"}]}}, "start": "game", "bounds": [-31.0, -19.5, 24.5, 17.0], "hearth": {"benches": [[-2.549999999999999, -4.350000000000001, 2.55, -3.9000000000000004], [-4.15, -4.350000000000001, -3.700000000000001, -2.1500000000000004], [3.7, -4.350000000000001, 4.15, -2.1500000000000004]], "fire_w": 1.8}, "table": {"chair": [0.5, 0.45], "gap": 0.35, "step": 1.15}, "bar": {"step": 0.8, "r": 0.21}};
+const NS = "http://www.w3.org/2000/svg";
+const svg = document.getElementById("svg");
+const KEY = "lodge-layout-v1";
+
+let items = [];
+let sel = null;
+let hist = [], fut = [];
+let view = { x: DATA.bounds[0], y: -DATA.bounds[3], w: DATA.bounds[2] - DATA.bounds[0], h: DATA.bounds[3] - DATA.bounds[1] };
+
+const COL = {
+  sled: ["var(--sled)", "#fff"], food: ["var(--food)", "#fff"], fire: ["var(--stone)", "var(--ink)"],
+  seat: ["var(--wood)", "var(--ink)"], wood: ["var(--wood)", "var(--ink)"], wall: ["var(--wall)", "#fff"],
+  door: ["#efe7d6", "var(--ink)"], note: ["var(--note)", "var(--ink)"], misc: ["#a99c86", "#fff"],
+};
+
+const clone = o => JSON.parse(JSON.stringify(o));
+function save() { try { localStorage.setItem(KEY, JSON.stringify(items)); } catch (e) {} }
+function load() { try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; } }
+function commit() { hist.push(clone(items)); if (hist.length > 200) hist.shift(); fut = []; }
+function el(tag, attrs, parent) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(e);
+  return e;
+}
+const r2 = v => Math.round(v * 100) / 100;
+
+// ---- 下絵 -----------------------------------------------------------------------------
+function drawStatic(g) {
+  for (const s of DATA.static) {
+    const t = s[0];
+    if (t === "grid") el("line", { x1: s[1], y1: -s[2], x2: s[3], y2: -s[4], stroke: "var(--faint)", "stroke-width": 0.04, "stroke-dasharray": "0.15 0.3" }, g);
+    else if (t === "rect") {
+      const fill = { floor: "var(--floor)", deck: "var(--deck)", lean: "none", vend: "#c9a48a" }[s[5]];
+      el("rect", { x: Math.min(s[1], s[3]), y: -Math.max(s[2], s[4]), width: Math.abs(s[3] - s[1]), height: Math.abs(s[4] - s[2]),
+        fill, stroke: s[5] === "lean" ? "#7a6f60" : "none", "stroke-width": 0.06, "stroke-dasharray": s[5] === "lean" ? "0.3 0.25" : "" }, g);
+    }
+    else if (t === "wall") el("line", { x1: s[1], y1: -s[2], x2: s[3], y2: -s[4], stroke: "var(--wall)", "stroke-width": 0.36, "stroke-linecap": "square" }, g);
+    else if (t === "glass") el("line", { x1: s[1], y1: -s[2], x2: s[3], y2: -s[4], stroke: "var(--glass)", "stroke-width": 0.26 }, g);
+    else if (t === "win") el("line", { x1: s[1], y1: -s[2], x2: s[3], y2: -s[4], stroke: "var(--glass)", "stroke-width": 0.3 }, g);
+    else if (t === "opening") el("line", { x1: s[1], y1: -s[2], x2: s[3], y2: -s[4], stroke: "var(--bg)", "stroke-width": 0.4 }, g);
+    else if (t === "autodoor") {
+      el("line", { x1: s[1], y1: -s[2], x2: s[3], y2: -s[4], stroke: "var(--floor)", "stroke-width": 0.42 }, g);
+      el("line", { x1: s[1], y1: -s[2], x2: s[3], y2: -s[4], stroke: "var(--glass)", "stroke-width": 0.12, "stroke-dasharray": "0.3 0.15" }, g);
+    }
+    else if (t === "post") el("rect", { x: s[1] - 0.18, y: -s[2] - 0.18, width: 0.36, height: 0.36, fill: "var(--wall)" }, g);
+    else if (t === "col") el("circle", { cx: s[1], cy: -s[2], r: s[3], fill: "var(--fire)" }, g);
+    else if (t === "stair") {
+      const [, x0, y0, x1, y1, xm, tread, n1, yl] = s;
+      el("rect", { x: x0, y: -y1, width: x1 - x0, height: y1 - y0, fill: "#e9dcc2", stroke: "var(--wood-d)", "stroke-width": 0.05 }, g);
+      for (let i = 0; i < n1; i++) el("line", { x1: xm, y1: -(y0 + i * tread), x2: x1, y2: -(y0 + i * tread), stroke: "var(--wood-d)", "stroke-width": 0.03 }, g);
+      el("line", { x1: xm, y1: -y0, x2: xm, y2: -yl, stroke: "var(--wood-d)", "stroke-width": 0.05 }, g);
+    }
+    else if (t === "label") {
+      const e = el("text", { x: s[1], y: -s[2], "font-size": s[4], "text-anchor": "middle", "dominant-baseline": "middle", fill: "var(--ink)" }, g);
+      e.textContent = s[3];
+    }
+  }
+}
+
+// ---- 品物の形（ローカル座標。正面 = +Y の画面下 = 南）-------------------------------
+function extents(it) {   // 当たりを見る範囲（ローカルの矩形）
+  const w = it.w / 2, d = it.d / 2;
+  if (it.shape === "table") { const c = DATA.table; const e = d + c.gap + c.chair[1] / 2; return [-w, -e, w, e]; }
+  if (it.shape === "hearth") {
+    let a = [-w, -d, w, d];
+    for (const b of DATA.hearth.benches) a = [Math.min(a[0], b[0]), Math.min(a[1], -b[3]), Math.max(a[2], b[2]), Math.max(a[3], -b[1])];
+    return a;
+  }
+  return [-w, -d, w, d];
+}
+
+function drawItem(it, g) {
+  const [fill, ink] = COL[it.kind] || COL.misc;
+  const w = it.w, d = it.d;
+  const body = el("g", { transform: `translate(${it.x},${-it.y}) rotate(${-it.rot})` }, g);
+  const R = (x, y, ww, dd, f, extra = {}) => el("rect", Object.assign({ x, y, width: ww, height: dd, fill: f }, extra), body);
+  if (it.shape === "zone") {
+    R(-w / 2, -d / 2, w, d, it.kind === "sled" ? "var(--sled-bg)" : "var(--food-bg)", { opacity: 0.85, stroke: it.kind === "sled" ? "var(--sled)" : "var(--food)", "stroke-width": 0.05, "stroke-dasharray": "0.3 0.2" });
+  } else if (it.shape === "person" || it.shape === "sack") {
+    el("circle", { cx: 0, cy: 0, r: w / 2, fill: it.shape === "sack" ? "#c9a46a" : "#f0e6d6", stroke: it.shape === "sack" ? "var(--wood-d)" : fill, "stroke-width": 0.1 }, body);
+  } else if (it.shape === "fridge") {
+    R(-w / 2, -d / 2, w, d, "#f4f6f8", { stroke: "var(--food)", "stroke-width": 0.1 });
+    el("circle", { cx: 0, cy: 0.1, r: 0.5, fill: "#fff", stroke: "var(--ink)", "stroke-width": 0.04 }, body);
+  } else if (it.shape === "hearth") {
+    for (const b of DATA.hearth.benches) R(b[0], -b[3], b[2] - b[0], b[3] - b[1], "var(--wood)", { stroke: "var(--wood-d)", "stroke-width": 0.04 });
+    R(-w / 2, -d / 2, w, d, "var(--stone)", { stroke: "#9d968a", "stroke-width": 0.05 });
+    const fw = DATA.hearth.fire_w;
+    R(-fw / 2, d / 2 - 0.7, fw, 0.7, "var(--fire)");
+    el("circle", { cx: 0, cy: d / 2 - 0.3, r: 0.3, fill: "#e8783a" }, body);
+  } else if (it.shape === "table") {
+    const c = DATA.table;
+    for (const s of [-1, 1]) for (const j of [-1, 0, 1])
+      R(j * c.step - c.chair[0] / 2, s * (d / 2 + c.gap) - c.chair[1] / 2, c.chair[0], c.chair[1], "var(--chair)");
+    R(-w / 2, -d / 2, w, d, "var(--wood)");
+  } else if (it.shape === "bar") {
+    const b = DATA.bar;
+    R(-w / 2, 0, w, d / 2, "var(--wood)");
+    for (let x = -w / 2 + 0.4; x < w / 2; x += b.step) el("circle", { cx: x, cy: -d / 4, r: b.r, fill: "var(--chair)" }, body);
+  } else if (it.shape === "rack") {
+    R(-w / 2, -d / 2, w, d, "var(--wood-d)");
+    const cols = ["var(--sled)", "var(--food)", "#e2b84a", "#6c9a6a"];
+    for (let i = 0, y = -d / 2 + 0.2; y < d / 2; y += 0.4, i++) el("line", { x1: -w / 2 - 0.1, y1: y, x2: w / 2 + 0.3, y2: y, stroke: cols[i % 4], "stroke-width": 0.1 }, body);
+  } else if (it.shape === "door") {
+    R(-w / 2, -d / 2, w, d, "var(--bg)", { stroke: "var(--ink)", "stroke-width": 0.04 });
+    el("path", { d: `M ${-w / 2} ${-d / 2} L ${-w / 2} ${w - d / 2} A ${w} ${w} 0 0 0 ${w / 2} ${-d / 2}`, fill: "none", stroke: "var(--ink)", "stroke-width": 0.03 }, body);
+  } else if (it.shape === "note") {
+    R(-w / 2, -d / 2, w, d, "var(--note)", { stroke: "#c9b24a", "stroke-width": 0.04 });
+  } else {
+    R(-w / 2, -d / 2, w, d, fill, { opacity: 0.92 });
+    if (w > 0.6 && d > 0.6 && it.kind !== "wall" && it.kind !== "wood")   // 正面の印（南の縁の小さな三角）
+      el("path", { d: `M -0.25 ${d / 2 - 0.05} L 0.25 ${d / 2 - 0.05} L 0 ${d / 2 - 0.35} z`, fill: ink, opacity: 0.7 }, body);
+  }
+  return body;
+}
+
+function labelOf(it) {
+  if (it.shape === "table" || it.shape === "sack") return null;
+  return it.name;
+}
+
+// ---- 描く -----------------------------------------------------------------------------
+let gStatic, gItems, gLabels, gSel;
+function setView() { svg.setAttribute("viewBox", `${view.x} ${view.y} ${view.w} ${view.h}`); }
+
+function worldBox(it) {
+    const e = extents(it), a = it.rot * Math.PI / 180, c = Math.abs(Math.cos(a)), s = Math.abs(Math.sin(a));
+    const hw = (e[2] - e[0]) / 2, hd = (e[3] - e[1]) / 2;
+    const ox = (e[0] + e[2]) / 2, oy = -(e[1] + e[3]) / 2;   // ローカルの中心のずれ（北が +）
+    const cx = it.x + ox * Math.cos(a) - oy * Math.sin(a), cy = it.y + ox * Math.sin(a) + oy * Math.cos(a);
+    const W = hw * c + hd * s, D = hw * s + hd * c;
+  return [cx - W, cy - D, cx + W, cy + D];
+}
+
+function overlaps() {
+  const box = worldBox;
+  const solid = items.filter(i => !["zone", "note", "person", "sack"].includes(i.shape));   // 人と麻袋は小さいので見ない
+  const bad = new Set();
+  for (let i = 0; i < solid.length; i++) for (let j = i + 1; j < solid.length; j++) {
+    const a = box(solid[i]), b = box(solid[j]), t = 0.06;
+    if (a[0] < b[2] - t && b[0] < a[2] - t && a[1] < b[3] - t && b[1] < a[3] - t) {
+      // 厨房の奥の台の前に機械が寄るのはよい
+      if ([solid[i].id, solid[j].id].some(id => id === "back")) continue;
+      bad.add(solid[i].id); bad.add(solid[j].id);
+    }
+  }
+  return bad;
+}
+
+function render() {
+  gItems.innerHTML = ""; gLabels.innerHTML = ""; gSel.innerHTML = "";
+  const order = { zone: 0, note: 9 };
+  const sorted = items.slice().sort((a, b) => (order[a.shape] ?? 5) - (order[b.shape] ?? 5));
+  const bad = overlaps();
+  for (const it of sorted) {
+    const g = drawItem(it, gItems);
+    g.dataset.id = it.id;
+    g.style.cursor = "grab";
+    if (bad.has(it.id)) {
+      const e = extents(it);
+      el("rect", { x: e[0] - 0.05, y: e[1] - 0.05, width: e[2] - e[0] + 0.1, height: e[3] - e[1] + 0.1, fill: "none", stroke: "var(--sel)", "stroke-width": 0.08, "stroke-dasharray": "0.2 0.12" }, g);
+    }
+    const lab = labelOf(it);
+    if (lab) {
+      const big = it.shape === "zone";
+      const [fill, ink] = COL[it.kind] || COL.misc;
+      const inside = ["box"].includes(it.shape) && it.w >= 2.4 && it.d >= 1.0 && !["wall", "wood"].includes(it.kind);
+      const ty = big ? -worldBox(it)[3] + 0.9 : inside ? -it.y : -worldBox(it)[3] - 0.45;
+      const fs = big ? 0.85 : it.shape === "note" ? 0.42 : 0.5;
+      const lines = String(lab).split("\n");
+      lines.forEach((ln, k) => {
+        const t = el("text", { x: it.x, y: ty + (k - (lines.length - 1) / 2) * fs * 1.2, "font-size": fs, "text-anchor": "middle", "dominant-baseline": "middle",
+          fill: inside ? ink : big ? (it.kind === "sled" ? "var(--sled)" : "var(--food)") : "var(--ink)", "font-weight": big || inside ? 700 : 500, "pointer-events": "none",
+          stroke: inside ? "none" : "var(--bg)", "stroke-width": inside ? 0 : 0.12, "paint-order": "stroke" }, gLabels);
+        t.textContent = ln;
+      });
+    }
+  }
+  if (sel) {
+    const it = items.find(i => i.id === sel);
+    if (it) {
+      const e = extents(it);
+      const g = el("g", { transform: `translate(${it.x},${-it.y}) rotate(${-it.rot})` }, gSel);
+      el("rect", { x: e[0] - 0.12, y: e[1] - 0.12, width: e[2] - e[0] + 0.24, height: e[3] - e[1] + 0.24, fill: "none", stroke: "var(--sel)", "stroke-width": 0.07 }, g);
+      if (!["person", "sack", "table", "hearth", "bar"].includes(it.shape)) {
+        const h = el("circle", { cx: it.w / 2, cy: it.d / 2, r: 0.28, fill: "#fff", stroke: "var(--sel)", "stroke-width": 0.07 }, g);
+        h.dataset.handle = it.id; h.style.cursor = "nwse-resize";
+      }
+    }
+  }
+  const n = bad.size;
+  const warn = document.getElementById("warn");
+  warn.style.display = n ? "block" : "none";
+  warn.textContent = n ? `重なっている品物が ${n} 個あります（赤い点線）` : "";
+  renderProps();
+  save();
+}
+
+// ---- 右の欄 ---------------------------------------------------------------------------
+function renderProps() {
+  const box = document.getElementById("props");
+  const it = items.find(i => i.id === sel);
+  if (!it) { box.innerHTML = '<div class="empty">品物をクリックすると、ここで名前・大きさ・向きを変えられます。</div>'; return; }
+  if (box.dataset.for === it.id && box.contains(document.activeElement)) {   // 打っている最中は書き換えない
+    for (const k of ["x", "y", "w", "d", "rot"]) { const f = box.querySelector(`[data-k=${k}]`); if (f && f !== document.activeElement) f.value = it[k]; }
+    return;
+  }
+  box.dataset.for = it.id;
+  box.innerHTML = `
+    <label class="f">名前<input type="text" data-k="name"></label>
+    <label class="f">東 x (m)<input type="number" step="0.1" data-k="x"></label>
+    <label class="f">北 y (m)<input type="number" step="0.1" data-k="y"></label>
+    <label class="f">幅 (m)<input type="number" step="0.1" min="0.1" data-k="w"></label>
+    <label class="f">奥行き (m)<input type="number" step="0.1" min="0.1" data-k="d"></label>
+    <label class="f">向き (°)<input type="number" step="15" data-k="rot"></label>
+    <div class="row"><button data-act="rot">90° 回す</button><button data-act="dup">複製</button><button data-act="del">消す</button></div>`;
+  box.querySelectorAll("input").forEach(f => {
+    f.value = it[f.dataset.k];
+    f.addEventListener("focus", () => commit());
+    f.addEventListener("input", () => {
+      const k = f.dataset.k;
+      if (k === "name") it.name = f.value; else { const v = parseFloat(f.value); if (!isNaN(v)) it[k] = k === "w" || k === "d" ? Math.max(0.1, v) : v; }
+      render();
+    });
+  });
+  box.querySelector('[data-act=rot]').onclick = () => { commit(); it.rot = (it.rot + 90) % 360; render(); };
+  box.querySelector('[data-act=dup]').onclick = () => dup();
+  box.querySelector('[data-act=del]').onclick = () => del();
+}
+
+function newId(base) { let i = 1; while (items.some(it => it.id === base + i)) i++; return base + i; }
+function dup() {
+  const it = items.find(i => i.id === sel); if (!it) return;
+  commit();
+  const c = clone(it); c.id = newId(it.id.replace(/\d+$/, "") + "_"); c.x = r2(c.x + 1); c.y = r2(c.y - 1);
+  items.push(c); sel = c.id; render();
+}
+function del() {
+  if (!sel) return;
+  commit(); items = items.filter(i => i.id !== sel); sel = null; render();
+}
+
+function center() { return [r2(view.x + view.w / 2), r2(-(view.y + view.h / 2))]; }
+const ADD = {
+  note: () => ({ id: newId("note"), name: prompt("メモ", "ここに…") || "メモ", shape: "note", w: 3.2, d: 1.4, rot: 0, kind: "note" }),
+  facility: () => ({ id: newId("facility"), name: prompt("施設の名前", "新しい施設") || "新しい施設", shape: "box", w: 3.0, d: 2.0, rot: 0, kind: "misc" }),
+  table: () => ({ id: newId("table_"), name: "食卓", shape: "table", w: 3.64, d: 1.09, rot: 0, kind: "seat" }),
+  vend: () => ({ id: newId("vend_"), name: "自販機", shape: "box", w: 2.1, d: 1.8, rot: 0, kind: "food" }),
+  zone_sled: () => ({ id: newId("zone_sled"), name: "ソリ・装備", shape: "zone", w: 10, d: 6, rot: 0, kind: "sled" }),
+  zone_food: () => ({ id: newId("zone_food"), name: "食べ物", shape: "zone", w: 10, d: 6, rot: 0, kind: "food" }),
+};
+document.querySelectorAll("[data-add]").forEach(b => b.onclick = () => {
+  const it = ADD[b.dataset.add]();
+  [it.x, it.y] = center();
+  commit(); items.push(it); sel = it.id; render();
+});
+
+// ---- つかむ・動かす ----------------------------------------------------------------------
+function toWorld(ev) {
+  const p = svg.createSVGPoint(); p.x = ev.clientX; p.y = ev.clientY;
+  const q = p.matrixTransform(svg.getScreenCTM().inverse());
+  return [q.x, -q.y];
+}
+const snap = v => { const s = document.getElementById("snapBig").checked ? 0.5 : 0.1; return r2(Math.round(v / s) * s); };
+let drag = null;
+
+svg.addEventListener("pointerdown", ev => {
+  const [wx, wy] = toWorld(ev);
+  const h = ev.target.closest("[data-handle]");
+  const g = ev.target.closest("[data-id]");
+  svg.setPointerCapture(ev.pointerId);
+  if (h) {
+    const it = items.find(i => i.id === h.dataset.handle);
+    commit(); drag = { kind: "size", it };
+  } else if (g) {
+    const it = items.find(i => i.id === g.dataset.id);
+    sel = it.id; commit();
+    drag = { kind: "move", it, dx: it.x - wx, dy: it.y - wy, moved: false };
+    render();
+  } else {
+    sel = null; render();
+    drag = { kind: "pan", sx: ev.clientX, sy: ev.clientY, v: Object.assign({}, view) };
+  }
+});
+svg.addEventListener("pointermove", ev => {
+  const [wx, wy] = toWorld(ev);
+  document.getElementById("readout").textContent = `東 ${wx.toFixed(1)} m ／ 北 ${wy.toFixed(1)} m`;
+  if (!drag) return;
+  if (drag.kind === "move") {
+    drag.it.x = snap(wx + drag.dx); drag.it.y = snap(wy + drag.dy); drag.moved = true; render();
+  } else if (drag.kind === "size") {
+    const it = drag.it, a = it.rot * Math.PI / 180, ox = wx - it.x, oy = wy - it.y;
+    const lx = ox * Math.cos(a) + oy * Math.sin(a), ly = -ox * Math.sin(a) + oy * Math.cos(a);
+    it.w = Math.max(0.2, snap(Math.abs(lx) * 2)); it.d = Math.max(0.2, snap(Math.abs(ly) * 2)); render();
+  } else if (drag.kind === "pan") {
+    const k = drag.v.w / svg.clientWidth;
+    const kk = Math.max(k, drag.v.h / svg.clientHeight);
+    view.x = drag.v.x - (ev.clientX - drag.sx) * kk; view.y = drag.v.y - (ev.clientY - drag.sy) * kk; setView();
+  }
+});
+svg.addEventListener("pointerup", () => {
+  if (drag && drag.kind === "move" && !drag.moved) hist.pop();   // 押しただけなら履歴に残さない
+  drag = null;
+});
+svg.addEventListener("dblclick", ev => {
+  const g = ev.target.closest("[data-id]"); if (!g) return;
+  const it = items.find(i => i.id === g.dataset.id);
+  const s = prompt("名前（改行は \\n）", it.name.replace(/\n/g, "\\n"));
+  if (s !== null) { commit(); it.name = s.replace(/\\n/g, "\n"); render(); }
+});
+svg.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  const [wx, wy] = toWorld(ev);
+  const f = Math.exp(ev.deltaY * 0.0015);
+  const nw = Math.min(120, Math.max(6, view.w * f)), k = nw / view.w;
+  view.x = wx - (wx - view.x) * k; view.y = -wy - (-wy - view.y) * k; view.w = nw; view.h *= k; setView();
+}, { passive: false });
+
+window.addEventListener("keydown", ev => {
+  if (ev.target.tagName === "INPUT" || ev.target.tagName === "TEXTAREA") return;
+  const mod = ev.metaKey || ev.ctrlKey;
+  if (mod && ev.key.toLowerCase() === "z") { ev.preventDefault(); ev.shiftKey ? redo() : undo(); return; }
+  const it = items.find(i => i.id === sel); if (!it) return;
+  const step = ev.shiftKey ? 1 : 0.1;
+  const mv = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, step], ArrowDown: [0, -step] }[ev.key];
+  if (mv) { ev.preventDefault(); commit(); it.x = r2(it.x + mv[0]); it.y = r2(it.y + mv[1]); render(); }
+  else if (ev.key === "r" || ev.key === "R") { commit(); it.rot = (it.rot + 90) % 360; render(); }
+  else if (ev.key === "q" || ev.key === "Q") { commit(); it.rot = (it.rot + 15) % 360; render(); }
+  else if (ev.key === "e" || ev.key === "E") { commit(); it.rot = (it.rot + 345) % 360; render(); }
+  else if (ev.key === "d" || ev.key === "D") dup();
+  else if (ev.key === "Delete" || ev.key === "Backspace") { ev.preventDefault(); del(); }
+});
+
+function undo() { if (!hist.length) return; fut.push(clone(items)); items = hist.pop(); render(); }
+function redo() { if (!fut.length) return; hist.push(clone(items)); items = fut.pop(); render(); }
+document.getElementById("undo").onclick = undo;
+document.getElementById("redo").onclick = redo;
+function preset(name) {
+  if (items.length && !confirm("いまの並びを捨てて、始めの並びに戻しますか？（戻すボタンで取り消せます）")) return;
+  commit(); items = clone(DATA.presets[name].items); sel = null; render();
+}
+for (const [key, p] of Object.entries(DATA.presets)) {
+  const b = document.createElement("button");
+  b.textContent = p.label; b.title = p.note || "";
+  b.onclick = () => preset(key);
+  document.getElementById("presets").appendChild(b);
+}
+
+// ---- 書き出し --------------------------------------------------------------------------
+window.getLayout = () => ({ saved: new Date().toISOString(), items: items.map(i => ({ id: i.id, name: i.name, shape: i.shape, kind: i.kind, x: i.x, y: i.y, w: i.w, d: i.d, rot: i.rot })) });
+document.getElementById("exp").onclick = () => { document.getElementById("out").value = JSON.stringify(window.getLayout(), null, 1); };
+document.getElementById("copy").onclick = async () => {
+  const t = document.getElementById("out"); if (!t.value) t.value = JSON.stringify(window.getLayout(), null, 1);
+  try { await navigator.clipboard.writeText(t.value); } catch (e) { t.select(); document.execCommand && document.execCommand("copy"); }
+};
+
+// ---- 始め ------------------------------------------------------------------------------
+gStatic = el("g", {}, svg); gItems = el("g", {}, svg); gLabels = el("g", {}, svg); gSel = el("g", {}, svg);
+drawStatic(gStatic);
+// ?preset=<名前> でその始めの並びを開く（保存した並びより先）。&print=1 で操作の欄とタブを隠し、建物いっぱいに映す（絵に撮る用）
+const Q = new URLSearchParams(location.search);
+if (Q.has("print")) {
+  document.getElementById("side").style.display = "none";
+  document.querySelector(".tabs").style.display = "none";
+  view = { x: -30.5, y: -15.5, w: 54, h: 34 };
+}
+items = (Q.has("preset") && DATA.presets[Q.get("preset")]) ? clone(DATA.presets[Q.get("preset")].items) : (load() || clone(DATA.presets[DATA.start].items));
+setView();
+render();
+</script>
+</body>
+</html>

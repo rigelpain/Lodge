@@ -52,7 +52,7 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 - 当たり判定では、戸の開口（風除室のアーチ戸・1 階の内の自動ドア・勝手口・西の戸・テラスへの戸）を抜き、窓は塞いだ。開け放したアーチ戸は壁にし、風除室の格子の溝は床として歩けるようにした。階段と玄関前の広場の外まわりの段は坂にした。椅子・灯り・小物は入れていない
 - 2 階の小上がりは 0.4 m の段。プレイヤーが上がれる高さかは、ゲームの側で確かめる
 - 原点は 1 階の外形の中心の真下、雪の地面の高さ。正面（南）が -Y（Blender）＝ +Z（Godot）を向く
-- 機械の置き場の目印（空の節点）: `slot_food_kitchen`、`slot_craft_rental`、`slot_vending_1`〜`3`。機械は代表があとで置く
+- 機械の置き場の目印（空の節点）: `slot_food_kitchen`、`slot_craft_rental`、`slot_vending_1`〜`3`。場所と向きは `dims.py` の `SLOTS`（並びは [design/lodge-layout/](../design/lodge-layout/)）。機械は `game/main.gd` が置く
 - 灯りの場所の目印（空の節点）: `light_lamp_0`〜`2`（食堂の天井）、`light_lantern_0`〜`1`（座敷）、`light_fire`（炉）、`light_vestibule`（風除室）。食堂は炉を入れて 4 つまで。ゲームはここに暖色の OmniLight3D を影なしで灯し、炉の火だけ揺らす
 - 書き出しでは面取りを外し、形を 2 つの物体にまとめる。建物は `lodge_body`、中の家具と小物（卓・椅子・灯り・自販機など）は `lodge_props_interior`（名前の prop で 360° 映像から外せる）。動かす自動ドアだけ別。三角形はロッジ全体で 10 万以下が目安（いま約 6.7 万）
 - 自動ドアの戸は `autodoor_l` / `autodoor_r`（ガラスは `autodoor_glass_l` / `_r`）。`lodge.gd` が、人（CharacterBody3D）が戸の前後 3 m に入ると左右へ 1.4 m 引き分ける

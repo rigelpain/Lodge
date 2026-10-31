@@ -91,19 +91,22 @@ TRANSOM = FL1 + 2.30 * TALL       # ガラスの欄間の横桟
 
 # 壁ごとの開口（中心の位置, 種類）。位置は壁に沿った世界座標。窓は 1.5 格子ごと（窓の間は窓幅と同じ）
 OPENINGS = {
-    "1F_N": [(gx(4.6), "win"), (gx(10.5), "win"), (gx(2.78), "door1")],
+    "1F_N": [(gx(4.6), "win"), (gx(10.5), "win"), (11.9, "door1")],   # 勝手口は厨房の東の端の奥
     "1F_E": [(gy(3.9), "win"), (gy(5.5), "win")],
     "2F_S": [(gx(1.0), "win"), (gx(2.5), "door2"), (gx(4.5), "win"), (gx(6.0), "win"), (gx(7.5), "win"),
              (gx(9.0), "win"), (gx(10.5), "win")],
-    "2F_N": [(gx(1.5), "win"), (gx(3.5), "win"), (gx(5.5), "win"), (gx(7.0), "win"), (gx(10.4), "win")],
+    "2F_N": [(gx(1.5), "win"), (gx(4.2), "win"), (gx(5.5), "win"), (gx(7.0), "win"), (gx(10.4), "win")],   # 4.2: 煙突をよける
     "2F_W": [(gy(1.5), "win"), (gy(3.5), "win")],
     "2F_E": [(gy(3.9), "win")],
 }
 DOOR1 = dict(w=1.20, h=2.40)      # 厨房の勝手口
 
 # ---- 煙突（北の壁にまたがる石の塔）----
-CH = dict(x0=gx(8.3), x1=gx(9.7), y0=Y1 - 1.60, y1=Y1 + 1.50,          # 1 階: 炉（幅 5.1 m の大きな炉）
-          ux0=gx(8.55), ux1=gx(9.45), uy0=Y1 - 0.80, uy1=Y1 + 1.40,   # 2 階より上
+# 2026-10-31 代表の並び（design/lodge-layout/layout-daihyo.json）: 入口から入って正面の北の壁に、幅 3.3 m の炉。
+# 炉の右（東）に厨房（食べ物）、入口の左（西）の南の隅にミシン（ソリ・装備）
+HEARTH_CX = -10.4
+CH = dict(x0=HEARTH_CX - 1.65, x1=HEARTH_CX + 1.65, y0=Y1 - 1.60, y1=Y1 + 1.50,          # 1 階: 炉
+          ux0=HEARTH_CX - 1.20, ux1=HEARTH_CX + 1.20, uy0=Y1 - 0.80, uy1=Y1 + 1.40,   # 2 階より上
           top=EAVE_S + ROOF_T + SNOW_T + 1.80,   # 直した点: 南の屋根の上端より 1.8 m 上に出す
           cap_out=0.20, cap_t=0.24, fire_w=1.8, fire_h=1.4)
 VENTS = [gx(6.25)]                # 厨房の排気の筒（屋根の上）
@@ -145,22 +148,26 @@ INSTAIR["y_land"] = INSTAIR["y_top"] - INSTAIR["landing"]  # 踊り場の南の�
 INSTAIR["y_bottom"] = INSTAIR["y_land"] - (INSTAIR["n1"] - 1) * INSTAIR["tread"]   # 1 本目の上り口（南）
 INSTAIR["z_land"] = FL1 + INSTAIR["n1"] * (FL2 - FL1) / _ir
 INSTAIR["hole_y0"] = INSTAIR["y_land"] - (_ir - INSTAIR["n1"] - 1) * INSTAIR["tread"]   # 2 本目の上がり口＝穴の南の縁
-KITCHEN = dict(x0=gx(1.46), x1=gx(6.0), y_front=gy(1.5))   # 間仕切りの位置
-COUNTER = dict(x0=gx(1.6), x1=gx(5.9), y0=gy(1.5) - 0.75, y1=gy(1.5), h=1.05)   # レジ・配膳
-BACK = dict(x0=gx(1.6), x1=gx(5.9), y0=Y1 - LOG_D / 2 - 0.70, y1=Y1 - LOG_D / 2, h=0.90)
-RENTAL = dict(x0=gx(0.15), x1=gx(1.40), y0=gy(1.5) - 0.75, y1=gy(1.5), h=1.05)
-SKI_RACK = dict(x0=X0 + LOG_D / 2 + 0.5, x1=X0 + LOG_D / 2 + 1.2, y0=gy(5.4), y1=gy(1.9), n=40)
+# 厨房に間仕切りはない（2026-10-31 代表: 仕切りと前の塀を消す。炉と厨房が一続き）
+BACK = dict(x0=-2.7, x1=10.9, y0=Y1 - LOG_D / 2 - 0.70, y1=Y1 - LOG_D / 2, h=0.90)   # 厨房の奥の台（北の壁ぎわ）
+MENU_Y = gy(1.5)                  # 厨房の前に吊るメニュー板の線
+# 貸出の棚: 西のガラスの壁ぎわ、ミシンの南。棚の口は東（中）を向く
+RENTAL = dict(x0=X0 + 0.30, x1=X0 + 1.00, y0=-11.17, y1=-6.63, h=1.9)
+# スキー置場: 中から外の下屋（貸出）へ出した。下屋の貸出のスキー立ての東に、もう一列
+SKI_RACK = dict(x0=-28.05, x1=-27.35, y0=3.8 - 6.36, y1=3.8 + 6.36, n=40)
 TABLE = dict(w=2 * K, d=0.6 * K, h=0.72)
-# 卓 18（6 人掛け）。3 列 x 6。2 階の南の壁の丸柱の列は、2 列目と 3 列目の間の通路に入る
-TABLES = [(gx(3.8 + 1.3 * i), y) for y in (gy(3.4), gy(4.6), gy(6.0)) for i in range(6)]   # 南西の角
+# 卓 8（6 人掛け）。2 列 x 4。2 階の南の壁の丸柱の列は、2 列のあいだの通路に入る。代表の並びの卓の真ん中から
+TABLE_CX = (-3.65, 3.55, 10.35, 17.15)
+TABLE_CY = (-2.8, -7.85)
+TABLES = [(x - TABLE["w"] / 2, y - TABLE["d"] / 2) for y in TABLE_CY for x in TABLE_CX]   # 南西の角
 # 窓向きのカウンター: 正面（南）のガラス面いっぱいに一続き。一人用の高い椅子で外の丘を眺める
 WINDOW_BAR = dict(x0=GLASS_S_X0 + 0.35, x1=X1 - LOG_D / 2 - 0.05, y0=Y0 + POST / 2 + 0.10,
                   d=0.50, h=1.05, t=0.06)
 STOOL = dict(step=0.80, y=WINDOW_BAR["y0"] + 0.50 + 0.38, seat=0.76, r=0.21)
-# 炉をコの字に囲む長椅子（奥行き 0.45）
-HEARTH_BENCH = [(CH["x0"], CH["y0"] - 2.8, CH["x1"], CH["y0"] - 2.35),
-                (CH["x0"] - 1.6, CH["y0"] - 2.8, CH["x0"] - 1.15, CH["y0"] - 0.6),
-                (CH["x1"] + 1.15, CH["y0"] - 2.8, CH["x1"] + 1.6, CH["y0"] - 0.6)]
+# 炉をコの字に囲む長椅子（奥行き 0.45）。炉を細くしても、コの字の大きさは前のまま（代表の並びの図のとおり）
+HEARTH_BENCH = [(HEARTH_CX - 2.55, CH["y0"] - 2.8, HEARTH_CX + 2.55, CH["y0"] - 2.35),
+                (HEARTH_CX - 4.15, CH["y0"] - 2.8, HEARTH_CX - 3.7, CH["y0"] - 0.6),
+                (HEARTH_CX + 3.7, CH["y0"] - 2.8, HEARTH_CX + 4.15, CH["y0"] - 0.6)]
 # 2 階
 TATAMI = dict(x0=gx(3.25), x1=gx(10.75), y0=gy(4.6), y1=gy(0.6), h=0.40)   # 小上がり
 KOTATSU_W, KOTATSU_D = 1.2 * K, 0.7 * K
@@ -169,14 +176,16 @@ PIT_DEPTH = 0.40
 BENCH2 = (gx(0.3), Y2_0 + LOG_D / 2 + 0.05, gx(2.0), Y2_0 + LOG_D / 2 + 0.50)
 TABLE2 = (gx(0.4), Y2_0 + 2.0, gx(1.6), Y2_0 + 3.1)
 
-# 機械の置き場（代表があとで置く）。床を空け、glb に空の目印を入れる
+# 機械の置き場。床を空け、glb に空の目印を入れる: (x, y, z, 向き°)。向きは上から見て反時計回り。
+# 0 で機械の正面が南（食堂）、90 で東、270 で西
 SLOTS = {
-    "slot_food_kitchen": (gx(3.75), gy(0.75), FL1),
-    "slot_craft_rental": (gx(0.75), gy(0.75), FL1),
-    "slot_vending_1": (gx(6.55), gy(0.30), FL1),
-    "slot_vending_2": (gx(7.15), gy(0.30), FL1),
-    "slot_vending_3": (gx(3.7), Y0 - 0.45, FL1),
+    "slot_food_kitchen": (3.0, 10.0, FL1, 0),          # 厨房（炉の右）。装置は props/build_scenes.py の kitchen
+    "slot_craft_rental": (-18.3, -3.4, FL1, 90),       # ミシン（南西の隅）。正面は東（入口からの通り道）
+    "slot_vending_1": (-20.6, 4.2, FL1, 90),           # 西のガラスの壁ぎわ。正面は東
+    "slot_vending_2": (20.6, 3.5, FL1, 270),           # 東の壁ぎわ、内階段の手前。正面は西
+    "slot_vending_3": (gx(3.7), Y0 - 0.45, FL1, 0),
 }
+LAMPS = [(x, -5.3) for x in (-0.05, 6.95, 13.75)]   # 食堂の天井の灯り（卓の 2 列のあいだ）
 
 # ---- 地面 ----
 HILL_Y = Y0 - 22.0                # ここから南へ丘が上る

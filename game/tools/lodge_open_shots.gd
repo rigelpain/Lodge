@@ -12,9 +12,9 @@ var lodge: Node3D
 var p: CharacterBody3D
 var lines: Array[String] = []
 
-const MACHINE := Vector2(-19.1, 7.4)   # ミシンの前（立つ所のあたり）
-const KITCHEN := Vector2(-8.2, 7.4)    # ご飯の機械（厨房の置き場）の前
-const BETWEEN := Vector2(-13.6, 6.4)   # そのあいだ
+const MACHINE := Vector2(-15.4, -3.4)  # ミシンの前（南西の隅。正面は東）
+const KITCHEN := Vector2(2.0, 7.4)     # ご飯の機械（炉の右の厨房）の前
+const BETWEEN := Vector2(-6.7, 2.0)    # そのあいだ
 
 
 func _initialize() -> void:
