@@ -1,18 +1,15 @@
-[gd_scene load_steps=7 format=3]
+[gd_scene load_steps=6 format=3]
 
 [ext_resource type="Script" path="res://props_set.gd" id="1"]
 [ext_resource type="PackedScene" path="res://props/sets/kitchen.glb" id="2"]
 
 [sub_resource type="BoxShape3D" id="box_0"]
-size = Vector3(3.800, 1.000, 1.240)
-
-[sub_resource type="BoxShape3D" id="box_1"]
 size = Vector3(1.600, 1.000, 1.960)
 
-[sub_resource type="BoxShape3D" id="box_2"]
+[sub_resource type="BoxShape3D" id="box_1"]
 size = Vector3(2.700, 3.460, 2.700)
 
-[sub_resource type="BoxShape3D" id="box_3"]
+[sub_resource type="BoxShape3D" id="box_2"]
 size = Vector3(1.800, 0.940, 0.900)
 
 [node name="Kitchen" type="Node3D"]
@@ -24,17 +21,13 @@ transform = Transform3D(1.0000, 0, 0.0000, 0, 1.0000, 0, -0.0000, 0, 1.0000, 0.0
 [node name="Collide" type="StaticBody3D" parent="."]
 
 [node name="box_0" type="CollisionShape3D" parent="Collide"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -5.8000, 0.5000, -0.6000)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.9000, 0.5000, -0.8000)
 shape = SubResource("box_0")
 
 [node name="box_1" type="CollisionShape3D" parent="Collide"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, -1.9000, 0.5000, -0.8000)
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.0000, 1.7300, -0.5000)
 shape = SubResource("box_1")
 
 [node name="box_2" type="CollisionShape3D" parent="Collide"]
-transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 2.0000, 1.7300, -0.5000)
-shape = SubResource("box_2")
-
-[node name="box_3" type="CollisionShape3D" parent="Collide"]
 transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 6.0000, 0.4700, 0.4000)
-shape = SubResource("box_3")
+shape = SubResource("box_2")

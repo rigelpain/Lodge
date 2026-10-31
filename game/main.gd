@@ -62,6 +62,11 @@ const Seats := preload("res://seats.gd")
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がロッジの中の側）と向き
 const SHOP_AT := Vector3(2.0, 0, 1.0)
 const SHOP_YAW := PI - 0.5
+## ご飯係の雪だるまの冷蔵庫の立つ所（厨房の目印 slot_food_kitchen の座標。厨房の奥の並びのいちばん西＝ミシンの右。
+## もとは巨大なアイロン台の所）と大きさ（ミシンと同じくらいの高さ 3.7 m）。当たり判定の箱は倍率 1 の幅・高さ・奥行き
+const SNOWMAN_AT := Vector3(-7.15, 0, -1.07)
+const SNOWMAN_SCALE := 1.85
+const FRIDGE_BOX := Vector3(1.1, 2.0, 0.85)
 
 var sled: RigidBody3D
 var player: CharacterBody3D
@@ -725,6 +730,31 @@ func _furnish_lodge() -> void:
 		var set_node := (load("res://props/sets/kitchen.tscn") as PackedScene).instantiate()
 		kitchen.add_child(set_node)
 		Props.cook_cycle(set_node)   # 調理の仕組みができるまで: 装置が順に調理して煙を出す
+		_put_snowman(kitchen)
+
+
+## 厨房の奥の並びのいちばん西（ミシンの右）に、扉を開けた冷蔵庫と、中に立つご飯係の雪だるま（props/build_snowman.py）。
+## 正面は食堂（+Z）、扉は東（厨房の側）へ開く。雪だるまは段ごとの節点（base・chest・head・arm_l・arm_r）を回せば動く（まだ動かさない）
+func _put_snowman(slot: Node3D) -> void:
+	var fridge := Props.make("res://props/snowman_fridge.glb")
+	fridge.name = "SnowmanFridge"
+	fridge.position = SNOWMAN_AT
+	fridge.rotation.y = PI
+	fridge.scale = Vector3.ONE * SNOWMAN_SCALE
+	slot.add_child(fridge)
+	var spot := fridge.find_child("snowman_spot", true, false) as Node3D
+	if spot:
+		var man := Props.make("res://props/snowman.glb")
+		man.name = "Snowman"
+		spot.add_child(man)
+	var body := StaticBody3D.new()   # 冷蔵庫の箱（中の雪だるまごと。扉は通れる）
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = FRIDGE_BOX
+	col.shape = box
+	col.position.y = FRIDGE_BOX.y / 2.0
+	body.add_child(col)
+	fridge.add_child(body)
 
 
 ## 舞う雪: 羊毛のふわふわが、あなたのまわりでゆっくり落ちる
