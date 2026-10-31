@@ -7,9 +7,9 @@
   hearth_nook  暖炉の前のくつろぎ場所: 暖炉、編んだ敷物、ひじ掛け椅子 2 脚、プフ、小卓と灯り、薪、膝掛け
   kotatsu_room 小上がりの掘りごたつ: 畳の台、こたつ、座布団 4 枚、提灯、行灯、お茶とみかん
   dining       食堂のカウンター: カウンター 2 区画、メニュー板 3 枚、レジ、お盆にラーメンとお茶、給水機、肉まんのケース
-  kitchen      厨房（ロッジの slot_food_kitchen に置く）: 巨大なプレス機・乾燥機を奥に並べ（アイロン台は一旦外した）、東の端の
-               作業台に卓上の道具。床に麻袋と仕分けの盆、奥の台（ロッジの物）に瓶と紙袋。前（-Y）がレジのカウンターの側。
-               装置と作業台には当たり判定の箱
+  kitchen      厨房（ロッジの slot_food_kitchen に置く）: 巨大なアイロン台・プレス機・乾燥機を奥に東へ詰めて並べる
+               （西の端は雪だるまの冷蔵庫）。床に麻袋と仕分けの盆、奥の台（ロッジの物）に瓶と紙袋。前（-Y）がレジのカウンターの側。
+               装置には当たり判定の箱
 
 先に各台本で glb を game/props/ に書き出しておくこと。Godot の場面は game/props/sets/<名前>.tscn
 （game/props_set.gd が素材を着せる）。座標は Blender（前 +Y）で書き、Godot（前 -Z）に直して書く。
@@ -87,19 +87,15 @@ SCENES = {
     # 原点はロッジの slot_food_kitchen（床の上）。前のカウンターの裏は y = -1.36、奥の台（高さ 0.45）は y = 0.93..1.28、
     # 両脇の間仕切りは x = ±4.1（どれも 2 倍する前の数）。装置の前（カウンターとのあいだ）に 2 m ほどの通り道をあける
     "kitchen": [
-        # 巨大な装置 3 台を奥に並べ、正面をカウンターへ。東の端の作業台に卓上の道具
-        # 巨大なアイロン台（x = -2.9）は一旦外した。そこ（ミシンの右）に雪だるまの冷蔵庫を置く（main.gd の _put_snowman）。2026-10-31 代表
-        # ("props/kitchen/giant_press_board.glb", -2.9, 0.3, 0, 90, 1),
-        ("props/kitchen/giant_heat_press.glb", -0.95, 0.4, 0, 180, 1),
-        ("props/kitchen/giant_dryer.glb", 1.0, 0.25, 0, 180, 1),
-        ("props/kitchen/work_table_moss.glb", 3.0, -0.2, 0, 0, 1),
-        ("props/kitchen/press_board.glb", 2.78, -0.2, 0.47, 180, 1),
-        ("props/kitchen/table_dryer_red.glb", 3.22, -0.17, 0.47, 180, 1),
-        ("props/food/taiyaki.glb", 3.0, -0.36, 0.47, 30, 1),
-        ("props/kitchen/pellet_sack_mix.glb", -2.45, -0.3, 0, 0, 1),     # 冷蔵庫の前を空けるよう、東へ寄せた
+        # 巨大な装置 3 台を奥に並べ、正面をカウンターへ。東（右）へ詰め、西の端（ミシンの右）を雪だるまの冷蔵庫に空ける
+        # （main.gd の _put_snowman。冷蔵庫は x = -4.08..-3.06）。東の端の作業台と卓上の道具は片付けた（2026-10-31 代表）
+        ("props/kitchen/giant_press_board.glb", -0.4, 0.3, 0, 90, 1),
+        ("props/kitchen/giant_heat_press.glb", 1.5, 0.4, 0, 180, 1),
+        ("props/kitchen/giant_dryer.glb", 3.125, 0.25, 0, 180, 1),
+        ("props/kitchen/pellet_sack_mix.glb", -2.45, -0.3, 0, 0, 1),     # 麻袋は冷蔵庫とアイロン台のあいだへ
         ("props/kitchen/pellet_sack_brown.glb", -2.25, -0.5, 0, 40, 1),
-        ("props/kitchen/pellet_sack_green.glb", 2.2, 0.6, 0, 0, 1),
-        ("props/kitchen/pellet_sack_mix.glb", 3.85, 0.55, 0, -30, 1),
+        ("props/kitchen/pellet_sack_green.glb", -2.35, 0.6, 0, 0, 1),
+        ("props/kitchen/pellet_sack_mix.glb", -1.95, 0.65, 0, -30, 1),
         ("props/kitchen/pellet_tray.glb", -1.95, -0.25, 0, 0, 1),
         ("props/kitchen/pellet_jar_yellow.glb", -2.1, 1.08, 0.45, 0, 1),
         ("props/kitchen/pellet_jar_mix.glb", -1.95, 1.1, 0.45, 0, 1),
@@ -111,8 +107,7 @@ SCENES = {
 }
 
 # 当たり判定の箱: (場面, x, y, 幅, 奥行き, 高さ)。床に置く（2 倍する前の数）
-COLLIDE = {"kitchen": [(-0.95, 0.4, 0.8, 0.98, 0.5), (1.0, 0.25, 1.35, 1.35, 1.73),
-                       (3.0, -0.2, 0.9, 0.45, 0.47)]}
+COLLIDE = {"kitchen": [(-0.4, 0.3, 1.9, 0.62, 0.5), (1.5, 0.4, 0.8, 0.98, 0.5), (3.125, 0.25, 1.35, 1.35, 1.73)]}
 
 # 描くときだけ置く物（ロッジの床と奥の台の代わり）
 STAGE = {"kitchen": [("props/room/floor_planks.glb", x, y, 0, 0, 1) for x in (-3, -1, 1, 3) for y in (-0.4, 1.6)]}

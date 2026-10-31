@@ -1,12 +1,12 @@
 extends SceneTree
 ## --spawn=inside（食堂の中から始める）の立ち位置が、物の当たりと重ならないか確かめる。
-## 雪だるまの冷蔵庫と、ミシン・冷蔵庫・プレス機・乾燥機のあいだを本物の W キーで歩けるかも確かめる（確かめ用）。
+## 雪だるまの冷蔵庫と、ミシン・冷蔵庫・アイロン台・プレス機・乾燥機のあいだを本物の W キーで歩けるかも確かめる（確かめ用）。
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/inside_spawn_check.gd -- --spawn=inside --bots=0 --no-pip --dir=/path/shots
 ## （--spawn=inside は main.gd が読む。音を切ると立ち位置が効かないので --no-sound は付けない）
 ## 場所はロッジの座標（lodge/dims.py の x, y。Godot ではロッジの (x, 0, -y)）で出す。
 ## 1. 立ち位置: 中から始めたあなたの位置、カプセルと重なる当たり、まわりの物
 ## 2. 一人称: 立ち位置から見た絵と、冷蔵庫の前から雪だるまを見た絵
-## 3. 歩く: ミシンの前 → 冷蔵庫の前 → プレス機の前 → 乾燥機の前を、行きと帰り
+## 3. 歩く: ミシンの前 → 冷蔵庫の前 → アイロン台の前 → プレス機の前 → 乾燥機の前を、行きと帰り
 
 var args := {}
 var main: Node3D
@@ -150,10 +150,10 @@ func _run() -> void:
 	await _shot("01_spawn_inside")
 	_say("1 秒後のあなた: x=%.2f y=%.2f、カメラ x=%.2f y=%.2f（三人称 %s）" % [_l(p.global_position).x, _l(p.global_position).y,
 		_l(p.cam.global_position).x, _l(p.cam.global_position).y, str(p.third)])
-	# 2. 歩く: ミシンの前 → 冷蔵庫の前 → プレス機の前 → 乾燥機の前（厨房の目印の座標で、並びの前 2.6 m）、そして帰り
+	# 2. 歩く: ミシンの前 → 冷蔵庫の前 → アイロン台の前 → プレス機の前 → 乾燥機の前（厨房の目印の座標で、並びの前 2.6 m）、そして帰り
 	p.set_third(false)
 	var kitchen := lodge.find_child("slot_food_kitchen", true, false) as Node3D
-	var stops := [["ミシン", -10.9], ["冷蔵庫", -7.15], ["プレス機", -1.9], ["乾燥機", 2.0]]
+	var stops := [["ミシン", -10.9], ["冷蔵庫", -7.15], ["アイロン台", -0.8], ["プレス機", 3.0], ["乾燥機", 6.25]]
 	var pts := []
 	for s in stops:
 		var g := kitchen.to_global(Vector3(s[1], 0, 2.6))
