@@ -125,7 +125,10 @@ var _held_key := ""
 const HELD_TILT := 0.12      # 畳んだソリの包みの名札の面を、まっすぐより少し上へ傾ける (rad)
 const HELD_TURN := 0.0     # 少し内へ回す (rad)
 const HELD_SCALE := 1.25     # 一人称で持つ包みの大きさ
-const BEAD := 0.4            # 一人称の、袋の雪玉の粒の大きさ（手の雪玉に比べて）
+const BEAD := 0.32           # 一人称の、左手に抱える雪玉の粒の大きさ（右手の雪玉に比べて）
+## 左手に抱える雪玉の山の並び（左手の座標。下の段に 3 つ、その上に 2 つ）
+const BEAD_HEAP := [Vector3(0.0, 0.03, -0.07), Vector3(0.026, 0.027, -0.065), Vector3(-0.024, 0.027, -0.068),
+	Vector3(0.013, 0.052, -0.07), Vector3(-0.011, 0.052, -0.066)]
 var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
 var _pan_acc := 0.0          # 二本指スクロールのたまった量
 const PAN_STEP := 1.5        # これだけたまったら 1 つ持ち替える
@@ -178,14 +181,16 @@ func _ready() -> void:
 			_ball_fp.position = Vector3(0, 0.03, -0.1)
 			_ball_fp.visible = false
 			h.add_child(_ball_fp)
-			# 帯の袋の雪玉の数を、右手のそばに小さな粒で（一人称では帯が見えないので）。手の内側へ一列に
+		else:
+			# 残りの雪玉（帯の袋の分）は、投げない左手の手のひらに小さな山にして抱える（一人称では帯が見えないので）。
+			# 2026-10-31 代表「投げる方の手にくっついてしまっているから、左手にストックはくっつけてほしい」
 			for i in Emotes.BALL_MAX:
 				var bead := MeshInstance3D.new()
 				bead.mesh = Doll.ball_mesh()
 				bead.material_override = Doll.ball_material()
 				bead.layers = 1 << 2
 				bead.scale = Vector3.ONE * BEAD
-				bead.position = Vector3(-0.09 - 0.05 * i, -0.02 + 0.006 * i, -0.04)
+				bead.position = BEAD_HEAP[i]
 				bead.visible = false
 				h.add_child(bead)
 				_beads_fp.append(bead)
@@ -852,6 +857,9 @@ func _pose_hands(dt: float) -> void:
 					target = Vector3(0.28 * s, -0.32, -0.35)
 			_:
 				target = Vector3(0.27 * s, -0.25 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.48)
+				if s < 0 and doll.pouch_balls > 0:
+					# 雪玉を抱えた左手は、胸の前へ少し上げる（左下の名札に隠れず、手のひらの山が見えるように）
+					target = Vector3(-0.2, -0.16 + sin(_t * 6.0) * 0.006 * velocity.length(), -0.44)
 		var em_hand := _emote_hand(s)
 		if em_hand != Vector3.INF:
 			target = em_hand
@@ -882,9 +890,13 @@ func _pose_hands(dt: float) -> void:
 		grow = 1.0   # 投げたあとは、次の雪玉を帯の袋から出すまで少し空く
 	_ball_fp.visible = grow > 0.0
 	_ball_fp.scale = Vector3.ONE * maxf(grow, 0.01)
-	var beads := doll.pouch_balls + (1 if holding_ball and grow == 0.0 else 0)   # 投げた直後は、次の玉もまだ袋に
+	var beads := doll.pouch_balls + (1 if holding_ball and grow == 0.0 else 0)   # 投げた直後は、次の玉もまだ左手に
+	# 左手がほかのことに使われているあいだ（ソリの縁を握る・米袋の耳を握る・身ぶり・指さし）は、袋にしまってあることにして出さない
+	var left_busy: bool = mode == Mode.GRIP or (mode == Mode.RIDE and sled.kind == "sack") \
+		or (-1 in Palm.sides_of(hand) and point_at != Vector3.INF) \
+		or (_emote_hand(-1) != Vector3.INF and not _winding and em[0] != "throw")
 	for i in _beads_fp.size():
-		_beads_fp[i].visible = i < beads
+		_beads_fp[i].visible = i < beads and not left_busy
 	_place_held_fp(grow > 0.0)
 	_face_held_fp()
 	_place_shapes_fp(em)
@@ -1209,6 +1221,10 @@ func _emote_hand(s: int) -> Vector3:
 					return Vector3(0.12, 0.0, -0.66)
 				if k < 3:
 					return Vector3(-0.04, -0.34, -0.56)
+				if k < Doll.BALL_BACK + 1 and ball_count() > 0:
+					return Vector3(-0.14, -0.2, -0.47)   # 左手の山から次の 1 つを取る
+			elif k >= 2 and k < Doll.BALL_BACK + 1 and ball_count() > 0:
+				return Vector3(-0.2, -0.22, -0.48)   # 左手は少し寄せて、右手に差し出す
 		"hit":
 			if k < 8:
 				return Vector3(s * 0.26, 0.0, -0.4)

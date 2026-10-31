@@ -50,6 +50,8 @@ var _hover_btn := ""         # "buy" "close"
 var _shake := 0.0
 var _pop := {}               # 持ち物の番号 → 跳ねの残り
 var _coin_pop := 0.0
+var _balls := -1             # 前に見た雪玉の数（増えた・減ったで弾ませる）
+var _ball_pop := 0.0
 var _flies: Array = []       # 財布へ飛んでいるボタン 1 枚ずつ {from（画面の px）, t（0→1）, look（段）, v（値打ち）, sewn（速さの表示の糸の上の番号。なければ -1）}
 var _pending := 0            # 飛んでいて、まだ財布に描かない値打ち（木のボタンの何個分）
 var _tier_at := {}           # 段 → 財布のその段の山の、次の 1 枚が載る所（画面の px。描くときに決まる）
@@ -423,6 +425,11 @@ func _process(dt: float) -> void:
 	_bar_a = move_toward(_bar_a, 1.0 if show else 0.0, dt * 4.0)
 	_shake = maxf(0.0, _shake - dt * 2.5)
 	_coin_pop = maxf(0.0, _coin_pop - dt * 2.5)
+	var nb: int = player.ball_count() if player.has_method("ball_count") else 0
+	if _balls >= 0 and nb != _balls:
+		_ball_pop = 1.0
+	_balls = nb
+	_ball_pop = maxf(0.0, _ball_pop - dt * 2.5)
 	var hud = main.get("hud") if main else null
 	for f in _flies.duplicate():
 		var was: float = f.t
@@ -474,6 +481,7 @@ class View extends Control:
 			_draw_purse(u, ui._purse_a)
 		_draw_flies(u)
 		_draw_gear(u)
+		_draw_balls(u)
 
 	## 帯の装備の札（2026-10-29 代表「米袋は刺繍小窓の上においてほしい」）: 右下の刺繍の小窓の真上に、左から
 	##   装備の画面（I・背負いかばん）、米袋（N。持っている米袋の数だけ点、選んでいるのは赤。出していれば破線の形）、
@@ -516,6 +524,42 @@ class View extends Control:
 				"lamp":
 					CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamp.get("look", "box"), craft.lamp_on(who), 1.0, lamp.is_empty())
 			Icons.keycap(self, cards[i][0], r.position + Vector2(13.0 * u, 13.0 * u), 22.0 * u, 1.0)
+
+	## 雪玉の数: I・N・R の札の上に、持っている数だけ雪玉の粒が並ぶ細い札（文字・数字なし）。5 つまでの空きは点線の丸。
+	## 0 個のときは出さない。数が変わると、増えた・減った端の粒がぽんと弾む（2026-10-31 代表「三人称でもわかるように、雪玉ストック数の HUD がほしい」）
+	func _draw_balls(u: float) -> void:
+		var n: int = ui._balls
+		if n <= 0 or ui.shop_open or ui.machine_open or ui.gear_open:
+			return
+		var cw := 70.0 * u
+		var gap := 10.0 * u
+		var total := cw * 3.0 + gap * 2.0
+		var cx := size.x - 18.0 * u - total / 2.0
+		var bottom := size.y - 18.0 * u
+		var sc = ui.main.get("self_cam") if ui.main else null
+		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
+			var fr: Control = sc._frame
+			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
+			bottom = fr.position.y - 44.0 * u
+		var top := bottom - 78.0 * u - 10.0 * u   # I・N・R の札の上
+		var h := 40.0 * u
+		var r := Rect2(cx - total / 2.0, top - h, total, h)
+		Icons.screen()
+		Icons.patch(self, Icons.rr(r.position.x, r.position.y, r.size.x, h, 14.0 * u), Icons.PAPER, 0.88, true, Icons.PAPER_EDGE)
+		var mx: int = 5
+		var step := (r.size.x - 36.0 * u) / float(mx - 1)
+		for i in mx:
+			var c := Vector2(r.position.x + 18.0 * u + i * step, r.get_center().y)
+			if i < n:
+				var pop: float = ui._ball_pop if i == n - 1 else 0.0
+				var rad := 11.0 * u * (1.0 + 0.4 * sin(pop * PI))
+				c.y -= 6.0 * u * sin(pop * PI)
+				draw_circle(c + Vector2(1.0, 1.6) * u, rad, Color(Icons.SHADOW, 0.25))
+				draw_circle(c, rad, Icons.SNOW)
+				draw_arc(c, rad, 0, TAU, 24, Color(0.62, 0.70, 0.84), 1.4 * u, true)
+				draw_circle(c + Vector2(-0.35, -0.35) * rad, rad * 0.32, Color(1, 1, 1, 0.9))   # つや
+			else:
+				Icons.dashes(self, Icons.circ(c, 9.0 * u, 16), Color(Icons.PAPER_EDGE, 0.9), 1.2 * u, 2.6 * u, 2.2 * u, 1.0, true)
 
 	## 持ち物の列
 	func _draw_bar(u: float, a: float) -> void:
