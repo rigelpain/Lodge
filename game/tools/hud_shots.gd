@@ -22,6 +22,7 @@ var _set := false
 var _mash_n := -1
 var _frame_k := -1
 var _flips := 0
+var _balls_set := false
 
 
 func _initialize() -> void:
@@ -152,6 +153,32 @@ func _process(dt: float) -> bool:
 		_flips += 1
 		_key(KEY_RIGHT, true)
 		_key(KEY_RIGHT, false)
+	# --balls=N: 雪玉を N 個持たせる。--throw=秒: その時に振りかぶって、0.35 秒後に投げる
+	if _set and args.has("balls") and not _balls_set and main.get("emotes"):
+		_balls_set = true
+		main.emotes.balls[p.id] = int(args["balls"])
+	if _set and args.has("throw"):
+		var tt := float(args["throw"])
+		if t > tt and t - dt <= tt:
+			p.wind_up()
+		if t > tt + 0.35 and t - dt <= tt + 0.35:
+			p.throw_ball()
+	# --point=秒: その時に指さしを入れ、--sweep=度/秒 で見回す（指す先が視点についてくるかの確かめ）
+	if _set and args.has("point"):
+		var pt0 := float(args["point"])
+		if t > pt0 and t - dt <= pt0:
+			p.toggle_point()
+		if t > pt0 + 0.3 and args.has("sweep"):
+			p.rotation.y += deg_to_rad(float(args["sweep"])) * dt
+			p._pitch = -0.1 + 0.15 * sin((t - pt0) * 1.3)
+		elif t > pt0 + 0.3 and args.has("look"):   # --look=rad: 指さしたまま、見上げる（正）・見下ろす（負）
+			p._pitch = float(args["look"])
+	if _set and args.has("point") and args.has("log-point") and int(t * 2.0) != int((t - dt) * 2.0) and p.point_at != Vector3.INF:
+		var head: Vector3 = p.global_position + Vector3.UP * 1.55
+		var hub = main.get_node_or_null("Emotes")
+		var sent: Vector3 = hub.point_of(p.id) if hub else Vector3.INF
+		print("t=%.1f 指す先と見ている向きのずれ %.0f°  配られた指す先とのずれ %.0f°" % [t, rad_to_deg((p.point_at - head).angle_to(-p.cam.global_basis.z)),
+			rad_to_deg((p.point_at - head).angle_to(sent - head)) if sent != Vector3.INF else -1.0])
 	if _set and args.has("pitch"):   # 見上げる・見下ろす（空や床を背景にして撮る）
 		p._pitch = float(args["pitch"])
 	if _set and scene == "ride":

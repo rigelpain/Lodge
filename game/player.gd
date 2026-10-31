@@ -92,9 +92,14 @@ var _col: CollisionShape3D
 var _t := 0.0
 var _snap := 0.0             # 吸い付きの途中（0→1）
 var _hand_frame := -1        # 一人称の手を最後に置き直したコマ
-var point_at := Vector3.INF  # 指している所（世界）。仲間はここを見る
-var _point_on: Node3D = null # 指した物（ソリや人）。動いても指し続ける
-var _point_local := Vector3.ZERO
+var point_at := Vector3.INF  # 指している所（世界）。指していなければ INF。指しているあいだは、いつも見ている先を追う
+var pointing := false        # 指さしを入れているか（右クリック・輪・2 キーで入れたり切ったり）
+var _point_sent := Vector3.ZERO   # 最後に配り役へ送った向き（間引くため）
+var _point_send_t := 0.0
+const POINT_FOLLOW := 10.0   # 指す先が、見ている先へ追いつく速さ（1/s）
+var point_level := true      # 一人称の指さしの手形を、画面の中で床に平行に置く（--point-tilt で前の、腕に沿った斜めの向き）
+const POINT_SEND_DEG := 4.0  # 向きがこれだけ変わったら送る（度）
+const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
@@ -125,7 +130,10 @@ var _held_key := ""
 const HELD_TILT := 0.12      # 畳んだソリの包みの名札の面を、まっすぐより少し上へ傾ける (rad)
 const HELD_TURN := 0.0     # 少し内へ回す (rad)
 const HELD_SCALE := 1.25     # 一人称で持つ包みの大きさ
-const BEAD := 0.4            # 一人称の、袋の雪玉の粒の大きさ（手の雪玉に比べて）
+const BEAD := 0.32           # 一人称の、左手に抱える雪玉の粒の大きさ（右手の雪玉に比べて）
+## 左手に抱える雪玉の山の並び（左手の座標。下の段に 3 つ、その上に 2 つ）
+const BEAD_HEAP := [Vector3(0.0, 0.03, -0.07), Vector3(0.026, 0.027, -0.065), Vector3(-0.024, 0.027, -0.068),
+	Vector3(0.013, 0.052, -0.07), Vector3(-0.011, 0.052, -0.066)]
 var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
 var _pan_acc := 0.0          # 二本指スクロールのたまった量
 const PAN_STEP := 1.5        # これだけたまったら 1 つ持ち替える
@@ -178,14 +186,16 @@ func _ready() -> void:
 			_ball_fp.position = Vector3(0, 0.03, -0.1)
 			_ball_fp.visible = false
 			h.add_child(_ball_fp)
-			# 帯の袋の雪玉の数を、右手のそばに小さな粒で（一人称では帯が見えないので）。手の内側へ一列に
+		else:
+			# 残りの雪玉（帯の袋の分）は、投げない左手の手のひらに小さな山にして抱える（一人称では帯が見えないので）。
+			# 2026-10-31 代表「投げる方の手にくっついてしまっているから、左手にストックはくっつけてほしい」
 			for i in Emotes.BALL_MAX:
 				var bead := MeshInstance3D.new()
 				bead.mesh = Doll.ball_mesh()
 				bead.material_override = Doll.ball_material()
 				bead.layers = 1 << 2
 				bead.scale = Vector3.ONE * BEAD
-				bead.position = Vector3(-0.09 - 0.05 * i, -0.02 + 0.006 * i, -0.04)
+				bead.position = BEAD_HEAP[i]
 				bead.visible = false
 				h.add_child(bead)
 				_beads_fp.append(bead)
@@ -539,7 +549,7 @@ func _physics_process(dt: float) -> void:
 			_walk(dt, true)
 		Mode.WALK:
 			_walk(dt, false)
-	_update_point()
+	_update_point(dt)
 	_update_emote(dt)
 	_sack_events(dt)
 	_pose_hands(dt)
@@ -578,36 +588,64 @@ func _pose_doll() -> void:
 		doll.lantern_lit = craft.lamp_on(id)
 
 
-## 右クリックで指さしを入れたり切ったりする。入れると、いま向いている先（画面のまんなかが当たる所）を指し、
-## その所を指し続ける。指したまま見回せば、顔の向きと違う所を指していられる。もう一度押すと腕を下ろす
+## 右クリックで指さしを入れたり切ったりする。入れているあいだ、腕はいま見ている先（画面のまんなかが当たる所）を追う。
+## 見回すと指す先も一緒に動く（2026-10-31 代表「指差し時に向きを固定していますが、視点に追従するほうがわかりやすいので、向き固定はやめましょう」）。
+## 前の作り（指した所に残す・動く物に吸い付く）はやめた。もう一度押すと腕を下ろす
 func toggle_point() -> void:
-	if point_at != Vector3.INF:
-		point_at = Vector3.INF
-		_point_on = null
+	if pointing:
+		_stop_point()
 		return
 	set_height("")   # 指さす手は、手のひらを下ろす
+	pointing = true
+	point_at = _view_point()
+	_send_point(true)
+
+
+func _stop_point() -> void:
+	pointing = false
+	point_at = Vector3.INF
+	if hub:
+		hub.send({"kind": "point", "who": id, "dir": Vector3.ZERO, "dist": 0.0})
+		_point_sent = Vector3.ZERO
+
+
+## いま見ている先: 画面のまんなかから 60 m 先までで、最初に当たる所（なければ 60 m 先）
+func _view_point() -> Vector3:
 	var from := cam.global_position
 	var to := from - cam.global_basis.z * 60.0
 	var q := PhysicsRayQueryParameters3D.create(from, to)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
-	point_at = hit.position if hit else to
-	_point_on = null
-	# 動く物（ソリや人）を指したら、その物に対しての所を覚えて、動いても指し続ける
-	if hit and (hit.collider is RigidBody3D or hit.collider is CharacterBody3D):
-		_point_on = hit.collider
-		_point_local = _point_on.to_local(point_at)
+	return hit.position if hit else to
 
 
-## 指した物が動いたら、指す所もついていく。物が消えたら腕を下ろす
-func _update_point() -> void:
-	if _point_on == null:
+## 指しているあいだ、指す先を見ている先へなめらかに追わせる。向き（頭から）を回し、長さは近づける
+## （当たる所が手前の物と遠くの雪のあいだで跳んでも、腕が飛ばないように）。腕の形は人形が 12 コマで刻む
+func _update_point(dt: float = 0.0) -> void:
+	if not pointing:
 		return
-	if not is_instance_valid(_point_on):
-		point_at = Vector3.INF
-		_point_on = null
+	var head := global_position + Vector3.UP * 1.55
+	var want := _view_point() - head
+	var cur := point_at - head if point_at != Vector3.INF else want
+	var k := 1.0 - exp(-dt * POINT_FOLLOW)
+	var dir := cur.normalized().slerp(want.normalized(), k) if cur.length() > 0.01 and want.length() > 0.01 else want.normalized()
+	var dist := lerpf(cur.length(), want.length(), k)
+	point_at = head + dir * dist
+	_send_point(false)
+
+
+## 指さしの向きを配り役へ送る。向きが POINT_SEND_DEG 以上変わったときだけ、多くても 1 秒に 6 回（通信の量を抑える）
+func _send_point(force: bool) -> void:
+	if hub == null or point_at == Vector3.INF:
 		return
-	point_at = _point_on.to_global(_point_local)
+	var rel := point_at - (global_position + Vector3.UP * 1.55)
+	var dir := rel.normalized()
+	var now := Time.get_ticks_msec() / 1000.0
+	var turned := _point_sent == Vector3.ZERO or rad_to_deg(dir.angle_to(_point_sent)) >= POINT_SEND_DEG
+	if force or (turned and now - _point_send_t >= POINT_SEND_GAP):
+		hub.send({"kind": "point", "who": id, "dir": dir, "dist": snappedf(rel.length(), 0.1)})
+		_point_sent = dir
+		_point_send_t = now
 
 
 ## 小さな段差（STEP_UP まで）は、歩くだけで乗り上げる。
@@ -852,6 +890,9 @@ func _pose_hands(dt: float) -> void:
 					target = Vector3(0.28 * s, -0.32, -0.35)
 			_:
 				target = Vector3(0.27 * s, -0.25 + sin(_t * 6.0 + s) * 0.01 * velocity.length(), -0.48)
+				if s < 0 and doll.pouch_balls > 0:
+					# 雪玉を抱えた左手は、胸の前へ少し上げる（左下の名札に隠れず、手のひらの山が見えるように）
+					target = Vector3(-0.2, -0.16 + sin(_t * 6.0) * 0.006 * velocity.length(), -0.44)
 		var em_hand := _emote_hand(s)
 		if em_hand != Vector3.INF:
 			target = em_hand
@@ -882,9 +923,13 @@ func _pose_hands(dt: float) -> void:
 		grow = 1.0   # 投げたあとは、次の雪玉を帯の袋から出すまで少し空く
 	_ball_fp.visible = grow > 0.0
 	_ball_fp.scale = Vector3.ONE * maxf(grow, 0.01)
-	var beads := doll.pouch_balls + (1 if holding_ball and grow == 0.0 else 0)   # 投げた直後は、次の玉もまだ袋に
+	var beads := doll.pouch_balls + (1 if holding_ball and grow == 0.0 else 0)   # 投げた直後は、次の玉もまだ左手に
+	# 左手がほかのことに使われているあいだ（ソリの縁を握る・米袋の耳を握る・身ぶり・指さし）は、袋にしまってあることにして出さない
+	var left_busy: bool = mode == Mode.GRIP or (mode == Mode.RIDE and sled.kind == "sack") \
+		or (-1 in Palm.sides_of(hand) and point_at != Vector3.INF) \
+		or (_emote_hand(-1) != Vector3.INF and not _winding and em[0] != "throw")
 	for i in _beads_fp.size():
-		_beads_fp[i].visible = i < beads
+		_beads_fp[i].visible = i < beads and not left_busy
 	_place_held_fp(grow > 0.0)
 	_face_held_fp()
 	_place_shapes_fp(em)
@@ -931,11 +976,24 @@ func _place_shapes_fp(em: Array) -> void:
 			var h: Node3D = hands[0] if hands[0].get_meta("side") == side else hands[1]
 			match mode[side]:
 				"point":
-					# 人さし指を、手の伸びる向きへ（腕の先）
-					var y: Vector3 = (h.basis * Vector3.FORWARD).normalized()
-					var z := Vector3.UP.cross(y) * float(side)
-					z = z.normalized() if z.length() > 0.05 else Vector3.BACK
-					b = Palm.thumb_up(Basis(y.cross(z).normalized(), y, z), side)   # 親指は上
+					# 人さし指の手形は、画面の中で床に平行に（水平に、画面のまんなかの側へ）向け、手の甲を自分へ向ける。
+					# 腕の伸びる向きに合わせると、画面の中で指が斜め上を向き、どこを指しているか読みにくかった
+					# （2026-10-31 代表「指差しは床に平行な方が見やすい」。腕ではなく指のワッペンのこと）。--point-tilt で前の向き
+					var y: Vector3
+					var z: Vector3
+					if point_level:
+						# 人さし指の先を、画面のまんなか（消失点）へ向ける。紙の手形は画面に向けたまま（手の甲が見える）、
+						# 画面の中で、手の所から消失点への向きに回す。親指は内側、小指は外側になる
+						# （輪郭の親指は右手 +x・左手 -x。x = y × z で、どちらも指の内側に来る）
+						var toward := Vector3(-h.position.x, -h.position.y, 0.0)
+						y = toward.normalized() if toward.length() > 0.01 else Vector3.UP
+						z = Vector3.FORWARD   # 手のひらは向こう（手の甲がこちら）
+						b = Basis(y.cross(z).normalized(), y, z)
+					else:
+						y = (h.basis * Vector3.FORWARD).normalized()
+						z = Vector3.UP.cross(y) * float(side)
+						z = z.normalized() if z.length() > 0.05 else Vector3.BACK
+						b = Palm.thumb_up(Basis(y.cross(z).normalized(), y, z), side)   # 親指は上
 					size = 1.0
 				"low":
 					b = b * Basis(Vector3.RIGHT, -0.65)   # 下へ向けて、おさえる
@@ -987,9 +1045,8 @@ func _height() -> String:
 
 ## 手のひらを掲げる・下ろす（配り役へ送る）。いまの手（右・左・両手）で。指さしていれば、指さしをやめる
 func set_height(height: String) -> void:
-	if height != "" and point_at != Vector3.INF:
-		point_at = Vector3.INF
-		_point_on = null
+	if height != "" and pointing:
+		_stop_point()
 	set_hands(Palm.hands_name(height, hand))
 
 
@@ -1209,6 +1266,10 @@ func _emote_hand(s: int) -> Vector3:
 					return Vector3(0.12, 0.0, -0.66)
 				if k < 3:
 					return Vector3(-0.04, -0.34, -0.56)
+				if k < Doll.BALL_BACK + 1 and ball_count() > 0:
+					return Vector3(-0.14, -0.2, -0.47)   # 左手の山から次の 1 つを取る
+			elif k >= 2 and k < Doll.BALL_BACK + 1 and ball_count() > 0:
+				return Vector3(-0.2, -0.22, -0.48)   # 左手は少し寄せて、右手に差し出す
 		"hit":
 			if k < 8:
 				return Vector3(s * 0.26, 0.0, -0.4)

@@ -55,6 +55,7 @@ var balls := {}              # 番号 → 持っている雪玉の数
 var _making := {}            # 番号 → 丸めている雪玉ができるコマ（MAKE_READY。それまでにのけぞると、できない）
 
 var people := {}             # 番号 → 人（player.gd・bot.gd）
+var aims := {}               # 番号 → 指している向き {dir: 頭から見た向き（世界）, dist: その先までの長さ}。指していなければ無い
 var hands := {}              # 番号 → いま掲げている手（HANDS の名前。"high_R" など）
 var _next_id := 1
 
@@ -65,6 +66,15 @@ func join(who: Node3D) -> int:
 	_next_id += 1
 	people[id] = who
 	return id
+
+
+## その人がいま指している所（世界）。頭から、配られた向きと長さの先。指していなければ INF
+func point_of(id: int) -> Vector3:
+	var a: Dictionary = aims.get(id, {})
+	var who: Node3D = people.get(id)
+	if a.is_empty() or who == null or not is_instance_valid(who):
+		return Vector3.INF
+	return who.global_position + Vector3.UP * 1.55 + (a.dir as Vector3) * float(a.dist)
 
 
 ## 持っている雪玉の数
@@ -94,6 +104,11 @@ func _apply(ev: Dictionary) -> void:
 			if balls_of(ev.who) <= 0:
 				return   # 投げる雪玉がない
 			balls[ev.who] = balls_of(ev.who) - 1
+	if ev.kind == "point":   # 指さしの向き（持ち主の画面で、向きが変わったときだけ間引いて送られる）
+		if ev.get("dir", Vector3.ZERO) == Vector3.ZERO:
+			aims.erase(ev.who)
+		else:
+			aims[ev.who] = {"dir": ev.dir, "dist": ev.dist}
 	if ev.kind == "hands":
 		if ev.hands == "":
 			hands.erase(ev.who)

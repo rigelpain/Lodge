@@ -307,7 +307,8 @@ func _pose_doll() -> void:
 	if player and _look_t > 0.0:
 		doll.gaze = player.global_position + Vector3.UP * 1.25   # 呼ばれた人のほうを見る
 	elif player:
-		var pt: Vector3 = player.point_at
+		var hub = get_parent().get_node_or_null("Emotes")   # あなたが指している所（配られた向きから。通信でも同じ）
+		var pt: Vector3 = hub.point_of(int(player.get("id"))) if hub and player.get("id") != null else player.point_at
 		if pt != Vector3.INF:
 			doll.gaze = pt
 		elif handle == Vector3.INF and global_position.distance_to(player.global_position) < 8.0:
