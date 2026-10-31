@@ -213,6 +213,13 @@ func _touch(a_id: int, b_id: int, height: String, frame: int) -> void:
 			gb.append([pr[1], p])
 		ea["grips"] = ga
 		eb["grips"] = gb
+		# 手のひらは、手が合う所でなく相手の体へまっすぐ向ける（二人の手のひらがぴったり向かい合う）。
+		# 合う所へ向けると、右手と右手のときや近いとき・斜めのときに、手のひらが大きく内側へ回っていた
+		# （2026-10-31 代表「ハイタッチするときやけに内側に傾いてる事がある」）
+		var ab := _flat(b.global_position - a.global_position)
+		ab = ab.normalized() if ab.length() > 0.01 else _forward(a)
+		ea["fwd"] = ab
+		eb["fwd"] = -ab
 	else:
 		var sg := _shake_grips(a, sa, b, sb)
 		ea.merge({"kind": "shake", "grips": sg[0], "fwd": sg[2], "axis": sg[3]}, true)

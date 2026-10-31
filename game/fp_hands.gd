@@ -58,6 +58,7 @@ static func make(kind: String, side: int, layers: int) -> Node3D:
 	sm.radial_segments = 6
 	sm.rings = 3
 	var hand := _part(_flat(sm), skin, layers)
+	hand.name = "Mitten"
 	hand.transform = Transform3D(Basis(Vector3.RIGHT, -0.3) * Basis.from_scale(Vector3(1.0, 0.6, 1.3)), Vector3(0, -0.01, -0.045))
 	root.add_child(hand)
 	var tm := SphereMesh.new()
@@ -66,6 +67,7 @@ static func make(kind: String, side: int, layers: int) -> Node3D:
 	tm.radial_segments = 5
 	tm.rings = 2
 	var thumb := _part(_flat(tm), skin, layers)
+	thumb.name = "MittenThumb"
 	thumb.transform = Transform3D(Basis.from_scale(Vector3(0.9, 0.8, 1.4)), Vector3(-0.042 * side, 0.0, -0.05))
 	root.add_child(thumb)
 	return root
