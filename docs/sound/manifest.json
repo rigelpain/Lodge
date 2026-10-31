@@ -28,6 +28,48 @@
   "loop": false
  },
  {
+  "file": "cmp_voice_oi_01a.wav",
+  "dur": 1.36,
+  "peak": -5.0,
+  "rms": -16.8,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_01b.wav",
+  "dur": 1.36,
+  "peak": -5.0,
+  "rms": -16.7,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_02a.wav",
+  "dur": 1.27,
+  "peak": -5.0,
+  "rms": -15.9,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_02b.wav",
+  "dur": 1.27,
+  "peak": -5.0,
+  "rms": -16.2,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_03a.wav",
+  "dur": 1.37,
+  "peak": -5.0,
+  "rms": -17.1,
+  "loop": false
+ },
+ {
+  "file": "cmp_voice_oi_03b.wav",
+  "dur": 1.37,
+  "peak": -5.0,
+  "rms": -16.7,
+  "loop": false
+ },
+ {
   "file": "dish_01.wav",
   "dur": 0.12,
   "peak": -9.0,
