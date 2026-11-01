@@ -17,6 +17,8 @@ const Look := preload("res://look.gd")
 ##   --stitch=名前  滑りあとの縫い目の差し替え（running なみ縫い・zigzag・chain くさり縫い・saddle サドルステッチ）。既定はソリの大きさで決まる
 ##   --trail-fade=fray|bury  滑りあとの消え方（ほつれる・雪に埋もれる）
 ##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
+##   --bot-lanterns=形,形…  仲間の帯に提げるランタン（lantern.gd の LOOKS。ソリを押す仲間、ロッジの仲間の順に。確かめ用）
+##   --spawn=lanterns  おじいさんの番台の横のランタン掛けの前から始める（F でランタンを買って提げ替える）
 ##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
 ##   --spawn=wardrobe  2 階の衣装掛けの前から始める（F で人形を選び直す）
 ##   --spawn=dye       2 階の染め桶の前から始める（F で服を染める）
@@ -72,6 +74,10 @@ const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
+const LanternRack := preload("res://lantern_rack.gd")
+const LanternUi := preload("res://lantern_ui.gd")
+## ランタン掛け（lantern_rack.gd）を、おじいさんの番台（BANDAI の counter_patch）からどれだけ横に置くか（番台の座標, m。+X は番台の右の端の側）
+const LANTERN_RACK_AT := Vector3(-2.0, 0.0, 0.1)
 const Damp := preload("res://damp.gd")
 const Badges := preload("res://badges.gd")
 const Companions := preload("res://companions.gd")
@@ -147,6 +153,8 @@ var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
+var lantern_rack: Node3D      # 番台の横のランタン掛け（lantern_rack.gd）
+var lantern_ui: CanvasLayer   # ランタンを買って提げ替える画面（lantern_ui.gd）
 var pal_stall: Node3D         # 衣装掛けの横の、頭・肩の小物とミニオンの売り台（pal_stall.gd）
 var pals_ui: CanvasLayer      # 小物とミニオンを買って付け替える画面（pals_ui.gd）
 var dye_vat: Node3D           # 衣装掛けのとなりの染め桶（dye_vat.gd）
@@ -321,6 +329,7 @@ func _ready() -> void:
 		b.lean_mode = args.get("bot-lean", "follow")
 		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
 		add_child(b)
+		_bot_lantern(b, i)
 		_add_pals(b)
 	if seats:
 		# ロッジでくつろぐ仲間: 食堂の空いた席に座った姿で始まる（bot.gd の lounge）
@@ -334,6 +343,7 @@ func _ready() -> void:
 			b.lounge = true
 			b.position = get_node("Lodge").to_global(Vector3(6.0 + 3.0 * i, 0.6, -4.0))
 			add_child(b)
+			_bot_lantern(b, int(args.get("bots", "1")) + i)
 			_add_pals(b)
 
 	if player and net.spawn_slot() > 0:
@@ -423,6 +433,18 @@ func _ready() -> void:
 		wardrobe_ui.craft = craft
 		wardrobe_ui.player = player
 		add_child(wardrobe_ui)
+		if lantern_rack:
+			lantern_rack.player = player
+		lantern_ui = LanternUi.new()
+		lantern_ui.main = self
+		lantern_ui.craft = craft
+		lantern_ui.player = player
+		add_child(lantern_ui)
+		if args.get("spawn", "") == "lanterns" and lantern_rack:   # --spawn=lanterns: 番台の横のランタン掛けの前から始める
+			var at := lantern_rack.to_global(Vector3(0, 0.1, 1.7))
+			player.global_position = at
+			var to := lantern_rack.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if pal_stall:
 			pal_stall.player = player
 		pals_ui = PalsUi.new()
@@ -893,6 +915,14 @@ func _furnish_lodge() -> void:
 		_put_snowman(kitchen_slot)
 	for b in BANDAI:
 		_put_bandai(lodge, b)
+	# おじいさんの番台の横に、ランタン掛け（正面は番台と同じく客の側）
+	var bp := lodge.get_node_or_null("Bandai_counter_patch") as Node3D
+	if bp:
+		lantern_rack = LanternRack.new()
+		lantern_rack.name = "LanternRack"
+		lantern_rack.player = player
+		lantern_rack.transform = bp.transform * Transform3D(Basis(Vector3.UP, PI), LANTERN_RACK_AT)
+		lodge.add_child(lantern_rack)
 	# 2 階の衣装掛け: 前で F を押すと人形を選び直す
 	wardrobe = Wardrobe.new()
 	wardrobe.name = "Wardrobe"
@@ -929,6 +959,17 @@ func _add_pals(host: Node3D) -> void:
 	c.host = host
 	c.craft = craft
 	add_child(c)
+
+
+## --bot-lanterns の i 番目の形を、仲間に持たせて提げる（あなたと同じ出来事。ほかの人の画面にも、その人のランタンが見える）
+func _bot_lantern(b: Node3D, i: int) -> void:
+	if not args.has("bot-lanterns") or craft == null or int(b.get("id")) < 0:
+		return
+	var ls: PackedStringArray = String(args["bot-lanterns"]).split(",")
+	var look := ls[i % ls.size()]
+	var who := int(b.get("id"))
+	craft.send({"kind": "lantern_own", "who": who, "look": look})
+	craft.send({"kind": "equip", "who": who, "gear": "lantern", "index": craft.lantern_index(who, look)})
 
 
 ## 番台 1 つ: パッチワーク（または藍）のフェルトを張った木のカウンター。上に、店番の側を向いたレジと、払いを受けるお皿。

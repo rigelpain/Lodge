@@ -34,6 +34,9 @@ extends Node
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
+##   lantern_buy {look}        おじいさんの番台の横のランタン掛け（lantern_rack.gd）で、形違いのランタン（lantern.gd の LOOK）を買う。
+##                             買ったらすぐ帯に提げる（ev に index が入る）。通信ではほかの人の画面でも、その人のランタンが替わる
+##   lantern_own {look}        持っているランタンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
 ##   pal_buy   {key}           2 階の衣装掛けの横の売り台で、頭・肩の小物かミニオン（pals.gd）を買う。買ったらすぐ身につける（ev に slot が入る）
 ##   pal_own   {key}           持っている小物・ミニオンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
 ##   pal_wear  {slot, key}     頭（head）・肩（shoulder）・連れ（pet）に、持っている物を付ける。key が "" なら外す。
@@ -48,13 +51,14 @@ extends Node
 ## GEARS に種類を足し、_gear_lists に持ち物の配列の入れ物を足す
 ## 米袋は全員が最初から 1 つ（標準）持つ。米袋の型紙と布で縫った米袋は、持ち物でなく装備の枠に入り、選ばれる
 ## ランタンも全員が最初から持ち、帯の左に提げている（消えた状態で始まる）。形は lantern.gd の LOOKS（{look}）。
-## いまは木の手提げ（標準）と和紙の提灯の 2 つを最初から持つ。売り台で形違いを売るかは、まだ決めていない
+## 木の手提げ（標準）と和紙の提灯の 2 つを最初から持つ。ほかの 8 つは番台の横のランタン掛けで売る（2026-11-01 代表）
 
 signal happened(ev: Dictionary)
 
 const Doll := preload("res://doll.gd")
 const Sled := preload("res://sled.gd")
 const Fabrics := preload("res://fabrics.gd")
+const Lantern := preload("res://lantern.gd")
 const Pals := preload("res://pals.gd")
 const Food := preload("res://food.gd")
 
@@ -218,6 +222,15 @@ func lantern(who: int) -> Dictionary:
 	var list: Array = lanterns.get(who, [])
 	var i := int(lantern_sel.get(who, -1))
 	return list[i] if i >= 0 and i < list.size() else {}
+
+
+## 持っているランタンの中の、形 look の番号（持っていなければ -1）
+func lantern_index(who: int, look: String) -> int:
+	var list: Array = lanterns.get(who, [])
+	for i in list.size():
+		if String(list[i].get("look", "")) == look:
+			return i
+	return -1
 
 
 ## ランタンが点いているか
@@ -677,6 +690,23 @@ func _apply(ev: Dictionary) -> bool:
 			if lantern(who).is_empty():
 				return false
 			lamps[who] = bool(ev.on)
+		"lantern_buy":
+			var look := String(ev.get("look", ""))
+			var cost := Lantern.price(look)
+			if cost < 0 or lantern_index(who, look) >= 0 or wallets[who] < cost:
+				return false
+			wallets[who] -= cost
+			var was_lit := lamp_on(who)
+			lanterns[who].append({"look": look})
+			lantern_sel[who] = lanterns[who].size() - 1   # 買ったらすぐ帯に提げる（点いていれば点いたまま）
+			lamps[who] = was_lit
+			ev["index"] = lantern_sel[who]
+		"lantern_own":
+			var look := String(ev.get("look", ""))
+			if Lantern.price(look) < 0:
+				return false
+			if lantern_index(who, look) < 0:
+				lanterns[who].append({"look": look})
 		"earn":
 			if int(ev.get("n", 0)) <= 0:
 				return false

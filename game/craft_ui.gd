@@ -1327,20 +1327,25 @@ class View extends Control:
 			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[lamp_on].get("look", "box"), craft.lamp_on(who), 1.0)
 		# 左の下: 持っているランタン。押すと提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
 		var lrects: Array = []
-		var lcw := 104.0 * u
-		var lch := 128.0 * u
+		# 札は 2 枚なら大きく、ランタン掛けで買い足して増えたら列を増やして小さくする（10 枚で 5 列 2 段）
+		var lcols := clampi(ceili(lamps.size() / 2.0), 2, 5)
+		var lrows := maxi(1, ceili(lamps.size() / float(lcols)))
+		var lgap := (12.0 if lcols == 2 else 6.0) * u
+		var lcw := minf(104.0 * u, (lw - 48.0 * u - (lcols - 1) * lgap) / lcols)
+		var lch := minf(minf(128.0 * u, lcw * 1.23), (150.0 * u - (lrows - 1) * lgap) / lrows)
 		var ly := lr.position.y + py + 316.0 * u
+		var lx := lr.position.x + (lw - lcols * lcw - (lcols - 1) * lgap) / 2.0
 		Icons.screen()
 		Icons.thread(self, PackedVector2Array([Vector2(lr.position.x + 18.0 * u, ly - 18.0 * u), Vector2(lr.end.x - 18.0 * u, ly - 18.0 * u)]), Icons.PAPER_EDGE, 1.5 * u, 0.8)
 		for i in lamps.size():
-			var card := Rect2(lr.position.x + 24.0 * u + (i % 2) * (lcw + 12.0 * u), ly + (i / 2) * (lch + 10.0 * u), lcw, lch)
+			var card := Rect2(lx + (i % lcols) * (lcw + lgap), ly + (i / lcols) * (lch + lgap), lcw, lch)
 			var picked := i == lamp_on
 			if picked or ui._lamp_hover == i:
 				card.position.y -= (8.0 if picked else 4.0) * u
 			lrects.append(card)
 			Icons.screen()
-			Icons.patch(self, Icons.rr(card.position.x, card.position.y, lcw, lch, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
-			CraftIcons._at(card.get_center(), lcw * 0.95)
+			Icons.patch(self, Icons.rr(card.position.x, card.position.y, lcw, lch, minf(12.0 * u, lcw * 0.12)), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+			CraftIcons._at(card.get_center(), minf(lcw, lch * 0.8) * 0.95)
 			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[i].get("look", "box"), picked and craft.lamp_on(who), 1.0)
 			if picked:
 				Icons.screen()

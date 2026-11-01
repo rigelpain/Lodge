@@ -203,18 +203,23 @@ static func rice_sack(ci: CanvasItem, c: Vector2, sc: float, body := KRAFT, band
 	ci.draw_polyline(Icons._map(pts + PackedVector2Array([pts[0]])), Color(edge, 0.8 * a), maxf(1.0 * Icons._s * sc, 1.0), true)
 
 
-## ランタンの絵（帯のランタン）。look は lantern.gd の LOOKS（box 木の手提げ / paper 提灯）。lit なら芯が光り、まわりに暖かい光の輪。
-## outline なら提げていない（破線の形）
+## ランタンの絵（帯のランタン）。look は lantern.gd の LOOKS（box 木の手提げ / paper 提灯 / 売り物の 8 つ）。lit なら芯が光り、
+## まわりに形の色の光の輪。outline なら提げていない（破線の形）
 static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit := true, a := 1.0, outline := false) -> void:
 	var o := Icons._o + c * Icons._s
 	var k := sc * Icons._s
 	if outline:
 		Icons.dashes(ci, Icons.xf(Icons.rr(-13, -16, 26, 34, 4), 0.0, c, sc), Icons.PAPER_EDGE, 1.4, 3.0, 2.0, a, true)
 		return
+	var L: Dictionary = preload("res://lantern.gd").LOOK.get(look, preload("res://lantern.gd").LOOK["box"])
 	if lit:   # 光の輪（重ねた薄い円）
+		var lc: Color = L.color
 		for i in 4:
-			ci.draw_circle(o + Vector2(0, 2) * k, (30.0 - i * 6.0) * k, Color(1.0, 0.74, 0.38, 0.16 * a))
-	var glow := Color(1.0, 0.90, 0.55) if lit else Color(0.62, 0.60, 0.58)
+			ci.draw_circle(o + Vector2(0, 2) * k, (30.0 - i * 6.0) * k, Color(lc.r, lc.g * 1.08, lc.b * 0.95, 0.16 * a))
+	var glow := (L.glow as Color).lerp(Color.WHITE, 0.35) if lit else Color(0.62, 0.60, 0.58)
+	if look in ["spool", "knit", "hoop", "yarnball", "thimble", "hotaru", "pearl"]:
+		_lantern_ware(ci, c, sc, look, glow, lit, a)
+		return
 	var arc := PackedVector2Array()
 	for i in 13:   # 毛糸を巻いた取っ手
 		var t := PI + PI * i / 12.0
@@ -228,16 +233,116 @@ static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit :=
 		Icons.patch(ci, Icons.xf(Icons.rr(-7, -17, 14, 4, 1.5), 0.0, c, sc), Icons.WOOD.darkened(0.35), a, false)
 		Icons.patch(ci, Icons.xf(Icons.rr(-7, 18, 14, 4, 1.5), 0.0, c, sc), Icons.WOOD.darkened(0.35), a, false)
 		return
-	Icons.thread(ci, Icons.xf(arc, 0.0, c, sc), Color("B8402E"), 2.6, a)
-	var dark := Icons.WOOD.darkened(0.3)
+	var raden := look == "raden"   # 螺鈿の漆の灯籠: 木を黒い漆に、糸を金に、板に貝のかけら、下に茜の房
+	var wood := Color(0.10, 0.08, 0.09) if raden else Icons.WOOD
+	var dark := Color(0.06, 0.05, 0.06) if raden else Icons.WOOD.darkened(0.3)
+	var gold := Color(0.85, 0.65, 0.24)
+	if raden:
+		Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(0, 19), Vector2(0, 27)]), 0.0, c, sc), Color("B8402E"), 2.4, a)
+	Icons.thread(ci, Icons.xf(arc, 0.0, c, sc), gold if raden else Color("B8402E"), 2.6, a)
 	Icons.patch(ci, Icons.xf(PackedVector2Array([Vector2(-15, -13), Vector2(0, -21), Vector2(15, -13)]), 0.0, c, sc), dark, a, false)   # 屋根
-	Icons.patch(ci, Icons.xf(Icons.rr(-11, -12, 22, 26, 1), 0.0, c, sc), Color(1.0, 0.78, 0.42, 0.75) if lit else Color(0.36, 0.40, 0.50, 0.75), a, false)   # フィルムの窓
+	var film := Color(1.0, 0.78, 0.42, 0.75) if lit else Color(0.36, 0.40, 0.50, 0.75)
+	if lit and raden:
+		film = Color(1.0, 0.62, 0.26, 0.8)
+	Icons.patch(ci, Icons.xf(Icons.rr(-11, -12, 22, 26, 1), 0.0, c, sc), film, a, false)   # フィルムの窓
 	Icons.patch(ci, Icons.xf(Icons.ell(Vector2(0, 3), 5, 7, 14), 0.0, c, sc), glow, a, false)   # 和紙で包んだ芯
-	Icons.dashes(ci, Icons.xf(Icons.rr(-9, -10, 18, 22, 1), 0.0, c, sc), Color(1, 1, 1, 0.9), 0.9, 2.2, 1.6, a, true)   # 白い糸の枠
+	Icons.dashes(ci, Icons.xf(Icons.rr(-9, -10, 18, 22, 1), 0.0, c, sc), gold if raden else Color(1, 1, 1, 0.9), 0.9, 2.2, 1.6, a, true)   # 白い糸の枠
 	for x in [-13.0, 10.0]:   # 柱
-		Icons.patch(ci, Icons.xf(Icons.rr(x, -13, 3, 28, 1), 0.0, c, sc), Icons.WOOD, a, false)
-	Icons.patch(ci, Icons.xf(Icons.rr(-15, -15, 30, 3.5, 1), 0.0, c, sc), Icons.WOOD, a, false)
-	Icons.patch(ci, Icons.xf(Icons.rr(-16, 14, 32, 5, 1.5), 0.0, c, sc), Icons.WOOD, a, false)
+		Icons.patch(ci, Icons.xf(Icons.rr(x, -13, 3, 28, 1), 0.0, c, sc), wood, a, false)
+	Icons.patch(ci, Icons.xf(Icons.rr(-15, -15, 30, 3.5, 1), 0.0, c, sc), wood, a, false)
+	Icons.patch(ci, Icons.xf(Icons.rr(-16, 14, 32, 5, 1.5), 0.0, c, sc), wood, a, false)
+	if raden:
+		for x in [-10.0, -3.0, 4.0, 11.0]:   # 貝のかけら
+			Icons.patch(ci, Icons.xf(PackedVector2Array([Vector2(x - 2, 16.5), Vector2(x, 15), Vector2(x + 2, 16.5), Vector2(x, 18)]), 0.0, c, sc), Color(0.80, 0.90, 0.92), a, false)
+
+
+## 売り物のランタンの絵（lantern の続き）。どれも上に提げる紐、体の形、光る所（glow）
+static func _lantern_ware(ci: CanvasItem, c: Vector2, sc: float, look: String, glow: Color, lit: bool, a: float) -> void:
+	var P := func(pts: PackedVector2Array, col: Color, al := 1.0) -> void:
+		Icons.patch(ci, Icons.xf(pts, 0.0, c, sc), col, a * al, false)
+	var T := func(pts: PackedVector2Array, col: Color, w: float, al := 1.0) -> void:
+		Icons.thread(ci, Icons.xf(pts, 0.0, c, sc), col, w, a * al)
+	var hemp := Color(0.79, 0.67, 0.47)
+	var red := Color("B8402E")
+	var cream := Color(0.94, 0.90, 0.82)
+	var brass := Color(0.79, 0.60, 0.24)
+	var wood := Icons.WOOD
+	match look:
+		"spool":   # 糸巻き: 木のつばを上下に、光る胴に生成りの糸の帯 3 つ
+			T.call(PackedVector2Array([Vector2(0, -27), Vector2(0, -19)]), hemp, 1.8)
+			P.call(Icons.rr(-9, -16, 18, 32, 1), glow)
+			for y in [-12.0, -1.0, 9.0]:
+				P.call(Icons.rr(-10, y, 20, 6, 1), cream)
+				for j in 3:
+					T.call(PackedVector2Array([Vector2(-10, y + 1.5 + j * 1.6), Vector2(10, y + 1.5 + j * 1.6)]), Color(0.70, 0.64, 0.55), 0.6, 0.8)
+			P.call(Icons.rr(-15, -20, 30, 5, 2), wood)
+			P.call(Icons.rr(-15, 16, 30, 5, 2), wood)
+		"knit":    # 毛糸の編み帽子: 茜と生成りの縞、裾のゴム編み、てっぺんのぼんぼり
+			T.call(PackedVector2Array([Vector2(0, -27), Vector2(0, -20)]), red, 2.0)
+			P.call(Icons.ell(Vector2(0, 2), 13, 16, 20), glow)
+			for i in 7:
+				var y := -11.0 + i * 3.6
+				var w := 13.0 * sqrt(maxf(0.0, 1.0 - pow((y - 2.0) / 16.0, 2.0)))
+				T.call(PackedVector2Array([Vector2(-w, y), Vector2(w, y)]), cream if i % 3 == 1 else red, 2.2)
+			P.call(Icons.rr(-10, 14, 20, 5, 1.5), red.darkened(0.15))
+			P.call(Icons.circ(Vector2(0, -16), 4.5, 12), cream)
+		"hoop":    # 刺繍枠と麻布: 3 本の麻ひも、上下の木の輪、生成りの布に赤いクロスステッチの雪
+			for x in [-12.0, 0.0, 12.0]:
+				T.call(PackedVector2Array([Vector2(0, -27), Vector2(x, -15)]), hemp, 1.0)
+			P.call(Icons.rr(-13, -14, 26, 30, 1), glow)
+			P.call(Icons.rr(-15, -16, 30, 4, 2), Color(0.82, 0.69, 0.49))
+			P.call(Icons.rr(-15, 14, 30, 4, 2), Color(0.82, 0.69, 0.49))
+			P.call(Icons.rr(14, -17, 3, 5, 1), brass)
+			for f in [Vector2(-5, -4), Vector2(5, 6)]:
+				for d in [Vector2(0, 0), Vector2(3, 0), Vector2(-3, 0), Vector2(0, 3), Vector2(0, -3)]:
+					var q: Vector2 = f + d
+					T.call(PackedVector2Array([q + Vector2(-1.1, -1.1), q + Vector2(1.1, 1.1)]), red, 0.8)
+					T.call(PackedVector2Array([q + Vector2(-1.1, 1.1), q + Vector2(1.1, -1.1)]), red, 0.8)
+		"yarnball":   # 糸玉: 光る小さな玉を、からし色の毛糸の輪で包む
+			T.call(PackedVector2Array([Vector2(0, -27), Vector2(0, -15)]), hemp, 1.8)
+			P.call(Icons.circ(Vector2(0, 2), 8.0, 16), glow)
+			for i in 6:
+				var pts := Icons.ell(Vector2.ZERO, 16.0, 6.0 + 2.0 * i, 24)
+				var rot := PI * i / 6.0
+				var q := PackedVector2Array()
+				for v in pts:
+					q.append(v.rotated(rot) + Vector2(0, 2))
+				q.append(q[0])
+				T.call(q, Color(0.85, 0.64, 0.23) if i % 3 else hemp, 1.3)
+		"thimble":   # 真鍮の指ぬき: 伏せた筒の、くぼみの穴から光の粒
+			T.call(PackedVector2Array([Vector2(0, -27), Vector2(0, -19)]), red, 2.0)
+			P.call(Icons.rr(-13, -19, 26, 38, 11), brass)
+			P.call(Icons.rr(-14, 15, 28, 4, 1.5), brass.darkened(0.2))
+			for j in 6:
+				for i in 5:
+					var x := -9.0 + i * 4.5 + (2.25 if j % 2 else 0.0)
+					if absf(x) < 11.5:
+						ci.draw_circle(Icons._o + (c + Vector2(x, -11.0 + j * 4.4) * sc) * Icons._s, 1.25 * sc * Icons._s, Color(glow, a) if lit else Color(0.30, 0.22, 0.12, a))
+		"hotaru":   # 麻ひもの蛍かご: 濃い木の屋根と底、麻ひもの格子、中に光るおしりの蛍
+			T.call(PackedVector2Array([Vector2(0, -27), Vector2(0, -19)]), hemp, 1.8)
+			if lit:
+				P.call(Icons.rr(-12, -13, 24, 27, 1), Color(glow, 0.35))
+			for x in [-10.0, -5.0, 0.0, 5.0, 10.0]:
+				T.call(PackedVector2Array([Vector2(x, -14), Vector2(x, 14)]), hemp, 0.9)
+			for y in [-8.0, -2.0, 4.0, 10.0]:
+				T.call(PackedVector2Array([Vector2(-12, y), Vector2(12, y)]), hemp, 0.9)
+			for f in [Vector2(-5, -4), Vector2(4, 2), Vector2(-2, 8)]:
+				ci.draw_circle(Icons._o + (c + f * sc) * Icons._s, 2.4 * sc * Icons._s, Color(glow, a) if lit else Color(0.45, 0.48, 0.30, a))
+				ci.draw_circle(Icons._o + (c + (f + Vector2(2.4, -1.2)) * sc) * Icons._s, 1.5 * sc * Icons._s, Color(0.2, 0.18, 0.17, a))
+			P.call(PackedVector2Array([Vector2(-15, -14), Vector2(-6, -20), Vector2(6, -20), Vector2(15, -14)]), wood.darkened(0.3))
+			P.call(Icons.rr(-15, 14, 30, 4, 1.5), wood.darkened(0.3))
+		"pearl":   # 白蝶貝のボタン: 真鍮の笠から、2 つ穴のボタンを鱗のように重ねて垂らす。奥に月白の灯り
+			T.call(PackedVector2Array([Vector2(0, -27), Vector2(0, -20)]), cream, 1.4)
+			P.call(Icons.ell(Vector2(0, 1), 9, 14, 18), glow)
+			for j in 4:
+				for i in 4:
+					var q := Vector2(-10.5 + i * 7.0 + (3.5 if j % 2 else 0.0), -10.0 + j * 7.0)
+					if absf(q.x) > 13.0:
+						continue
+					P.call(Icons.circ(q, 3.4, 12), Color(0.90, 0.92, 0.94), 0.92)
+					for hx in [-1.0, 1.0]:
+						ci.draw_circle(Icons._o + (c + (q + Vector2(hx, 0)) * sc) * Icons._s, 0.5 * sc * Icons._s, Color(0.55, 0.58, 0.62, a))
+			P.call(PackedVector2Array([Vector2(-14, -14), Vector2(-5, -20), Vector2(5, -20), Vector2(14, -14)]), brass)
 
 
 ## 背負いかばん（装備の画面の印）: フェルトの胴に、ボタンで留めるかぶせ、前のポケット、上の持ち手

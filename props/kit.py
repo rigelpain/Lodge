@@ -432,6 +432,8 @@ def _cycles():
     sc = bpy.context.scene
     sc.render.engine = "CYCLES"
     try:
+        if os.environ.get("KIT_CPU"):   # GPU (Metal) の焼き付けが止まったまま戻らない小物があるので、CPU で焼き直す道
+            raise RuntimeError("KIT_CPU")
         prefs = bpy.context.preferences.addons["cycles"].preferences
         prefs.compute_device_type = "METAL"
         prefs.get_devices()
