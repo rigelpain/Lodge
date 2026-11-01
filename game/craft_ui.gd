@@ -3,7 +3,8 @@ extends CanvasLayer
 ##   持ち物は手持ち 6 ＋ かばん 6 の決まった場所（craft.gd の HAND_SLOTS・SLOTS。空いた場所はそのまま空いている）。
 ##   持ち物の列（画面の下のまんなか）: 左端が素手（手袋）、続けて手持ちの 6 マス（空いたマスは縫い目だけ）。手に持っている物は
 ##     少し持ち上がり、赤い糸で囲む。持ち替えたとき、列の上に名前の紙の札を 2 秒ほど出す。
-##     右端に財布（木のボタンを数だけ積む）。ホイールで手に持つ物を替える（player.gd）。手持ちが空で売り台も閉じていれば出さない
+##     右に財布（木のボタンを数だけ積む。ボタンがなければ出さず、列はマスのすぐ右で終わる）。ホイールで手に持つ物を替える（player.gd）。
+##     遊んでいるあいだはいつも出しておく（2026-11-01 代表「常時手持ちインベントリ表示」）
 ##   売り台（おじさんに F）: 上の段に型紙 4 枚、下の段に布 6 色。どれも絵と、値段のボタンの数。
 ##     品物を押して選び、右の買うボタン（ボタン → 手袋）で買う。足りない品物は薄く、買えないときは買うボタンが震える。
 ##     閉じるのは右上の × の縫い目か、F か Esc
@@ -24,7 +25,7 @@ extends CanvasLayer
 ##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: 取った所からボタンが画面を飛んで財布へ入り、
 ##     財布がぽんと跳ねる。財布に着くたびに、素材ごとの取得音（audio.gd の coin。木コッ・真鍮チン・白蝶貝シャラン・螺鈿）。
 ##     飛ぶボタンは、増えた分を段ごとに分けた 1 枚ずつ（真鍮・白蝶貝・螺鈿は光る）。滑ってもらった分は、速さの表示の糸の上に
-##     縫い込まれたボタンが、上から順にぽんぽんと続けて飛ぶ。持ち物の列が出ていなければ、画面の下のまんなかに財布だけを少しのあいだ出す
+##     縫い込まれたボタンが、上から順にぽんぽんと続けて飛ぶ
 ##   財布は段ごとの山（左から木・真鍮・白蝶貝・螺鈿。価値の低い順）。両替はひとりでに（木が 10 枚になると真鍮 1 枚）
 ## 出来事は craft.gd へ送る（いまはすぐ配られる。通信ではホストが確かめる）。
 
@@ -81,8 +82,6 @@ var _tier_at := {}           # 段 → 財布のその段の山の、次の 1 �
 var _batches := {}           # 滑った分（spool）の一まとまり → {left: まだ飛んでいる数, count, brass}。全部入ったら締めくくりの「ちゃりん」
 var _next_batch := 1
 var _shine_t := 0.0          # お金のボタンの光の時計
-var _purse_a := 0.0          # 財布だけの札の濃さ
-var _purse_hold := 0.0       # 財布だけの札を出しておく残りの秒
 var _wallet_at := Vector2.ZERO   # 財布の、次のボタンが載る所（画面の px。描くときに決まる）
 const FLY_T := 0.75          # 財布まで飛ぶ秒
 var _bar_a := 0.0
@@ -218,7 +217,6 @@ func _on_craft(ev: Dictionary) -> void:
 				var si: int = hud.sewn_claim(list[k]) if on_spool else -1
 				_flies.append({"from": from, "t": -0.45 - k * gap, "look": list[k], "v": v, "sewn": si, "step": k, "batch": batch})
 			_pending += flown
-			_purse_hold = 3.5
 		"buy", "fold":
 			_pop[int(ev.slot)] = 1.0
 			_coin_pop = 1.0 if ev.kind == "buy" else _coin_pop
@@ -629,8 +627,7 @@ func select(i: int) -> void:
 func _process(dt: float) -> void:
 	if craft == null or player == null:
 		return
-	var show: bool = shop_open or machine_open or gear_open or craft.has_hand_items(_who())
-	_bar_a = move_toward(_bar_a, 1.0 if show else 0.0, dt * 4.0)
+	_bar_a = move_toward(_bar_a, 1.0, dt * 4.0)   # 持ち物の列はいつも出しておく（始めにふわっと出す）
 	var held_it: Dictionary = craft.held(_who())
 	var key := "" if held_it.is_empty() else "%d %s" % [craft.hands.get(_who(), -1), held_it]
 	if key != _name_key:
@@ -667,13 +664,9 @@ func _process(dt: float) -> void:
 				if bt.left <= 0:   # 滑った分が全部入った: 締めくくりの「ちゃりん」
 					_batches.erase(int(f.batch))
 					_coin_pop = 1.0
-					_purse_hold = maxf(_purse_hold, 2.5)   # 財布をもう少し見せておく
 					if audio:
 						audio.reward(int(bt.count), bool(bt.brass))
-	_purse_hold = maxf(0.0, _purse_hold - dt)
 	_shine_t += dt
-	var purse: bool = (_purse_hold > 0.0 or not _flies.is_empty()) and _bar_a < 0.5
-	_purse_a = move_toward(_purse_a, 1.0 if purse else 0.0, dt * 4.0)
 	for k in _pop.keys():
 		_pop[k] = maxf(0.0, _pop[k] - dt * 2.5)
 	name_edit.visible = gear_open and _name_rect.size.x > 0.0
@@ -697,8 +690,6 @@ class View extends Control:
 			_draw_gear_screen(u)
 		if ui._bar_a > 0.01:   # 操作のための表示なので、風では揺らさない（2026-10-29 代表）
 			_draw_bar(u, ui._bar_a)
-		if ui._purse_a > 0.01 or (not ui._flies.is_empty() and ui._bar_a < 0.5):
-			_draw_purse(u, ui._purse_a)
 		_draw_flies(u)
 		_draw_gear(u)
 		_draw_balls(u)
@@ -851,7 +842,8 @@ class View extends Control:
 			var p1 := p0 + d.rotated(0.9 * sin(k + seed)) * r * (0.08 + 0.08 * absf(sin(k * 1.7 + seed)))
 			draw_line(p0, p1, Color(0.97, 0.97, 0.95, 0.7 * a), maxf(0.7, r / 18.0), true)
 
-	## 持ち物の列: 素手と、手持ちの 6 マス（空いたマスは縫い目だけ）。かばんの物は装備の画面で
+	## 持ち物の列: 素手と、手持ちの 6 マス（空いたマスは縫い目だけ）。かばんの物は装備の画面で。
+	## マスは画面のまんなかにそろえ、財布はその右に足す（ボタンが増えてもマスは動かない）。紙の左右の余白はそろえる
 	func _draw_bar(u: float, a: float) -> void:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
@@ -861,9 +853,10 @@ class View extends Control:
 		var gap := 6.0 * u
 		var n := Craft.HAND_SLOTS + 1
 		var coins: int = craft.wallet(who) - ui._pending
-		var wallet_w := maxf(96.0 * u, _coins_w(coins, 9.0 * u) + 16.0 * u)
-		var w := n * cell + (n - 1) * gap + 24.0 * u + wallet_w
-		var x0 := size.x / 2.0 - w / 2.0
+		var cells_w := n * cell + (n - 1) * gap
+		var purse: bool = coins > 0 or not ui._flies.is_empty()   # ボタンがなければ財布の場所を取らない（飛んでくるあいだは出す）
+		var w := cells_w + (gap * 2.0 + _coins_w(coins, 9.0 * u) if purse else 0.0)
+		var x0 := size.x / 2.0 - cells_w / 2.0
 		var y := size.y - 20.0 * u - cell
 		var off := Icons.tuck_off(Rect2(x0 - 56.0 * u, y - 60.0 * u, w + 68.0 * u, cell + 70.0 * u), size)   # 何もしないでいると画面の外へ（名前の札まで）
 		x0 += off.x
@@ -897,13 +890,13 @@ class View extends Control:
 				Icons.dashes(self, Icons.rr(r.position.x - 3.0 * u, r.position.y - 3.0 * u, cell + 6.0 * u, cell + 6.0 * u, 12.0 * u), Icons.RED, 2.4 * u, 6.0 * u, 3.5 * u, a, true)
 				Icons.chevron(self, Vector2(c.x, r.position.y - 12.0 * u), 14.0 * u, Icons.RED, a, PI / 2, 2.6 * u)
 		# 財布: ボタンを数だけ、山に積む
-		var wx := x0 + n * (cell + gap) + 16.0 * u
-		_coins(wx, y + cell - 4.0 * u, coins, 9.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI)), a)
+		if purse:
+			_coins(x0 + cells_w + gap * 2.0, y + cell - 4.0 * u, coins, 9.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI)), a)
 		# 手に持っている物の名前: 持ち替えたとき、列のまんなかの上に紙の札で少しのあいだ（左下の札とぶつからない所）。
 		# ゲームの中に文字を出さない決まりの例外（2026-11-01 代表「手に持ってる物の名前をインベントリHUDの上に小さく表示」）
 		var it: Dictionary = craft.held(who)
 		if not it.is_empty() and ui._name_t > 0.0:
-			_name_tag(CraftIcons.item_name(it), Vector2(x0 + w / 2.0 - 12.0 * u, y - 18.0 * u), u, a * clampf(ui._name_t / 0.4, 0.0, 1.0))
+			_name_tag(CraftIcons.item_name(it), Vector2(x0 + cells_w / 2.0, y - 18.0 * u), u, a * clampf(ui._name_t / 0.4, 0.0, 1.0))
 
 	## 装備の画面の右下: 手持ち（上の段, 6 マス）と、かばん（下の段, 6 マス。口を紐で絞ったフェルトの巾着の上）。
 	## 引きずって入れ替える。押すと、食べる・捨てるの小窓（_draw_inv_menu）
@@ -1017,21 +1010,6 @@ class View extends Control:
 			if c > 0 or m[1] == "wood":
 				cols += maxi(1, ceili(c / 10.0))
 		return cols * cr * 2.3
-
-	## 財布だけの札（持ち物の列が出ていないとき、ボタンが入ったあいだ）: 画面の下のまんなかに、紙の札と財布
-	func _draw_purse(u: float, a: float) -> void:
-		var coins: int = ui.craft.wallet(ui._who()) - ui._pending
-		var cr := 12.0 * u
-		var w := _coins_w(coins, cr) + 28.0 * u
-		var h := 9.0 * cr * 0.55 + cr * 2.6
-		var x0 := size.x / 2.0 - w / 2.0
-		var y1 := size.y - 22.0 * u
-		var off := Icons.tuck_off(Rect2(x0, y1 - h, w, h), size)   # 何もしないでいると画面の外へ
-		x0 += off.x
-		y1 += off.y
-		Icons.screen()
-		Icons.patch(self, Icons.rr(x0, y1 - h, w, h, 14.0 * u), Icons.PAPER, 0.85 * a, true, Icons.PAPER_EDGE)
-		_coins(x0 + 14.0 * u, y1 - 8.0 * u, coins, cr * (1.0 + 0.3 * sin(ui._coin_pop * PI)), a)
 
 	## 財布へ飛んでいるボタン: 取った所から弧を描いて財布の次の場所へ
 	func _draw_flies(u: float) -> void:
