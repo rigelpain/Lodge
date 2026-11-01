@@ -204,17 +204,19 @@ func _make_body(kind: String) -> void:
 	doll = Doll.new()
 	doll.kind = kind if kind in Doll.KINDS else "kasa"
 	doll.layers = 1 << 1
+	var dyed: Array = craft.outfit_of(id, doll.kind) if craft else []   # 染め桶で染めた服の色
+	doll.outfit = dyed
 	add_child(doll)
 
 	# 米袋に座ったときに一人称で見える両脚（層 3）。米袋に合わせて置く
-	_fp_legs = FpHands.make_legs(doll.kind, 1 << 2)
+	_fp_legs = FpHands.make_legs(doll.kind, 1 << 2, dyed)
 	_fp_legs.top_level = true
 	_fp_legs.visible = false
 	add_child(_fp_legs)
 
 	# 一人称の手: 自分の人形と同じ柄の袖口から、紙の手がのぞく（層 3。一人称の画面にだけ映す）
 	for s in [-1, 1]:
-		var h := FpHands.make(doll.kind, s, 1 << 2)
+		var h := FpHands.make(doll.kind, s, 1 << 2, dyed)
 		cam.add_child(h)
 		h.set_meta("side", s)
 		hands.append(h)
@@ -244,8 +246,8 @@ func _make_body(kind: String) -> void:
 
 ## 人形を替える（衣装掛けで選んだ出来事が配られてから）。体・一人称の袖と手・米袋の脚・手のアップリケを作り直す。
 ## 持っている物・雪玉・名札・ランタンは人ではなく工房と配り役が持っているので、そのまま新しい体に付く
-func set_doll(kind: String) -> void:
-	if doll and doll.kind == kind or not kind in Doll.KINDS:
+func set_doll(kind: String, again := false) -> void:
+	if doll and doll.kind == kind and not again or not kind in Doll.KINDS:
 		return
 	var at := doll.global_transform if doll else global_transform
 	for n in [doll, _fp_legs] + hands:
@@ -375,6 +377,9 @@ func _unhandled_input(e: InputEvent) -> void:
 					return
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
+					return
+				if mode == Mode.WALK and dye_near():
+					get_parent().dye_ui.open()   # 衣装掛けのとなりの染め桶: 服を染める（衣装掛けより近くで向いていれば、こちら）
 					return
 				if mode == Mode.WALK and wardrobe_near():
 					get_parent().wardrobe_ui.open()   # 2 階の衣装掛け: 人形を選び直す
@@ -1508,6 +1513,9 @@ func _on_craft(ev: Dictionary) -> void:
 	match ev.kind:
 		"doll":   # 衣装掛けで選んだ人形に着替える
 			set_doll(String(ev.doll))
+		"dye", "outfit":   # 染め桶で服を染めた: 人形と一人称の袖と脚を、その色で作り直す
+			if doll and String(ev.doll) == doll.kind:
+				set_doll(doll.kind, true)
 		"sewn":   # 自分の縫ったソリが、最後に触ったソリになる（左下の札がその場所を出す）
 			var made: RigidBody3D = craft.sleds.get(int(ev.id))
 			if made:
@@ -1561,6 +1569,15 @@ func shop_near() -> bool:
 func wardrobe_near() -> bool:
 	var w = get_parent().get("wardrobe")
 	return w != null and get_parent().get("wardrobe_ui") != null and not menu_open and w.can_use(self)
+
+
+## 2 階の染め桶の前で、桶の方を向いているか（衣装掛けにも届くときは、向いている方）
+func dye_near() -> bool:
+	var v = get_parent().get("dye_vat")
+	if v == null or get_parent().get("dye_ui") == null or menu_open or not v.can_use(self):
+		return false
+	var w = get_parent().get("wardrobe")
+	return w == null or not w.can_use(self) or _facing(v.global_position) >= _facing(w.global_position)
 
 
 ## ミシンの前（立つ所のそば）で、ミシンの方を向いていて、縫い始められるか
@@ -1811,6 +1828,9 @@ func _load_tag() -> void:
 	if cf.has_section("profile"):
 		craft.send({"kind": "profile", "who": id, "name": String(cf.get_value("profile", "name", craft.name_of(id))),
 			"color": int(cf.get_value("profile", "color", craft.colors.get(id, 0)))})
+	if cf.has_section("outfit"):
+		for k in cf.get_section_keys("outfit"):
+			craft.send({"kind": "outfit", "who": id, "doll": k, "colors": cf.get_value("outfit", k, [])})
 	var a = get_parent().get("args")
 	if cf.has_section_key("profile", "doll") and not (a is Dictionary and a.has("doll")):   # --doll を付けたときは、そちらが勝つ
 		craft.send({"kind": "doll", "who": id, "doll": String(cf.get_value("profile", "doll"))})
@@ -1876,6 +1896,9 @@ func save_tag() -> void:
 	cf.set_value("profile", "name", craft.name_of(id))
 	cf.set_value("profile", "color", int(craft.colors.get(id, 0)))
 	cf.set_value("profile", "doll", doll.kind)
+	var dyed: Dictionary = craft.outfits.get(id, {})
+	for k in dyed:
+		cf.set_value("outfit", k, dyed[k])
 	var d: Dictionary = craft.tag_designs.get(id, {})
 	for part in d:
 		cf.set_value("tag", part, d[part])

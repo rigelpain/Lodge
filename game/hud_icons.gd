@@ -298,6 +298,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"untag": _tag_move(ci, a, true)
 		"tag_on": _tag_move(ci, a, false)
 		"wardrobe": _wardrobe(ci, a, tint)
+		"dye": _dye(ci, a, tint)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
 		_:   # 工房の絵（型紙・布・畳む・広げる。craft_icons.gd）
@@ -759,6 +760,18 @@ static func _wardrobe(ci: CanvasItem, a: float, col: Color) -> void:
 	doll(ci, Vector2(-4, 24), col, "stand", a, 0.8)
 	arc_arrow(ci, Vector2(-4, 6), 25.0, -0.35, 0.9, THREAD, a, 2.2)
 	arc_arrow(ci, Vector2(-4, 6), 25.0, PI - 0.35, PI + 0.9, THREAD, a, 2.2)
+
+
+## 染め桶: 輪で締めた木の桶に染め液、縁から染めた布が垂れる（布と液は tint の色）
+static func _dye(ci: CanvasItem, a: float, col: Color) -> void:
+	patch(ci, PackedVector2Array([Vector2(-24, -8), Vector2(24, -8), Vector2(19, 24), Vector2(-19, 24)]), WOOD, a, false)
+	for x in [-12.0, 0.0, 12.0]:   # 側板の継ぎ目
+		thread(ci, PackedVector2Array([Vector2(x, -6), Vector2(x * 0.8, 22)]), WOOD.darkened(0.35), 1.4, a)
+	for y in [-1.0, 16.0]:   # 縄の輪
+		thread(ci, PackedVector2Array([Vector2(-23 + (y + 8) * 0.15, y), Vector2(23 - (y + 8) * 0.15, y)]), Color(0.78, 0.66, 0.44), 3.0, a)
+	patch(ci, ell(Vector2(0, -8), 24.0, 6.0), col.darkened(0.15), a, false)   # 染め液
+	patch(ci, PackedVector2Array([Vector2(6, -12), Vector2(18, -12), Vector2(19, 8), Vector2(13, 12), Vector2(7, 6)]), col, a, true)   # 縁に掛けた布
+	thread(ci, PackedVector2Array([Vector2(-10, -30), Vector2(-4, -6)]), WOOD.darkened(0.2), 3.0, a)   # 櫂
 
 
 static func _return(ci: CanvasItem, a: float) -> void:

@@ -27,6 +27,10 @@ extends Node
 ##   profile   {name, color}   自分の名前と、キャラの色（COLORS の番号）を決める（装備の画面）。HUD の札で、人の形の色と頭の上の名前になる
 ##   doll      {doll}          自分の人形（doll.gd の KINDS のどれか）を替える（2 階の衣装掛け）。みんなの画面で、その人の人形が作り直される。
 ##                             入った時にも今の人形で 1 度送る（通信では、あとから来た人もこれでほかの人の人形を知る）
+##   dye       {doll, colors}  2 階の染め桶で、人形 doll の服の布を染める。colors は布ごとの色（"rrggbb"。"" はもとの色。outfit.gd の CLOTH の順）。
+##                             色は自由に選べ、色ではなく染め代（DYE_PRICE）を 1 回ごとに払う（2026-11-01 代表「全部買う、染色桶をつくって、
+##                             色に払うんじゃなくて染色代として払う」）。染めた色は人形ごとに残る（ほかの人形に着替えて戻っても同じ色）
+##   outfit    {doll, colors}  保存してある染めた色を戻す（起動したとき。値はここでは取らない）
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
@@ -53,6 +57,8 @@ const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 ## 最初の小は、米袋で漕いで丘を 3 分ほど、大は、中に 3 人で大きな山を 6 分半・小ひとりで 11 分・米袋ひとりで 20〜50 分ほど（design/snow-buttons の表）
 const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
 const FABRIC_PRICE := 10
+## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
+const DYE_PRICE := 15
 const PATTERNS := ["sack", "small", "mid", "large"]
 ## ロッジの中から外へ運び出せないソリ（tools/carry_out_check.gd で確かめた。大は西の通路の家具と壁に当たる）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
@@ -75,6 +81,7 @@ var loose_tags := {}           # 人の番号 → 帯の名札入れの、外し
 var names := {}                # 人の番号 → 名前（装備の画面で決める。HUD の札で頭の上に出す）
 var colors := {}               # 人の番号 → キャラの色（COLORS の番号）
 var dolls := {}                # 人の番号 → 人形（doll.gd の KINDS。衣装掛けで替える）
+var outfits := {}              # 人の番号 → {人形: 布ごとの色 ["rrggbb" か ""]}（染め桶で染めた服の色。染めていない人形は書かない）
 var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
 var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
@@ -140,6 +147,25 @@ func color_of(who: int) -> Color:
 
 func doll_of(who: int) -> String:
 	return String(dolls.get(who, ""))
+
+
+## その人の人形 kind の服の色（布ごとの Color か null。染めていなければ空）。doll.gd の outfit に入れる形
+func outfit_of(who: int, kind: String) -> Array:
+	var out := []
+	for h in outfits.get(who, {}).get(kind, []):
+		out.append(Color(h) if String(h) != "" else null)
+	return out
+
+
+## 布ごとの色の並びを、通信に乗せる形（"rrggbb" か ""。布の数にそろえる）にする。色でない物は ""
+static func dye_colors(kind: String, cols: Array) -> Array:
+	var out := []
+	for i in preload("res://outfit.gd").cloth_count(kind):
+		var c = cols[i] if i < cols.size() else null
+		if c is String and String(c).is_valid_html_color():
+			c = Color(c)
+		out.append((c as Color).to_html(false) if c is Color else "")
+	return out
 
 
 func name_of(who: int) -> String:
@@ -415,6 +441,23 @@ func _apply(ev: Dictionary) -> bool:
 			if not String(ev.get("doll", "")) in Doll.KINDS:
 				return false
 			dolls[who] = String(ev.doll)
+		"dye", "outfit":
+			var k := String(ev.get("doll", ""))
+			if not k in Doll.KINDS:
+				return false
+			var cols := dye_colors(k, ev.get("colors", []))
+			var mine: Dictionary = outfits.get(who, {})
+			var old: Array = mine.get(k, dye_colors(k, []))
+			if ev.kind == "dye":
+				if cols == old or wallets[who] < DYE_PRICE:   # 同じ色のままなら染めない（染め代も取らない）
+					return false
+				wallets[who] -= DYE_PRICE
+			ev["colors"] = cols
+			if cols == dye_colors(k, []):
+				mine.erase(k)
+			else:
+				mine[k] = cols
+			outfits[who] = mine
 		"lamp":
 			if lantern(who).is_empty():
 				return false

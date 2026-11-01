@@ -18,6 +18,7 @@ const Look := preload("res://look.gd")
 ##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
 ##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
 ##   --spawn=wardrobe  2 階の衣装掛けの前から始める（F で人形を選び直す）
+##   --spawn=dye       2 階の染め桶の前から始める（F で服を染める）
 ##   --doll=人形   あなたの始めの人形（doll.gd の KINDS: kasa・origami・news・robo・musha・ningyo・golem）。保存した人形より勝つ
 ##   --bot-dolls=人形,人形…  ソリを押す仲間の人形（既定は右が origami、左が news）
 ##   --lodge-dolls=人形,人形…  ロッジでくつろぐ仲間の人形（既定は robo・ningyo・golem・musha の順）
@@ -64,10 +65,14 @@ const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
+const DyeVat := preload("res://dye_vat.gd")
+const DyeUi := preload("res://dye_ui.gd")
 ## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
 ## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
 const WARDROBE_AT := Vector2(21.25, 2.2)
 const WARDROBE_FLOOR := 6.1   # 2 階の床（dims.FL2）
+## 染め桶（dye_vat.gd）の所（衣装掛けの座標。+X が竿の右の端のほう、+Z が正面）
+const DYE_VAT_AT := Vector3(2.45, 0.0, 0.35)
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
 ## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
@@ -111,6 +116,8 @@ var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
+var dye_vat: Node3D           # 衣装掛けのとなりの染め桶（dye_vat.gd）
+var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
 var seats: Seats              # ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団）の配り役。人より先に置く
 
@@ -339,6 +346,18 @@ func _ready() -> void:
 		wardrobe_ui.craft = craft
 		wardrobe_ui.player = player
 		add_child(wardrobe_ui)
+		if dye_vat:
+			dye_vat.player = player
+		dye_ui = DyeUi.new()
+		dye_ui.main = self
+		dye_ui.craft = craft
+		dye_ui.player = player
+		add_child(dye_ui)
+		if args.get("spawn", "") == "dye" and dye_vat:   # --spawn=dye: 2 階の染め桶の前から始める
+			var at := dye_vat.to_global(Vector3(0, 0.1, 1.3))
+			player.global_position = at
+			var to := dye_vat.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if args.get("spawn", "") == "wardrobe" and wardrobe:   # --spawn=wardrobe: 2 階の衣装掛けの前から始める
 			var at := wardrobe.to_global(Vector3(0, 0.1, 1.6))
 			player.global_position = at
@@ -784,6 +803,14 @@ func _furnish_lodge() -> void:
 	wardrobe.position = Vector3(WARDROBE_AT.x, WARDROBE_FLOOR, -WARDROBE_AT.y)
 	wardrobe.rotation.y = -PI / 2.0   # 竿の正面（+Z）を西へ
 	lodge.add_child(wardrobe)
+	# そのとなりの染め桶: 前で F を押すと服を染める（竿の端の少し前。正面は竿と同じ西）
+	dye_vat = DyeVat.new()
+	dye_vat.name = "DyeVat"
+	dye_vat.player = player
+	dye_vat.craft = craft
+	dye_vat.position = wardrobe.position + wardrobe.basis * DYE_VAT_AT
+	dye_vat.rotation.y = wardrobe.rotation.y
+	lodge.add_child(dye_vat)
 
 
 ## 番台 1 つ: パッチワーク（または藍）のフェルトを張った木のカウンター。上に、店番の側を向いたレジと、払いを受けるお皿。
