@@ -271,7 +271,7 @@ func _my_state() -> Dictionary:
 	var d = p.doll
 	var s := {"p": p.global_position, "y": p.rotation.y, "m": int(p.mode), "d": d.kind,
 		"e": d.effort, "dr": d.dragged, "air": d.airborne, "f": d.facing, "g": d.gaze, "ln": d.lean,
-		"c": d.crouch, "pt": d.point, "ps": d.point_sides, "ss": d.sit_stage, "sd": d.seat_drop}
+		"c": d.crouch, "pt": d.point, "ps": d.point_sides, "ss": d.sit_stage, "sd": d.seat_drop, "se": d.seat_edge}
 	if p.sled and is_instance_valid(p.sled):
 		s["sl"] = main.get_path_to(p.sled)
 	# 体の調子: 紙の水（damp.gd、整数）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る

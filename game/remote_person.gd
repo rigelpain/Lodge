@@ -217,6 +217,7 @@ func _pose_doll() -> void:
 	doll.point_sides = _s.get("ps", [])
 	doll.sit_stage = int(_s.get("ss", 0))
 	doll.seat_drop = float(_s.get("sd", 0.45))
+	doll.seat_edge = float(_s.get("se", 0.2))
 	# 雪玉・帯の米袋・ランタンは、配り役（ホストが決めて配った値）から。player.gd の _pose_doll と同じ
 	if hub:
 		var n: int = hub.balls_of(id)

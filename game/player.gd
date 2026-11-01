@@ -738,6 +738,7 @@ func _pose_doll() -> void:
 		doll.facing = st.face
 		doll.sit_stage = _sit_stage
 		doll.seat_drop = st.pos.y - st.floor
+		doll.seat_edge = st.edge
 	# 人形の顔は、カメラの見ている向きの 6 m 先を見る。測る所は、一人称ではカメラ（目）、三人称では頭。
 	# 三人称でカメラから測ると、カメラが 6 m 後ろなら見る先が頭そのものに、9 m なら頭の 3 m 後ろになり、首がねじれていた
 	var from := _gaze_from if third and _gaze_from != Vector3.INF else cam.global_position
