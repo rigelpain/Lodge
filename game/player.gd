@@ -188,8 +188,8 @@ func _ready() -> void:
 	if craft and id >= 0:
 		craft.join(id)
 		craft.happened.connect(_on_craft)
-		_load_tag()
-		if craft.doll_of(id) == "":
+		# 保存した人形を送ったら、いまの人形は送らない（通信では、送った出来事がホストから戻るまで doll_of が空のため）
+		if not _load_tag() and craft.doll_of(id) == "":
 			craft.send({"kind": "doll", "who": id, "doll": doll.kind})   # いまの人形をみんなに知らせる
 	last_sled = sled
 	seats = get_parent().get_node_or_null("Seats")
@@ -1794,12 +1794,12 @@ func summon_sack() -> bool:
 
 const TAG_FILE := "user://my_tag.cfg"
 
-## 保存してある自分の名札を読む（なければ、人の番号から決めたはじめの名札のまま）。
+## 保存してある自分の名札を読む（なければ、人の番号から決めたはじめの名札のまま）。保存した人形を送ったら true。
 ## 手に入れた部品を先に戻してから、名札を付ける（前の版の保存にない部品は、はじめの名札のまま）
-func _load_tag() -> void:
+func _load_tag() -> bool:
 	var cf := ConfigFile.new()
 	if cf.load(TAG_FILE) != OK:
-		return
+		return false
 	var Tags := preload("res://sled_tags.gd")
 	if cf.has_section("owned"):
 		for part in cf.get_section_keys("owned"):
@@ -1816,6 +1816,8 @@ func _load_tag() -> void:
 	var a = get_parent().get("args")
 	if cf.has_section_key("profile", "doll") and not (a is Dictionary and a.has("doll")):   # --doll を付けたときは、そちらが勝つ
 		craft.send({"kind": "doll", "who": id, "doll": String(cf.get_value("profile", "doll"))})
+		return true
+	return false
 
 
 # ---------------------------------------------------------------- 名札を外す・付ける（G を長押し）

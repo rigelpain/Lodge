@@ -241,6 +241,13 @@ func _ready() -> void:
 	emotes.name = "Emotes"
 	add_child(emotes)
 
+	# 通信は人より先に始める（人の番号を通信の番号にするため。emotes.gd の join）
+	net = Net.new()
+	net.name = "Net"
+	net.main = self
+	add_child(net)
+	net.start(args)
+
 	if not args.has("no-player"):
 		player = Player.new()
 		player.point_level = not args.has("point-tilt")   # 確かめ用: 指さしの手形を、前の腕に沿った向きに
@@ -275,11 +282,7 @@ func _ready() -> void:
 			b.position = get_node("Lodge").to_global(Vector3(6.0 + 3.0 * i, 0.6, -4.0))
 			add_child(b)
 
-	net = Net.new()
-	net.name = "Net"
-	net.main = self
-	add_child(net)
-	if net.start(args) and player and net.spawn_slot() > 0:
+	if player and net.spawn_slot() > 0:
 		# つなぐ側は、ホストの横に並んで始める（同じ所に重ならないように）
 		var slot := net.spawn_slot()
 		var at := START + Vector3(2.5 * ceili(slot / 2.0) * (1 if slot % 2 == 1 else -1), 0, 1.5)

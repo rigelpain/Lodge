@@ -38,7 +38,8 @@ func _ready() -> void:
 	add_child(doll)
 	hub = get_parent().get_node_or_null("Emotes")
 	if hub:
-		id = hub.join(self)
+		id = hub.join(self)   # 通信の番号がそのまま人の番号（emotes.gd）
+		hub.happened.connect(_on_emote)
 	craft = get_parent().get_node_or_null("Craft")
 	if craft and id >= 0:
 		craft.join(id)
@@ -88,8 +89,12 @@ func _set_doll(kind: String) -> void:
 	doll.kind = kind
 	add_child(doll)
 	doll.global_transform = at
-	if craft and id >= 0:
-		craft.send({"kind": "doll", "who": id, "doll": kind})   # 名札の札や HUD が読む人形
+
+
+## この人の身ぶり・声・雪玉の当たりを、人形に（判定はホストが済ませて配っている）
+func _on_emote(ev: Dictionary) -> void:
+	if ev.get("who", -1) == id:
+		doll.play(ev)
 
 
 func _leave() -> void:
@@ -189,3 +194,15 @@ func _pose_doll() -> void:
 	doll.point_sides = _s.get("ps", [])
 	doll.sit_stage = int(_s.get("ss", 0))
 	doll.seat_drop = float(_s.get("sd", 0.45))
+	# 雪玉・帯の米袋・ランタンは、配り役（ホストが決めて配った値）から。player.gd の _pose_doll と同じ
+	if hub:
+		var n: int = hub.balls_of(id)
+		doll.holding_ball = n > 0 and (craft == null or craft.held(id).is_empty())
+		doll.sleeve_balls = n - (1 if doll.holding_ball else 0)
+	if craft:
+		var spec: Dictionary = craft.sack(id)
+		doll.belt_sack = not spec.is_empty() and craft.sack_sled(id) == null
+		if not spec.is_empty():
+			doll.belt_color = preload("res://fabrics.gd").color(spec.fabric) if spec.fabric != "" else preload("res://sled.gd").KINDS["sack"].color
+		doll.lantern = craft.lantern(id).get("look", "")
+		doll.lantern_lit = craft.lamp_on(id)

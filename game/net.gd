@@ -1,6 +1,7 @@
 extends Node
 
 const RemotePerson := preload("res://remote_person.gd")
+const Doll := preload("res://doll.gd")
 ## 通信（オンラインで一緒に遊ぶ）。Godot の高レベルの multiplayer（ENet）で、一人がホストになり、ほかの人がつなぐ。
 ## 起動の引数: --host でホスト、--join=IP でつなぐ（--port= で番号を替えられる。既定 PORT）。どちらもなければ一人で遊ぶ。
 ##
@@ -102,6 +103,8 @@ func _on_peer(pid: int) -> void:
 	main.add_child(r)
 	remotes[pid] = r
 	print("来た: 番号 ", pid)
+	if is_host():
+		_snap.rpc_id(pid, main.craft.snapshot(), main.emotes.snapshot())
 
 
 func _on_gone(pid: int) -> void:
@@ -115,6 +118,10 @@ func _on_gone(pid: int) -> void:
 
 func _on_connected() -> void:
 	print("つながった: 番号 ", multiplayer.get_unique_id())
+	for p in _pending:
+		p[1]["frame"] = Doll.frame_index() + 1
+		_up.rpc_id(1, p[0], p[1], Doll.frame_index())
+	_pending.clear()
 
 
 func _on_failed() -> void:
@@ -220,6 +227,90 @@ func _my_state() -> Dictionary:
 		3:   # 紐
 			s["rh"] = p.rope_hand()
 	return s
+
+
+# ---- 出来事（身ぶり・クラフト）: つなぐ側 → ホスト → 全員 -------------------------------------
+# 出来事のコマ（frame・until）は、送る画面の姿勢の時計で書いてある。受けた画面は、送った画面の「いま」との差で
+# 自分の時計に直す（届いたらすぐ、次のコマから動く）
+
+var _pending := []            # つながる前に出した出来事 [種類, 出来事]（つながったら送る）
+
+
+## つなぐ側: 出来事をホストへ
+func up(what: String, ev: Dictionary) -> void:
+	if joined():
+		_up.rpc_id(1, what, ev, Doll.frame_index())
+	else:
+		_pending.append([what, ev])
+
+
+@rpc("any_peer", "call_remote", "reliable")
+func _up(what: String, ev: Dictionary, at: int) -> void:
+	if not is_host():
+		return
+	var pid := multiplayer.get_remote_sender_id()
+	if lag > 0.0:
+		await get_tree().create_timer(lag, true, true).timeout
+	ev = _rebase(ev, at)
+	ev["who"] = pid   # 人の番号は通信の番号（ほかの人の名で出させない）
+	match what:
+		"emote":
+			main.emotes._apply(ev)
+		"craft":
+			if not main.craft.wallets.has(pid):
+				main.craft.join(pid)
+			main.craft._apply(ev)
+
+
+## ホスト: 確かめた出来事を、つなぐ側の全員へ
+func down(what: String, ev: Dictionary) -> void:
+	if is_host() and not remotes.is_empty():
+		_down.rpc(what, ev, Doll.frame_index())
+
+
+@rpc("authority", "call_remote", "reliable")
+func _down(what: String, ev: Dictionary, at: int) -> void:
+	if lag > 0.0:
+		await get_tree().create_timer(lag, true, true).timeout
+	ev = _rebase(ev, at)
+	match what:
+		"emote":
+			main.emotes.from_host(ev)
+		"craft":
+			main.craft.replay = true
+			if not main.craft._apply(ev):
+				push_warning("ホストの出来事をなぞれなかった: %s" % ev)
+			main.craft.replay = false
+
+
+## ホスト: 雪玉の数（出来事にはしない。配り役の数を合わせるだけ）
+func down_balls(id: int, n: int) -> void:
+	if is_host() and not remotes.is_empty():
+		_balls.rpc(id, n)
+
+
+@rpc("authority", "call_remote", "reliable")
+func _balls(id: int, n: int) -> void:
+	if lag > 0.0:
+		await get_tree().create_timer(lag, true, true).timeout
+	main.emotes.balls[id] = n
+
+
+## ホスト → 来た人: いまの工房と身ぶりの持ち物
+@rpc("authority", "call_remote", "reliable")
+func _snap(craft: Dictionary, emotes: Dictionary) -> void:
+	if lag > 0.0:
+		await get_tree().create_timer(lag, true, true).timeout
+	main.craft.load_snapshot(craft)
+	main.emotes.load_snapshot(emotes)
+
+
+func _rebase(ev: Dictionary, at: int) -> Dictionary:
+	var d := Doll.frame_index() - at
+	for k in ["frame", "until"]:
+		if ev.has(k):
+			ev[k] = int(ev[k]) + d
+	return ev
 
 
 ## ほかの人の姿が届いた
