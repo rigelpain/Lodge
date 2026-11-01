@@ -139,8 +139,12 @@ const HELD_SCALE := 1.25     # 一人称で持つ包みの大きさ
 const STOCK_Z := Vector2(0.05, 0.23)
 const STOCK_HAND := Vector3(-0.2, -0.04, -0.5)   # ストックを見せる左手の所（腕は画面の下の肩から伸びるので、袖が目のほうへ寝る）
 var last_sled: RigidBody3D   # 最後に触った（つかむ・紐・乗る・広げる）ソリ。左下の札はこのソリのタグ（hud.gd）
-var _pan_acc := 0.0          # 二本指スクロールのたまった量
-const PAN_STEP := 1.5        # これだけたまったら 1 つ持ち替える
+var _pan_acc := Vector2.ZERO # 二本指スクロールのひと撫でのたまった量（横も。縦が勝ったときだけ持ち替える）
+var _pan_done := false       # このひと撫ででもう持ち替えた（指を離したあとの慣性でも、続けて替えない）
+var _pan_ms := 0             # 最後に動いたパンが来た時刻 (ms)
+var _pan_frame := 0          # …そのフレーム
+const PAN_STEP := 1.0        # 縦にこれだけたまったら 1 つ持ち替える（Godot は Mac のスクロール量の 0.03 倍で渡す。約 33 pt）
+const PAN_GAP := 120         # パンがこれだけ (ms) 途切れたら、次のひと撫で
 var last_item := {}          # 最後に触ったソリを畳んで持っていれば、その持ち物（last_sled は null）
 const SLED_SWITCH := 0.8     # 近いソリへ持ち替える差 (m)。行ったり来たりしないよう
 var seats: Seats             # ロッジの席の配り役（main.gd が置く。なければ座れない）
@@ -328,11 +332,7 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e is InputEventPanGesture:
 		# トラックパッドの二本指スクロール（Mac ではホイールでなくこれで届く）: 持ち物の持ち替えだけ。持ち物がなければ何もしない
 		# （2026-10-30 代表「二本指スクロールはインベントリ選択にしたい。視野角とカメラ高さは設定からのみ変更」）
-		if not menu_open and craft and not craft.bag(id).is_empty():
-			_pan_acc += e.delta.y
-			if absf(_pan_acc) >= PAN_STEP:
-				cycle_hand(1 if _pan_acc > 0.0 else -1)
-				_pan_acc = 0.0
+		_pan_hand(e.delta)
 	elif e is InputEventMagnifyGesture and not menu_open:
 		_pinch(e.factor)
 	elif e is InputEventMouseButton and e.pressed:
@@ -340,7 +340,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			var step := -1 if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_LEFT] else 1
 			# Shift＋ホイールは、Mac では横のホイールとして届くことがある
 			var sideways: bool = e.shift_pressed or e.button_index in [MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]
-			if not menu_open and not sideways and craft and not craft.bag(id).is_empty():
+			if not sideways and _can_cycle():
 				cycle_hand(step)   # ホイールは持ち物の持ち替えだけ。持ち物がなければ何もしない
 		elif e.button_index == MOUSE_BUTTON_RIGHT and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 			toggle_point()
@@ -1519,6 +1519,33 @@ func _on_craft(ev: Dictionary) -> void:
 			var s: RigidBody3D = craft.sleds.get(int(ev.id))
 			if s:
 				_touched(s)
+
+
+## ホイール・二本指スクロールで持ち替えてよいか（画面を開いているあいだは、その画面がスクロールを使う。身ぶりの輪を出しているあいだも替えない）
+func _can_cycle() -> bool:
+	return not menu_open and not (ring and ring.visible) and craft != null and not craft.bag(id).is_empty()
+
+
+## 二本指スクロールのひと撫でで 1 つ持ち替える。指を離したあとの慣性のパンも同じひと撫でとして、続けて替えない。
+## 途切れたら（PAN_GAP）、または逆向きに撫でたら、次のひと撫で。横向きが勝っている撫で方では替えない
+func _pan_hand(d: Vector2) -> void:
+	if d == Vector2.ZERO:
+		return   # 撫で終わりの知らせ（動いていない）。慣性が続くことがあるので、ここでは区切らない
+	var now := Time.get_ticks_msec()
+	var frame := Engine.get_process_frames()
+	var reverse := _pan_done and absf(d.y) > absf(d.x) and signf(d.y) != signf(_pan_acc.y)
+	# 重くて 1 フレームが長いときも、毎フレーム届いているあいだは同じひと撫で（パンの来ないフレームをはさんで初めて区切る）
+	if (now - _pan_ms > PAN_GAP and frame - _pan_frame > 1) or reverse:
+		_pan_acc = Vector2.ZERO
+		_pan_done = false
+	_pan_ms = now
+	_pan_frame = frame
+	_pan_acc += d
+	if _pan_done or not _can_cycle():
+		return
+	if absf(_pan_acc.y) >= PAN_STEP and absf(_pan_acc.y) > absf(_pan_acc.x):
+		cycle_hand(1 if _pan_acc.y > 0.0 else -1)
+		_pan_done = true
 
 
 ## ホイール: 素手 → 持ち物 1 → 2 → … と回す
