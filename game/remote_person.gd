@@ -45,6 +45,12 @@ func _ready() -> void:
 		craft.join(id)
 
 
+## 帰った: 配り役の名簿から外す（ほかの仕組みが、消えた体を読まないように）
+func _exit_tree() -> void:
+	if hub and hub.people.get(id) == self:
+		hub.people.erase(id)
+
+
 ## 届いた姿を入れる（net.gd）。ソリとのかかわり（つかむ・紐・乗る）が変わったら、この画面のソリにも同じことをする
 func put(s: Dictionary) -> void:
 	var p: Vector3 = s.get("p", global_position)
@@ -163,7 +169,7 @@ func _physics_process(dt: float) -> void:
 			global_position = sled.to_global(handle)
 			var dir: Vector3 = _s.get("pd", Vector3.ZERO)
 			if fresh and dir != Vector3.ZERO:
-				sled.push(dir, global_position + Vector3.UP * 0.5, self)
+				sled.push(dir, global_position + Vector3.UP * 0.5, self, _push_k())
 				pushing = true
 		_:
 			var want := _at + _vel * minf(_age, STALE)
@@ -172,9 +178,15 @@ func _physics_process(dt: float) -> void:
 			else:
 				global_position = global_position.lerp(want, 1.0 - exp(-PULL * dt))
 			if mode == Mode.ROPE and fresh:
-				pulling = sled.pull_rope(rope_hand()) > 0.0
+				pulling = sled.pull_rope(rope_hand(), _push_k()) > 0.0
 	rotation.y = lerp_angle(rotation.y, _yaw, 1.0 - exp(-PULL * dt))
 	_pose_doll()
+
+
+## 湿り気で変わる押す力（damp.gd。値はホストが決めているので、ホストの画面でそのまま効く）
+func _push_k() -> float:
+	var dm := get_parent().get_node_or_null("Damp")
+	return dm.push_k(id) if dm and id >= 0 else 1.0
 
 
 ## 人形に、その人の画面の人形と同じ姿勢を伝える（姿勢は人形が 12 コマで刻む）

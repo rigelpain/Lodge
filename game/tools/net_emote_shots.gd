@@ -122,6 +122,10 @@ func _run() -> void:
 	await _wait(2.0)
 	_log()
 	await _shot("3_craft")
+	if args.has("host"):   # つなぐ側の出来事が遅れて届く分を待ってから、もう一度書く
+		await _wait(6.0)
+		_say("届いた身ぶり: " + ", ".join(seen))
+		_log()
 	var f := FileAccess.open("%s/log_%s.txt" % [_dir(), _tag()], FileAccess.WRITE)
 	f.store_string("\n".join(lines) + "\n")
 	f.close()

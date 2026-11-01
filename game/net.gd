@@ -75,6 +75,8 @@ func receive(pid: int, m: Array) -> void:
 			if from_host:
 				main.craft.load_snapshot(m[1])
 				main.emotes.load_snapshot(m[2])
+				if main.get("damp"):
+					main.damp.values.merge(m[3], true)
 		"told":
 			if from_host:
 				_told(m[1])
@@ -159,7 +161,7 @@ func _on_peer(pid: int) -> void:
 	remotes[pid] = r
 	print("来た: 番号 ", pid)
 	if is_host():
-		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot()])
+		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot(), main.damp.values if main.get("damp") else {}])
 
 
 func _on_gone(pid: int) -> void:
@@ -324,6 +326,8 @@ func _down(what: String, ev: Dictionary, at: int) -> void:
 	match what:
 		"emote":
 			main.emotes.from_host(ev)
+		"damp":
+			main.damp.apply_net(ev)
 		"craft":
 			main.craft.replay = true
 			if not main.craft._apply(ev):

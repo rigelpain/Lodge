@@ -297,6 +297,9 @@ func _ready() -> void:
 	net.main = self
 	add_child(net)
 	net.start(args)
+	if net.online:   # 湿り気の値はホストが決めて配る（damp.gd）
+		damp.authority = net.is_host()
+		damp.sent.connect(func(ev: Dictionary): net.down("damp", ev))
 
 	if not args.has("no-player"):
 		player = Player.new()
