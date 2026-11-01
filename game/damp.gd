@@ -260,7 +260,7 @@ func _publish(id: int, force: bool) -> void:
 	var moved := absf(v - last[0]) >= SEND_STEP or stage_of(v) != stage_of(last[0] if last[0] != INF else START)
 	if force or (moved and now - last[1] >= SEND_GAP):
 		_sent[id] = [v, now]
-		if authority:
+		if authority and not _from_net(id):   # 通信の相手の値は、その人の画面が送っている（送り返すと、その人の値を古い値で上書きしてしまう）
 			sent.emit({"kind": "damp", "who": id, "v": int(v)})
 	if badges:
 		# 押す力と速さのバッジ（段の向きと矢印の数）。ふつうなら出さない

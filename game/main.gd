@@ -297,8 +297,8 @@ func _ready() -> void:
 	net.main = self
 	add_child(net)
 	net.start(args)
-	if net.online:   # 湿り気の値はホストが決めて配る（damp.gd）
-		damp.authority = net.is_host()
+	if net.online:   # 湿り気の値は、その人の画面が決めて姿といっしょに送る（net.gd の "dv"。通信の相手の値は damp_from_net で受けるだけ）。
+		# ホストは自分と仲間の値を配る（つなぐ側の down は何もしない）
 		damp.sent.connect(func(ev: Dictionary): net.down("damp", ev))
 
 	if not args.has("no-player"):
