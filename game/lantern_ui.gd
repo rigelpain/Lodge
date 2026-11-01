@@ -1,0 +1,328 @@
+extends CanvasLayer
+## ランタンを買って提げ替える画面（番台の横のランタン掛け lantern_rack.gd の前で F）。文字は使わない。
+##   緑のフェルトの板（衣装掛け・2 階の売り台の画面と同じ）に、紙の札を 5 枚ずつ 2 段（ランタン掛けと同じ並び。lantern.gd の LOOKS）。
+##   札の中は夜の藍で、灯したランタンがゆっくり回る（12 コマ）。光る紙は形ごとの揺らぎ方で明るさが変わる。
+##   持っていない札の下には値段のボタン、持っている札は値段なし。いま帯に提げている札には赤い糸の結び目（あなたの印）。
+##   札を押すと: 持っていれば提げる（提げている札をもう一度押すと外す）。持っていなければ買って、すぐ提げる。
+##   ボタンが足りないと札が震える。板の下のまんなかに財布（持っているボタン）。
+##   A/D（←/→）と W/S（↑/↓）で札を選び、Enter か Space で押したのと同じ。閉じるのは右上の × の縫い目か、F か Esc
+## 買う・提げるは craft.gd の出来事 lantern_buy・equip（通信ではほかの人の画面でも、その人の帯のランタンが替わる）
+
+const Lantern := preload("res://lantern.gd")
+const Icons := preload("res://hud_icons.gd")
+const CraftIcons := preload("res://craft_icons.gd")
+const Doll := preload("res://doll.gd")
+
+const SHOT := Vector2i(200, 240)   # 札の中の絵の大きさ (px)
+const PER_ROW := 5
+
+var main: Node3D
+var craft: Node
+var player: Node3D
+var is_open := false
+var _view: Control
+var _sel := 0
+var _hover := -1
+var _hover_close := false
+var _shots := []             # 札ごと [SubViewport, 回す節, 光る紙の素材, 揺らぎ方, ずらし]
+var _cards: Array[Rect2] = []
+var _close_rect := Rect2()
+var _pop := 0.0              # 提げたときに札が跳ねる
+var _pop_i := -1
+var _shake := 0.0            # 足りないときに札が震える
+var _shake_i := -1
+var _frame := -1
+var _t := 0.0
+
+
+class View:
+	extends Control
+	var ui
+
+	func _draw() -> void:
+		if ui.is_open:
+			ui._draw_on(self)
+
+
+func _ready() -> void:
+	layer = 4
+	_view = View.new()
+	_view.ui = self
+	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_view)
+
+
+func _who() -> int:
+	return int(player.get("id"))
+
+
+## いま帯に提げている形（"" は外している）
+func _worn() -> String:
+	return String(craft.lantern(_who()).get("look", ""))
+
+
+func open() -> void:
+	if is_open or player == null or player.menu_open:
+		return
+	is_open = true
+	_sel = maxi(0, Lantern.LOOKS.find(_worn()))
+	_hover = -1
+	_view.mouse_filter = Control.MOUSE_FILTER_STOP
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	player.menu_open = true
+	player.set("shopping", true)
+	_make_shots()
+	var hud = main.get("hud") if main else null
+	if hud:
+		hud.learn("lanterns")   # 開けたら、F の案内はもう出さない
+	_view.queue_redraw()
+
+
+func close() -> void:
+	if not is_open:
+		return
+	is_open = false
+	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	player.menu_open = false
+	player.set("shopping", false)
+	_free_shots()
+	_view.queue_redraw()
+
+
+## 札を押した: 持っていれば提げる（提げている形なら外す）、持っていなければ買って提げる。できなければ false（札が震える）
+func choose(i: int) -> bool:
+	if i < 0 or i >= Lantern.LOOKS.size() or craft == null:
+		return false
+	_sel = i
+	var look: String = Lantern.LOOKS[i]
+	var have: int = craft.lantern_index(_who(), look)
+	var ok := false
+	if have >= 0:
+		ok = craft.send({"kind": "equip", "who": _who(), "gear": "lantern", "index": -1 if _worn() == look else have})
+	else:
+		ok = craft.send({"kind": "lantern_buy", "who": _who(), "look": look})
+		if ok:
+			var au = main.get_node_or_null("Audio") if main else null
+			if au and au.has_method("coin"):
+				au.coin("brass")
+	if ok:
+		_pop = 1.0
+		_pop_i = i
+		if player.has_method("save_tag"):
+			player.save_tag()   # 次に起動しても同じ
+	else:
+		_shake = 1.0
+		_shake_i = i
+	return ok
+
+
+# ---------------------------------------------------------------- 札の中で回るランタン
+
+func _make_shots() -> void:
+	for look in Lantern.LOOKS:
+		var vp := SubViewport.new()
+		vp.size = SHOT
+		vp.own_world_3d = true
+		vp.msaa_3d = Viewport.MSAA_4X
+		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(vp)
+		var env := Environment.new()
+		env.background_mode = Environment.BG_COLOR
+		env.background_color = Color(0.12, 0.14, 0.24)   # 夜の藍（灯りの色が見えるように）
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+		env.ambient_light_color = Color(0.62, 0.66, 0.82)
+		env.ambient_light_energy = 0.45
+		env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+		env.glow_enabled = true
+		env.glow_intensity = 0.5
+		var we := WorldEnvironment.new()
+		we.environment = env
+		vp.add_child(we)
+		var key := DirectionalLight3D.new()
+		key.rotation_degrees = Vector3(-30, -35, 0)
+		key.light_color = Color(1.0, 0.92, 0.82)
+		key.light_energy = 0.55
+		vp.add_child(key)
+		var spin := Node3D.new()
+		vp.add_child(spin)
+		var made := Lantern.make_body(look)
+		var b: Node3D = made[0]
+		spin.add_child(b)
+		var mat: StandardMaterial3D = null
+		for m in made[1]:
+			if mat == null:
+				var src := (m as MeshInstance3D).get_surface_override_material(0) as StandardMaterial3D
+				mat = src.duplicate() if src else null
+			if mat:
+				(m as MeshInstance3D).set_surface_override_material(0, mat)
+		var glow := OmniLight3D.new()   # 中の灯り（形の色）
+		glow.light_color = Lantern.LOOK[look].color
+		glow.light_energy = 0.9
+		glow.omni_range = 0.6
+		glow.position = Vector3(0, -0.15, 0)
+		vp.add_child(glow)
+		var box := _bounds(b)
+		var cam := Camera3D.new()
+		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		cam.size = maxf(box.size.y, maxf(box.size.x, box.size.z)) * 1.25
+		cam.keep_aspect = Camera3D.KEEP_HEIGHT
+		vp.add_child(cam)
+		var c := Vector3(0, box.get_center().y, 0)
+		cam.look_at_from_position(c + Vector3(0, 1.4, 6.0), c)
+		_shots.append([vp, spin, mat, String(Lantern.LOOK[look].style), randf() * 100.0])
+
+
+func _bounds(n: Node3D) -> AABB:
+	var box := AABB()
+	var first := true
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		var b := m.transform * m.get_aabb()
+		var p := m.get_parent()
+		while p != n and p is Node3D:
+			b = (p as Node3D).transform * b
+			p = p.get_parent()
+		box = b if first else box.merge(b)
+		first = false
+	return box
+
+
+func _free_shots() -> void:
+	for s in _shots:
+		(s[0] as Node).queue_free()
+	_shots.clear()
+
+
+func _process(dt: float) -> void:
+	if not is_open:
+		return
+	_t += dt
+	_pop = maxf(0.0, _pop - dt * 3.0)
+	_shake = maxf(0.0, _shake - dt * 2.5)
+	for s in _shots:
+		if s[2]:
+			(s[2] as StandardMaterial3D).emission_energy_multiplier = 1.6 * Lantern.flicker(s[3], _t, s[4])
+	var f := Doll.frame_index()
+	if f != _frame:   # 12 コマで回す。選んでいる札は速く
+		_frame = f
+		for i in _shots.size():
+			var spin: Node3D = _shots[i][1]
+			spin.rotation.y += 0.2 if i == _sel else 0.06
+	_view.queue_redraw()
+
+
+# ---------------------------------------------------------------- 描く
+
+func _draw_on(ci: Control) -> void:
+	var vs := ci.size
+	var u := Icons.ui_scale(vs.y)
+	var n := PER_ROW
+	var rows := ceili(Lantern.LOOKS.size() / float(n))
+	var gap := 16.0 * u
+	var cw := minf(150.0 * u, (vs.x - 120.0 * u + gap) / n - gap)
+	var ch := minf(cw * 1.42, (vs.y - 260.0 * u - (rows - 1) * gap) / rows)
+	cw = minf(cw, ch / 1.25)
+	var bw := n * cw + (n - 1) * gap + 90.0 * u
+	var bh := rows * ch + (rows - 1) * gap + 170.0 * u
+	var r := Rect2((vs - Vector2(bw, bh)) / 2.0, Vector2(bw, bh))
+	_board(ci, r, u)
+	_cards.clear()
+	var worn := _worn()
+	var coins: int = craft.wallet(_who())
+	var pad := 8.0 * u
+	var asp := float(SHOT.x) / SHOT.y
+	for i in Lantern.LOOKS.size():
+		var look: String = Lantern.LOOKS[i]
+		var lift := sin(_pop * PI) * 18.0 * u if i == _pop_i else 0.0
+		var shake := sin(_shake * 40.0) * 8.0 * u * _shake if i == _shake_i else 0.0
+		var cr := Rect2(r.position + Vector2(45.0 * u + (i % n) * (cw + gap) + shake, 60.0 * u + (i / n) * (ch + gap) - lift), Vector2(cw, ch))
+		_cards.append(Rect2(cr.position + Vector2(0, lift), cr.size))
+		var owned: bool = craft.lantern_index(_who(), look) >= 0
+		var price := Lantern.price(look)
+		Icons.paper_tag(ci, cr, 14.0 * u, u)
+		var ih := minf(ch - pad * 2.0 - 30.0 * u, (cw - pad * 2.0) / asp)
+		var iw := ih * asp
+		if i < _shots.size():
+			var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture()
+			ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((cw - iw) / 2.0, 12.0 * u), Vector2(iw, ih)), false, Color(1, 1, 1, 1.0 if owned or price <= coins else 0.6))
+		if not owned:   # 値段（足りなければ薄く）
+			CraftIcons.price(ci, cr.position + Vector2(cw / 2.0, ch - 20.0 * u), price, 9.0 * u, 1.0 if price <= coins else 0.45)
+		if i == _sel or i == _hover:
+			var rim := Icons.rr(cr.position.x - 6.0 * u, cr.position.y - 6.0 * u, cr.size.x + 12.0 * u, cr.size.y + 12.0 * u, 10.0 * u)
+			Icons.screen()
+			Icons.dashes(ci, rim, Icons.RED, 3.0 * u, 9.0 * u, 5.0 * u, 1.0 if i == _sel else 0.4, true)
+		if look == worn:   # いま提げている: 札の上の赤い糸の結び目（あなたの印）
+			var c := cr.position + Vector2(cw / 2.0, -2.0 * u)
+			ci.draw_circle(c, 9.0 * u, Icons.RED)
+			ci.draw_arc(c, 9.0 * u, 0, TAU, 18, Icons.RED.darkened(0.4), 1.6 * u, true)
+			for s in [-1.0, 1.0]:
+				ci.draw_line(c + Vector2(s * 6.0, 4.0) * u, c + Vector2(s * 14.0, 20.0) * u, Icons.RED, 3.0 * u, true)
+	# 下のまんなか: 財布（持っているボタン）
+	Icons.screen()
+	var py := r.end.y - 50.0 * u
+	Icons.patch(ci, Icons.rr(r.position.x + bw / 2.0 - 170.0 * u, py - 32.0 * u, 340.0 * u, 64.0 * u, 14.0 * u), Icons.PAPER, 0.95, true, Icons.PAPER_EDGE)
+	CraftIcons.price(ci, Vector2(r.position.x + bw / 2.0, py), coins, 10.0 * u)
+	# 右上: 閉じる（× の縫い目）
+	var xs := 46.0 * u
+	var xc := Vector2(r.end.x - 32.0 * u, r.position.y + 32.0 * u)
+	_close_rect = Rect2(xc - Vector2(xs, xs) / 2.0, Vector2(xs, xs))
+	Icons.screen()
+	Icons.patch(ci, Icons.circ(xc, xs * 0.5 * (1.08 if _hover_close else 1.0), 20), Icons.PAPER, 1.0, false)
+	Icons._o = xc
+	Icons._s = xs / 64.0
+	Icons.thread(ci, PackedVector2Array([Vector2(-12, -12), Vector2(12, 12)]), Icons.THREAD, 4.0, 1.0)
+	Icons.thread(ci, PackedVector2Array([Vector2(12, -12), Vector2(-12, 12)]), Icons.THREAD, 4.0, 1.0)
+
+
+## 濃い緑のフェルトの板と、縁のなみ縫い（衣装掛けの画面と同じ）
+func _board(ci: CanvasItem, r: Rect2, u: float) -> void:
+	Icons.screen()
+	var pts := PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])
+	var uv := PackedVector2Array()
+	for p in pts:
+		uv.append(p / 40.0)
+	ci.draw_colored_polygon(pts, Color(0.36, 0.42, 0.33), uv, Icons.felt())
+	var inset := Rect2(r.position + Vector2(14, 14) * u, r.size - Vector2(28, 28) * u)
+	Icons.dashes(ci, PackedVector2Array([inset.position, Vector2(inset.end.x, inset.position.y), inset.end, Vector2(inset.position.x, inset.end.y)]),
+			Icons.CAP, 2.4 * u, 9.0 * u, 6.0 * u, 0.8, true)
+
+
+func _hit(p: Vector2) -> int:
+	for i in _cards.size():
+		if _cards[i].has_point(p):
+			return i
+	return -1
+
+
+func _input(e: InputEvent) -> void:
+	if not is_open:
+		return
+	var count := Lantern.LOOKS.size()
+	if e is InputEventKey and e.pressed and not e.echo:
+		match e.physical_keycode:
+			KEY_ESCAPE, KEY_F:
+				close()
+			KEY_A, KEY_LEFT:
+				_sel = posmod(_sel - 1, count)
+			KEY_D, KEY_RIGHT:
+				_sel = posmod(_sel + 1, count)
+			KEY_W, KEY_UP:
+				_sel = posmod(_sel - PER_ROW, count)
+			KEY_S, KEY_DOWN:
+				_sel = posmod(_sel + PER_ROW, count)
+			KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
+				choose(_sel)
+		get_viewport().set_input_as_handled()
+	elif e is InputEventMouseMotion:
+		_hover = _hit(e.position)
+		_hover_close = _close_rect.has_point(e.position)
+	elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
+		get_viewport().set_input_as_handled()
+		if _close_rect.has_point(e.position):
+			close()
+		else:
+			var i := _hit(e.position)
+			if i >= 0:
+				choose(i)

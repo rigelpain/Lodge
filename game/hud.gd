@@ -402,8 +402,11 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if si >= 0 and not p.rooted():
 		_hint("sit", ["F"], "sit", p.seats.seat(si).pos + Vector3.UP * 0.85)
 	# 売り子のおじさん: F で売り台
-	if p.shop_near() and not p.shopping:
+	if p.shop_near() and not p.shopping and not (p.has_method("lantern_rack_near") and p.lantern_rack_near()):
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
+	# 番台の横のランタン掛け: F でランタンを買って提げ替える（ランタンの絵）
+	if p.has_method("lantern_rack_near") and p.lantern_rack_near() and not p.shopping:
+		_hint("lanterns", ["F"], "lamp", main.lantern_rack.global_position + Vector3.UP * 2.25)
 	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
 	if p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
 		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)

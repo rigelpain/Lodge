@@ -373,6 +373,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.WALK and machine_near() and (not shop_near() or _facing(get_parent().sewing.machine.global_position) > _facing(get_parent().shopkeeper.global_position)):
 					get_parent().craft_ui.open_machine()   # ミシンの画面（おじさんも近ければ、向いている方）
 					return
+				if mode == Mode.WALK and lantern_rack_near() and (not shop_near() or _facing(get_parent().lantern_rack.global_position) > _facing(get_parent().shopkeeper.global_position)):
+					get_parent().lantern_ui.open()   # 番台の横のランタン掛け: ランタンを買って提げ替える（おじさんも近ければ、向いている方）
+					return
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
 					return
@@ -1563,6 +1566,12 @@ func wardrobe_near() -> bool:
 	return w != null and get_parent().get("wardrobe_ui") != null and not menu_open and w.can_use(self)
 
 
+## 番台の横のランタン掛け（lantern_rack.gd）の前で、掛けの方を向いているか
+func lantern_rack_near() -> bool:
+	var rk = get_parent().get("lantern_rack")
+	return rk != null and get_parent().get("lantern_ui") != null and not menu_open and rk.can_use(self)
+
+
 ## ミシンの前（立つ所のそば）で、ミシンの方を向いていて、縫い始められるか
 func machine_near() -> bool:
 	var sew = get_parent().get("sewing")
@@ -1811,6 +1820,12 @@ func _load_tag() -> void:
 	if cf.has_section("profile"):
 		craft.send({"kind": "profile", "who": id, "name": String(cf.get_value("profile", "name", craft.name_of(id))),
 			"color": int(cf.get_value("profile", "color", craft.colors.get(id, 0)))})
+	if cf.has_section("lantern"):   # ランタン: 持っている形を戻してから、提げていた形を提げる（"" は外していた）
+		for k in cf.get_value("lantern", "owned", []):
+			craft.send({"kind": "lantern_own", "who": id, "look": String(k)})
+		if cf.has_section_key("lantern", "wear"):
+			var look := String(cf.get_value("lantern", "wear"))
+			craft.send({"kind": "equip", "who": id, "gear": "lantern", "index": craft.lantern_index(id, look) if look != "" else -1})
 	var a = get_parent().get("args")
 	if cf.has_section_key("profile", "doll") and not (a is Dictionary and a.has("doll")):   # --doll を付けたときは、そちらが勝つ
 		craft.send({"kind": "doll", "who": id, "doll": String(cf.get_value("profile", "doll"))})
@@ -1882,4 +1897,9 @@ func save_tag() -> void:
 	var owned: Dictionary = craft.tag_owned.get(id, {})
 	for part in owned:
 		cf.set_value("owned", part, owned[part])
+	var looks: Array = []   # ランタン（lantern.gd）: 持っている形と、提げている形
+	for l in craft.lanterns.get(id, []):
+		looks.append(String(l.get("look", "")))
+	cf.set_value("lantern", "owned", looks)
+	cf.set_value("lantern", "wear", String(craft.lantern(id).get("look", "")))
 	cf.save(TAG_FILE)
