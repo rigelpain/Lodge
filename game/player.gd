@@ -376,6 +376,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
 					return
+				if mode == Mode.WALK and pal_stall_near() and (not wardrobe_near() or _facing(get_parent().pal_stall.global_position) > _facing(get_parent().wardrobe.global_position)):
+					get_parent().pals_ui.open()   # 衣装掛けの横の売り台: 頭・肩の小物とミニオンを買って付け替える
+					return
 				if mode == Mode.WALK and wardrobe_near():
 					get_parent().wardrobe_ui.open()   # 2 階の衣装掛け: 人形を選び直す
 					return
@@ -1601,6 +1604,12 @@ func wardrobe_near() -> bool:
 	return w != null and get_parent().get("wardrobe_ui") != null and not menu_open and w.can_use(self)
 
 
+## 衣装掛けの横の売り台（pal_stall.gd）の前で、台の方を向いているか
+func pal_stall_near() -> bool:
+	var st = get_parent().get("pal_stall")
+	return st != null and get_parent().get("pals_ui") != null and not menu_open and st.can_use(self)
+
+
 ## ミシンの前（立つ所のそば）で、ミシンの方を向いていて、縫い始められるか
 func machine_near() -> bool:
 	var sew = get_parent().get("sewing")
@@ -1849,6 +1858,12 @@ func _load_tag() -> void:
 	if cf.has_section("profile"):
 		craft.send({"kind": "profile", "who": id, "name": String(cf.get_value("profile", "name", craft.name_of(id))),
 			"color": int(cf.get_value("profile", "color", craft.colors.get(id, 0)))})
+	if cf.has_section("pals"):   # 頭・肩の小物とミニオン: 持っている物を戻してから付ける
+		for k in cf.get_value("pals", "owned", []):
+			craft.send({"kind": "pal_own", "who": id, "key": String(k)})
+		for slot in ["head", "shoulder", "pet"]:
+			if cf.has_section_key("pals", slot):
+				craft.send({"kind": "pal_wear", "who": id, "slot": slot, "key": String(cf.get_value("pals", slot))})
 	var a = get_parent().get("args")
 	if cf.has_section_key("profile", "doll") and not (a is Dictionary and a.has("doll")):   # --doll を付けたときは、そちらが勝つ
 		craft.send({"kind": "doll", "who": id, "doll": String(cf.get_value("profile", "doll"))})
@@ -1920,4 +1935,7 @@ func save_tag() -> void:
 	var owned: Dictionary = craft.tag_owned.get(id, {})
 	for part in owned:
 		cf.set_value("owned", part, owned[part])
+	cf.set_value("pals", "owned", craft.pals_owned.get(id, []))   # 頭・肩の小物とミニオン（pals.gd）
+	for slot in craft.pals_wear.get(id, {}):
+		cf.set_value("pals", slot, craft.pals_wear[id][slot])
 	cf.save(TAG_FILE)

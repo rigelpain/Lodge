@@ -486,6 +486,9 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
+	# 衣装掛けの横の売り台: F で頭・肩の小物とミニオンを買って付け替える（頭に小鳥、足もとに子狐の人の形）
+	if p.has_method("pal_stall_near") and p.pal_stall_near() and not p.shopping:
+		_hint("pals", ["F"], "pals", main.pal_stall.global_position + Vector3.UP * 1.6)
 	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
 	if p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
 		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)

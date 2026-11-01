@@ -312,6 +312,10 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"untag": _tag_move(ci, a, true)
 		"tag_on": _tag_move(ci, a, false)
 		"wardrobe": _wardrobe(ci, a, tint)
+		"pals": _pals(ci, a, tint, "all")
+		"pal_head": _pals(ci, a, tint, "head")
+		"pal_shoulder": _pals(ci, a, tint, "shoulder")
+		"pal_pet": _pals(ci, a, tint, "pet")
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
 		_:   # 工房の絵（型紙・布・畳む・広げる。craft_icons.gd）
@@ -773,6 +777,43 @@ static func _wardrobe(ci: CanvasItem, a: float, col: Color) -> void:
 	doll(ci, Vector2(-4, 24), col, "stand", a, 0.8)
 	arc_arrow(ci, Vector2(-4, 6), 25.0, -0.35, 0.9, THREAD, a, 2.2)
 	arc_arrow(ci, Vector2(-4, 6), 25.0, PI - 0.35, PI + 0.9, THREAD, a, 2.2)
+
+
+## 頭・肩の小物とミニオン（pals.gd）: 人の形の頭や肩に小鳥、足もとに子狐。which は all（売り台の案内）・head・shoulder・pet（売り台の画面の札の段）
+static func _pals(ci: CanvasItem, a: float, col: Color, which: String) -> void:
+	var sc := 1.05
+	var feet := Vector2(-6, 30) if which in ["pet", "all"] else Vector2(0, 30)
+	doll(ci, feet, col if which != "pet" else col.lerp(PAPER_EDGE, 0.5), "stand", a, sc)
+	if which in ["head", "all"]:
+		_tiny_bird(ci, feet + Vector2(1, -41) * sc, 1.0 if which == "head" else 0.8, a)
+	if which == "shoulder":
+		_tiny_bird(ci, feet + Vector2(8, -27) * sc, 0.8, a)
+	if which in ["pet", "all"]:
+		_tiny_fox(ci, feet + Vector2(24, 0), 1.0 if which == "pet" else 0.8, a)
+
+
+## 小さな千代紙の小鳥（右を向く）
+static func _tiny_bird(ci: CanvasItem, c: Vector2, k: float, a: float) -> void:
+	var o := _o
+	var s := _s
+	patch(ci, PackedVector2Array([c + Vector2(-9, -2) * k, c + Vector2(-2, 2) * k, c + Vector2(-6, 6) * k]), RED.darkened(0.2), a, false)   # しっぽ
+	patch(ci, ell(c, 7.0 * k, 5.0 * k, 14), RED, a, false)
+	patch(ci, circ(c + Vector2(5, -5) * k, 3.6 * k, 12), RED, a, false)
+	patch(ci, PackedVector2Array([c + Vector2(8, -6) * k, c + Vector2(12, -4.5) * k, c + Vector2(8, -3.5) * k]), MUSTARD, a, false)   # くちばし
+	ci.draw_circle(o + (c + Vector2(6, -6) * k) * s, 1.0 * k * s, Color(0.1, 0.08, 0.08, a))
+
+
+## 小さな折り紙の子狐（座って右を向く）
+static func _tiny_fox(ci: CanvasItem, feet: Vector2, k: float, a: float) -> void:
+	var fox := Color(0.82, 0.45, 0.19)
+	patch(ci, PackedVector2Array([feet + Vector2(-8, 0) * k, feet + Vector2(-14, -3) * k, feet + Vector2(-10, -9) * k, feet + Vector2(-4, -2) * k]), fox.darkened(0.15), a, false)   # しっぽ
+	patch(ci, PackedVector2Array([feet + Vector2(-7, 0) * k, feet + Vector2(7, 0) * k, feet + Vector2(4, -14) * k, feet + Vector2(-3, -12) * k]), fox, a, false)
+	var h := feet + Vector2(4, -17) * k
+	for ex in [-4.0, 2.0]:   # 耳
+		patch(ci, PackedVector2Array([h + Vector2(ex - 2, -3) * k, h + Vector2(ex + 3, -3) * k, h + Vector2(ex, -10) * k]), fox, a, false)
+	patch(ci, ell(h, 6.0 * k, 4.5 * k, 12), fox, a, false)
+	patch(ci, PackedVector2Array([h + Vector2(3, -2) * k, h + Vector2(11, 1) * k, h + Vector2(3, 3) * k]), fox, a, false)   # 鼻先
+	patch(ci, PackedVector2Array([feet + Vector2(0, -2) * k, feet + Vector2(4, -2) * k, feet + Vector2(3, -12) * k]), Color(0.96, 0.92, 0.85), a, false)   # 胸の白
 
 
 static func _return(ci: CanvasItem, a: float) -> void:

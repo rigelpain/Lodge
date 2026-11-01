@@ -30,6 +30,10 @@ extends Node
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
+##   pal_buy   {key}           2 階の衣装掛けの横の売り台で、頭・肩の小物かミニオン（pals.gd）を買う。買ったらすぐ身につける（ev に slot が入る）
+##   pal_own   {key}           持っている小物・ミニオンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
+##   pal_wear  {slot, key}     頭（head）・肩（shoulder）・連れ（pet）に、持っている物を付ける。key が "" なら外す。
+##                             みんなの画面で、その人の小物とミニオンが替わる（companions.gd）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
@@ -43,6 +47,7 @@ signal happened(ev: Dictionary)
 const Doll := preload("res://doll.gd")
 const Sled := preload("res://sled.gd")
 const Fabrics := preload("res://fabrics.gd")
+const Pals := preload("res://pals.gd")
 
 ## お金はボタン（snow_buttons.gd）。最初に START_BUTTONS 個（木の何個分）持たせる。米袋の型紙と布はすぐ買えるが、小はまだ（少し滑って稼いでから）
 const START_BUTTONS := 30
@@ -81,6 +86,8 @@ var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
 var lanterns := {}             # 人の番号 → 持っているランタンの配列 [{look}]（0 番は標準）
 var lantern_sel := {}          # 人の番号 → 提げているランタンの番号（-1 は外している）
 var lamps := {}                # 人の番号 → ランタンが点いているか
+var pals_owned := {}           # 人の番号 → 持っている頭・肩の小物とミニオンの名前の配列（pals.gd）
+var pals_wear := {}            # 人の番号 → {head, shoulder, pet} 身につけている物の名前（"" は付けていない）
 ## キャラの色（装備の画面で選ぶ。はじめは人の番号の順に、赤・藍・からし…）。フェルトの色で、名札の窓の生成りの上で見分けられる濃さ
 const COLORS := [Color(0.80, 0.24, 0.20), Color(0.24, 0.32, 0.55), Color(0.88, 0.66, 0.20), Color(0.25, 0.52, 0.34),
 	Color(0.55, 0.30, 0.58), Color(0.92, 0.50, 0.22), Color(0.22, 0.58, 0.66), Color(0.84, 0.40, 0.56),
@@ -109,6 +116,8 @@ func join(who: int) -> void:
 	lanterns[who] = [{"look": "box"}, {"look": "paper"}]
 	lantern_sel[who] = 0
 	lamps[who] = false
+	pals_owned[who] = Pals.START.duplicate()
+	pals_wear[who] = Pals.START_WEAR.duplicate()
 
 
 ## 名札の部品 part の i 番を使えるか（最初から使える部品か、手に入れた部品）
@@ -131,6 +140,16 @@ func gear_index(who: int, gear: String) -> int:
 		"sack": return int(sack_sel.get(who, 0))
 		"lantern": return int(lantern_sel.get(who, -1))
 	return -1
+
+
+## その人がその小物・ミニオンを持っているか
+func pal_owned(who: int, key: String) -> bool:
+	return key in pals_owned.get(who, [])
+
+
+## その人が slot（head・shoulder・pet）に付けている物の名前（"" は付けていない）
+func pal_worn(who: int, slot: String) -> String:
+	return String(pals_wear.get(who, {}).get(slot, ""))
 
 
 ## その人のキャラの色と名前（知らない人は灰色・名前なし）
@@ -411,6 +430,27 @@ func _apply(ev: Dictionary) -> bool:
 					lantern_sel[who] = i
 					if i < 0:
 						lamps[who] = false
+		"pal_buy":
+			var key := String(ev.get("key", ""))
+			var cost := Pals.price(key)
+			if cost < 0 or pal_owned(who, key) or wallets[who] < cost:
+				return false
+			wallets[who] -= cost
+			pals_owned[who].append(key)
+			ev["slot"] = Pals.slot_of(key)
+			pals_wear[who][ev.slot] = key   # 買ったらすぐ身につける
+		"pal_own":
+			var key := String(ev.get("key", ""))
+			if Pals.price(key) < 0:
+				return false
+			if not pal_owned(who, key):
+				pals_owned[who].append(key)
+		"pal_wear":
+			var slot := String(ev.get("slot", ""))
+			var key := String(ev.get("key", ""))
+			if not slot in Pals.SLOTS or key != "" and (not pal_owned(who, key) or Pals.slot_of(key) != slot):
+				return false
+			pals_wear[who][slot] = key
 		"doll":
 			if not String(ev.get("doll", "")) in Doll.KINDS:
 				return false

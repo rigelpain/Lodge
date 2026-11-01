@@ -22,6 +22,9 @@ const Look := preload("res://look.gd")
 ##   --doll=人形   あなたの始めの人形（doll.gd の KINDS: kasa・origami・news・robo・musha・ningyo・golem）。保存した人形より勝つ
 ##   --bot-dolls=人形,人形…  ソリを押す仲間の人形（既定は右が origami、左が news）
 ##   --lodge-dolls=人形,人形…  ロッジでくつろぐ仲間の人形（既定は robo・ningyo・golem・musha の順）
+##   --spawn=pals  2 階の衣装掛けの横の売り台の前から始める（F で頭・肩の小物とミニオンを買って付け替える）
+##   --no-pets     頭・肩の小物とミニオン（companions.gd）を出さない
+##   --bot-pals=名前,名前…  仲間（ソリを押す仲間とロッジの仲間）に付ける頭・肩の小物とミニオン（pals.gd の名前。確かめ用）
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
@@ -67,6 +70,12 @@ const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
 const Damp := preload("res://damp.gd")
 const Badges := preload("res://badges.gd")
+const Companions := preload("res://companions.gd")
+const Pals := preload("res://pals.gd")
+const PalStall := preload("res://pal_stall.gd")
+const PalsUi := preload("res://pals_ui.gd")
+## 頭・肩の小物とミニオンの売り台（pal_stall.gd）を、衣装掛けの竿の端からどれだけ横に置くか（衣装掛けの座標, m。+X は竿の右）
+const PAL_STALL_X := 2.85
 ## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
 ## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
 const WARDROBE_AT := Vector2(21.25, 2.2)
@@ -114,6 +123,8 @@ var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
+var pal_stall: Node3D         # 衣装掛けの横の、頭・肩の小物とミニオンの売り台（pal_stall.gd）
+var pals_ui: CanvasLayer      # 小物とミニオンを買って付け替える画面（pals_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
 var damp: Damp                # 紙の人形の「よれ」（湿り気）の配り役（damp.gd）。人より先に置く。人が名前（"Damp"）で探す
 var badges: Badges            # 体の調子のバッジ（badges.gd）。湿り気・ご飯の効き目などが入れ、hud.gd が描く
@@ -253,6 +264,7 @@ func _ready() -> void:
 		add_child(player)
 		player.look_at(sled.position, Vector3.UP)
 		player.rotation.x = 0
+		_add_pals(player)
 
 	for i in int(args.get("bots", "1")):
 		var b := Bot.new()
@@ -265,6 +277,7 @@ func _ready() -> void:
 		b.lean_mode = args.get("bot-lean", "follow")
 		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
 		add_child(b)
+		_add_pals(b)
 	if seats:
 		# ロッジでくつろぐ仲間: 食堂の空いた席に座った姿で始まる（bot.gd の lounge）
 		for i in int(args.get("lodge-bots", "2")):
@@ -277,6 +290,7 @@ func _ready() -> void:
 			b.lounge = true
 			b.position = get_node("Lodge").to_global(Vector3(6.0 + 3.0 * i, 0.6, -4.0))
 			add_child(b)
+			_add_pals(b)
 
 	if not args.has("no-buttons"):
 		snow_buttons = SnowButtons.new()
@@ -352,6 +366,18 @@ func _ready() -> void:
 		wardrobe_ui.craft = craft
 		wardrobe_ui.player = player
 		add_child(wardrobe_ui)
+		if pal_stall:
+			pal_stall.player = player
+		pals_ui = PalsUi.new()
+		pals_ui.main = self
+		pals_ui.craft = craft
+		pals_ui.player = player
+		add_child(pals_ui)
+		if args.get("spawn", "") == "pals" and pal_stall:   # --spawn=pals: 売り台の前から始める
+			var at := pal_stall.to_global(Vector3(0, 0.1, 1.5))
+			player.global_position = at
+			var to := pal_stall.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if args.get("spawn", "") == "wardrobe" and wardrobe:   # --spawn=wardrobe: 2 階の衣装掛けの前から始める
 			var at := wardrobe.to_global(Vector3(0, 0.1, 1.6))
 			player.global_position = at
@@ -797,6 +823,27 @@ func _furnish_lodge() -> void:
 	wardrobe.position = Vector3(WARDROBE_AT.x, WARDROBE_FLOOR, -WARDROBE_AT.y)
 	wardrobe.rotation.y = -PI / 2.0   # 竿の正面（+Z）を西へ
 	lodge.add_child(wardrobe)
+	# その横に、頭・肩の小物とミニオンの売り台（同じ壁ぎわ、正面は同じく西）
+	pal_stall = PalStall.new()
+	pal_stall.name = "PalStall"
+	pal_stall.player = player
+	pal_stall.transform = wardrobe.transform * Transform3D(Basis(), Vector3(PAL_STALL_X, 0, 0.2))
+	lodge.add_child(pal_stall)
+
+
+## 持ち主（あなた・仲間）に、頭・肩の小物とミニオン（companions.gd）を付ける。--bot-pals で仲間に付ける物を決める（確かめ用）
+func _add_pals(host: Node3D) -> void:
+	if args.has("no-pets"):
+		return
+	if host != player and args.has("bot-pals") and craft and int(host.get("id")) >= 0:
+		var who := int(host.get("id"))
+		for k in String(args["bot-pals"]).split(","):
+			craft.send({"kind": "pal_own", "who": who, "key": k})
+			craft.send({"kind": "pal_wear", "who": who, "slot": Pals.slot_of(k), "key": k})
+	var c := Companions.new()
+	c.host = host
+	c.craft = craft
+	add_child(c)
 
 
 ## 番台 1 つ: パッチワーク（または藍）のフェルトを張った木のカウンター。上に、店番の側を向いたレジと、払いを受けるお皿。
