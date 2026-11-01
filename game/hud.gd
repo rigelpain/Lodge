@@ -1311,7 +1311,7 @@ class View extends Control:
 		if sc == null or not is_instance_valid(sc) or sc.get("hidden") or sc.get("_frame") == null:
 			return
 		var fr: Control = sc._frame
-		var c := fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui())
+		var c: Vector2 = fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui()) + sc.offset   # 引っこめは小窓の層ごと（刺繍枠と同じ）
 		draw_set_transform_matrix(Icons.wind_xform(c, 5.0, 0.0, 0.03, 2.5 * u))
 		DampHud.draw(self, c, fr.size.x / 2.0, u, hud.main.badges.of(p.id), hud._badge_pop)
 		draw_set_transform_matrix(Transform2D.IDENTITY)

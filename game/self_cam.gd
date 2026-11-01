@@ -10,6 +10,7 @@ extends CanvasLayer
 
 const Icons := preload("res://hud_icons.gd")
 const Player := preload("res://player.gd")
+const DampHud := preload("res://damp_hud.gd")
 
 const PX := 224               # 描く大きさ（正方形の px）。窓とほぼ同じ。刺繍の糸目は窓の側で描く
 const STITCH_PX := 2.6        # 糸 1 本の、画面での幅（1080 のとき, px）
@@ -361,8 +362,16 @@ func _process(dt: float) -> void:
 	_frame.position += Icons.wind_offset(5.0, 2.5 * ui())
 	# 何もしないでいると、小窓は層ごと画面の外へ引っこむ（hud.gd の _update_tuck）。刺繍枠（hud.gd）もこの offset で追う
 	# （刺繍枠の木の輪とねじは小窓より外へ出るので、その分も広げる。上の I・N・R の札と一緒に右へ抜ける）
+	# 刺繍枠の右上の体の調子のバッジ（damp_hud.gd）も、この offset で一緒に引っこむ（hud.gd の _draw_damp）。
+	# バッジは枠より外へ出るので、出しうる 3 枚の所も含める（2026-11-01 代表「HUD 退避させるときバフデバフワッペンがたいひさせれてない」）
 	var u := ui()
 	var fr := Rect2(_frame.position, _frame.size).grow(12.0 * u).grow_side(SIDE_TOP, 34.0 * u)
+	var c := _frame.position + _frame.size / 2.0
+	var half := (DampHud.BADGE * 0.5 + 8.0) * u   # バッジの半径と、落ち影・跳ねの分
+	for i in 3:
+		var t: float = DampHud.BADGE_FROM + i * DampHud.BADGE_STEP
+		var bc := c + Vector2(cos(t), sin(t)) * (_frame.size.x / 2.0 + DampHud.BADGE_R * u)
+		fr = fr.merge(Rect2(bc - Vector2.ONE * half, Vector2.ONE * half * 2.0))
 	offset = Icons.tuck_off(fr, get_viewport().get_visible_rect().size)
 	var dc := get_node_or_null("/root/DayCycle")
 	if dc and "dial_right" in dc:
