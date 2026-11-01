@@ -10,7 +10,9 @@ const Doll := preload("res://doll.gd")
 ##
 ## 席はロッジの glb（lodge/build_lodge.py）の座面（素材 cushion の面）から、ゲームを始めたときに見つける。
 ## 家具は 1 つの形にまとめて書き出されていて、椅子ごとの名前がないので、面をつながったかたまりに分け、高さと形で見分ける。
-## 向きは、座面の少し上から四方へ当たりを探り、机（窓辺のカウンター・こたつ）に当たる向き。長椅子は炉の灯りの目印（light_fire）の向き。
+## 向きは、座面の少し上から四方へ当たりを探り、机（窓辺のカウンター）に当たる向き。長椅子は炉の灯りの目印（light_fire）の向き。
+## 2 階の座布団は、こたつの組（props/sets/kotatsu_lodge_*。main.gd が slot_kotatsu_* に置く）の座る所の目印 sit_<番号>
+## （目印の -Z がこたつの側、大きさは座布団の幅・厚み・奥行き）。
 ## ロッジの台本で家具を動かしても、書き出し直せばそのまま合う。
 ##
 ## 座る・立つの動き（人形と同じ 12 コマ／秒）: 席の立つ所（椅子の後ろ・長椅子の前）へ 3 コマで歩み寄って向きを変え、
@@ -186,11 +188,33 @@ func _find() -> void:
 		var face: Vector3 = hit[0]
 		var p := Vector3(c.x, top, c.z)
 		if kind == "zabuton":
-			p += face * maxf(0.0, hit[1] - KOTATSU_HIPS)
-			floor_y = b.position.y - KOTATSU_PIT
-			_add(kind, p, face, floor_y, _edge(b, p, face), b.size, Vector3(c.x, b.position.y, c.z))
+			_add_zabuton(b, face, hit[1])
 			continue
 		_add(kind, p, face, floor_y, _edge(b, p, face), b.size)
+	# 2 階の座布団（こたつの組の目印）。2 階なので、並びは 1 階の席のあと。奥（-Z）から、西から
+	var marks := lodge.find_children("sit_*", "Node3D", true, false)
+	var at_of := func(m: Node3D) -> Vector3: return lodge.to_local(m.global_position)
+	marks.sort_custom(func(a: Node3D, b: Node3D) -> bool:
+		var ca: Vector3 = at_of.call(a)
+		var cb: Vector3 = at_of.call(b)
+		return ca.z < cb.z - 0.05 or (absf(ca.z - cb.z) <= 0.05 and ca.x < cb.x))
+	for m: Node3D in marks:
+		var top: Vector3 = at_of.call(m)
+		var size := m.scale.abs()
+		var b := AABB(top - Vector3(size.x * 0.5, size.y, size.z * 0.5), size)
+		var face := lodge.global_basis.inverse() * -m.global_basis.z
+		face.y = 0
+		var hit := _table_dir(space, top + Vector3.UP * 0.12, [face.normalized()])
+		if hit.is_empty():
+			continue
+		_add_zabuton(b, hit[0], hit[1])
+
+
+## 座布団の席: 腰の所を、こたつ（布団と天板の当たり）から KOTATSU_HIPS 手前まで前へ出し、足は穴の底まで下ろせる
+func _add_zabuton(b: AABB, face: Vector3, hit: float) -> void:
+	var c := b.get_center()
+	var p := Vector3(c.x, b.end.y, c.z) + face * maxf(0.0, hit - KOTATSU_HIPS)
+	_add("zabuton", p, face, b.position.y - KOTATSU_PIT, _edge(b, p, face), b.size, Vector3(c.x, b.position.y, c.z))
 
 
 ## p（ロッジの座標）から face の向きに、座面の箱 b の前の縁までの奥行き (m)。座布団で縁を越えていれば 0
@@ -257,10 +281,10 @@ static func _clusters(arr: Array, xf: Transform3D) -> Array[AABB]:
 	return out
 
 
-## 座面の少し上（ロッジの座標）から四方へ当たりを探り、机に当たる向き（ロッジの座標）と、その距離。なければ空
-func _table_dir(space: PhysicsDirectSpaceState3D, at: Vector3) -> Array:
+## 座面の少し上（ロッジの座標）から四方（dirs）へ当たりを探り、机に当たる向き（ロッジの座標）と、その距離。なければ空
+func _table_dir(space: PhysicsDirectSpaceState3D, at: Vector3, dirs := [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT]) -> Array:
 	var best := []
-	for d in [Vector3.FORWARD, Vector3.BACK, Vector3.LEFT, Vector3.RIGHT]:
+	for d in dirs:
 		var from := lodge.to_global(at)
 		var q := PhysicsRayQueryParameters3D.create(from, lodge.to_global(at + d * 0.8))
 		var hit := space.intersect_ray(q)

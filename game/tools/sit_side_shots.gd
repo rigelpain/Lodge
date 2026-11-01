@@ -2,10 +2,16 @@ extends SceneTree
 ## ロッジの席に 7 体の人形を 1 体ずつ座らせ、真横から撮って 1 枚に並べる（確かめ用）。人形を縦、席の種類を横に並べる。
 ##   Godot --path game --resolution 1000x1000 -s res://tools/sit_side_shots.gd -- [--kinds=all|kasa,news] [--seats=chair,stool,bench,zabuton] [--out=DIR]
 ## 席は種類ごとに、カメラを置く横が空いている席（並びの端。なければ並びのまんなか）。人形のまわりの奥行きだけを映す（手前と奥は切る）。
-## 脚（太もも・すね・足）の頂点のうち、座面の真下（座面の幅と奥行きの中で、座面より低く床より高い所＝椅子の中）に入った数を書き出す
+## 脚（太もも・すね・足）の頂点のうち、座面の真下（座面の幅と奥行きの中で、座面より低く床より高い所＝椅子の中）に入った数を書き出す。
+## 座布団の席では、こたつ（天板と垂れた布団の外形の箱）の中へ入った体の頂点も数える
 
 const Doll := preload("res://doll.gd")
 const CELL := Vector2i(400, 400)
+## 2 階のこたつの外形（lodge/dims.py の KOTATSU_W・KOTATSU_D、KOTATSU_FLARE、KOTATSU_TOP、PIT_DEPTH）
+const KOTATSU := Vector2(2.1816, 1.2726)
+const KOTATSU_FLARE := 0.10
+const KOTATSU_TOP := 0.44
+const KOTATSU_PIT_D := 0.40
 
 var args := {}
 var main: Node3D
@@ -189,7 +195,34 @@ func _count(seats) -> void:
 				if behind > 0.01 and rel.y > 0.0 and rel.y < 0.5 and absf(rel.dot(side)) < size.x * 0.5:
 					back += 1
 					back_deep = maxf(back_deep, behind)
-	print("%s %s: 座面の真下に入った脚の頂点 %d（いちばん深く %.3f m）、背もたれへ出た体の頂点 %d（%.3f m）　座面の奥行き %.2f m（腰から縁まで %.2f m）" % [d.kind, sk, n, deep, back, back_deep, size.y, edge])
+	# 座布団: こたつ（天板と、穴へ垂れた布団の外形。lodge/dims.py の KOTATSU_W・D・FLARE・TOP、穴の深さ）の中へ入った体の頂点
+	var kot := ""
+	if sk == "zabuton":
+		var ks := _kotatsu_near(st.pos)
+		if ks:
+			var inside := 0
+			var kdeep := 0.0
+			var half := Vector3(KOTATSU.x * 0.5 + KOTATSU_FLARE, 0, KOTATSU.y * 0.5 + KOTATSU_FLARE)
+			for b in groups:
+				for v in groups[b]:
+					var l: Vector3 = ks.global_transform.affine_inverse() * v
+					var dx := half.x - absf(l.x)
+					var dz := half.z - absf(l.z)
+					var dy := minf(KOTATSU_TOP - l.y, l.y + KOTATSU_PIT_D)
+					if dx > 0.0 and dz > 0.0 and dy > 0.0:
+						inside += 1
+						kdeep = maxf(kdeep, minf(minf(dx, dz), dy))
+			kot = "、こたつ（布団・天板）へ入った体の頂点 %d（いちばん深く %.3f m）" % [inside, kdeep]
+	print("%s %s: 座面の真下に入った脚の頂点 %d（いちばん深く %.3f m）、背もたれへ出た体の頂点 %d（%.3f m）%s　座面の奥行き %.2f m（腰から縁まで %.2f m）" % [d.kind, sk, n, deep, back, back_deep, kot, size.y, edge])
+
+
+## 座布団の席に近いこたつの置き場（ロッジの目印 slot_kotatsu_*）
+func _kotatsu_near(p: Vector3) -> Node3D:
+	var best: Node3D = null
+	for n in root.find_children("slot_kotatsu_*", "Node3D", true, false):
+		if best == null or (n as Node3D).global_position.distance_to(p) < best.global_position.distance_to(p):
+			best = n
+	return best
 
 
 ## 人形の形の頂点を、いまの骨の姿勢で曲げ、いちばん重い骨の名前ごとに世界の座標で返す（sit_hands_shots.gd と同じ）

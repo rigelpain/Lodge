@@ -1057,8 +1057,8 @@ def build_interior():
     pits = []
     for i, (x, ky0) in enumerate(KOTATSU):
         ky1 = ky0 + KOTATSU_D
-        pits.append((x - 0.25, ky0 - 0.45, x + KOTATSU_W + 0.25, ky1 + 0.45))
-        cut(plo, cutter("cut_pit_%d" % i, x - 0.25, ky0 - 0.45, zt - PIT_DEPTH, x + KOTATSU_W + 0.25, ky1 + 0.45, zt + 0.1))
+        pits.append((x - PIT_OUT, ky0 - PIT_OUT, x + KOTATSU_W + PIT_OUT, ky1 + PIT_OUT))
+        cut(plo, cutter("cut_pit_%d" % i, *pits[-1][:2], zt - PIT_DEPTH, *pits[-1][2:], zt + 0.1))
     # 畳: 半間 x 1 間を目地で並べる。掘りごたつの穴にかかる畳は外す
     tt = M("tatami", "tatami", "interior")
     nx = int(round((T_["x1"] - T_["x0"]) / (K / 2)))
@@ -1079,23 +1079,14 @@ def build_interior():
         for a in ((x0, y0, x0 + 0.06, y1), (x1 - 0.06, y0, x1, y1), (x0, y0, x1, y0 + 0.06), (x0, y1 - 0.06, x1, y1)):
             pe.box(a[0], a[1], zt - 0.03, a[2], a[3], zt + 0.005)
     pe.done(bevel=0.006)
-    kt = M("kotatsu", "board", "interior")
-    qu = M("kotatsu_quilt", "quilt", "interior")
-    zb = M("zabuton", "cushion", "interior")
-    for x, ky0 in KOTATSU:
-        ky1 = ky0 + KOTATSU_D
-        kt.box(x, ky0, zt + 0.36, x + KOTATSU_W, ky1, zt + 0.40)
-        qu.box(x - 0.12, ky0 - 0.12, zt + 0.02, x + KOTATSU_W + 0.12, ky1 + 0.12, zt + 0.36)
-        for j in range(3):
-            cx = x + KOTATSU_W * (j + 0.5) / 3
-            zb.box(cx - 0.27, ky0 - 0.98, zt, cx + 0.27, ky0 - 0.42, zt + 0.08)
-            zb.box(cx - 0.27, ky1 + 0.42, zt, cx + 0.27, ky1 + 0.98, zt + 0.08)
-        cy = (ky0 + ky1) / 2
-        zb.box(x - 0.98, cy - 0.27, zt, x - 0.42, cy + 0.27, zt + 0.08)
-        zb.box(x + KOTATSU_W + 0.42, cy - 0.27, zt, x + KOTATSU_W + 0.98, cy + 0.27, zt + 0.08)
-    kt.done(bevel=0.012)
-    qu.done(bevel=0.06, seg=4, smooth=True)
-    zb.done(bevel=0.03, seg=3, smooth=True)
+    # こたつ（卓・布団・天板）と座布団は、ゲームが props の場面を置く（props/build_room.py の kotatsu_lodge）。
+    # ここは置き場の目印だけ: 穴のまんなか、畳の面
+    for i, (x, ky0) in enumerate(KOTATSU):
+        e = bpy.data.objects.new("slot_kotatsu_%d" % i, None)
+        e.empty_display_type = "CUBE"
+        e.empty_display_size = 0.4
+        e.location = (x + KOTATSU_W / 2, ky0 + KOTATSU_D / 2, zt)
+        coll("markers").objects.link(e)
     b2 = M("bench2", "board", "interior")
     x0, y0, x1, y1 = BENCH2
     b2.box(x0, y0, FL2, x1, y1, FL2 + 0.42)
@@ -1446,8 +1437,9 @@ def build_collision():
     S_ = SKI_RACK
     Fu.box(S_["x0"], S_["y0"], 0, S_["x1"], S_["y1"], 1.75)   # 外の下屋
     zt = FL2 + TATAMI["h"]
-    for x, ky in KOTATSU:
-        Fu.box(x - 0.12, ky - 0.12, zt, x + KOTATSU_W + 0.12, ky + KOTATSU_D + 0.12, zt + 0.40)
+    for x, ky in KOTATSU:   # こたつ: 天板と、穴へ垂れた布団（props の kotatsu_lodge）の外形
+        Fu.box(x - KOTATSU_FLARE, ky - KOTATSU_FLARE, zt, x + KOTATSU_W + KOTATSU_FLARE, ky + KOTATSU_D + KOTATSU_FLARE,
+               zt + KOTATSU_TOP)
     Fu.box(*BENCH2[:2], FL2, *BENCH2[2:], FL2 + 0.42)
     Fu.box(TABLE2[0], TABLE2[1], FL2, TABLE2[2], TABLE2[3], FL2 + 0.72)
     for m in groups.values():

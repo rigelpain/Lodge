@@ -22,6 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import kit as K  # noqa: E402
 
+import dims as LD  # noqa: E402  ロッジの寸法（common が lodge/ を道に足す）
+
 A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）")),
              ("--views-only", dict(default="", help="描く品物の名前（カンマで）。ほかは組まない"))])
 K.setup(A, fiber=1.5, scale=2.0)
@@ -262,28 +264,89 @@ def kotatsu(name, quilt_role, top_role="wood", pit=True):
     P.finish(fuzz=0.003)
 
 
+def kotatsu_lodge(name, quilt_role, top_role="wood"):
+    """ロッジの 2 階の掘りごたつ（kotatsu と同じ作り）。卓の大きさ・天板の高さ・穴は lodge/dims.py に合わせる。
+    ロッジの穴は畳の台を抜いてあるので、ここは穴の底のフェルトと熱だけ。布団は卓から穴の中へ垂らす（穴の縁には掛けない。
+    座布団に座った人の脚は、穴の縁と布団のあいだへ下ろす）。書き出しは 2 倍なので、ここでは寸法を半分で組む"""
+    P = K.Parts(name, kind="kotatsu")
+    h = 0.5
+    TW, TD = LD.KOTATSU_W * h, LD.KOTATSU_D * h
+    tz = LD.KOTATSU_TOP * h - 0.02                  # 天板の芯
+    TZ = tz - 0.095                                 # 卓の枠（kotatsu と同じ重ね: 枠 → 布団 → 天板）
+    PW, PD, PZ = TW + 2 * LD.PIT_OUT * h, TD + 2 * LD.PIT_OUT * h, LD.PIT_DEPTH * h
+    for role in ("wood", "wood_dark", top_role, "felt_charcoal"):
+        P.hard[role] = 0.006
+    K.box(P, "felt_charcoal", (0, 0, -PZ + 0.004), (PW - 0.01, PD - 0.01, 0.008))   # 穴の底（ロッジの床の少し上）
+    K.pbox(P, "felt_heat", (0, 0, -PZ + 0.03), (0.22, 0.14, 0.025), n=4.0, c=5)
+    for sx in (-1, 1):
+        for sy in (-1, 1):   # 脚は穴の底から（掘りごたつの卓は穴の中に立つ）
+            K.box(P, "wood_dark", (sx * (TW / 2 - 0.05), sy * (TD / 2 - 0.05), (TZ - 0.04 - PZ) / 2), (0.06, 0.06, TZ - 0.04 + PZ))
+    for (cx, cy, sx, sy) in ((0, TD / 2 - 0.05, TW - 0.1, 0.03), (0, -TD / 2 + 0.05, TW - 0.1, 0.03),
+                             (TW / 2 - 0.05, 0, 0.03, TD - 0.1), (-TW / 2 + 0.05, 0, 0.03, TD - 0.1)):
+        K.box(P, "wood_dark", (cx, cy, TZ - 0.07), (sx, sy, 0.06))
+    K.box(P, "wood_dark", (0, 0, TZ - 0.02), (TW, TD, 0.03))
+    # 布団: 卓の上から落とす。穴の外の畳は輪の 4 枚、穴の底も当たる。裾は穴の底より上で止まる長さ（布は重さで伸び、
+    # 四隅は斜めの分だけ長く垂れて底に着く）
+    hang = (TZ + 0.04) + PZ - 0.13
+    col = K.collider_box((0, 0, (TZ - 0.005) / 2), (TW, TD, TZ - 0.005))
+    ring = [K.collider_box((0, (PD + 1.0) / 2 * s, -0.05), (PW + 2.0, 1.0, 0.1)) for s in (-1, 1)]
+    ring += [K.collider_box(((PW + 1.0) / 2 * s, 0, -0.05), (1.0, PD, 0.1)) for s in (-1, 1)]
+    bottom = K.collider_box((0, 0, -PZ - 0.05), (PW, PD, 0.1))
+    cw, cd = TW + 2 * hang, TD + 2 * hang
+    nu, nv = int(cw / 0.032), int(cd / 0.032)
+    cloth = K.cloth_grid(name + "_futon", quilt_role, cw, cd, nu, nv, (0, 0, TZ + 0.04))
+    K.cloth_sim(cloth, [col, bottom] + ring, frames=70, mass=0.5, stiff=12.0, bend=3.0, thickness=0.012, solidify=0.035,
+                subsurf=1)
+    for c in [col, bottom] + ring:
+        K.drop(c)
+    cloth.parent = P.root
+    P.parts.append(cloth)
+    K.box(P, top_role, (0, 0, tz), (TW + 0.08, TD + 0.08, 0.04))
+    K.box(P, "wood_dark", (0, 0, tz - 0.026), (TW + 0.02, TD + 0.02, 0.012))
+    # 天板の上: みかんの籠（kotatsu の 0.7 倍。ロッジの人形に合う大きさ）
+    s, bx, by = 0.7, TW * 0.22, TD * 0.1
+    K.lathe(P, "hemp", [(x * s, y * s) for x, y in ((0.0, 0.0), (0.09, 0.0), (0.11, 0.05), (0.1, 0.05), (0.085, 0.006), (0.0, 0.006))],
+            center=(bx, by, tz + 0.02), segs=24)
+    for k, (dx, dy) in enumerate(((0.0, 0.0), (0.045, 0.02), (-0.03, 0.035), (0.01, -0.04))):
+        K.pbox(P, "felt_orange", (bx + dx * s, by + dy * s, tz + 0.02 + (0.05 + (0.03 if k == 0 else 0)) * s),
+               (0.032 * s, 0.032 * s, 0.028 * s), n=2.0, c=5)
+    P.mark("top", (0, 0, tz + 0.02))
+    P.finish(fuzz=0.003)
+
+
 # ---------------------------------------------------------------- 組む
-floor_planks("floor_planks")
-floor_planks("floor_planks_dark", "wood_dark")
-floor_tatami("floor_tatami")
-floor_rug("rug_braided_warm", ["felt_rust", "felt_mustard", "felt_ivory", "felt_rose"])
-floor_rug("rug_braided_cool", ["felt_indigo", "felt_sky", "felt_ivory", "felt_moss"])
-wall_boards("wall_boards")
-wall_quilt("wall_quilt_warm", ["felt_rust", "felt_mustard", "felt_ivory", "felt_rose", "felt_tan"])
-wall_quilt("wall_quilt_cool", ["felt_indigo", "felt_sky", "felt_ivory", "felt_moss", "felt_beige"])
-wall_logs("wall_logs")
+def make(fn, name, *a, **kw):
+    """組む。書き出しで --only を決めたら、その品物だけ組む（布の計算が重いので）"""
+    if not (A.export and A.only) or name in A.only.split(","):
+        fn(name, *a, **kw)
+
+
+make(floor_planks, "floor_planks")
+make(floor_planks, "floor_planks_dark", "wood_dark")
+make(floor_tatami, "floor_tatami")
+make(floor_rug, "rug_braided_warm", ["felt_rust", "felt_mustard", "felt_ivory", "felt_rose"])
+make(floor_rug, "rug_braided_cool", ["felt_indigo", "felt_sky", "felt_ivory", "felt_moss"])
+make(wall_boards, "wall_boards")
+make(wall_quilt, "wall_quilt_warm", ["felt_rust", "felt_mustard", "felt_ivory", "felt_rose", "felt_tan"])
+make(wall_quilt, "wall_quilt_cool", ["felt_indigo", "felt_sky", "felt_ivory", "felt_moss", "felt_beige"])
+make(wall_logs, "wall_logs")
 for nm, role in (("zabuton_red", "felt_red"), ("zabuton_indigo", "felt_indigo"), ("zabuton_mustard", "felt_mustard"),
                  ("zabuton_moss", "felt_moss")):
-    zabuton(nm, role, "thread" if role != "felt_mustard" else "thread_red", "thread" if role == "felt_indigo" else "thread_red")
-zabuton("zabuton_patch", "patch_cool", "thread_red", "thread_red")
-futon("futon_indigo", "felt_ivory", "felt_indigo", "felt_mustard")
-futon("futon_patch", "felt_ivory", "patch_warm", "felt_rust")
-futon("futon_rose", "felt_beige", "felt_rose", "felt_ivory")
-koagari("koagari_2")
-koagari("koagari_4", mats=4)
-kotatsu("kotatsu_patch", "patch_mix")
-kotatsu("kotatsu_indigo", "felt_indigo")
-kotatsu("kotatsu_floor", "felt_rust", pit=False)
+    make(zabuton, nm, role, "thread" if role != "felt_mustard" else "thread_red", "thread" if role == "felt_indigo" else "thread_red")
+make(zabuton, "zabuton_patch", "patch_cool", "thread_red", "thread_red")
+make(futon, "futon_indigo", "felt_ivory", "felt_indigo", "felt_mustard")
+make(futon, "futon_patch", "felt_ivory", "patch_warm", "felt_rust")
+make(futon, "futon_rose", "felt_beige", "felt_rose", "felt_ivory")
+make(koagari, "koagari_2")
+make(koagari, "koagari_4", mats=4)
+make(kotatsu, "kotatsu_patch", "patch_mix")
+make(kotatsu, "kotatsu_indigo", "felt_indigo")
+make(kotatsu, "kotatsu_floor", "felt_rust", pit=False)
+# ロッジの 2 階の掘りごたつ（lodge/dims.py の大きさ。game/main.gd が props/sets/kotatsu_lodge_*.tscn を置く）
+if A.export:
+    make(kotatsu_lodge, "kotatsu_lodge_patch", "patch_mix")
+    make(kotatsu_lodge, "kotatsu_lodge_indigo", "felt_indigo")
+    make(kotatsu_lodge, "kotatsu_lodge_rust", "felt_rust")
 
 if A.export:
     K.export_all(A.export, A.only.split(",") if A.only else None)

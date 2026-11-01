@@ -173,6 +173,11 @@ TATAMI = dict(x0=gx(3.25), x1=gx(10.75), y0=gy(4.6), y1=gy(0.6), h=0.40)   # 小
 KOTATSU_W, KOTATSU_D = 1.2 * K, 0.7 * K
 KOTATSU = [(gx(3.9 + 1.7 * i), y) for y in (gy(3.4), gy(2.0)) for i in range(4)]   # 8 卓。南西の角
 PIT_DEPTH = 0.40
+# こたつの見た目は props/build_room.py の kotatsu_lodge（布団を布の計算で垂らす。2026-11-01 代表「差し替える」）。
+# ロッジは穴と目印（slot_kotatsu_<番号>、穴のまんなかの畳の面）だけを作り、こたつと座布団は game/main.gd が置く
+KOTATSU_TOP = 0.44                # 天板の上の面（畳から）
+PIT_OUT = 0.42                    # 穴の縁: 卓の縁から四方にこれだけ外（布団は穴の中へ垂れ、脚は布団の手前に下ろす）
+KOTATSU_FLARE = 0.10              # 天板と垂れた布団が卓の縁から外へ出る幅（当たり判定の箱）
 BENCH2 = (gx(0.3), Y2_0 + LOG_D / 2 + 0.05, gx(2.0), Y2_0 + LOG_D / 2 + 0.50)
 TABLE2 = (gx(0.4), Y2_0 + 2.0, gx(1.6), Y2_0 + 3.1)
 

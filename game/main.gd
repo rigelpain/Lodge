@@ -117,6 +117,9 @@ const KITCHEN := [
 	["drink", "res://props/kitchen/giant_vapor.glb", Vector3(6.5, 0, 0.0), 180.0,
 		[[Vector3(2.08, 1.5, 1.52), Vector3(0, 0.75, 0.04)], [Vector3(0.14, 3.6, 0.14), Vector3(-0.68, 1.8, -0.48)]]],
 ]
+## 2 階の掘りごたつ 8 卓の柄（props/sets/kotatsu_lodge_<柄>.tscn。patch・indigo・rust）。
+## 並びはロッジの目印 slot_kotatsu_0〜7: 0〜3 が南の列、4〜7 が北の列、どちらも西から
+const KOTATSU_SETS := ["patch", "indigo", "patch", "rust", "rust", "patch", "indigo", "patch"]
 ## 番台（店番の商人のカウンターとレジ。2026-10-31 代表「パッチワークおじいさんにも、雪だるまにも、番台的なカウンターとレジを」）。
 ## [カウンター, レジ, お皿に盛る物, ロッジの座標 (x, y), 正面（客の側）の向き（度。0 = 南、90 = 東。lodge/dims.py の SLOTS と同じ）]。
 ## おじいさんは真東を向いて番台の後ろに立ち、雪だるまは冷蔵庫の中から番台ごしに食堂を向く。置き方は design/lodge-layout/
@@ -913,6 +916,11 @@ func _furnish_lodge() -> void:
 		kitchen_slot.add_child(set_node)
 		_put_kitchen(kitchen_slot)
 		_put_snowman(kitchen_slot)
+	# 2 階の掘りごたつ: 穴の目印に、こたつと座布団 8 枚の組（座布団の座る所の目印 sit_* は seats.gd が拾う）
+	for i in KOTATSU_SETS.size():
+		var ks := lodge.find_child("slot_kotatsu_%d" % i, true, false) as Node3D
+		if ks:
+			ks.add_child((load("res://props/sets/kotatsu_lodge_%s.tscn" % KOTATSU_SETS[i]) as PackedScene).instantiate())
 	for b in BANDAI:
 		_put_bandai(lodge, b)
 	# おじいさんの番台の横に、ランタン掛け（正面は番台と同じく客の側）
