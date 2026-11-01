@@ -65,6 +65,7 @@ const Seats := preload("res://seats.gd")
 const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
 const Net := preload("res://net.gd")
+const Start := preload("res://start.gd")
 ## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
 ## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
 const WARDROBE_AT := Vector2(21.25, 2.2)
@@ -114,6 +115,7 @@ var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
 var net: Net                  # 通信（net.gd）。--host でホスト、--join=IP でつなぐ
+var start: Start              # スタート画面（start.gd）。引数なしで起動したときだけ
 var seats: Seats              # ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団）の配り役。人より先に置く
 
 
@@ -201,6 +203,7 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
+	args.merge(Net.boot, true)   # スタート画面で選んだホスト・つなぐ
 	if args.has("host") or args.has("join"):
 		# 通信で遊ぶときは、仲間（CPU）を置かない（仲間はそれぞれの画面の中だけにいて、ほかの人には見えないので）
 		for k in ["bots", "lodge-bots"]:
@@ -329,6 +332,7 @@ func _ready() -> void:
 	settings = Settings.new()
 	add_child(settings)
 	settings.changed.connect(_apply_setting)
+	settings.to_start.connect(func(): net.leave())
 	for key in settings.values:
 		_apply_setting(key, settings.values[key])
 	if args.has("settings"):   # 確かめ用: 設定画面を開いた状態で始める
@@ -366,6 +370,14 @@ func _ready() -> void:
 			player.global_position = at
 			var to := shopkeeper.global_position
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
+
+	# 引数なしで起動した: スタート画面（一人・ホスト・つなぐ）。スタート画面からつなぎに行ったときは、つながるまで出しておく
+	var waiting := Net.boot.has("join") and net.online and not net.joined()
+	if Start.wanted(args) or waiting:
+		start = Start.new()
+		start.main = self
+		start.waiting = waiting
+		add_child(start)
 
 
 ## ロッジの中から運び出せない大きさのソリ（craft.gd の OUT_FRONT）を、縫ったときに出す所: 玄関前の広場の先の雪の上。
@@ -1297,6 +1309,8 @@ func _apply_setting(key: String, v) -> void:
 
 
 func _unhandled_input(e: InputEvent) -> void:
+	if is_instance_valid(start):   # スタート画面のあいだは、キーで何もしない
+		return
 	if e is InputEventKey and e.pressed and not e.echo:
 		if e.physical_keycode == KEY_ESCAPE and settings:
 			settings.set_open(not settings.is_open)

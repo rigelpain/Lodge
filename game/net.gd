@@ -16,11 +16,14 @@ const SEND_HZ := 20.0         # 自分の姿を送る回数（1 秒に）
 const SLED_HZ := 30.0         # ホストがソリの姿を送る回数（1 秒に）。止まっているソリは STILL_HZ
 const STILL_HZ := 2.0
 
+static var boot := {}         # スタート画面で選んだ始め方（{"host": "1"} か {"join": 番号}）。読み直した main.gd が引数に足す
+
 var main: Node3D
 var online := false
 var remotes := {}             # 通信の番号 → その人の体（remote_person.gd）
 var lag := 0.0                # 届いたものを遅らせる (s)
 var _send_t := 0.0
+var _port := PORT
 var _sled_t := {}             # ソリ → 送るまでの残り (s)
 
 
@@ -30,6 +33,7 @@ func start(args: Dictionary) -> bool:
 		return false
 	lag = float(args.get("lag", "0")) / 1000.0
 	var port := int(args.get("port", str(PORT)))
+	_port = port
 	var peer := ENetMultiplayerPeer.new()
 	var err: Error
 	if args.has("host"):
@@ -38,12 +42,15 @@ func start(args: Dictionary) -> bool:
 		err = peer.create_client(String(args["join"]), port)
 	if err != OK:
 		push_error("通信を始められない: %s" % error_string(err))
+		_back_to_start("host" if args.has("host") else "join")
 		return false
+	if not args.has("host"):
+		peer.get_peer(1).set_timeout(0, 4000, 8000)   # つながらないときは 8 秒ほどであきらめる（ENet の既定は 30 秒ほど）
 	multiplayer.multiplayer_peer = peer
 	multiplayer.peer_connected.connect(_on_peer)
 	multiplayer.peer_disconnected.connect(_on_gone)
-	multiplayer.connected_to_server.connect(func(): print("つながった: 番号 ", multiplayer.get_unique_id()))
-	multiplayer.connection_failed.connect(func(): print("つながらなかった"))
+	multiplayer.connected_to_server.connect(_on_connected)
+	multiplayer.connection_failed.connect(_on_failed)
 	multiplayer.server_disconnected.connect(_on_host_gone)
 	online = true
 	print("ホストになった: ポート %d" % port if is_host() else "つなぎにいく: %s:%d" % [args["join"], port])
@@ -51,6 +58,11 @@ func start(args: Dictionary) -> bool:
 		follow(s)
 	get_tree().node_added.connect(_on_node_added)
 	return true
+
+
+## つなぐ側で、ホストとつながっている
+func joined() -> bool:
+	return online and not is_host() and multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
 
 
 func is_host() -> bool:
@@ -101,8 +113,49 @@ func _on_gone(pid: int) -> void:
 	print("帰った: 番号 ", pid)
 
 
+func _on_connected() -> void:
+	print("つながった: 番号 ", multiplayer.get_unique_id())
+
+
+func _on_failed() -> void:
+	print("つながらなかった")
+	_back_to_start("join")
+
+
+## スタート画面から始めた通信が切れたら、スタート画面へ戻る（つなぐの札に×）。引数で始めたときは、一人で続ける
+func _back_to_start(why: String) -> bool:
+	if boot.is_empty():
+		return false
+	var st = load("res://start.gd")
+	st.fail = why
+	leave()
+	return true
+
+
+## 通信をやめて、スタート画面へ戻る（設定の「スタート画面へ」）
+func leave() -> void:
+	var st = load("res://start.gd")
+	st.force = true
+	boot = {}
+	online = false
+	if multiplayer.multiplayer_peer:
+		multiplayer.multiplayer_peer.close()
+	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+	get_tree().reload_current_scene.call_deferred()
+
+
+func _exit_tree() -> void:
+	for sig in [multiplayer.peer_connected, multiplayer.peer_disconnected, multiplayer.connected_to_server,
+			multiplayer.connection_failed, multiplayer.server_disconnected]:
+		for c in sig.get_connections():
+			if c.callable.get_object() == self:
+				sig.disconnect(c.callable)
+
+
 func _on_host_gone() -> void:
 	print("ホストが帰った")
+	if _back_to_start("gone"):
+		return
 	for pid in remotes.keys():
 		_on_gone(pid)
 	for s in get_tree().get_nodes_in_group("sleds"):
@@ -111,7 +164,26 @@ func _on_host_gone() -> void:
 	online = false
 
 
+var _note_t := 0.0
+
+## 設定の画面に、通信の様子を書く（ホストは友達に教える番号も）
+func _update_note(dt: float) -> void:
+	_note_t -= dt
+	var st = main.settings
+	if _note_t > 0.0 or st == null or st.net_note == null:
+		return
+	_note_t = 1.0
+	if not online:
+		st.net_note.text = ""
+	elif is_host():
+		st.net_note.text = "ホスト　番号 %s　ポート %d　来ている人 %d" % [load("res://start.gd").my_address(), _port, remotes.size()]
+	else:
+		var ok := multiplayer.multiplayer_peer.get_connection_status() == MultiplayerPeer.CONNECTION_CONNECTED
+		st.net_note.text = "つないでいる　ほかの人 %d" % remotes.size() if ok else "つないでいるところ"
+
+
 func _physics_process(dt: float) -> void:
+	_update_note(dt)
 	if not online or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
 		return
 	_send_t -= dt
