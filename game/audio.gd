@@ -823,6 +823,22 @@ func _make_lodge() -> void:
 	_door.position = _marker("light_vestibule", VEST)
 
 
+## 外の焚き火（campfire.gd）の音: 暖炉と同じ録音（燃える床のループと、ぱちぱち）を、焚き火の所で外の音として鳴らす。
+## [床のループ, ぱちぱちの口] を返す。ぱちぱちは焚き火が fire_crack で鳴らす（燃える強さで大きさを変える）
+func campfire(parent: Node3D) -> Array:
+	var bed := _p3(parent, "Outdoor", -40.0, 3.0, 35.0)
+	bed.position = Vector3.UP * 0.4
+	bed.stream = _wav("fire_bed_loop")
+	bed.play(rng.randf_range(0.0, 6.0))
+	var crack := _p3(parent, "Outdoor", -8.0, 3.0, 35.0)
+	crack.position = Vector3.UP * 0.4
+	return [bed, crack]
+
+
+func fire_crack(p: AudioStreamPlayer3D, level: float) -> void:
+	_shot(p, _pick("fire_crack", 8), rng.randf_range(-11.0, -4.0) + linear_to_db(maxf(level, 0.05)), rng.randf_range(0.9, 1.15))
+
+
 func _marker(marker_name: String, fallback: Vector3) -> Vector3:
 	var n := lodge.find_child(marker_name, true, false)
 	return lodge.to_local((n as Node3D).global_position) if n else fallback

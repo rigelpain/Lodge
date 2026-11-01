@@ -49,6 +49,10 @@ extends Node
 ##                             装置に残った物は入れた人が F でもう一度出す
 ##   dry_in    {}              手にペレットを持たずに、厨房の乾燥機に入る（空いていて、誰も調理していなければ。cook_station.gd）
 ##   dry_out   {}              乾燥機から出る（中の人の画面が決める: 乾ききったか、F）
+##   fire_lay  {slot, at, yaw, up}  手の焚き火セット（{kind:"campfire"}。売り子のおじさんから buy で買う）を、前の雪の上に組んで火をつける
+##                             （campfire.gd。組める所は player.gd の fire_spot が決める）。セットは持ち物から消える。ev に id が入る。
+##                             一人ひとつ: 前に組んだ自分の焚き火が燃えていれば、そちらは消える
+##   fire_out  {id}            自分の焚き火に雪をかけて消す（F）。消えた焚き火は少しして片づく
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
@@ -75,6 +79,8 @@ const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 ## 最初の小は、米袋で漕いで丘を 3 分ほど、大は、中に 3 人で大きな山を 6 分半・小ひとりで 11 分・米袋ひとりで 20〜50 分ほど（design/snow-buttons の表）
 const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
 const FABRIC_PRICE := 10
+## 焚き火セットの値段（木の何個分）。1 つで 1 回燃える（campfire.gd の LIFE、3 分）。布より少し高く、米袋の型紙より安い
+const CAMPFIRE_PRICE := 15
 ## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
 const DYE_PRICE := 15
 const PATTERNS := ["sack", "small", "mid", "large"]
@@ -94,6 +100,8 @@ var bags := {}                 # 人の番号 → 持ち物（SLOTS 個の場所
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
 var _next_sled := 1
+var fires := {}                # 焚き火の番号 → 組んだ焚き火（campfire.gd）
+var _next_fire := 1
 const GEARS := ["sack", "lantern"]   # 装備の種類（装備の画面の並び）
 var tag_designs := {}          # 人の番号 → 自分の名札（sled_tags.gd の部品の辞書）。通信では「誰が」の印として配る
 var tag_owned := {}            # 人の番号 → 手に入れた「あとで手に入る」名札の部品 {部品: [番号, ...]}（最初から使える部品は書かない）
@@ -342,6 +350,8 @@ static func price(item: Dictionary) -> int:
 		return PATTERN_PRICE.get(item.get("sled", ""), 99)
 	if item.get("kind") == "fabric":
 		return FABRIC_PRICE
+	if item.get("kind") == "campfire":
+		return CAMPFIRE_PRICE
 	return 99
 
 
@@ -388,9 +398,14 @@ func snapshot() -> Dictionary:
 		var gs := sack_sled(who)
 		if gs:
 			out[who] = {"fabric": gs.fabric, "at": gs.global_transform}
+	var lit := []
+	for f in fires.values():
+		if is_instance_valid(f):
+			lit.append(f.snap())
 	return {"wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "sacks": sacks,
 		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
-		"lantern_sel": lantern_sel, "lamps": lamps, "next_sled": _next_sled, "sleds": placed, "sack_out": out}
+		"lantern_sel": lantern_sel, "lamps": lamps, "next_sled": _next_sled, "sleds": placed, "sack_out": out,
+		"fires": lit, "next_fire": _next_fire}
 
 
 ## ホストから渡された持ち物と置いてあるソリで、この画面の工房を置き換える（つないだとき）。自分の人の番号の分もホストの値になる
@@ -420,6 +435,13 @@ func load_snapshot(d: Dictionary) -> void:
 		gs.set_meta("gear_of", int(who))
 		gs.global_transform = spec.at
 		sack_out[int(who)] = gs
+	for f in fires.values():
+		if is_instance_valid(f):
+			f.queue_free()
+	fires.clear()
+	for spec in d.get("fires", []):   # 燃えている焚き火（燃えた秒のぶん進めて置く）
+		_light_fire(int(spec.id), int(spec.owner), spec.at, float(spec.yaw), spec.up, float(spec.age), float(spec.get("out", -1.0)))
+	_next_fire = int(d.get("next_fire", _next_fire))
 
 
 ## ホストの判定
@@ -739,6 +761,24 @@ func _apply(ev: Dictionary) -> bool:
 				return false
 			if lantern_index(who, look) < 0:
 				lanterns[who].append({"look": look})
+		"fire_lay":
+			var b: Array = bags[who]
+			var i := int(ev.get("slot", -1))
+			if i < 0 or i >= b.size() or b[i].get("kind", "") != "campfire":
+				return false
+			_clear(who, i)
+			for f in fires.values():   # 一人ひとつ: 前の焚き火は消える
+				if is_instance_valid(f) and f.owner_id == who and f.lit():
+					f.put_out()
+			var fid := int(ev.id) if ev.has("id") else _next_fire   # つなぐ側は、ホストの付けた番号
+			_next_fire = maxi(_next_fire, fid + 1)
+			ev["id"] = fid
+			_light_fire(fid, who, ev.at, float(ev.get("yaw", 0.0)), ev.get("up", Vector3.UP), 0.0)
+		"fire_out":
+			var f = fires.get(int(ev.get("id", -1)))
+			if f == null or not is_instance_valid(f) or f.owner_id != who or not f.lit():
+				return false
+			f.put_out()
 		"earn":
 			if int(ev.get("n", 0)) <= 0:
 				return false
@@ -768,6 +808,21 @@ func _apply(ev: Dictionary) -> bool:
 	if net and net.is_host():
 		net.down("craft", ev)   # ホストが確かめた出来事を、つなぐ側へ（つなぐ側も同じ順に _apply する）
 	return true
+
+
+## 焚き火を置く（組んでから age 秒たった姿で。out が 0 以上なら、その秒に消えたもの）
+func _light_fire(id: int, who: int, at: Vector3, yaw: float, up: Vector3, age: float, out := -1.0) -> void:
+	var f: Node3D = preload("res://campfire.gd").new()
+	f.fire_id = id
+	f.owner_id = who
+	f.age = age
+	f.name = "Campfire%d" % id
+	f.transform = Transform3D(_basis(yaw, up), at)
+	(world if world else get_parent()).add_child(f)
+	if out >= 0.0:
+		f.set("_out_age", out)
+	fires[id] = f
+	f.tree_exited.connect(func(): if fires.get(id) == f: fires.erase(id))
 
 
 ## 名札の柄を、手に入れた部品だけの辞書にする（書いていない部品・まだ手に入れていない部品は old のまま、old にもなければ DEFAULT）

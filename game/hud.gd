@@ -506,6 +506,13 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var dr = p.dryer_near() if p.has_method("dryer_near") and not p.shopping else null
 	if dr and st == null:
 		_hint("dryer", ["F"], "dryer", dr.drum_center() + dr.front() * 1.0 + Vector3.UP * 1.2)
+	# 焚き火セットを持って外の雪の上: F で前に組んで火をつける（組む所の上に、薪と炎の絵）。自分の焚き火のそば: F で雪をかけて消す
+	var fs: Dictionary = p.fire_spot() if p.has_method("fire_spot") and not p.shopping else {}
+	if not fs.is_empty():
+		_hint("campfire", ["F"], "campfire", fs.at + Vector3.UP * 0.7)
+	var mf = p.own_fire_near() if p.has_method("own_fire_near") and not p.shopping else null
+	if mf and fs.is_empty():
+		_hint("fire_out", ["F"], "fire_out", mf.global_position + Vector3.UP * 1.3)
 	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
 	if p.has_method("dye_near") and p.dye_near() and not p.shopping:
 		_hint("dye", ["F"], "dye", main.dye_vat.global_position + Vector3.UP * 1.3)   # 染め桶: F で服を染める（桶と布の絵）
