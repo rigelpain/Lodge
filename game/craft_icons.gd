@@ -49,6 +49,14 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			backpack(ci, Vector2(0, 2), 1.0, a)
 		"lamp":   # 帯のランタン（点いている）
 			lantern(ci, Vector2(0, 2), 1.0, "box", true, a)
+		"food":   # 雪だるまの食べ物屋: 綿の雪玉とペレット（料理のもとの毛玉）
+			Icons.patch(ci, Icons.circ(Vector2(-10, 6), 13.0, 16), Color(0.97, 0.97, 0.95), a, false)
+			Icons.patch(ci, Icons.circ(Vector2(12, -4), 10.0, 14), Color(0.86, 0.55, 0.25), a, true)
+			Icons.patch(ci, Icons.circ(Vector2(16, 14), 7.0, 12), Color(0.95, 0.85, 0.45), a, true)
+		"cook":   # 調理: 湯気の上るどんぶり
+			Icons.patch(ci, PackedVector2Array([Vector2(-22, 0), Vector2(22, 0), Vector2(16, 18), Vector2(-16, 18)]), Color(0.82, 0.30, 0.22), a, true)
+			for x in [-8.0, 2.0, 12.0]:
+				Icons.thread(ci, PackedVector2Array([Vector2(x, -4), Vector2(x - 4, -12), Vector2(x + 2, -20), Vector2(x - 2, -28)]), Color(0.98, 0.98, 0.96), 3.0, a)
 		"shopkeeper":   # 売り子のおじさんの顔: 紺のとんがり帽、紙の顔、丸眼鏡、綿のひげ
 			var indigo := Color(0.20, 0.25, 0.46)
 			Icons.patch(ci, PackedVector2Array([Vector2(-20, -6), Vector2(4, -30), Vector2(14, -24), Vector2(20, -6)]), indigo, a, false)
@@ -63,6 +71,13 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a := 1.0) -> void:
 	_at(center, size)
 	match it.get("kind", ""):
+		"food":   # 雪だるまの店のペレットか、できあがった料理（Blender で描いた絵。food.gd）
+			var Food := preload("res://food.gd")
+			var path: String = Food.dish_icon(it.dish) if Food.done(it) else Food.pellet_icon(it.dish)
+			var t: Texture2D = load(path) if ResourceLoader.exists(path) else null
+			if t:
+				var s := size * (1.15 if Food.done(it) else 1.5)
+				ci.draw_texture_rect(t, Rect2(center - Vector2(s, s) / 2.0, Vector2(s, s)), false, Color(1, 1, 1, a))
 		"pattern":
 			_pattern(ci, Vector2.ZERO, 1.0, it.get("sled", "mid"), a)
 		"fabric":

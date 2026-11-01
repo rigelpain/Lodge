@@ -1,6 +1,6 @@
 """売り台・ミシン・厨房の音を、代表が聞き比べるページ（sound/check/craft/index.html）を作る。
 ゲームと同じ間で重ねたお手本（demo）も、ここで wav/ の音から組み立てて sound/check/craft/ に書く。
-Finder から index.html を開くと聞ける。先に gen/shop.py・gen/sew.py・gen/cook.py を走らせておく。
+Finder から index.html を開くと聞ける。先に gen/shop.py・gen/sew.py・gen/cook_device.py を走らせておく。
 
 .venv/bin/python gen/craft_page.py
 """
@@ -129,7 +129,7 @@ h2{{border-bottom:2px solid #c9b79c;margin-top:2em}}h3{{margin:1.2em 0 .4em;font
 figcaption{{font-size:12px;color:#6b5f52}}audio{{width:230px;height:32px}}</style>
 <h1>売り台・ミシン・厨房の音（2026-11-01）</h1>
 <p>代表に聞いてほしいこと: (1) 3 つの音の世界がこれでよいか (2) 購入音は「録音まじり」「合成だけ」「そろばん」のどれがよいか
-(3) 嫌な音・耳に残りすぎる音はどれか。作り方は sound/gen/shop.py・sew.py・cook.py、録音の出どころは sound/SOURCES.md。</p>
+(3) 嫌な音・耳に残りすぎる音はどれか。作り方は sound/gen/shop.py・sew.py・cook_device.py、録音の出どころは sound/SOURCES.md。</p>
 {''.join(rows)}"""
 
 

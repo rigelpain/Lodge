@@ -65,6 +65,9 @@ const SelfCam := preload("res://self_cam.gd")
 const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
 const CraftUi := preload("res://craft_ui.gd")
+const FoodUi := preload("res://food_ui.gd")
+const SnowmanShop := preload("res://snowman_shop.gd")
+const CookStation := preload("res://cook_station.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const Wardrobe := preload("res://wardrobe.gd")
@@ -134,6 +137,9 @@ var _ft_n := 0
 var pip_label: Label
 var sewing: Node3D            # 大きなミシンの動き（sewing_machine.gd）
 var kitchen := {}             # 厨房の装置（KITCHEN の名前 → 置いた Node3D）
+var stations: Array = []      # 厨房の装置の調理の動き（cook_station.gd）
+var snowman_shop: Node        # ご飯係の雪だるま（snowman_shop.gd）
+var food_ui: CanvasLayer      # 雪だるまの食べ物屋の売り場（food_ui.gd）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
@@ -377,6 +383,12 @@ func _ready() -> void:
 		craft_ui.craft = craft
 		craft_ui.player = player
 		add_child(craft_ui)
+		food_ui = FoodUi.new()
+		food_ui.main = self
+		food_ui.craft = craft
+		food_ui.player = player
+		food_ui.shop = snowman_shop
+		add_child(food_ui)
 		if wardrobe:
 			wardrobe.player = player
 		wardrobe_ui = WardrobeUi.new()
@@ -906,6 +918,9 @@ func _put_bandai(lodge: Node3D, b: Array) -> void:
 	dish.scale = Vector3.ONE * 0.5
 	dish.position = Vector3(-0.5, top, -0.08)
 	root.add_child(dish)
+	if b[2] == "snowballs" and snowman_shop:   # 雪だるまの番台: 話しかける所と、ペレットを跳ばすお皿
+		snowman_shop.counter = root
+		snowman_shop.dish_at = dish.position
 	var heap := Node3D.new()
 	heap.position = dish.position + Vector3.UP * 0.03
 	root.add_child(heap)
@@ -960,7 +975,7 @@ func _solid(n: Node3D) -> void:
 
 
 ## 厨房の巨大な調理の装置を KITCHEN の並びで 1 台ずつ置く（調理で動かすので、小物の場面には結合しない）。
-## スチーマーのふた（giant_vapor_lid）は目印 lid に付ける。装置の煙は、調理の仕組みができるまで順に出す
+## スチーマーのふた（giant_vapor_lid）は目印 lid に付ける。装置ごとに調理の動き（cook_station.gd）を付ける
 func _put_kitchen(slot: Node3D) -> void:
 	for k in KITCHEN:
 		var dev := Props.make(k[1])
@@ -983,7 +998,12 @@ func _put_kitchen(slot: Node3D) -> void:
 			var lid := Props.make("res://props/kitchen/giant_vapor_lid.glb")
 			lid.name = "Lid"
 			hinge.add_child(lid)
-		Props.cook_cycle(dev)
+		var st := CookStation.new()   # F で手のペレットを入れて調理する
+		st.name = "Station"
+		st.main = self
+		st.kind = k[0]
+		dev.add_child(st)
+		stations.append(st)
 
 
 ## 厨房の奥の並びのいちばん西（ミシンの右）に、扉を開けた冷蔵庫と、中に立つご飯係の雪だるま（props/build_snowman.py）。
@@ -1000,6 +1020,11 @@ func _put_snowman(slot: Node3D) -> void:
 		var man := Props.make("res://props/snowman.glb")
 		man.name = "Snowman"
 		spot.add_child(man)
+		snowman_shop = SnowmanShop.new()   # 番台ごしにペレットを売る（売り場は food_ui.gd）
+		snowman_shop.name = "SnowmanShop"
+		snowman_shop.main = self
+		snowman_shop.man = man
+		add_child(snowman_shop)
 	var body := StaticBody3D.new()   # 冷蔵庫の箱（中の雪だるまごと。扉は通れる）
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()

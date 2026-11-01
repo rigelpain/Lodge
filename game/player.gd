@@ -8,6 +8,8 @@ const EmoteRing := preload("res://emote_ring.gd")
 const Palm := preload("res://palm.gd")
 const SackLook := preload("res://sack_look.gd")
 const Seats := preload("res://seats.gd")
+const FoodMenu := preload("res://food.gd")
+const PropsLib := preload("res://props.gd")
 ## あなた。一人称で、見えるのは自分の人形と同じ柄の袖口と、紙の手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
@@ -383,6 +385,12 @@ func _unhandled_input(e: InputEvent) -> void:
 					return
 				if mode == Mode.WALK and pal_stall_near() and (not wardrobe_near() or _facing(get_parent().pal_stall.global_position) > _facing(get_parent().wardrobe.global_position)):
 					get_parent().pals_ui.open()   # 衣装掛けの横の売り台: 頭・肩の小物とミニオンを買って付け替える
+					return
+				var st := station_near()
+				if mode == Mode.WALK and st and st.use(self):   # 厨房の装置: 手のペレットを入れて調理する（仕上がりを受け取る）
+					return
+				if mode == Mode.WALK and food_near():
+					get_parent().food_ui.open()   # 雪だるまの番台: ペレットを雪玉で買う
 					return
 				if mode == Mode.WALK and wardrobe_near():
 					get_parent().wardrobe_ui.open()   # 2 階の衣装掛け: 人形を選び直す
@@ -1606,6 +1614,27 @@ func shop_near() -> bool:
 	return d.length() < 0.6 or (-global_basis.z).dot(d.normalized()) > 0.4
 
 
+## 雪だるまの番台で話しかけられる所にいて、番台の方を向いているか
+func food_near() -> bool:
+	var sh = get_parent().get("snowman_shop")
+	if sh == null or get_parent().get("food_ui") == null or menu_open or not sh.can_talk(self):
+		return false
+	return sh.counter == null or _facing(sh.counter.global_position) > 0.3
+
+
+## 手のペレットを入れられる（または仕上がりを受け取れる）厨房の装置のうち、いちばん向いているもの（なければ null）
+func station_near() -> Node:
+	var best: Node = null
+	var best_f := 0.2
+	for st in get_parent().get("stations") if get_parent().get("stations") != null else []:
+		if st.can_use(self):
+			var f := _facing(st.get_parent().global_position)
+			if f > best_f:
+				best = st
+				best_f = f
+	return best
+
+
 ## 2 階の衣装掛けの前で、竿の方を向いているか
 func wardrobe_near() -> bool:
 	var w = get_parent().get("wardrobe")
@@ -1673,6 +1702,13 @@ func _face_held_fp() -> void:
 
 ## 手に持った物の小さな形（一人称の右手と、確かめ用）
 static func held_shape(it: Dictionary) -> Node3D:
+	if it.get("kind") == "food":   # 雪だるまの店のペレット（途中は押されたペレット）か、できあがった料理（food.gd）
+		var done := FoodMenu.done(it)
+		var f := PropsLib.make(FoodMenu.dish_glb(it.dish) if done else FoodMenu.pellet_glb(it.dish))
+		var holder := Node3D.new()
+		holder.add_child(f)
+		f.scale = Vector3.ONE * (0.75 if done else 1.0) * (Vector3(1.3, 0.6, 1.3) if int(it.get("step", 0)) > 0 and not done else Vector3.ONE)
+		return holder
 	var root := Node3D.new()
 	var mi := MeshInstance3D.new()
 	var bm := BoxMesh.new()

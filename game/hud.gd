@@ -489,6 +489,13 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 衣装掛けの横の売り台: F で頭・肩の小物とミニオンを買って付け替える（頭に小鳥、足もとに子狐の人の形）
 	if p.has_method("pal_stall_near") and p.pal_stall_near() and not p.shopping:
 		_hint("pals", ["F"], "pals", main.pal_stall.global_position + Vector3.UP * 1.6)
+	# 雪だるまの番台: F でペレットを買う
+	if p.has_method("food_near") and p.food_near() and not p.shopping:
+		_hint("food", ["F"], "food", main.snowman_shop.counter.global_position + Vector3.UP * 1.4)
+	# 厨房の装置: 手のペレットを入れて F で調理
+	var st = p.station_near() if p.has_method("station_near") and not p.shopping else null
+	if st:
+		_hint("cook", ["F"], "cook", st.get_parent().global_position + Vector3.UP * 2.6)
 	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
 	if p.has_method("dye_near") and p.dye_near() and not p.shopping:
 		_hint("dye", ["F"], "dye", main.dye_vat.global_position + Vector3.UP * 1.3)   # 染め桶: F で服を染める（桶と布の絵）

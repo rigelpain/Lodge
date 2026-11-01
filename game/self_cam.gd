@@ -405,7 +405,8 @@ var _last_body := Vector3.ZERO
 func _sync_held() -> void:
 	var doll = player.doll
 	var it: Dictionary = player.held()
-	var key := "" if it.is_empty() else "%s/%s/%s/%s" % [it.get("kind", ""), it.get("fabric", ""), it.get("tag", ""), it.get("sled", "")]
+	var key := "" if it.is_empty() else "%s/%s/%s/%s/%s/%s" % [it.get("kind", ""), it.get("fabric", ""), it.get("tag", ""), it.get("sled", ""),
+			it.get("dish", ""), it.get("step", "")]
 	if _held != null and not is_instance_valid(_held):   # 着替えると、前の体の手に付けていた物は体と一緒に消える。新しい体に付け直す
 		_held = null
 		_held_key = "-"

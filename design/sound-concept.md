@@ -152,6 +152,13 @@
 | 調理: プレス機 | `cook_press_in_01..02.wav` `cook_press_loop.wav` `cook_press_done_01..02.wav` | つめ車のレバーを下ろす → 押さえ込む → 湯気が抜けてレバーが戻る。`cook("press", …)` | — |
 | 調理: 乾燥機 | `cook_dryer_in_01..02.wav` `cook_dryer_loop.wav` `cook_dryer_done_01..02.wav` | 丸い扉に入れて閉める → 胴が回って具が転がり湯が沸く → 扉が開いて湯気。`cook("dryer", …)` | — |
 | 調理: 飲み物のスチーマー | `cook_drink_in_01..02.wav` `cook_drink_loop.wav` `cook_drink_done_01..02.wav` | ペレットが水に落ちる → タンクの泡とホースの「ごぼ」→ 頭から湯気が出てカップに注ぐ。`cook("drink", …)` | — |
+| 調理の曲（装置のオルゴール） | `cook_music_<press・iron・dryer・drink>_loop.wav` | 厨房の装置が調理しているあいだ、その装置から（2026-11-01 代表「ペレット調理による食べ物クッキングのアニメーション・音楽の制作」。場にあるものしか鳴らない決まりなので、装置に仕込んだオルゴールにした） | 120 BPM・8 秒のループ。装置ごとに下の音が違う |
+| 雪だるまのベル | `cook_bell_01..02.wav` | ペレットが売れたとき（雪だるまの右手） | — |
+| ペレットのぽこ | `cook_pellet_01..03.wav` | ペレットが跳ねる・手や装置に収まる | — |
+| プレス機のぼすっ | `cook_press_01..03.wav` | プレス機が 2 拍ごとに押す | — |
+| 焼く・揚げる・茹でる・回る | `cook_sizzle_loop` `cook_fry_loop` `cook_boil_loop` `cook_drum_loop` | アイロン台・乾燥機（揚げ物か麺かで替える） | — |
+| スチーマー | `cook_plop_01` `cook_gurgle_loop` `cook_puff_01..03` | ぽとん・タンクの泡・頭からぷしゅっ | — |
+| できあがりのチン | `cook_done_01..02.wav` | 装置のタイマー（装置から鳴る） | — |
 
 合成の音（`sound/gen/` の台本で作ったもの）は録音の台帳（`sound/SOURCES.md`）には書かない決まりなので、雪のボタンの音はこの表と、
 台本 `sound/gen/button.py` の頭の説明に残す。

@@ -104,6 +104,12 @@ func _apply(ev: Dictionary) -> void:
 			if balls_of(ev.who) <= 0:
 				return   # 投げる雪玉がない
 			balls[ev.who] = balls_of(ev.who) - 1
+		"spend":   # 雪だるまの店で、雪玉で払う（craft.gd の food_buy が呼ぶ。足りなければ払わない）
+			if balls_of(ev.who) < int(ev.n):
+				ev["ok"] = false
+				return
+			balls[ev.who] = balls_of(ev.who) - int(ev.n)
+			ev["ok"] = true
 	if ev.kind == "point":   # 指さしの向き（持ち主の画面で、向きが変わったときだけ間引いて送られる）
 		if ev.get("dir", Vector3.ZERO) == Vector3.ZERO:
 			aims.erase(ev.who)

@@ -577,6 +577,18 @@ func exchange(look: String) -> void:
 
 
 ## 速さの表示の糸の上のボタンが、ぽんと外れて財布へ飛び出す（ぷつ。小さく高く、耳元で）
+## 雪だるまの店と厨房の音（sound/gen/cook.py）を、parent の所で鳴らす（ロッジの中の Inside。まわりの人にも聞こえる）。
+## count が 1 より大きければ name_01..count から前と違うものを選ぶ。_loop の音は止めるまで回るので、返した物を呼ぶ側が消す
+func kitchen(parent: Node3D, name_: String, db := -10.0, count := 1, pitch := 1.0) -> AudioStreamPlayer3D:
+	if parent == null or not is_instance_valid(parent):
+		return null
+	var p := _p3(parent, "Inside", db, 3.0, 30.0)
+	_shot(p, _pick(name_, count) if count > 1 else _wav(name_), db, pitch)
+	if not name_.ends_with("_loop"):
+		p.finished.connect(p.queue_free)
+	return p
+
+
 func coin_off() -> void:
 	var s := _pick("button_snap", 3)
 	if s == null:
@@ -632,7 +644,7 @@ func button(what: String, at: Vector3, frame: int, tier := 0) -> void:
 
 # ---- 売り台で買う・厨房で調理する（2026-11-01 代表「購入音、ミシンでの制作音、食べ物の調理音をしっかり作ってほしい」） --------
 # 画面の決定音にはしない。番台のお皿・レジ・品物を包む手もとで鳴る音として、店の所から 3D で鳴らす（Inside）。
-# 音は sound/gen/shop.py と sound/gen/cook.py。ミシンの音は sewing_machine.gd が自分で鳴らす
+# 音は sound/gen/shop.py と sound/gen/cook_device.py。ミシンの音は sewing_machine.gd が自分で鳴らす
 
 ## 店ごとの 3 つの層: [払いの音, その数, レジ, 包む]。払いは、払った数（木のボタンの段に分けた枚数）だけ粒を落とす
 const SHOP_SOUNDS := {
