@@ -1,9 +1,8 @@
 extends SceneTree
 ## ロッジの 2 階の掘りごたつを、決まった所から昼と夜に撮り、1 コマに描く三角形の数と描く回数を出す（確かめ用）。
 ##   Godot --path game --resolution 1280x720 -s res://tools/kotatsu_shots.gd -- --no-sound --dir=/path/shots [--tag=after]
-##     [--sets=patch,indigo,...（8 卓の柄を差し替える）] [--andon] [--sit] [--hours=13,22] [--views=wide,near,row]
+##     [--sets=patch,indigo,...（8 卓の柄を差し替える）] [--sit] [--hours=13,22] [--views=wide,near,row]
 ## --sit: 南の列の西から 2 卓目のこたつの座布団に、7 体の人形を座らせる。
-## --andon: 行灯（props/furniture/andon.glb を人の大きさに）を、こたつの組の隅に置いてみる（置くかを代表に聞くため）。
 ## 三角形の数は本体の画面だけ（360 の小窓は止める）。場所はロッジの座標（lodge/dims.py の x 東, y 北, 高さ。Godot ではロッジの (x, 高さ, -y)）。2 階の畳の面は 6.5
 
 const Doll := preload("res://doll.gd")
@@ -57,8 +56,6 @@ func _run() -> void:
 		(vp as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED
 	if args.has("sets"):
 		_swap_sets(String(args.sets).split(","))
-	if args.has("andon"):
-		_put_andon()
 	if args.has("sit"):
 		await _sit_dolls()
 	cam = Camera3D.new()
@@ -119,21 +116,9 @@ func _swap_sets(pats: PackedStringArray) -> void:
 		if ks == null:
 			continue
 		for c in ks.get_children():
-			c.queue_free()
+			if String(c.name).begins_with("Kotatsu"):   # 行灯は残す
+				c.queue_free()
 		ks.add_child((load("res://props/sets/kotatsu_lodge_%s.tscn" % pats[i]) as PackedScene).instantiate())
-
-
-func _put_andon() -> void:
-	for i in 8:
-		var ks := lodge.find_child("slot_kotatsu_%d" % i, true, false) as Node3D
-		if ks == null:
-			continue
-		var a := Props.make("res://props/furniture/andon.glb")
-		a.scale = Vector3.ONE * 0.5
-		var sx := -1.0 if i % 2 == 0 else 1.0
-		var sz := 1.0 if i < 4 else -1.0   # 壁の側の隅（南の列は南＝+Z、北の列は北）。座布団のあいだ
-		a.position = Vector3(sx * 1.75, 0, sz * 1.35)
-		ks.add_child(a)
 
 
 ## 7 体の人形を、1 卓のこたつの座布団に座らせる

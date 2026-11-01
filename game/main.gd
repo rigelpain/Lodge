@@ -120,6 +120,9 @@ const KITCHEN := [
 ## 2 階の掘りごたつ 8 卓の柄（props/sets/kotatsu_lodge_<柄>.tscn。patch・indigo・rust）。
 ## 並びはロッジの目印 slot_kotatsu_0〜7: 0〜3 が南の列、4〜7 が北の列、どちらも西から
 const KOTATSU_SETS := ["patch", "indigo", "patch", "rust", "rust", "patch", "indigo", "patch"]
+## こたつの横の行灯（2026-11-02 代表「行灯を置く」）: こたつの組の座標で、壁の側の隅（座布団のあいだ）。
+## 南の列（0〜3）は南（+Z）、北の列は北の隅。東西は卓ごとに交互。行灯は 2 倍で書き出してあるので半分（高さ 0.74 m）
+const KOTATSU_ANDON := Vector3(1.75, 0, 1.35)
 ## 番台（店番の商人のカウンターとレジ。2026-10-31 代表「パッチワークおじいさんにも、雪だるまにも、番台的なカウンターとレジを」）。
 ## [カウンター, レジ, お皿に盛る物, ロッジの座標 (x, y), 正面（客の側）の向き（度。0 = 南、90 = 東。lodge/dims.py の SLOTS と同じ）]。
 ## おじいさんは真東を向いて番台の後ろに立ち、雪だるまは冷蔵庫の中から番台ごしに食堂を向く。置き方は design/lodge-layout/
@@ -923,7 +926,12 @@ func _furnish_lodge() -> void:
 		if ks:
 			var kset := (load("res://props/sets/kotatsu_lodge_%s.tscn" % KOTATSU_SETS[i]) as PackedScene).instantiate()
 			ks.add_child(kset)
-			for g in kset.find_children("*", "GeometryInstance3D", true, false):
+			var andon := Props.make("res://props/furniture/andon.glb")   # 灯りの目印に暖色の灯り（影なし）
+			andon.scale = Vector3.ONE * 0.5
+			andon.position = KOTATSU_ANDON * Vector3(1.0 if i % 2 else -1.0, 0, 1.0 if i < 4 else -1.0)
+			ks.add_child(andon)
+			_solid(andon)
+			for g in ks.find_children("*", "GeometryInstance3D", true, false):
 				(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for b in BANDAI:
 		_put_bandai(lodge, b)
