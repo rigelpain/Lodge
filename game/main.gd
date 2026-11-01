@@ -117,9 +117,9 @@ const KITCHEN := [
 	["drink", "res://props/kitchen/giant_vapor.glb", Vector3(6.5, 0, 0.0), 180.0,
 		[[Vector3(2.08, 1.5, 1.52), Vector3(0, 0.75, 0.04)], [Vector3(0.14, 3.6, 0.14), Vector3(-0.68, 1.8, -0.48)]]],
 ]
-## 2 階の掘りごたつ 8 卓の柄（props/sets/kotatsu_lodge_<柄>.tscn。patch・indigo・rust）。
+## 2 階の掘りごたつ 8 卓の柄（props/sets/kotatsu_lodge_<柄>.tscn。patch・indigo・rust）。8 卓ともパッチワーク（2026-11-02 代表「パッチワークにそろえる」）。
 ## 並びはロッジの目印 slot_kotatsu_0〜7: 0〜3 が南の列、4〜7 が北の列、どちらも西から
-const KOTATSU_SETS := ["patch", "indigo", "patch", "rust", "rust", "patch", "indigo", "patch"]
+const KOTATSU_SETS := ["patch", "patch", "patch", "patch", "patch", "patch", "patch", "patch"]
 ## こたつの横の行灯（2026-11-02 代表「行灯を置く」）: こたつの組の座標で、壁の側の隅（座布団のあいだ）。
 ## 南の列（0〜3）は南（+Z）、北の列は北の隅。東西は卓ごとに交互。行灯は 2 倍で書き出してあるので半分（高さ 0.74 m）
 const KOTATSU_ANDON := Vector3(1.75, 0, 1.35)
