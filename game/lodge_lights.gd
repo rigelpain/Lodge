@@ -6,8 +6,9 @@ extends Node3D
 ## 窓ぎわの床には燭台、厨房の奥の台にはガスコンロの火。形は手芸の素材（look.gd）の箱と筒を組んで作る:
 ## 松明は木の柄に麻の布を巻き、鉄はこげ茶のフェルト。ガス灯は真鍮色のフェルトの腕に、透明なフィルムの窓と木の枠。
 ## キャンドルはクリームのフェルトの芯に紙の帯を巻き、木の皿に載せる。
-## 炎は炉（props/build_hearth.py の flame）と同じ、フェルトのしずく形を赤・橙・黄の 3 枚、十字に重ねて光らせたもの。
-## 揺れは人形と同じ 12 コマ: コマごとに、形の違うしずく（3 枚ずつ用意）を差し替え、高さと傾きを少し変える（差し替えのコマ撮り）。
+## 炎は仮（_fire と FIRE_SHADER）。焚き火（PR #108 の campfire.gd: 赤・橙のフェルトと黄のクラフト紙の切り紙を十字に重ね、
+## 2 コマごとに切り方を差し替える）と同じ表現にそろえる。焚き火の炎の部品ができたら、_fire をその部品に差し替える。
+## いまは色をその FLAME_LAYERS にそろえ、12 コマの 2 コマごとに 3 つの形を差し替え、毎コマ高さと傾きを少し変える。
 ## 灯りは影を落とさない OmniLight3D を、届く範囲を絞って置く（60 fps を保つため）。強さもコマで ±4% だけ揺らす。
 ## 確かめ用: --no-fire-lights で置かない（置く前と比べる。game/tools/lodge_light_shots.gd）
 
@@ -153,7 +154,7 @@ func _ready() -> void:
 		_base.append(spec[0])
 
 
-## 12 コマ: 炎の形を 3 つの中から差し替え、高さ・幅・傾きを少し変える。灯りの強さも同じコマで少し揺らす
+## 12 コマ: 炎の形を 2 コマごとに 3 つの中から差し替え、毎コマ高さ・幅・傾きを少し変える。灯りの強さも同じコマで少し揺らす
 func _process(dt: float) -> void:
 	if Engine.is_editor_hint():
 		return
@@ -165,7 +166,7 @@ func _process(dt: float) -> void:
 	for i in _flames.size():
 		var f := _flames[i]
 		var h := hash(Vector2i(n, i))
-		f.mesh = _fire(h % 3, f.get_meta("gas"))
+		f.mesh = _fire(hash(Vector2i(n / 2, i)) % 3, f.get_meta("gas"))   # 形は 2 コマごとに差し替える（焚き火と同じ）
 		var base: Transform3D = f.get_meta("base")
 		var size: Vector2 = f.get_meta("size")
 		var sx := size.x * (0.94 + 0.10 * ((h >> 4) % 7) / 6.0)
@@ -371,7 +372,8 @@ static func _fire(shape: int, gas: bool) -> ArrayMesh:
 	if _fires.has(key):
 		return _fires[key]
 	# 頂点の色の a は明るさ（0 赤の外側は落ち着いて、1 黄の芯ほど明るく。素材の FIRE_SHADER）
-	var cols := [Color(0.30, 0.45, 1.0, 0.1) if gas else Color(0.92, 0.26, 0.08, 0.0), Color(1.0, 0.52, 0.12, 0.3), Color(1.0, 0.85, 0.42, 1.0)]
+	# 色は焚き火（campfire.gd の FLAME_LAYERS）と同じ
+	var cols := [Color(0.30, 0.45, 1.0, 0.1) if gas else Color(0.84, 0.22, 0.12, 0.0), Color(0.95, 0.50, 0.14, 0.3), Color(1.0, 0.82, 0.36, 1.0)]
 	var v := PackedVector3Array()
 	var nm := PackedVector3Array()
 	var uv := PackedVector2Array()

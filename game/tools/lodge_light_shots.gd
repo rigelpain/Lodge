@@ -116,6 +116,8 @@ func _run() -> void:
 	cam.fov = 70.0
 	root.add_child(cam)
 	cam.current = true
+	_look(VIEWS[0])   # 始めは素材の下ごしらえ（シェーダーの組み立て）で数秒黒く写るので、先に見せて待つ
+	await create_timer(float(args.get("warm", "6"))).timeout
 	if args.has("fps"):
 		await _fps()
 		quit()
