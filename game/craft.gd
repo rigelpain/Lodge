@@ -44,7 +44,9 @@ extends Node
 ##   food_buy  {item}          雪だるまの店でペレットを買う（item は food.gd の {kind:"food", dish, step:0}）。雪玉で払う（emotes.gd の spend）
 ##   cook      {slot, station} 手のペレット（料理の途中）を厨房の装置に入れる。持ち物から出て、装置が持つ（cook_station.gd）
 ##   bite      {slot}          手の料理をひと口食べる（3 口でなくなる。ev.ate に料理の名前が入る。食べても体の調子は変わらない。雰囲気づくりの道具）
-##   cooked    {item, station} 装置が仕上げた物（一段進んだ item）を、入れた人の持ち物に戻して手に持たせる。いっぱいなら断る（装置に残る）
+##   cooked    {station}       装置が仕上げた物を、入れた人の持ち物に戻して手に持たせる。いっぱいなら断る（装置に残る）。
+##                             ホストが装置の仕上がり（一段進んだ item）を確かめて ev に入れる。できあがりのときはホストの装置が出し（auto）、
+##                             装置に残った物は入れた人が F でもう一度出す
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
@@ -343,9 +345,9 @@ static func price(item: Dictionary) -> int:
 
 ## 出来事を出す。持ち主が呼ぶ（一人ならすぐ配る。通信ではホストへ送り、ホストが確かめてから全員に配る）。断られたら false。
 ## つなぐ側では断られたかがすぐには分からないので true を返し、結果は配られた出来事で知る（断られたら何も起きない）。
-## ミシンが縫い上げる・ボタンが入る・調理の装置が仕上げる・米袋がひとりでに帯に戻るは、ホストの画面が決める
-## （つなぐ側の画面では送らない。見た目は続けてよいので true を返し、本物はホストから届く）
-const HOST_ONLY := ["sewn", "earn", "cooked"]
+## ミシンが縫い上げる・ボタンが入るは、ホストの画面が決める（つなぐ側の画面では送らない。見た目は続けてよいので true を返し、
+## 本物はホストから届く）。調理の装置が仕上げる・米袋がひとりでに帯に戻るは auto（つなぐ側では送らず false。ホストの画面が出す）
+const HOST_ONLY := ["sewn", "earn"]
 
 func send(ev: Dictionary) -> bool:
 	ev["frame"] = Doll.frame_index() + 1
@@ -358,6 +360,14 @@ func send(ev: Dictionary) -> bool:
 		net.up("craft", ev)
 		return true
 	return _apply(ev)
+
+
+## 厨房の装置（cook_station.gd。なければ null）
+func _station(kind: String) -> Node:
+	for st in world.get("stations") if world and world.get("stations") != null else []:
+		if st.kind == kind:
+			return st
+	return null
 
 
 func _net() -> Node:
@@ -479,6 +489,11 @@ func _apply(ev: Dictionary) -> bool:
 				ev["ate"] = b[i].dish
 				_clear(who, i)
 		"cooked":
+			if not replay:   # 仕上がりはホストの画面の装置のもの（つなぐ側から来ても、中身は装置から取る）
+				var st := _station(String(ev.get("station", "")))
+				if st == null or st.result.is_empty() or st.who != who:
+					return false
+				ev["item"] = st.result.duplicate()
 			if free_slot(who) < 0:
 				return false
 			ev["slot"] = _put(who, ev.item)

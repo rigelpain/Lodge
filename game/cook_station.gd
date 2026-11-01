@@ -9,6 +9,8 @@ extends Node3D
 ##            （2 回）→ 棚にカップが出る（6 秒）
 ##   できあがり タイマーの「チン」。仕上がった物（料理か、次の装置へ持っていく途中の物）が装置からぽんと出て、入れた人の手へ飛ぶ
 ##   持ち物がいっぱいなら、装置の上に置いたまま待つ（もう一度 F で受け取る）
+## 入れる・受け取るは工房の出来事（craft.gd の cook・cooked）。調理は出来事が配られてから始まるので、通信ではどの画面の装置も
+## 同じ人の調理をする。仕上がりを手に戻す cooked は、ホストの画面の装置が仕上げたときに出す（ホストが装置の仕上がりを確かめて配る）
 
 const Doll := preload("res://doll.gd")
 const Props := preload("res://props.gd")
@@ -49,6 +51,9 @@ func _ready() -> void:
 		if not _mark.has(nm):
 			_mark[nm] = c
 	_lid = _dev.find_child("Lid", true, false) as Node3D
+	var craft = main.get("craft") if main else null
+	if craft:
+		craft.happened.connect(_on_craft)
 
 
 func _m(name: String) -> Vector3:
@@ -73,30 +78,47 @@ func can_use(p: Node3D) -> bool:
 	return Food.next_station(p.held()) == kind
 
 
-## F: 入れて調理を始める（仕上がりを待っていれば受け取る）
+## F: 入れて調理を始める（仕上がりを待っていれば受け取る）。出来事を出すだけで、動きは配られてから（_on_craft）
 func use(p: Node3D) -> bool:
 	var id := int(p.get("id"))
 	var craft: Node = main.craft
 	if not result.is_empty():
-		_give()
-		return true
+		return _give(false)
 	var hand: int = craft.hands.get(id, -1)
-	var ev := {"kind": "cook", "who": id, "slot": hand, "station": kind}
-	if not craft.send(ev):
+	if not craft.send({"kind": "cook", "who": id, "slot": hand, "station": kind}):
 		return false
-	who = id
-	who_node = p
+	var hud = main.get("hud")
+	if hud:
+		hud.learn("cook")
+	return true
+
+
+## 工房の出来事が配られた（どの画面でも。ほかの人の調理も、ここで始まって手に渡る）
+func _on_craft(ev: Dictionary) -> void:
+	if ev.get("station") != kind:
+		return
+	match ev.kind:
+		"cook":
+			_begin(ev)
+		"cooked":
+			_hand_over(ev)
+
+
+## 手のペレットが装置へ飛んで、調理が始まる
+func _begin(ev: Dictionary) -> void:
+	var hub = main.get("emotes")
+	who = int(ev.who)
+	who_node = hub.people.get(who) if hub else null
 	item = ev.item
 	_start = _k + 1
 	_vis = Props.make(Food.pellet_glb(item.dish))
 	_vis.scale = Vector3.ONE * 2.0
 	main.add_child(_vis)
-	_vis.global_position = p.global_position + Vector3.UP * 1.1 - p.global_basis.z * 0.35
+	if is_instance_valid(who_node):
+		_vis.global_position = who_node.global_position + Vector3.UP * 1.1 - who_node.global_basis.z * 0.35
+	else:
+		_vis.global_position = _dest()
 	_vis.set_meta("from", _vis.global_position)
-	var hud = main.get("hud")
-	if hud:
-		hud.learn("cook")
-	return true
 
 
 func _process(_dt: float) -> void:
@@ -314,7 +336,8 @@ func _step_fx() -> void:
 		_vis.position.y += 0.03 if (_k / 6) % 2 == 0 else -0.03
 
 
-func _finish() -> void:
+## 調理が仕上がる。give はできあがりの「手に戻す」を出すか（ホストの装置が先に仕上げて cooked が届いたときは出さない）
+func _finish(give := true) -> void:
 	_dev.transform = _rest
 	if _lid:
 		_lid.rotation.x = 0.0
@@ -324,9 +347,10 @@ func _finish() -> void:
 		if p and is_instance_valid(p):
 			p.queue_free()
 	if _vis and is_instance_valid(_vis):
-		var drum = _vis.get_meta("drum", null)
-		if drum and is_instance_valid(drum):
-			drum.queue_free()
+		if _vis.has_meta("drum"):   # 音なしのときは付いていない（get_meta の既定に null を渡すと ERROR になる）
+			var drum = _vis.get_meta("drum")
+			if is_instance_valid(drum):
+				drum.queue_free()
 		_vis.queue_free()
 	if _cup and is_instance_valid(_cup):
 		_cup.queue_free()
@@ -343,26 +367,35 @@ func _finish() -> void:
 	_vis.scale = Vector3.ONE * (2.0 if done else 2.0) * (Vector3(1.3, 0.6, 1.3) if not done and kind == "press" else Vector3.ONE)
 	main.add_child(_vis)
 	_vis.global_position = (_m("cup") if kind == "drink" else _dest()) + Vector3.UP * 0.15
-	_give()
+	if give:
+		_give(true)
 
 
-## 仕上がりを入れた人の手へ（持ち物がいっぱいなら、装置の上で待つ）
-func _give() -> void:
+## 仕上がりを入れた人の手へ戻す出来事を出す（ホストが装置の仕上がりを確かめて配る。持ち物がいっぱいなら断られ、装置の上で待つ）。
+## auto はできあがりのとき: つなぐ側の画面では出さない（同じ仕上がりを、ホストの画面の装置が出す）
+func _give(auto: bool) -> bool:
 	if result.is_empty():
-		return
-	var craft: Node = main.craft
-	if not craft.send({"kind": "cooked", "who": who, "item": result, "station": kind}):
-		return
-	var to := who_node.global_position + Vector3.UP * 1.1 if is_instance_valid(who_node) else _vis.global_position
+		return false
+	return main.craft.send({"kind": "cooked", "who": who, "station": kind, "auto": auto})
+
+
+## 手に戻す出来事が配られた: 仕上がりが装置から入れた人の手へ飛ぶ
+func _hand_over(ev: Dictionary) -> void:
+	if who >= 0 and result.is_empty():
+		_finish(false)   # ホストの装置が先に仕上げた（この画面の調理は、まだ少し残っていた）
+	if result.is_empty():
+		return   # この画面では調理を見ていない（持ち物は craft.gd が戻している）
 	var v := _vis
-	var from := v.global_position
-	var tw := create_tween()
-	tw.tween_method(func(s: float) -> void:
-		if is_instance_valid(v):
-			v.global_position = from.lerp(to, s) + Vector3.UP * 0.5 * 4.0 * s * (1.0 - s), 0.0, 1.0, FLY / 12.0)
-	tw.tween_callback(func() -> void:
-		if is_instance_valid(v):
-			v.queue_free())
+	if is_instance_valid(v):
+		var to := who_node.global_position + Vector3.UP * 1.1 if is_instance_valid(who_node) else v.global_position
+		var from := v.global_position
+		var tw := create_tween()
+		tw.tween_method(func(s: float) -> void:
+			if is_instance_valid(v):
+				v.global_position = from.lerp(to, s) + Vector3.UP * 0.5 * 4.0 * s * (1.0 - s), 0.0, 1.0, FLY / 12.0)
+		tw.tween_callback(func() -> void:
+			if is_instance_valid(v):
+				v.queue_free())
 	var audio = main.get_node_or_null("Audio")
 	if audio and is_instance_valid(who_node):
 		audio.kitchen(who_node, "cook_pellet", -9.0, 3)
