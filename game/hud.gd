@@ -120,8 +120,9 @@ var _flip := 0.0              # めくりの残り（1→0）
 var _flip_dir := 1
 var _flip_hold := 0.0
 var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
-var _damp_v := 120.0          # 「よれ」のゲージに出している値（damp.gd の値をなめらかに追う）
-var _damp_c := 0.0            # ご飯でこれから戻る量（しつけ糸。damp.gd の coming を追う）
+var _damp_w := 0.0            # 水のゲージに出している値（damp.gd の値をなめらかに追う）
+var _damp_h := 50.0           # 熱のゲージに出している値
+var _damp_c := 0.0            # ご飯でこれから上がる熱（しつけ糸。damp.gd の coming を追う）
 var _damp_a := 0.0            # ゲージの濃さ（ゲームが始まると出る。水の猶予とブーストの残りを見るので、ふつうでも消さない）
 var _badge_pop := {}          # バッジの名前 → 跳ねの残り（1→0）
 var _badge_seen := {}         # バッジの名前 → 最後に見た [向き, 段]（変わったら跳ねる）
@@ -993,15 +994,16 @@ func _net_ms() -> int:
 	return ms
 
 
-## 「よれ」のゲージ: 値をなめらかに追う。バッジの向きか段が変わったら跳ねさせる
+## 水と熱のゲージ: 値をなめらかに追う。バッジの向きか段が変わったら跳ねさせる
 func _update_damp(dt: float, p: CharacterBody3D) -> void:
 	var dm = main.get("damp")
 	if p == null or dm == null:
 		return
-	var v: float = dm.value(p.id)
-	_damp_v = lerpf(_damp_v, v, 1.0 - exp(-dt * 4.0))
+	var h: float = dm.heat_of(p.id)
+	_damp_w = lerpf(_damp_w, dm.water_of(p.id), 1.0 - exp(-dt * 4.0))
+	_damp_h = lerpf(_damp_h, h, 1.0 - exp(-dt * 4.0))
 	var coming: float = dm.coming(p.id)
-	_damp_c = lerpf(_damp_c, v + coming - _damp_v if coming > 0.5 else 0.0, 1.0 - exp(-dt * 8.0))   # 行き先は、見せている値からの量で
+	_damp_c = lerpf(_damp_c, h + coming - _damp_h if coming > 0.5 else 0.0, 1.0 - exp(-dt * 8.0))   # 行き先は、見せている熱からの量で
 	_damp_a = move_toward(_damp_a, 1.0, dt * 2.0)
 	var now := {}
 	for b in main.badges.of(p.id):
@@ -1300,7 +1302,7 @@ class View extends Control:
 		draw_texture_rect(tex, Rect2(c - sz / 2.0, sz), false)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
 
-	## 右下の刺繍枠の左に縫った「よれ」のゲージと体の調子のバッジ（damp_hud.gd）。自分のだけ（仲間の調子は人形の見た目で分かる）
+	## 右下の刺繍枠の左右に縫った水と熱のゲージと体の調子のバッジ（damp_hud.gd）。自分のだけ（仲間の調子は人形の見た目で分かる）
 	func _draw_damp(u: float) -> void:
 		var sc = hud.main.get("self_cam")
 		var p = hud.main.player
@@ -1311,7 +1313,7 @@ class View extends Control:
 		var fr: Control = sc._frame
 		var c := fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui())
 		draw_set_transform_matrix(Icons.wind_xform(c, 5.0, 0.0, 0.03, 2.5 * u))
-		DampHud.draw(self, c, fr.size.x / 2.0, u, hud._damp_v, hud._damp_a, hud.main.badges.of(p.id), hud._badge_pop, hud._damp_c)
+		DampHud.draw(self, c, fr.size.x / 2.0, u, hud._damp_w, hud._damp_h, hud._damp_a, hud.main.badges.of(p.id), hud._badge_pop, hud._damp_c)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
 
 	## 右上の 360° 映像が後ろ向きのしるし（「後ろ」の文字の代わり）

@@ -1,9 +1,9 @@
 extends SceneTree
-## 「よれ」のゲージとバッジ（damp_hud.gd・badges.gd）を、ゲームの画面で撮る（確かめ用）。
-##   Godot --path game --resolution 1600x900 -s res://tools/damp_hud_shots.gd -- --dir=/path [--values=10,60,120,190] [--mate=30] [--place=foot|fire] [--frames=12] [--coming=40]
-## 値ごとに、一人称（値_fp.png）と三人称（値_tp.png）。あなたの値は固定し（なじませない）、仲間（2.2 m 先）には --mate の値を入れる。
+## 水と熱のゲージとバッジ（damp_hud.gd・badges.gd）を、ゲームの画面で撮る（確かめ用）。
+##   Godot --path game --resolution 1600x900 -s res://tools/damp_hud_shots.gd -- --dir=/path [--values=80/40,10/50,60/100] [--mate=80/40] [--place=foot|fire] [--frames=12] [--coming=20]
+## 値（水/熱）ごとに、一人称（水_熱_fp.png）と三人称（水_熱_tp.png）。あなたの値は固定し（なじませない）、仲間（2.2 m 先）には --mate の値を入れる。
 ## --place=fire はロッジの暖炉の前（暖炉を背に、こちらを向いた仲間）
-## --coming はご飯でこれから戻る量（しつけ糸とご飯のバッジを見る）
+## --coming はご飯でこれから上がる熱（しつけ糸とご飯のバッジを見る）
 
 const Doll := preload("res://doll.gd")
 
@@ -44,10 +44,12 @@ func _run() -> void:
 	var place: String = args.get("place", "foot")
 	var b: Node3D = _bots()[0]
 	_stage(place, b)
-	var mate := float(args.get("mate", "30"))
-	for v in Array(String(args.get("values", "10,60,120,190")).split_floats(",")):
-		main.damp.put(p.id, v)
-		main.damp.put(b.id, mate)
+	var mate := String(args.get("mate", "80/40")).split_floats("/")
+	for pair in String(args.get("values", "80/40,10/50,60/100")).split(","):
+		var wh := pair.split_floats("/")
+		var v := "%d_%d" % [int(wh[0]), int(wh[1])]
+		main.damp.put(p.id, wh[0], wh[1])
+		main.damp.put(b.id, mate[0], mate[1])
 		main.damp.pending[p.id] = float(args.get("coming", "0"))
 		for view in ["fp", "tp"]:
 			p.set_third(view == "tp")
@@ -56,15 +58,15 @@ func _run() -> void:
 				main.craft_ui.gear_open = false   # 撮っているあいだに窓が I の入力を受けても、持ち物の窓は閉じて撮る
 				await _frames(3)
 			RenderingServer.force_draw()
-			root.get_texture().get_image().save_png(dir.path_join("%s_%d_%s.png" % [place, int(v), view]))
+			root.get_texture().get_image().save_png(dir.path_join("%s_%s_%s.png" % [place, v, view]))
 			# --frames=N: そこから 12 コマ／秒で N 枚（上がる矢印の伸び縮みを見る）
 			for k in int(args.get("frames", "0")):
 				var t0 := Time.get_ticks_msec()
 				while Time.get_ticks_msec() - t0 < 83:
 					await process_frame
 				RenderingServer.force_draw()
-				root.get_texture().get_image().save_png(dir.path_join("%s_%d_%s_f%02d.png" % [place, int(v), view, k]))
-		print("%s 値=%d 段=%s 歩く×%.2f 押す×%.2f バッジ=%s" % [place, int(v), main.damp.STAGES[main.damp.stage_of(v)][1],
+				root.get_texture().get_image().save_png(dir.path_join("%s_%s_%s_f%02d.png" % [place, v, view, k]))
+		print("%s 水/熱=%s 点=%.2f 段=%s 歩く×%.2f 押す×%.2f バッジ=%s" % [place, v, main.damp.score(p.id), main.damp.STAGES[main.damp.stage_of(main.damp.score(p.id))][1],
 			main.damp.speed_k(p.id), main.damp.push_k(p.id), str(main.badges.of(p.id))])
 	quit()
 

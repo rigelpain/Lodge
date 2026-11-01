@@ -113,7 +113,6 @@ const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
-var push_boost := 1.0         # ソリを押す力の倍率（食べたぬくもりで少し増える。warmth.gd が入れる）
 var _eating := false         # 左ボタンを押しているあいだ、手の料理を 1 口ずつ食べ続ける
 var _bit_frame := -1         # ひと口を数えた身ぶりの始まりのコマ（同じひと口を 2 度数えない）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
@@ -1299,12 +1298,9 @@ func _eat_step() -> void:
 		var bit: bool = craft.send(ev)
 		var dm = get_parent().get("damp")
 		if bit and dm:
-			dm.eat(id, ev.dish)   # ひと口ごとに、湿り気がじんわり戻る（damp.gd）
+			dm.eat(id, ev.dish)   # ひと口ごとに、熱がじんわり上がる（damp.gd）
 		if bit and ev.has("ate"):
 			_eating = false
-			var w = get_parent().get("warmth")
-			if w:
-				w.ate(id, ev.ate)
 			if audio:
 				audio.eat(self, "eat_ah", 2, true)
 	# 一人称: 手の料理を口もと（画面の下のまんなか）へ運び、噛むあいだ小さく揺らす。人形の腕と同じ割合で寄せる

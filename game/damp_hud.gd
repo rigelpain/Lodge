@@ -3,127 +3,136 @@ extends RefCounted
 const Icons := preload("res://hud_icons.gd")
 const Badges := preload("res://badges.gd")
 const Damp := preload("res://damp.gd")
-## 右下の刺繍枠（自分の小窓）の左の縁に沿って縫った「よれ」のゲージと、体の調子のバッジ（hud.gd が描く）。
-## ゲージは紙の帯。下の端に水のワッペン（0 びしょびしょ）、上の端に炎のワッペン（200 パリパリ）。
-## 境目（150）より下は水の青で、下の端へ行くほど濃い青。境目より上はブーストの赤で、上の端へ行くほど濃い赤
-## （2026-11-01 代表「上端下端に行くに連れ色が赤、青に濃くなってほしい」）。帯の地は淡い色、縫った糸は濃い色。
-## 境目には太い生成りの糸を渡す。下の端から今の所まで糸で縫い、今の所に赤い結び目。段の境目（40・90）に小さな十字。
-## 帯そのものも、湿るほど縁が波打つ（紙の体と同じ）。数字は出さない。
-## 水の猶予とブーストの残りを見るものなので、ふつうでも出しておく。
-## ご飯でこれから戻る分は、今の所から行き先まで白いしつけ糸（あとで縫う所の目印）を渡し、行き先に白い小さな結び目
-## バッジは刺繍枠の右上に、枠に沿って並べ、出たときに跳ねる（2026-11-01 代表「バフデバフは刺繍の右上に置きましょう」）
+## 右下の刺繍枠（自分の小窓）の左右の縁に沿って縫った、水と熱の 2 本のゲージと、体の調子のバッジ（hud.gd が描く）。
+## 2026-11-01 代表「水は刺繍の左側、熱は刺繍の右にゲージ作ろう。水ゲージには水アイコンだけ、熱ゲージには氷アイコンと炎アイコン」。
+##   水（左）: 紙の帯。下が乾いている（0）、上の端に水のワッペン（100 びしょびしょ）。上へ行くほど濃い藍。湿るほど帯の縁が波打つ
+##   熱（右）: 紙の帯。下の端に氷のワッペン（0 凍える）、上の端に炎のワッペン（100 ほかほか）。まんなか（50 ふつう）に太い生成りの糸。
+##             下へ行くほど濃い氷の青、上へ行くほど濃い赤
+## 帯の地は淡い色、端から今の所まで縫った糸は濃い色。今の所に赤い結び目。数字は出さない。
+## ご飯でこれから上がる熱は、今の所から行き先まで白いしつけ糸（あとで縫う所の目印）を渡し、行き先に白い小さな結び目。
+## バッジ（水と熱を差し引いた押す力・速さの上がり下がり、ご飯）は刺繍枠の上に、2 本のゲージのあいだに並べ、出たときに跳ねる
 
-const ARC_WET := PI - 0.55      # 帯の下の端（0）の向き（刺繍枠の中心から。画面の座標、右が 0、下が正）
-const ARC_CRISP := PI + 1.05    # 帯の上の端（200）
 const GAP := 40.0               # 窓の縁から帯までの間（1080 のとき, px。木の輪の外）
 const BAND := 17.0              # 帯の幅（px）
 const END := 34.0               # 端のワッペンの直径（px）
+const SPAN := 0.55              # 帯の下の端の、真横からの下がり（rad）
+const TOP := 0.75               # 帯の上の端の、真横からの上がり（rad。上の端のワッペンがバッジにかからないように）
 const BADGE := 52.0             # バッジの直径（px）
-const BADGE_R := 42.0           # 窓の縁から、バッジの真ん中までの間（px。木の輪に少しかかる）
-const BADGE_FROM := -1.0        # 1 枚目のバッジの向き（右上）
-const BADGE_STEP := 0.46       # 2 枚目からの、枠に沿った間（rad。右下へ回る）
-const BADGE_STEP_3 := 0.40     # 3 枚のとき（湿り気の 2 枚とご飯）は詰める。3 枚目が画面の右の端にかからないように
+## バッジの置き場: [向き, 窓の縁からバッジの真ん中までの間 (px)]。1 枚目は枠の上の右、2 枚目は左、3 枚目は留め具の真上の少し外
+const BADGE_AT := [[-1.27, 44.0], [-1.87, 44.0], [-1.57, 80.0]]
 # 帯の色: [値, 縫う糸の色]。あいだは混ぜる。帯の地は、これを生成りへ寄せた淡い色
-const COLORS := [
-	[0.0, Color(0.08, 0.20, 0.52)],     # 下の端: 濃い藍
-	[150.0, Color(0.55, 0.72, 0.92)],   # 境目の下: 淡い水色
-	[150.01, Color(0.98, 0.62, 0.42)],  # 境目の上: 淡い朱
-	[200.0, Color(0.72, 0.08, 0.06)],   # 上の端: 濃い赤
+const WATER_COLORS := [
+	[0.0, Color(0.72, 0.82, 0.92)],     # 乾いている: 淡い水色
+	[100.0, Color(0.08, 0.20, 0.52)],   # びしょびしょ: 濃い藍
+]
+const HEAT_COLORS := [
+	[0.0, Color(0.16, 0.50, 0.78)],     # 凍える: 濃い氷の青
+	[50.0, Color(0.86, 0.80, 0.68)],    # ふつう: 生成りに近い
+	[100.0, Color(0.72, 0.08, 0.06)],   # ほかほか: 濃い赤
 ]
 
 
-## 値（0 〜 200）の、帯の上の向き
-static func angle_of(v: float) -> float:
-	return lerpf(ARC_WET, ARC_CRISP, (clampf(v, Damp.LO, Damp.HI) - Damp.LO) / (Damp.HI - Damp.LO))
+## 水（0 〜 100）の、左の帯の上の向き（画面の座標、右が 0、下が正）
+static func water_angle(v: float) -> float:
+	return lerpf(PI - SPAN, PI + TOP, clampf(v, 0.0, 100.0) / 100.0)
 
 
-## 値の、縫う糸の色
-static func color_of(v: float) -> Color:
-	for i in COLORS.size() - 1:
-		if v <= COLORS[i + 1][0]:
-			return (COLORS[i][1] as Color).lerp(COLORS[i + 1][1], clampf((v - COLORS[i][0]) / (COLORS[i + 1][0] - COLORS[i][0]), 0.0, 1.0))
-	return COLORS[-1][1]
+## 熱（0 〜 100）の、右の帯の上の向き
+static func heat_angle(v: float) -> float:
+	return lerpf(SPAN, -TOP, clampf(v, 0.0, 100.0) / 100.0)
+
+
+static func color_in(cols: Array, v: float) -> Color:
+	for i in cols.size() - 1:
+		if v <= cols[i + 1][0]:
+			return (cols[i][1] as Color).lerp(cols[i + 1][1], clampf((v - cols[i][0]) / (cols[i + 1][0] - cols[i][0]), 0.0, 1.0))
+	return cols[-1][1]
 
 
 static func _on(c: Vector2, t: float, r: float) -> Vector2:
 	return c + Vector2(cos(t), sin(t)) * r
 
 
-## ゲージとバッジ。c は刺繍枠の真ん中、r は窓の半径（px）。v は見せている値、a は濃さ、pops は名前 → 跳ね（1→0）。
-## coming はご飯でこれから戻る量（しつけ糸）
-static func draw(ci: CanvasItem, c: Vector2, r: float, u: float, v: float, a: float, badges: Array, pops: Dictionary, coming := 0.0) -> void:
+## 2 本のゲージとバッジ。c は刺繍枠の真ん中、r は窓の半径（px）。w・h は見せている水と熱、a は濃さ、
+## pops は名前 → 跳ね（1→0）、coming はご飯でこれから上がる熱（しつけ糸）
+static func draw(ci: CanvasItem, c: Vector2, r: float, u: float, w: float, h: float, a: float, badges: Array, pops: Dictionary, coming := 0.0) -> void:
 	Icons.screen()
 	var rr := r + GAP * u
-	var wet := clampf((Damp.MID - v) / Damp.MID, 0.0, 1.0)
 	if a > 0.01:
-		_band(ci, c, rr, u, wet, a)
-		# 下の端から今の所まで、値ごとの色で縫う（少しずつ区切って色を変える）
-		var steps := int(clampf(v, Damp.LO, Damp.HI) / 4.0)
-		var w := 9.0 * u
-		for i in steps:
-			var v0 := i * 4.0
-			var v1 := minf(v0 + 4.0 + 0.6, v)
-			var pts := PackedVector2Array([_on(c, angle_of(v0), rr), _on(c, angle_of((v0 + v1) / 2.0), rr), _on(c, angle_of(v1), rr)])
-			ci.draw_polyline(pts, Color(color_of(v0 + 2.0), a), w, true)
-		if v > 1.0:
-			var all := PackedVector2Array()
-			for i in 33:
-				all.append(_on(c, lerpf(ARC_WET, angle_of(v), i / 32.0), rr))
-			Icons.dashes(ci, all, Color(1, 1, 1), 1.2 * u, 3.0 * u, 3.0 * u, 0.45 * a)   # 糸の撚りの筋
-		# ご飯でこれから戻る分: 白いしつけ糸と、行き先の結び目
-		if coming > 0.5:
-			var to := minf(v + coming, Damp.HI)
-			var n := maxi(2, int(coming / 3.0))
-			var basting := PackedVector2Array()
-			for i in n + 1:
-				basting.append(_on(c, lerpf(angle_of(v), angle_of(to), i / float(n)), rr))
-			Icons.dashes(ci, basting, Icons.THREAD, 6.4 * u, 5.0 * u, 3.0 * u, 0.85 * a)   # 淡い帯の上でも見えるよう、藍で縁どる
-			Icons.dashes(ci, basting, Color(1, 1, 1), 4.0 * u, 5.0 * u, 3.0 * u, a)
-			var tip := _on(c, angle_of(to), rr)
-			ci.draw_circle(tip, 5.4 * u, Color(Icons.THREAD, 0.85 * a))
-			ci.draw_circle(tip, 4.0 * u, Color(1, 1, 1, a))
-		# 境目（150）: 帯を横切る太い生成りの糸
-		var ab := angle_of(Damp.BOOST)
-		var d := Vector2(cos(ab), sin(ab))
+		# 水（左）: 下の端から今の所まで
+		_band(ci, c, rr, u, water_angle(-4.0), water_angle(104.0), WATER_COLORS, -4.0, 104.0, clampf(w / 100.0, 0.0, 1.0), a)
+		_sew(ci, c, rr, u, 0.0, w, WATER_COLORS, water_angle, a)
+		Badges.end_patch(ci, "drop", _on(c, water_angle(100.0) + 0.2, rr), END * u, a)
+		_knot(ci, _on(c, water_angle(w), rr), u, a)
+		# 熱（右）: 下の端（氷）から今の所まで。まんなかに太い生成りの糸
+		_band(ci, c, rr, u, heat_angle(-4.0), heat_angle(104.0), HEAT_COLORS, -4.0, 104.0, 0.0, a)
+		_sew(ci, c, rr, u, 0.0, h, HEAT_COLORS, heat_angle, a)
+		var am := heat_angle(Damp.HEAT_MID)
+		var d := Vector2(cos(am), sin(am))
 		Icons.thread(ci, PackedVector2Array([c + d * (rr - BAND * 0.8 * u), c + d * (rr + BAND * 0.8 * u)]), Icons.PAPER, 3.4 * u, a)
-		# 段の境目の十字
-		for b in [40.0, 90.0]:
-			var t := angle_of(b)
-			var dd := Vector2(cos(t), sin(t))
-			var p := c + dd * rr
-			var e := dd.orthogonal()
-			for k in [-1.0, 1.0]:
-				ci.draw_line(p + (dd + e * k) * 3.5 * u, p - (dd + e * k) * 3.5 * u, Color(Icons.THREAD, 0.75 * a), maxf(1.4 * u, 1.0), true)
-		# 両端のワッペン
-		Badges.end_patch(ci, "drop", _on(c, ARC_WET - 0.2, rr), END * u, a)
-		Badges.end_patch(ci, "fire", _on(c, ARC_CRISP + 0.2, rr), END * u, a)
-		# 今の所の赤い結び目
-		Icons._o = _on(c, angle_of(v), rr)
-		Icons._s = u
-		Icons.patch(ci, Icons.circ(Vector2.ZERO, 8.5, 16), Icons.RED, a, false)
-		ci.draw_circle(Icons._o + Vector2(-2.4, -2.4) * u, 2.3 * u, Color(1, 1, 1, 0.5 * a))
-		Icons.screen()
-	# バッジ: 刺繍枠の右上に、枠に沿って並べる（矢印はそれぞれの下）
-	for i in badges.size():
+		if coming > 0.5:
+			_basting(ci, c, rr, u, h, minf(h + coming, 100.0), a)
+		Badges.end_patch(ci, "ice", _on(c, heat_angle(0.0) + 0.2, rr), END * u, a)
+		Badges.end_patch(ci, "fire", _on(c, heat_angle(100.0) - 0.2, rr), END * u, a)
+		_knot(ci, _on(c, heat_angle(h), rr), u, a)
+	# バッジ: 刺繍枠の上、2 本のゲージのあいだ
+	for i in mini(badges.size(), BADGE_AT.size()):
 		var b: Dictionary = badges[i]
-		var p := _on(c, BADGE_FROM + i * (BADGE_STEP if badges.size() < 3 else BADGE_STEP_3), r + BADGE_R * u)
+		var p := _on(c, BADGE_AT[i][0], r + BADGE_AT[i][1] * u)
 		Badges.draw_badge(ci, b, p, BADGE * u, 1.0, pops.get(b.key, 0.0))
 	Icons.screen()
 
 
-## 紙の帯（両側にランニングステッチ）。地は値ごとの色を生成りへ寄せた淡い色（下ほど青く、上ほど赤く）。湿るほど縁が波打つ
-static func _band(ci: CanvasItem, c: Vector2, rr: float, u: float, wet: float, a: float) -> void:
-	var n := 48
+## 帯の端（v0）から今の所（v1）まで、値ごとの色で縫う（少しずつ区切って色を変える）。糸の撚りの筋も
+static func _sew(ci: CanvasItem, c: Vector2, rr: float, u: float, v0: float, v1: float, cols: Array, angle: Callable, a: float) -> void:
+	var steps := int(clampf(v1 - v0, 0.0, 100.0) / 2.0)
+	for i in steps:
+		var s0 := v0 + i * 2.0
+		var s1 := minf(s0 + 2.0 + 0.3, v1)
+		var pts := PackedVector2Array([_on(c, angle.call(s0), rr), _on(c, angle.call((s0 + s1) / 2.0), rr), _on(c, angle.call(s1), rr)])
+		ci.draw_polyline(pts, Color(color_in(cols, s0 + 1.0), a), 9.0 * u, true)
+	if v1 - v0 > 1.0:
+		var all := PackedVector2Array()
+		for i in 25:
+			all.append(_on(c, angle.call(lerpf(v0, v1, i / 24.0)), rr))
+		Icons.dashes(ci, all, Color(1, 1, 1), 1.2 * u, 3.0 * u, 3.0 * u, 0.45 * a)
+
+
+## 今の所の赤い結び目
+static func _knot(ci: CanvasItem, at: Vector2, u: float, a: float) -> void:
+	Icons._o = at
+	Icons._s = u
+	Icons.patch(ci, Icons.circ(Vector2.ZERO, 8.5, 16), Icons.RED, a, false)
+	ci.draw_circle(at + Vector2(-2.4, -2.4) * u, 2.3 * u, Color(1, 1, 1, 0.5 * a))
+	Icons.screen()
+
+
+## ご飯でこれから上がる熱: 白いしつけ糸（藍の縁どり）と、行き先の結び目
+static func _basting(ci: CanvasItem, c: Vector2, rr: float, u: float, from: float, to: float, a: float) -> void:
+	var n := maxi(2, int((to - from) / 1.5))
+	var pts := PackedVector2Array()
+	for i in n + 1:
+		pts.append(_on(c, heat_angle(lerpf(from, to, i / float(n))), rr))
+	Icons.dashes(ci, pts, Icons.THREAD, 6.4 * u, 5.0 * u, 3.0 * u, 0.85 * a)
+	Icons.dashes(ci, pts, Color(1, 1, 1), 4.0 * u, 5.0 * u, 3.0 * u, a)
+	var tip := _on(c, heat_angle(to), rr)
+	ci.draw_circle(tip, 5.4 * u, Color(Icons.THREAD, 0.85 * a))
+	ci.draw_circle(tip, 4.0 * u, Color(1, 1, 1, a))
+
+
+## 紙の帯（両側にランニングステッチ）。地は値ごとの色を生成りへ寄せた淡い色。wet ほど縁が波打つ
+static func _band(ci: CanvasItem, c: Vector2, rr: float, u: float, t0: float, t1: float, cols: Array, v0: float, v1: float, wet: float, a: float) -> void:
+	var n := 40
 	var outer := PackedVector2Array()
 	var inner := PackedVector2Array()
 	var vals := PackedFloat32Array()
 	for i in n + 1:
 		var k := i / float(n)
-		var t := lerpf(ARC_WET - 0.06, ARC_CRISP + 0.06, k)
+		var t := lerpf(t0, t1, k)
 		var wave := sin(t * 38.0) * wet * 1.6 * u
 		outer.append(_on(c, t, rr + BAND * 0.5 * u + wave))
 		inner.append(_on(c, t, rr - BAND * 0.5 * u - wave))
-		vals.append(lerpf(Damp.LO - 6.0, Damp.HI + 6.0, k))
+		vals.append(lerpf(v0, v1, k))
 	var poly := outer.duplicate()
 	var back := inner.duplicate()
 	back.reverse()
@@ -134,7 +143,7 @@ static func _band(ci: CanvasItem, c: Vector2, rr: float, u: float, wet: float, a
 	ci.draw_colored_polygon(shadow, Color(Icons.SHADOW, 0.25 * a))
 	for i in n:   # 少しずつ区切って、地の色を変える
 		var q := PackedVector2Array([outer[i], outer[i + 1], inner[i + 1], inner[i]])
-		ci.draw_colored_polygon(q, Color(Icons.PAPER.lerp(color_of((vals[i] + vals[i + 1]) / 2.0), 0.45), a))
+		ci.draw_colored_polygon(q, Color(Icons.PAPER.lerp(color_in(cols, (vals[i] + vals[i + 1]) / 2.0), 0.45), a))
 	var edge := poly.duplicate()
 	edge.append(poly[0])
 	ci.draw_polyline(edge, Color(Icons.PAPER_EDGE, 0.9 * a), maxf(1.2 * u, 1.0), true)

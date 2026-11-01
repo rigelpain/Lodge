@@ -38,18 +38,16 @@ const DRINKS := ["cocoa", "oshiruko", "corn", "clam", "greentea", "milk", "milkt
 const NOODLES := ["ramen", "udon", "soba", "yakisoba"]
 const CRISP := ["taiyaki", "korokke", "hashbrown", "fries", "hotsand"]   # 皮がぱりっとした物（さくっ）
 const BITES := 3             # 3 口で食べ終わる
-## 食べたときのぬくもり（0〜1。暖炉のそばはおよそ 1）。汁物・麺は多め
-const WARM := {"ramen": 0.4, "udon": 0.38, "soba": 0.36, "oshiruko": 0.38, "corn": 0.34, "clam": 0.36}
-const WARM_BASE := 0.3
-## 食べたときに湿り気（damp.gd の「よれ」のゲージ, 0〜200）を戻す量（3 口に分けて、ひと口ごとに 1/3 ずつ。じんわり乾く）。
+## 食べたときに熱（damp.gd の熱のゲージ, 0〜100。ふつうは 50）を上げる量（3 口に分けて、ひと口ごとに 1/3 ずつ。じんわり温まる）。
 ## 熱い汁物・麺のつゆがいちばん、温かい飲み物、揚げ物、焼き物、おにぎりの順に少ない。表は design/damp.md。
-## 戻るのはふつうの上の端（150）までで、熱い汁物（SOUPS）だけはブーストまで（200）戻る（2026-11-01 代表「ブーストまで戻せるように」）
-const DRY := {
-	"ramen": 75.0, "udon": 75.0, "soba": 75.0, "clam": 75.0, "corn": 75.0, "oshiruko": 75.0,
-	"cocoa": 55.0, "milktea": 55.0, "greentea": 55.0, "milk": 55.0,
-	"taiyaki": 40.0, "nikuman": 40.0, "korokke": 40.0, "hashbrown": 40.0, "fries": 40.0,
-	"hotsand": 30.0, "yakiimo": 30.0, "hotcake": 30.0, "sanma": 30.0, "kaki": 30.0, "yakisoba": 30.0,
-	"onigiri": 20.0,
+## 上がるのはふつうの少し上（60。まだバフにならない）までで、熱い汁物（SOUPS）だけはいちばん上（100）まで
+## （2026-11-01 代表「ブーストまで戻せるように」。熱い汁物だけ）
+const HEAT := {
+	"ramen": 35.0, "udon": 35.0, "soba": 35.0, "clam": 35.0, "corn": 35.0, "oshiruko": 35.0,
+	"cocoa": 25.0, "milktea": 25.0, "greentea": 25.0, "milk": 25.0,
+	"taiyaki": 20.0, "nikuman": 20.0, "korokke": 20.0, "hashbrown": 20.0, "fries": 20.0,
+	"hotsand": 15.0, "yakiimo": 15.0, "hotcake": 15.0, "sanma": 15.0, "kaki": 15.0, "yakisoba": 15.0,
+	"onigiri": 10.0,
 }
 const SOUPS := ["ramen", "udon", "soba", "clam", "corn", "oshiruko"]
 
@@ -106,15 +104,11 @@ static func bite_sound(dish: String) -> Array:
 	return ["eat_chew", 4]
 
 
-static func warmth(dish: String) -> float:
-	return WARM.get(dish, WARM_BASE)
+## 熱を上げる量（料理 1 つぶん）
+static func heat(dish: String) -> float:
+	return HEAT.get(dish, 0.0)
 
 
-## 湿り気を戻す量（料理 1 つぶん）
-static func dry(dish: String) -> float:
-	return DRY.get(dish, 0.0)
-
-
-## 湿り気をどこまで戻すか（熱い汁物はブーストの上の端まで）
-static func dry_cap(dish: String) -> float:
-	return 200.0 if dish in SOUPS else 150.0
+## 熱をどこまで上げるか（熱い汁物はいちばん上まで）
+static func heat_cap(dish: String) -> float:
+	return 100.0 if dish in SOUPS else 60.0

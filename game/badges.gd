@@ -19,7 +19,8 @@ const DOWN_THREAD := Color(0.95, 0.95, 1.0)
 const UP_THREAD := Color(0.80, 0.24, 0.20)
 const DROP := Color(0.66, 0.82, 0.95)
 const FIRE_FELT := Color(0.93, 0.55, 0.24)  # ゲージの上端の炎のワッペン
-const WATER_FELT := Color(0.30, 0.45, 0.72) # ゲージの下端の水のワッペン
+const WATER_FELT := Color(0.30, 0.45, 0.72) # 水のゲージの上端の水のワッペン
+const ICE_FELT := Color(0.62, 0.84, 0.95)   # 熱のゲージの下端の氷のワッペン
 const ARROW_UP := Color(0.85, 0.26, 0.18)   # 上がる矢印（赤い糸）
 const ARROW_DOWN := Color(0.22, 0.34, 0.62) # 下がる矢印（藍の糸）
 const ARROW_STRETCH := 0.1     # 上がる矢印の伸び縮み（長さの割合の振れ。控えめに）
@@ -91,11 +92,12 @@ static func _arrow(ci: CanvasItem, from: Vector2, to: Vector2, col: Color, a: fl
 	Icons.patch(ci, head, col, a, false)
 
 
-## ゲージの端の小さなワッペン（"fire" 炎・"drop" 水）
+## ゲージの端の小さなワッペン（"fire" 炎・"drop" 水・"ice" 氷）
 static func end_patch(ci: CanvasItem, icon: String, center: Vector2, size: float, a := 1.0) -> void:
 	Icons._o = center
 	Icons._s = size / 64.0
-	Icons.patch(ci, Icons.circ(Vector2.ZERO, 30.0, 24), FIRE_FELT if icon == "fire" else WATER_FELT, a, true, Color(1, 1, 1, 0.9))
+	var felt := {"fire": FIRE_FELT, "ice": ICE_FELT}.get(icon, WATER_FELT) as Color
+	Icons.patch(ci, Icons.circ(Vector2.ZERO, 30.0, 24), felt, a, true, Color(1, 1, 1, 0.9))
 	Icons._s = size / 64.0 * 1.25
 	draw_icon(ci, icon, a)
 
@@ -113,6 +115,8 @@ static func draw_icon(ci: CanvasItem, name: String, a := 1.0) -> void:
 			_fire(ci, a)
 		"bowl":
 			_bowl(ci, a)
+		"ice":
+			_ice(ci, a)
 		_:
 			Icons.icon(ci, name, Icons._o, Icons._s * 40.0, a)
 
@@ -185,3 +189,16 @@ static func _bowl(ci: CanvasItem, a: float) -> void:
 	Icons.patch(ci, bowl, Icons.NAVY, a, true)
 	Icons.patch(ci, Icons.rr(-18, -1, 36, 5, 2.5), Icons.RED, a, false)          # 椀の縁
 	Icons.patch(ci, Icons.rr(-6, 15, 12, 3.5, 1.5), Icons.NAVY.darkened(0.25), a, false)   # 高台
+
+
+## 氷（凍える）: 白い糸で縫った雪の結晶（6 本の腕に小さな枝）。真ん中に藍の小さな結び目
+static func _ice(ci: CanvasItem, a: float) -> void:
+	var col := Color(0.20, 0.42, 0.70)
+	for k in 6:
+		var t := k * TAU / 6.0 - PI / 2.0
+		var d := Vector2(cos(t), sin(t))
+		var e := d.orthogonal()
+		Icons.thread(ci, PackedVector2Array([Vector2.ZERO, d * 17.0]), col, 2.6, a)
+		for f in [-1.0, 1.0]:
+			Icons.thread(ci, PackedVector2Array([d * 9.0, d * 13.5 + e * f * 4.5]), col, 2.0, a)
+	Icons.patch(ci, Icons.circ(Vector2.ZERO, 3.2, 10), col, a, false)

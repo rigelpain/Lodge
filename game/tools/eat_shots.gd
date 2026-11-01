@@ -1,6 +1,6 @@
 extends SceneTree
-## 食べる動き（emotes.gd の eat・doll.gd）を、7 体の人形それぞれ正面から撮る。ぬくもり（warmth.gd）と湿り気（damp.gd）の数も出す（確かめ用）。
-## 湿り気は食べる前に 20（びしょびしょ）にしておき、ひと口ごとに戻るのを見る
+## 食べる動き（emotes.gd の eat・doll.gd）を、7 体の人形それぞれ正面から撮る。熱（damp.gd）の数も出す（確かめ用）。
+## 食べる前に水 60・熱 40（外で濡れて冷えた）にしておき、ひと口ごとに熱が上がるのを見る
 ##   Godot --path game --resolution 1280x720 -s res://tools/eat_shots.gd -- --bots=0 --no-pip --dir=/path/shots [--fp]
 ## 撮るもの: <人形>_k00（持つ）・k03（口へ運ぶ）・k07（噛む）・k13（下ろす）、最後のひと口のあと
 ## --fp で、kasa の一人称（口もとへ運ぶ）も撮る
@@ -83,7 +83,7 @@ func _run() -> void:
 		for c in root.find_children("*", "CanvasLayer", true, false):
 			(c as CanvasLayer).visible = args.has("fp")
 		var dish := "taiyaki" if kind != "musha" else "cocoa"
-		main.damp.put(p.id, 20.0)
+		main.damp.put(p.id, 60.0, 40.0)
 		main.damp.pending.erase(p.id)
 		_give(dish)
 		await create_timer(0.4).timeout
@@ -98,11 +98,6 @@ func _run() -> void:
 		p._eating = false
 		await create_timer(0.3).timeout
 		await _shot("%s_done" % kind)
-		var w = main.warmth
-		print("%s: 食べたぬくもり %.2f 暖炉 %.2f 押す力 x%.2f ふるえを弱める %.2f" % [kind, w.food.get(p.id, 0.0), w.fire.get(p.id, 0.0),
-				p.push_boost, p.doll.warm_food])
-		print("%s: 湿り気 %.0f（20 から）これから戻る %.0f" % [kind, main.damp.value(p.id), main.damp.coming(p.id)])
-	# ぬくもりの減り方（食べ物は長く、暖炉はすぐ冷める）
-	var w = main.warmth
-	print("外で 60 秒後の食べたぬくもり（見込み） %.2f → %.2f" % [w.food.get(p.id, 0.0), maxf(0.0, w.food.get(p.id, 0.0) - w.FOOD_FADE * 60.0)])
+		print("%s: 水 %.0f 熱 %.0f（40 から）これから上がる %.0f 押す力 x%.2f ふるえを弱める %.2f" % [kind, main.damp.water_of(p.id),
+				main.damp.heat_of(p.id), main.damp.coming(p.id), main.damp.push_k(p.id), p.doll.warm])
 	quit()

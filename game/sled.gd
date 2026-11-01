@@ -293,7 +293,7 @@ func set_main_color(c: Color) -> void:
 
 
 ## dir は押す向き（水平）、at は手が触れた所（世界座標）、who は押した人（引きずられている人は押せない）。
-## strength は押す人の力の倍率（紙の体の湿り気。damp.gd の段: びしょびしょ 0.7 〜 パリパリ 1.25）
+## strength は押す人の力の倍率（紙の体の水と熱。damp.gd の段: よれよれ 0.7 〜 パリッと 1.25）
 func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> void:
 	dir.y = 0
 	if dir.length() < 0.01 or dragged.has(who):
@@ -303,8 +303,6 @@ func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> voi
 		_pushed_now[who] = true
 		helped[who] = _trail_now
 	var f: Vector3 = dir.normalized() * PUSH_FORCE * strength * min(1.0, dir.length())
-	if who and who.get("push_boost") != null:
-		f *= float(who.get("push_boost"))   # 食べたぬくもりで、押す力が少し増す（warmth.gd）
 	f *= 1.0 - smoothstep(PUSH_FADE.x, PUSH_FADE.y, linear_velocity.dot(dir.normalized()))
 	# 力は手が触れている所にそのままかける。どう動くかは滑り木と重力が決める
 	var p := to_local(at)
