@@ -45,6 +45,8 @@ extends Node
 ##   cook      {slot, station} 手のペレット（料理の途中）を厨房の装置に入れる。持ち物から出て、装置が持つ（cook_station.gd）
 ##   bite      {slot}          手の料理をひと口食べる（3 口でなくなる。ev.ate に料理の名前が入る。食べても体の調子は変わらない。雰囲気づくりの道具）
 ##   cooked    {item, station} 装置が仕上げた物（一段進んだ item）を、入れた人の持ち物に戻して手に持たせる。いっぱいなら断る（装置に残る）
+##   dry_in    {}              手にペレットを持たずに、厨房の乾燥機に入る（空いていて、誰も調理していなければ。cook_station.gd）
+##   dry_out   {}              乾燥機から出る（中の人の画面が決める: 乾ききったか、F）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
@@ -360,6 +362,14 @@ func send(ev: Dictionary) -> bool:
 	return _apply(ev)
 
 
+## 厨房の装置（cook_station.gd。なければ null）
+func _station(kind: String) -> Node:
+	for st in world.get("stations") if world and world.get("stations") != null else []:
+		if st.kind == kind:
+			return st
+	return null
+
+
 func _net() -> Node:
 	return world.get_node_or_null("Net") if world else null
 
@@ -466,8 +476,23 @@ func _apply(ev: Dictionary) -> bool:
 			var i := int(ev.slot)
 			if i < 0 or i >= b.size() or b[i].is_empty() or Food.next_station(b[i]) != ev.station:
 				return false
+			var st := _station(String(ev.station))
+			if st and st.riding() and not replay:
+				return false   # 乾燥機の中に人がいる
 			ev["item"] = b[i].duplicate()
 			_clear(who, i)
+			if st and int(ev.get("frame", -1)) >= 0:
+				st.note_cook(int(ev.frame))   # 仕上がるまで、ほかの人は乾燥機に入れない（どの画面でも）
+		"dry_in":
+			var st := _station("dryer")
+			if st == null or (not replay and (st.riding() or st.busy() or Doll.frame_index() < st._cook_until)):
+				return false
+			st.begin_ride(who, int(ev.get("frame", Doll.frame_index())))
+		"dry_out":
+			var st := _station("dryer")
+			if st == null or st.rider != who:
+				return false
+			st.end_ride(who, int(ev.get("frame", Doll.frame_index())))
 		"bite":
 			var b: Array = bags[who]
 			var i := int(ev.slot)

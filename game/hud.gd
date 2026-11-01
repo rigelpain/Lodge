@@ -397,6 +397,8 @@ func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 					learn("getoff")
 				elif _prev_mode == Player.Mode.SIT:
 					learn("standup")
+				elif _prev_mode == Player.Mode.DRUM:
+					learn("dryer_out")
 				elif _prev_mode >= 0:
 					learn("letgo")
 		_prev_mode = mode
@@ -430,6 +432,8 @@ func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			_walk_hints(dt, sled, p)
 		Player.Mode.SIT:
 			_hint("standup", ["F"], "standup")   # ロッジの席から立つ（移動キーでも立てる）
+		Player.Mode.DRUM:
+			_hint("dryer_out", ["F"], "dryer_out")   # 乾燥機から出る（乾ききったら、ひとりでに出る）
 
 
 ## 押す・引く・体重をかけるは、合わせて need 秒したら 1 回と数える
@@ -498,6 +502,10 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var st = p.station_near() if p.has_method("station_near") and not p.shopping else null
 	if st:
 		_hint("cook", ["F"], "cook", st.get_parent().global_position + Vector3.UP * 2.6)
+	# 厨房の乾燥機: 手にペレットを持たずに F で中に入って乾く（丸い戸に丸まった人形と回る矢印の絵）
+	var dr = p.dryer_near() if p.has_method("dryer_near") and not p.shopping else null
+	if dr and st == null:
+		_hint("dryer", ["F"], "dryer", dr.drum_center() + dr.front() * 1.0 + Vector3.UP * 1.2)
 	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
 	if p.has_method("dye_near") and p.dye_near() and not p.shopping:
 		_hint("dye", ["F"], "dye", main.dye_vat.global_position + Vector3.UP * 1.3)   # 染め桶: F で服を染める（桶と布の絵）

@@ -53,6 +53,8 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			Icons.patch(ci, Icons.circ(Vector2(-10, 6), 13.0, 16), Color(0.97, 0.97, 0.95), a, false)
 			Icons.patch(ci, Icons.circ(Vector2(12, -4), 10.0, 14), Color(0.86, 0.55, 0.25), a, true)
 			Icons.patch(ci, Icons.circ(Vector2(16, 14), 7.0, 12), Color(0.95, 0.85, 0.45), a, true)
+		"dryer", "dryer_out":   # 乾燥機に入る・出る: 丸い戸（紺の縁に白い破線、窓に丸まった人形）と、回る矢印か外へ出る矢印
+			_dryer_door(ci, Vector2(-4, 2), a, tint, name == "dryer")
 		"cook":   # 調理: 湯気の上るどんぶり
 			Icons.patch(ci, PackedVector2Array([Vector2(-22, 0), Vector2(22, 0), Vector2(16, 18), Vector2(-16, 18)]), Color(0.82, 0.30, 0.22), a, true)
 			for x in [-8.0, 2.0, 12.0]:
@@ -574,3 +576,17 @@ static func menu(ci: CanvasItem, r: Rect2) -> void:
 		var cy := r.position.y + h * 0.66
 		item(ci, {"kind": "fabric", "fabric": Fabrics.ORDER[i]}, Vector2(cx, cy), small)
 		price(ci, Vector2(cx, cy + small * 0.55), preload("res://craft.gd").FABRIC_PRICE, coin_r)
+
+
+## 乾燥機の丸い戸（cook_station.gd の乾燥機）。spin なら、窓のまわりに回る矢印。でなければ、戸から右へ出る矢印
+static func _dryer_door(ci: CanvasItem, c: Vector2, a: float, tint: Color, spin: bool) -> void:
+	Icons.patch(ci, Icons.circ(c, 25.0, 28), Color(0.16, 0.22, 0.52), a, true)       # 紺の縁
+	Icons.patch(ci, Icons.circ(c, 17.0, 24), Color(0.80, 0.86, 0.92), a, false)      # 窓（透明なフィルム）
+	Icons.dashes(ci, Icons.circ(c, 20.5, 32), Icons.CAP, 1.6, 3.0, 2.5, a, true)    # 白い糸の留め
+	if spin:
+		Icons.doll(ci, c + Vector2(-4, 8), tint, "sit", a, 0.62)
+		Icons.arc_arrow(ci, c, 30.0, -PI * 0.15, PI * 0.45, Icons.THREAD, a, 2.4)
+	else:
+		Icons.doll(ci, c + Vector2(20, 22), tint, "stand", a, 0.62)
+		Icons.arrow(ci, c + Vector2(2, -2), c + Vector2(30, -8), Icons.THREAD, a, 2.4)
+

@@ -106,6 +106,9 @@ var sled: Node3D = null
 var sit_stage := 0           # ロッジの席（seats.gd）: 0 立つ、1 中腰、2 座る（持ち主が毎フレーム入れる。act が SIT のとき）
 var seat_drop := 0.45        # 座面から足を下ろす床までの高さ (m)（持ち主が入れる）
 var seat_edge := 0.2         # 腰を下ろした所から、座面の前の縁までの奥行き (m)（持ち主が入れる）。膝がこれより前なら浮いている
+var spin_axis := Vector3.ZERO   # 乾燥機の胴といっしょに回る軸（世界。ZERO なら回らない。持ち主が毎フレーム入れる。cook_station.gd）
+var spin := 0.0              # その軸まわりに回った角 (rad)
+var spin_at := Vector3.ZERO  # 回る中心（世界。胴の真ん中）
 var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標）
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
 var lean := Vector2.ZERO     # 乗っているときの体重移動（x 右、y 前）
@@ -881,6 +884,10 @@ func _physics_process(dt: float) -> void:
 		if f.length() > 0.01:
 			_yaw = lerp_angle(_yaw, atan2(-f.x, -f.z), 1.0 - exp(-dt * 14.0))
 		b = Basis(Vector3.UP, _yaw)
+	if spin_axis != Vector3.ZERO:
+		var r := Basis(spin_axis.normalized(), spin)
+		b = r * b
+		pos = spin_at + r * (pos - spin_at)
 	global_transform = Transform3D(b, pos)
 
 	# 歩みは進んだ道のりで刻む（足と地面のずれを小さく）
