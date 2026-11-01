@@ -10,6 +10,7 @@ const Damp := preload("res://damp.gd")
 ## 境目には太い生成りの糸を渡す。下の端から今の所まで糸で縫い、今の所に赤い結び目。段の境目（40・90）に小さな十字。
 ## 帯そのものも、湿るほど縁が波打つ（紙の体と同じ）。数字は出さない。
 ## 水の猶予とブーストの残りを見るものなので、ふつうでも出しておく。
+## ご飯でこれから戻る分は、今の所から行き先まで白いしつけ糸（あとで縫う所の目印）を渡し、行き先に白い小さな結び目
 ## バッジは刺繍枠の右上に、枠に沿って並べ、出たときに跳ねる（2026-11-01 代表「バフデバフは刺繍の右上に置きましょう」）
 
 const ARC_WET := PI - 0.55      # 帯の下の端（0）の向き（刺繍枠の中心から。画面の座標、右が 0、下が正）
@@ -21,6 +22,7 @@ const BADGE := 52.0             # バッジの直径（px）
 const BADGE_R := 42.0           # 窓の縁から、バッジの真ん中までの間（px。木の輪に少しかかる）
 const BADGE_FROM := -1.0        # 1 枚目のバッジの向き（右上）
 const BADGE_STEP := 0.46       # 2 枚目からの、枠に沿った間（rad。右下へ回る）
+const BADGE_STEP_3 := 0.40     # 3 枚のとき（湿り気の 2 枚とご飯）は詰める。3 枚目が画面の右の端にかからないように
 # 帯の色: [値, 縫う糸の色]。あいだは混ぜる。帯の地は、これを生成りへ寄せた淡い色
 const COLORS := [
 	[0.0, Color(0.08, 0.20, 0.52)],     # 下の端: 濃い藍
@@ -47,8 +49,9 @@ static func _on(c: Vector2, t: float, r: float) -> Vector2:
 	return c + Vector2(cos(t), sin(t)) * r
 
 
-## ゲージとバッジ。c は刺繍枠の真ん中、r は窓の半径（px）。v は見せている値、a は濃さ、pops は名前 → 跳ね（1→0）
-static func draw(ci: CanvasItem, c: Vector2, r: float, u: float, v: float, a: float, badges: Array, pops: Dictionary) -> void:
+## ゲージとバッジ。c は刺繍枠の真ん中、r は窓の半径（px）。v は見せている値、a は濃さ、pops は名前 → 跳ね（1→0）。
+## coming はご飯でこれから戻る量（しつけ糸）
+static func draw(ci: CanvasItem, c: Vector2, r: float, u: float, v: float, a: float, badges: Array, pops: Dictionary, coming := 0.0) -> void:
 	Icons.screen()
 	var rr := r + GAP * u
 	var wet := clampf((Damp.MID - v) / Damp.MID, 0.0, 1.0)
@@ -67,6 +70,18 @@ static func draw(ci: CanvasItem, c: Vector2, r: float, u: float, v: float, a: fl
 			for i in 33:
 				all.append(_on(c, lerpf(ARC_WET, angle_of(v), i / 32.0), rr))
 			Icons.dashes(ci, all, Color(1, 1, 1), 1.2 * u, 3.0 * u, 3.0 * u, 0.45 * a)   # 糸の撚りの筋
+		# ご飯でこれから戻る分: 白いしつけ糸と、行き先の結び目
+		if coming > 0.5:
+			var to := minf(v + coming, Damp.HI)
+			var n := maxi(2, int(coming / 3.0))
+			var basting := PackedVector2Array()
+			for i in n + 1:
+				basting.append(_on(c, lerpf(angle_of(v), angle_of(to), i / float(n)), rr))
+			Icons.dashes(ci, basting, Icons.THREAD, 6.4 * u, 5.0 * u, 3.0 * u, 0.85 * a)   # 淡い帯の上でも見えるよう、藍で縁どる
+			Icons.dashes(ci, basting, Color(1, 1, 1), 4.0 * u, 5.0 * u, 3.0 * u, a)
+			var tip := _on(c, angle_of(to), rr)
+			ci.draw_circle(tip, 5.4 * u, Color(Icons.THREAD, 0.85 * a))
+			ci.draw_circle(tip, 4.0 * u, Color(1, 1, 1, a))
 		# 境目（150）: 帯を横切る太い生成りの糸
 		var ab := angle_of(Damp.BOOST)
 		var d := Vector2(cos(ab), sin(ab))
@@ -91,7 +106,7 @@ static func draw(ci: CanvasItem, c: Vector2, r: float, u: float, v: float, a: fl
 	# バッジ: 刺繍枠の右上に、枠に沿って並べる（矢印はそれぞれの下）
 	for i in badges.size():
 		var b: Dictionary = badges[i]
-		var p := _on(c, BADGE_FROM + i * BADGE_STEP, r + BADGE_R * u)
+		var p := _on(c, BADGE_FROM + i * (BADGE_STEP if badges.size() < 3 else BADGE_STEP_3), r + BADGE_R * u)
 		Badges.draw_badge(ci, b, p, BADGE * u, 1.0, pops.get(b.key, 0.0))
 	Icons.screen()
 

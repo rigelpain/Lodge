@@ -5,6 +5,7 @@ const Doll := preload("res://doll.gd")
 ## ソリには、あなたや仲間と同じ口（take_handle・push・mount・lean・pull_rope）でかかわる。
 ## 力をかけるのはどの画面でも同じに呼ぶが、効くのはホストの画面だけ（つなぐ側のソリは、ホストのソリの姿を写しているので）。
 ## 体の当たりは持たない（届いた位置へ置き直すので、ソリや人を押してしまわないように）
+## 体の調子（紙の湿り気・食べたぬくもり）もその人の画面が決めて届く。押す・引く力にはその値を掛ける（player.gd と同じ）
 
 enum Mode { WALK, GRIP, RIDE, ROPE, SIT }   # player.gd の Mode と同じ並び
 const STALE := 0.5           # これより長く届かなければ、押す・引く・体重移動をやめる (s)
@@ -23,6 +24,8 @@ var pulling := false
 var id := -1                 # 配り役（emotes.gd・craft.gd）からもらった番号。この画面の中だけの番号
 var hub: Node
 var craft: Node
+var damp_from_net := true    # 湿り気はその人の画面が決める（damp.gd はここでは動かさない。届いた "dv" を入れる）
+var push_boost := 1.0        # 食べたぬくもりで押す力が増す倍率（warmth.gd が、届いた "wf" から入れる。sled.gd の push がかける）
 var _s := {}                 # 最後に届いた姿
 var _age := 99.0             # 最後に届いてから (s)
 var _at := Vector3.INF       # 届いた位置
@@ -55,6 +58,7 @@ func put(s: Dictionary) -> void:
 	if _s.is_empty():
 		global_position = p
 		rotation.y = _yaw
+	_put_state(s)
 	var kind := String(s.get("d", doll.kind))
 	if kind != doll.kind and kind in Doll.KINDS:
 		_set_doll(kind)
@@ -69,6 +73,23 @@ func put(s: Dictionary) -> void:
 		seat = s.get("st", seat)
 		_yield_seat()
 	_s = s
+
+
+## 体の調子が届いた（"dv" 湿り気・"wf" 食べたぬくもり）
+func _put_state(s: Dictionary) -> void:
+	var main := get_parent()
+	var dm = main.get("damp")
+	if dm and s.has("dv") and id >= 0:
+		dm.apply_net({"kind": "damp", "who": id, "v": s.dv})
+	var w = main.get("warmth")
+	if w and s.has("wf") and id >= 0:
+		w.food[id] = float(s.wf)
+
+
+## 紙の湿り気の押す力の倍率（damp.gd の段）
+func damp_k() -> float:
+	var dm = get_parent().get("damp")
+	return dm.push_k(id) if dm and id >= 0 else 1.0
 
 
 ## それぞれの画面で同じ席に座ってしまったら、通信の番号の大きい人が空いた席へ移る（その人の画面で直す）
@@ -158,7 +179,7 @@ func _physics_process(dt: float) -> void:
 			global_position = sled.to_global(handle)
 			var dir: Vector3 = _s.get("pd", Vector3.ZERO)
 			if fresh and dir != Vector3.ZERO:
-				sled.push(dir, global_position + Vector3.UP * 0.5, self)
+				sled.push(dir, global_position + Vector3.UP * 0.5, self, damp_k())
 				pushing = true
 		_:
 			var want := _at + _vel * minf(_age, STALE)
@@ -167,7 +188,7 @@ func _physics_process(dt: float) -> void:
 			else:
 				global_position = global_position.lerp(want, 1.0 - exp(-PULL * dt))
 			if mode == Mode.ROPE and fresh:
-				pulling = sled.pull_rope(rope_hand()) > 0.0
+				pulling = sled.pull_rope(rope_hand(), damp_k()) > 0.0
 	rotation.y = lerp_angle(rotation.y, _yaw, 1.0 - exp(-PULL * dt))
 	_pose_doll()
 

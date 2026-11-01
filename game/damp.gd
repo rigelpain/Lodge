@@ -4,6 +4,7 @@ const Doll := preload("res://doll.gd")
 const Emotes := preload("res://emotes.gd")
 const Temp := preload("res://temperature.gd")
 const Audio := preload("res://audio.gd")
+const Food := preload("res://food.gd")
 ## 紙の人形の湿り気（「よれ」のゲージ）の配り役。人ごとに 1 本の値を持つ: 0 びしょびしょ（下端・水）〜 200 パリパリ（上端・炎）。
 ## 境目は 150: 150 〜 200 は暖炉で乾かしたブーストタイム、150 より下は水の側。ふつうの幅を長く取り、湿っても
 ## すぐには弱らない（水の猶予）。2026-11-01 代表「境目は 150 くらいにして、150〜200 がブーストタイムだと思ってもらえる感じに」。
@@ -11,13 +12,16 @@ const Audio := preload("res://audio.gd")
 ## 値は 4 つの段に分け、段ごとに歩く速さ・押す力・姿勢のコマの間隔を変える（下の STAGES。表は design/damp.md）。
 ## 見た目は段でなく値のまま（doll.gd の damp に毎フレーム入れる。濡れの色・シミ・垂れ・うなだれ、パリッとした張り）。
 ## HUD のバッジ（押す力・速さの上がり下がり）は badges.gd に入れる（ご飯の効き目など、ほかの仕組みも同じ所に入れる）。
+## ご飯を食べると、湿り気がじんわり戻る（eat。料理ごとの量は food.gd の DRY。ふつうの上の端 150 まで、
+## 熱い汁物だけはブーストまで。food.gd の dry_cap）。2026-11-01 代表「ごはんで湿り気ゲージをかいふくできるようにしてほしい」。
+## 戻るのを待っているあいだは、ゲージにしつけ糸（行き先）を縫い、ご飯のバッジを出す。
 ##
-## いまは一人の画面の中だけ（emotes.gd と同じ）: 全員の値をここで決める。
-## 通信を入れたら: 値を決めるのはホストだけ（authority）。ホストは sent の出来事を配り、
-## ほかの人の画面は apply_net() で受けて、見た目（人形）と効き目（自分の歩く速さ・押す力）に使う。
-## 押す力はソリを動かすホストが掛けるので、ホストの値がそのまま効く。
+## 通信（net.gd）: 人の値は、その人の画面が決める（自分の場所・動き・食べたことを知っているのはその画面なので）。
+## 値は姿といっしょに送り（net.gd の _my_state の "dv"）、ほかの画面ではその人の体（remote_person.gd）が apply_net で入れる。
+## その人の体は damp_from_net を持ち、ここでは値を動かさない。ソリはホストの物理が動かすので、ホストの画面の
+## その人の体が、届いた値の押す力で押す。
 
-signal sent(ev: Dictionary)     # 通信に乗せる出来事 {kind: "damp", who, v}（値は整数）
+signal sent(ev: Dictionary)     # 値が動いた出来事 {kind: "damp", who, v}（値は整数）。通信は net.gd が姿といっしょに送るので、いまは聞く人がいない
 
 ## 段: [値の下限, 名前, 歩く速さ, 押す力, 姿勢のコマの間隔（12 fps のコマいくつに 1 回）, バッジの向き（-1 下がる・1 上がる）, 矢印の数]
 const STAGES := [
@@ -56,6 +60,9 @@ const DRYER_AT := Vector3(5.5, 0.0, -0.2)   # 乾燥機の真ん中（厨房の�
 const DRYER_R := 2.6           # 乾燥機の真ん中から、これより近い（前に立つ）と暖炉と同じように乾く (m、水平。乾燥機は 2.7 m 角)
 const DRYER_HEAT := 0.8        # 乾燥機の前の暖かさ（暖炉のすぐそばを 1 として）
 
+# ご飯で戻す
+const FOOD_DRY := 5.0          # 戻る速さ（1 秒に。熱い汁物 1 杯 75 で 15 秒ほど）
+
 const SEND_STEP := 2.0         # 値がこれだけ変わるか、段が変わったら配る
 const SEND_GAP := 0.25         # 配るのは多くても 1 秒に 4 回
 
@@ -63,6 +70,8 @@ var hub: Emotes                # 身ぶりの配り役（人の番号と、雪�
 var badges: Node               # badges.gd（あれば押す力・速さのバッジを入れる）
 var authority := true          # 値を決める（ホスト）。false ならほかの人の画面: apply_net で受けるだけ
 var values := {}               # 番号 → 値（0 〜 200）
+var pending := {}              # 番号 → ご飯でこれから戻る量
+var _pending_cap := {}         # 番号 → それがどこまで戻るか（food.gd の dry_cap。重ねて食べたら高いほう）
 var _fall := {}                # 番号 → 前のフレームの下向きの速さ（空中にいるあいだ）
 var _sent := {}                # 番号 → [最後に配った値, 時刻]
 var _dryer: Node3D
@@ -116,11 +125,33 @@ func push_k(id: int) -> float:
 	return push_of(value(id))
 
 
-## 足す（ご飯であたたまる、など。正で乾く・パリッと、負で湿る）。ホストだけ
+## 足す（正で乾く・パリッと、負で湿る）。値を決める画面だけ（通信の相手の値は、その人の画面が決める）
 func add(id: int, amount: float) -> void:
-	if not authority:
+	if not authority or _from_net(id):
 		return
 	values[id] = clampf(value(id) + amount, LO, HI)
+
+
+## ひと口食べた（player.gd が craft.gd の bite のあとに呼ぶ）。料理の DRY の 1/BITES を、これから戻る量に足す。
+## 戻るのは料理の dry_cap まで（もうそこより上なら戻さない）
+func eat(id: int, dish: String) -> void:
+	if not authority or _from_net(id):
+		return
+	var cap := Food.dry_cap(dish)
+	if coming(id) > 0.0:
+		cap = maxf(cap, _pending_cap.get(id, cap))
+	_pending_cap[id] = cap
+	pending[id] = minf(coming(id) + Food.dry(dish) / Food.BITES, maxf(0.0, cap - value(id)))
+
+
+## これから戻る量（HUD のしつけ糸）
+func coming(id: int) -> float:
+	return float(pending.get(id, 0.0))
+
+
+func _from_net(id: int) -> bool:
+	var who = hub.people.get(id) if hub else null
+	return who != null and is_instance_valid(who) and who.get("damp_from_net") == true
 
 
 ## 確かめ用: 値をそのまま入れる
@@ -152,13 +183,25 @@ func _physics_process(dt: float) -> void:
 		var who: Node3D = hub.people[id]
 		if who == null or not is_instance_valid(who):
 			continue
-		if authority and not who.get("stays_dry"):   # 一人プレイの仲間（bot.gd）は湿らない
-			values[id] = clampf(value(id) + _rate(id, who, dt), LO, HI)
+		# 一人プレイの仲間（bot.gd）は湿らない。通信の相手（remote_person.gd）の値は、その人の画面から届く
+		if authority and not who.get("stays_dry") and not who.get("damp_from_net"):
+			values[id] = clampf(value(id) + _rate(id, who, dt) + _digest(id, dt), LO, HI)
 		var d: Doll = who.get("doll")
 		if d and is_instance_valid(d):
 			d.damp = look_of(value(id))
 			d.pose_step = pose_step_of(value(id))
 		_publish(id, false)
+
+
+## ご飯で戻る分（1 フレーム）。行き先（dry_cap）に着いたら、残りは捨てる
+func _digest(id: int, dt: float) -> float:
+	var p: float = pending.get(id, 0.0)
+	if p <= 0.0:
+		return 0.0
+	var cap: float = _pending_cap.get(id, HI)
+	var dv := minf(minf(FOOD_DRY * dt, p), maxf(0.0, cap - value(id)))
+	pending[id] = p - dv if value(id) + dv < cap - 0.01 else 0.0
+	return dv
 
 
 ## いまの場所と動きから、1 フレームの増減
@@ -227,6 +270,11 @@ func _publish(id: int, force: bool) -> void:
 				badges.clear(id, "damp_" + stat)
 			else:
 				badges.put(id, "damp_" + stat, st[5], st[6], stat)
+		# ご飯で戻っているあいだは、湯気の立つ椀のバッジ（上がる）
+		if coming(id) > 0.5:
+			badges.put(id, "food_dry", 1, 1, "bowl")
+		else:
+			badges.clear(id, "food_dry")
 
 
 ## 厨房の目印（乾燥機は DRYER_AT。なければ null。探すのは 2 秒に一度）

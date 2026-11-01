@@ -210,6 +210,11 @@ func _my_state() -> Dictionary:
 		"c": d.crouch, "pt": d.point, "ps": d.point_sides, "ss": d.sit_stage, "sd": d.seat_drop}
 	if p.sled and is_instance_valid(p.sled):
 		s["sl"] = main.get_path_to(p.sled)
+	# 体の調子: 紙の湿り気（damp.gd、整数）と食べたぬくもり（warmth.gd）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
+	if main.damp:
+		s["dv"] = int(roundf(main.damp.value(p.id)))
+	if main.warmth:
+		s["wf"] = snappedf(float(main.warmth.food.get(p.id, 0.0)), 0.01)
 	match int(p.mode):
 		1:   # つかんでいる
 			s["h"] = p.handle

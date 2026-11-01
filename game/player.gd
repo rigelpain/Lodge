@@ -1296,7 +1296,11 @@ func _eat_step() -> void:
 	if k == 10 and _bit_frame != int(_em.frame) * 10 + 9 and craft:
 		_bit_frame = int(_em.frame) * 10 + 9
 		var ev := {"kind": "bite", "who": id, "slot": craft.hands.get(id, -1)}
-		if craft.send(ev) and ev.has("ate"):
+		var bit: bool = craft.send(ev)
+		var dm = get_parent().get("damp")
+		if bit and dm:
+			dm.eat(id, ev.dish)   # ひと口ごとに、湿り気がじんわり戻る（damp.gd）
+		if bit and ev.has("ate"):
 			_eating = false
 			var w = get_parent().get("warmth")
 			if w:

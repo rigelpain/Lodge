@@ -111,6 +111,8 @@ static func draw_icon(ci: CanvasItem, name: String, a := 1.0) -> void:
 			_drop(ci, Vector2(0, -2), 1.0, a)
 		"fire":
 			_fire(ci, a)
+		"bowl":
+			_bowl(ci, a)
 		_:
 			Icons.icon(ci, name, Icons._o, Icons._s * 40.0, a)
 
@@ -163,3 +165,23 @@ static func _fire(ci: CanvasItem, a: float) -> void:
 	Icons.patch(ci, outer, Color(0.80, 0.22, 0.16), a, false)
 	var inner := PackedVector2Array([Vector2(1, -5), Vector2(6, 3), Vector2(5, 10), Vector2(-1, 12), Vector2(-6, 9), Vector2(-5, 3), Vector2(-2, 4)])
 	Icons.patch(ci, inner, Color(1.0, 0.82, 0.32), a, false)
+
+
+## ご飯で乾いている: 藍のフェルトの椀に赤い縁、上に白い糸の湯気が 3 すじ（12 コマでゆらぐ）
+static func _bowl(ci: CanvasItem, a: float) -> void:
+	var t := floorf(Time.get_ticks_msec() / 1000.0 * 12.0) / 12.0   # 人形と同じコマ撮り
+	for k in 3:
+		var x := -8.0 + k * 8.0
+		var sway := sin(t * TAU * 0.5 + k * 1.7) * 1.6
+		var steam := PackedVector2Array()
+		for i in 7:
+			var y := -4.0 - i * 2.6
+			steam.append(Vector2(x + sin(i * 0.9 + k) * 2.2 + sway * i / 6.0, y))
+		Icons.thread(ci, steam, Color(1, 1, 1), 1.8, 0.95 * a)
+	var bowl := PackedVector2Array()
+	for i in 13:
+		var u := PI * i / 12.0   # 左の縁から下を回って右の縁へ
+		bowl.append(Vector2(-cos(u) * 17.0, 2.0 + sin(u) * 14.0))
+	Icons.patch(ci, bowl, Icons.NAVY, a, true)
+	Icons.patch(ci, Icons.rr(-18, -1, 36, 5, 2.5), Icons.RED, a, false)          # 椀の縁
+	Icons.patch(ci, Icons.rr(-6, 15, 12, 3.5, 1.5), Icons.NAVY.darkened(0.25), a, false)   # 高台
