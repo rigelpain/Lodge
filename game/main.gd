@@ -916,11 +916,15 @@ func _furnish_lodge() -> void:
 		kitchen_slot.add_child(set_node)
 		_put_kitchen(kitchen_slot)
 		_put_snowman(kitchen_slot)
-	# 2 階の掘りごたつ: 穴の目印に、こたつと座布団 8 枚の組（座布団の座る所の目印 sit_* は seats.gd が拾う）
+	# 2 階の掘りごたつ: 穴の目印に、こたつと座布団 8 枚の組（座布団の座る所の目印 sit_* は seats.gd が拾う）。
+	# 屋根の下で日は届かないので、太陽の影は落とさない（影の地図に 8 組を描き直さない）
 	for i in KOTATSU_SETS.size():
 		var ks := lodge.find_child("slot_kotatsu_%d" % i, true, false) as Node3D
 		if ks:
-			ks.add_child((load("res://props/sets/kotatsu_lodge_%s.tscn" % KOTATSU_SETS[i]) as PackedScene).instantiate())
+			var kset := (load("res://props/sets/kotatsu_lodge_%s.tscn" % KOTATSU_SETS[i]) as PackedScene).instantiate()
+			ks.add_child(kset)
+			for g in kset.find_children("*", "GeometryInstance3D", true, false):
+				(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for b in BANDAI:
 		_put_bandai(lodge, b)
 	# おじいさんの番台の横に、ランタン掛け（正面は番台と同じく客の側）

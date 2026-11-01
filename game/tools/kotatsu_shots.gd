@@ -4,7 +4,7 @@ extends SceneTree
 ##     [--sets=patch,indigo,...（8 卓の柄を差し替える）] [--andon] [--sit] [--hours=13,22] [--views=wide,near,row]
 ## --sit: 南の列の西から 2 卓目のこたつの座布団に、7 体の人形を座らせる。
 ## --andon: 行灯（props/furniture/andon.glb を人の大きさに）を、こたつの組の隅に置いてみる（置くかを代表に聞くため）。
-## 場所はロッジの座標（lodge/dims.py の x 東, y 北, 高さ。Godot ではロッジの (x, 高さ, -y)）。2 階の畳の面は 6.5
+## 三角形の数は本体の画面だけ（360 の小窓は止める）。場所はロッジの座標（lodge/dims.py の x 東, y 北, 高さ。Godot ではロッジの (x, 高さ, -y)）。2 階の畳の面は 6.5
 
 const Doll := preload("res://doll.gd")
 const Props := preload("res://props.gd")
@@ -29,6 +29,7 @@ func _initialize() -> void:
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
+	current_scene = main   # daycycle.gd は current_scene の太陽と空を探す
 	DirAccess.make_dir_recursive_absolute(_dir())
 	_run.call_deferred()
 
@@ -52,6 +53,8 @@ func _run() -> void:
 	for c in main.get_children():   # ゲームの人（あなた・仲間）は隠す
 		if c.get("doll") != null:
 			c.visible = false
+	for vp in main.find_children("*", "SubViewport", true, false):   # 右上の 360 の小窓は止める（三角形の数を本体の画面だけにする）
+		(vp as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED
 	if args.has("sets"):
 		_swap_sets(String(args.sets).split(","))
 	if args.has("andon"):

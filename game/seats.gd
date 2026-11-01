@@ -23,7 +23,7 @@ signal happened(ev: Dictionary)
 const REACH := 1.5           # 座れる、席までの距離 (m)
 const BENCH_STEP := 0.75     # 長椅子に並ぶ間
 const KOTATSU_PIT := 0.40    # 掘りごたつの穴の深さ（lodge/dims.py の PIT_DEPTH）。座布団の席の足はここまで下ろせる
-const KOTATSU_HIPS := 0.32   # 座布団の席: 腰の所を、こたつ布団の縁からこれだけ手前に（穴の縁に腰かけ、脚を穴へ下ろす）
+const KOTATSU_HIPS := 0.56   # 座布団の席: 腰の所を、こたつ（天板と垂れた布団）の縁からこれだけ手前に（座布団に腰かけ、脚を穴へ下ろす。大きな人形の腹が天板に当たらない）
 const STAND_BACK := {"chair": 0.62, "stool": 0.6, "bench": -0.6, "zabuton": 0.48}   # 立つ所: 席の後ろへ（負は前へ）
 const STEP_IN := 3           # 歩み寄るコマ。その次の 1 コマが中腰
 const SIT_IN := STEP_IN + 2  # 座りきるまでのコマ
