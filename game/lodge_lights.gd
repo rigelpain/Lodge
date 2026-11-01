@@ -6,9 +6,10 @@ extends Node3D
 ## 窓ぎわの床には燭台、厨房の奥の台にはガスコンロの火。形は手芸の素材（look.gd）の箱と筒を組んで作る:
 ## 松明は木の柄に麻の布を巻き、鉄はこげ茶のフェルト。ガス灯は真鍮色のフェルトの腕に、透明なフィルムの窓と木の枠。
 ## キャンドルはクリームのフェルトの芯に紙の帯を巻き、木の皿に載せる。
-## 炎は仮（_fire と FIRE_SHADER）。焚き火（PR #108 の campfire.gd: 赤・橙のフェルトと黄のクラフト紙の切り紙を十字に重ね、
-## 2 コマごとに切り方を差し替える）と同じ表現にそろえる。焚き火の炎の部品ができたら、_fire をその部品に差し替える。
-## いまは色をその FLAME_LAYERS にそろえ、12 コマの 2 コマごとに 3 つの形を差し替え、毎コマ高さと傾きを少し変える。
+## 炎は焚き火と同じ火の手本（game/flame.gd。PR #108 の焚き火の部品: 赤・橙のフェルトと黄のクラフト紙の切り紙を十字に重ね、
+## 12 コマの 2 コマごとに切り方を差し替える）を使う。灯りは道具ごとに 1 つこちらで持つので、手本の灯りは作らない（brightness 0）。
+## flame.gd がまだない間（#108 が main に入る前）は、仮の炎（_fire と FIRE_SHADER。色は焚き火にそろえ、2 コマごとに 3 つの形を差し替える）。
+## ガスコンロの青い火は、いまは仮の炎のまま（手本の色はまだ替えられない）。
 ## 灯りは影を落とさない OmniLight3D を、届く範囲を絞って置く（60 fps を保つため）。強さもコマで ±4% だけ揺らす。
 ## 確かめ用: --no-fire-lights で置かない（置く前と比べる。game/tools/lodge_light_shots.gd）
 
@@ -99,6 +100,7 @@ static var _mats := {}
 static var _kits := {}                # 種類 → {mesh 道具の形を素材ごとに 1 つにまとめたもの, flames 炎の [置き方, 高さ, 幅, ガス], core 灯りの芯}
 static var _fires := {}               # [形の番号, ガス] → 炎の ArrayMesh（赤・橙・黄の層を十字に重ねて 1 つ）
 static var _fire_mat: ShaderMaterial
+const FLAME_PART := "res://flame.gd"   # 焚き火と同じ火の手本（あれば使う）
 static var _drops := {}               # [色の層, 形の番号] → しずくの ArrayMesh
 
 
@@ -108,6 +110,7 @@ func _ready() -> void:
 		visible = false
 		set_process(false)
 		return
+	var part: GDScript = load(FLAME_PART) if ResourceLoader.exists(FLAME_PART) else null
 	for p in PLACES:
 		var kind: String = p[0]
 		var rope: float = p[3] if p.size() > 3 else 0.0
@@ -126,6 +129,14 @@ func _ready() -> void:
 		body.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF   # 小さな物の影は描かない（軽く）
 		root.add_child(body)
 		for fl in kit.flames:
+			if part and not fl[3]:   # 火の手本: 原点が炎の根もと、大きさ 1 で高さ 0.9 m。炎はいつもまっすぐ上へ
+				var fp: Node3D = part.new()
+				fp.set("size", fl[1] / 0.9)
+				fp.set("brightness", 0.0)
+				fp.set("seed", _lights.size() * 7 + root.get_child_count())
+				fp.position = fl[0].origin
+				root.add_child(fp)
+				continue
 			var f := MeshInstance3D.new()
 			f.mesh = _fire(0, fl[3])
 			f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
