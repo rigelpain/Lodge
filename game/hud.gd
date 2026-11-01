@@ -24,6 +24,7 @@ const Plates := preload("res://hud_plates.gd")
 const SledTags := preload("res://sled_tags.gd")
 const PersonIcon := preload("res://person_icon.gd")
 const Player := preload("res://player.gd")
+const DampHud := preload("res://damp_hud.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
 const TAG_NEAR := 30.0        # ソリからこの距離より近いと札を出す (m)
 const MEET_R := 5.0           # ほかの人がこの距離に来たら身ぶりの案内
@@ -119,6 +120,10 @@ var _flip := 0.0              # めくりの残り（1→0）
 var _flip_dir := 1
 var _flip_hold := 0.0
 var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
+var _damp_v := 120.0          # 「よれ」のゲージに出している値（damp.gd の値をなめらかに追う）
+var _damp_a := 0.0            # ゲージの濃さ（ゲームが始まると出る。水の猶予とブーストの残りを見るので、ふつうでも消さない）
+var _badge_pop := {}          # バッジの名前 → 跳ねの残り（1→0）
+var _badge_seen := {}         # バッジの名前 → 最後に見た [向き, 段]（変わったら跳ねる）
 var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
 
 # 何も操作しないで IDLE_T 秒たったら、HUD を画面の外へ引っこめて景色だけにする（2026-11-01 代表「無操作状態で5秒経つとHUDを
@@ -230,6 +235,7 @@ func _process(dt: float) -> void:
 		h.a = move_toward(h.a, 1.0 if h.on else 0.0, dt * (4.0 if h.on else 3.0))
 	_layout_bottom()
 	_place_hints()
+	_update_damp(dt, p)
 	if debug_on:
 		_dbg = _debug_values()
 	_update_speedo(dt, p, menu)
@@ -974,6 +980,24 @@ func _net_ms() -> int:
 	return ms
 
 
+## 「よれ」のゲージ: 値をなめらかに追う。バッジの向きか段が変わったら跳ねさせる
+func _update_damp(dt: float, p: CharacterBody3D) -> void:
+	var dm = main.get("damp")
+	if p == null or dm == null:
+		return
+	var v: float = dm.value(p.id)
+	_damp_v = lerpf(_damp_v, v, 1.0 - exp(-dt * 4.0))
+	_damp_a = move_toward(_damp_a, 1.0, dt * 2.0)
+	var now := {}
+	for b in main.badges.of(p.id):
+		now[b.key] = [b.dir, b.level]
+		if _badge_seen.get(b.key) != now[b.key]:
+			_badge_pop[b.key] = 1.0
+	_badge_seen = now
+	for k in _badge_pop.keys():
+		_badge_pop[k] = move_toward(_badge_pop[k], 0.0, dt * 2.5)
+
+
 # ---- 描く ----------------------------------------------------------------------------
 
 class View extends Control:
@@ -1014,6 +1038,7 @@ class View extends Control:
 			Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, ease(h.a, 0.5))   # 操作のための表示なので、平らで、風でも揺らさない
 		_draw_tag_hold(u)
 		_draw_hoop(u)
+		_draw_damp(u)
 		_draw_pip_back(u)
 		if hud._spd_a > 0.01:
 			_draw_speedo(u)
@@ -1258,6 +1283,20 @@ class View extends Control:
 		draw_set_transform_matrix(Icons.wind_xform(c, 5.0, 0.0, 0.03, 2.5 * u))
 		draw_texture_rect(tex, Rect2(c - sz / 2.0 + Vector2(3.0, 5.0) * u, sz), false, Color(Icons.SHADOW, 0.32))   # 落ち影
 		draw_texture_rect(tex, Rect2(c - sz / 2.0, sz), false)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+
+	## 右下の刺繍枠の左に縫った「よれ」のゲージと体の調子のバッジ（damp_hud.gd）。自分のだけ（仲間の調子は人形の見た目で分かる）
+	func _draw_damp(u: float) -> void:
+		var sc = hud.main.get("self_cam")
+		var p = hud.main.player
+		if p == null or hud.main.get("badges") == null:
+			return
+		if sc == null or not is_instance_valid(sc) or sc.get("hidden") or sc.get("_frame") == null:
+			return
+		var fr: Control = sc._frame
+		var c := fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui())
+		draw_set_transform_matrix(Icons.wind_xform(c, 5.0, 0.0, 0.03, 2.5 * u))
+		DampHud.draw(self, c, fr.size.x / 2.0, u, hud._damp_v, hud._damp_a, hud.main.badges.of(p.id), hud._badge_pop)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
 
 	## 右上の 360° 映像が後ろ向きのしるし（「後ろ」の文字の代わり）

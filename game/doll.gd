@@ -132,6 +132,12 @@ var _shiver := 0.0           # 寒さのふるえ（0 〜 1）。口もとの気
 var _shiver_want := 0.0
 var _calm := 0.0             # 暖かさの落ち着き（0 〜 1）。揺れがゆっくりになる
 var _calm_want := 0.0
+var damp := 0.0              # 湿り気の見た目（damp.gd の look_of。-1 びしょびしょ 〜 0 ふつう 〜 1 パリパリ）。damp.gd が毎フレーム入れる
+var pose_step := 1.0         # 姿勢を決めるコマの間隔（12 fps のコマいくつに 1 回。湿ると 1.2・1.5）。damp.gd が毎フレーム入れる
+var _damp_mats: Array[ShaderMaterial] = []   # 紙の湿り気の材質（paper_damp.gdshader）
+var _damp_shown := INF       # 見た目の湿り気（値をなめらかに追う。姿勢もこれで決める）
+var _damp_put := INF         # 材質に入れた湿り気
+var _pose_due := -1.0        # 次に姿勢を決めるコマ。湿っていると間隔が空く（damp.gd の段）
 var _boil_k := 0.0           # クレイアニメの揺れの進み（整数ごとに新しい形。寒い所では毎コマ 1 進む）
 var _idle_t := 0.0           # 立ち止まりの揺れの時計（暖かいとゆっくり進む）
 var _next_out := 0
@@ -162,6 +168,7 @@ func _ready() -> void:
 	add_child(inst)
 	skel = inst.find_children("*", "Skeleton3D", true, false)[0]
 	_add_skirt(inst)
+	_make_damp(inst)
 	for m in inst.find_children("*", "MeshInstance3D", true, false):
 		(m as MeshInstance3D).layers = layers
 	for i in skel.get_bone_count():
@@ -568,9 +575,12 @@ func _physics_process(dt: float) -> void:
 	_phase += TAU * d.length() / maxf(_speed / CADENCE, 0.5) / _scale
 
 	var fi := frame_index()
-	if fi != _frame:
+	if fi != _frame and fi >= _pose_due:
+		# 湿っているとコマを飛ばす（12 → 10 → 8 fps）。飛ばしたぶんは次へ持ち越し、間隔をならす
+		_pose_due = _pose_due + pose_step if _pose_due + pose_step > fi else fi + pose_step
 		_frame = fi
 		_pose()
+	_show_damp(dt)
 	_hold_hands()
 	_apply()
 	_lantern.follow(dt, _yaw)
@@ -730,7 +740,7 @@ func _pose() -> void:
 		bend += _emote_body(em[0], em[1])
 	if em[0] != "breath" and em[0] != "oi":
 		_long.emitting = false
-	_turn_axis("chest", X, -bend)
+	_turn_axis("chest", X, -bend - _damp_bend())
 
 	if point != Vector3.INF:
 		# 指さし: 選んだ手の腕をまっすぐ伸ばして指す（両手なら両腕で「あっち！」）。手の先には指さしの手形。
@@ -791,7 +801,7 @@ func _pose() -> void:
 	# 暖かい所では、次の形へ何十コマもかけてゆっくり移る
 	var bk := floori(_boil_k)
 	var bw := smoothstep(0.0, 1.0, _boil_k - bk)
-	var boil := BOIL * (1.0 + BOIL_COLD * _shiver)
+	var boil := BOIL * (1.0 + BOIL_COLD * _shiver) * (1.0 - DAMP_BOIL * absf(damp))
 	for i in _order:
 		var a := _boil_at(bk, i)
 		if bw > 0.0:
@@ -1169,6 +1179,68 @@ func _aim_toward(i: int, dir: Vector3, w: float) -> void:
 		return
 	var y: Vector3 = (_g[i] as Transform3D).basis.y.normalized()
 	_aim(i, y.slerp(dir.normalized(), clampf(w, 0.0, 1.0)))
+
+
+# ---------------------------------------------------------------- 湿り気（damp.gd）
+
+const DAMP_SHADER := preload("res://person/paper_damp.gdshader")
+const DAMP_FOLLOW := 1.5      # 見た目の湿り気が値に追いつく速さ（1/s）。暖炉でじわっと乾き、雪玉でさっと濡れる見え方に
+const DAMP_SLUMP := 0.22      # びしょびしょで、胸がこれだけ前へうなだれる (rad)
+const DAMP_PROUD := 0.07      # パリパリで、胸がこれだけ起きる (rad)
+const DAMP_NECK := 0.22       # びしょびしょで、首がこれだけ下がる (rad)
+const DAMP_ARMS := 0.35       # びしょびしょで、腕がこれだけ下へ垂れる（下へ向ける割合）
+const DAMP_BOIL := 0.4        # 湿ってもパリッとしても、クレイアニメの揺れがこれだけ小さくなる（湿ると重く、張ると締まる）
+
+
+## 人形の材質（焼いた色の絵と法線の絵）を、湿り気の見える紙の材質に替える。人ごとにシミの所を変える
+func _make_damp(inst: Node3D) -> void:
+	var seed := float(get_instance_id() % 997) * 0.173
+	for m in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		for s in mi.mesh.get_surface_count():
+			var src := mi.get_active_material(s) as StandardMaterial3D
+			if src == null:
+				continue
+			var sm := ShaderMaterial.new()
+			sm.shader = DAMP_SHADER
+			sm.set_shader_parameter("albedo_tex", src.albedo_texture)
+			sm.set_shader_parameter("normal_tex", src.normal_texture)
+			sm.set_shader_parameter("top", TOP[kind])
+			sm.set_shader_parameter("seed", seed)
+			mi.set_surface_override_material(s, sm)
+			_damp_mats.append(sm)
+
+
+## 材質に湿り気を入れる（なめらかに追う。0.004 より動いたか、追いついたときだけ入れ直す）
+func _show_damp(dt: float) -> void:
+	var want := clampf(damp, -1.0, 1.0)
+	var now := want if _damp_shown == INF else lerpf(_damp_shown, want, 1.0 - exp(-dt * DAMP_FOLLOW))
+	if absf(want - now) < 0.003:
+		now = want
+	_damp_shown = now
+	if absf(now - _damp_put) < 0.004 and not (now == want and now != _damp_put):
+		return
+	_damp_put = now
+	for sm in _damp_mats:
+		sm.set_shader_parameter("wet", maxf(-now, 0.0))
+		sm.set_shader_parameter("crisp", maxf(now, 0.0))
+
+
+## 湿り気の姿勢: 湿るほど胸がうなだれ、首が下がり、腕が垂れる。パリッとすると胸が起きる。返り値は胸を前へ曲げる量
+func _damp_bend() -> float:
+	var w := maxf(-_damp_now(), 0.0)
+	var c := maxf(_damp_now(), 0.0)
+	if w > 0.01:
+		_turn_axis("neck", Vector3.RIGHT, -DAMP_NECK * w)
+		for side in ["L", "R"]:
+			var x := -1.0 if side == "L" else 1.0
+			_aim_toward(_id("upper_arm." + side), Vector3(0.12 * x, -1.0, -0.1), DAMP_ARMS * w)
+			_aim_toward(_id("forearm." + side), Vector3(0.05 * x, -1.0, -0.2), DAMP_ARMS * w)
+	return DAMP_SLUMP * w - DAMP_PROUD * c
+
+
+func _damp_now() -> float:
+	return damp if _damp_shown == INF else _damp_shown
 
 
 # ---------------------------------------------------------------- 身ぶり（emotes.gd）

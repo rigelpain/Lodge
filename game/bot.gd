@@ -40,6 +40,7 @@ var _still := 0.0
 var _wait := 0.0
 var hub: Emotes
 var id := -1
+var stays_dry := true         # 一人プレイの仲間（CPU）は湿らない（damp.gd。乾かしに行かないので。2026-11-01 代表「一人プレイの時の CPU は濡れないように」）
 var _replies: Array = []     # [残り秒, 身ぶり]
 var _five_with := -1         # ハイタッチをしにいく相手の番号
 var _five_until := 0         # このコマまでに届かなければやめる
@@ -147,6 +148,14 @@ func _uphill(p: Vector3) -> Vector3:
 	return u.normalized() if u.length() > 0.1 else Vector3.FORWARD
 
 
+## 紙の体の湿り気（damp.gd）の倍率: push なら押す力、そうでなければ歩く速さ（player.gd と同じ）
+func damp_k(push: bool) -> float:
+	var dm := get_parent().get_node_or_null("Damp")
+	if dm == null or id < 0:
+		return 1.0
+	return dm.push_k(id) if push else dm.speed_k(id)
+
+
 func _physics_process(dt: float) -> void:
 	_update_replies(dt)
 	_mind_lamp(dt)
@@ -199,7 +208,7 @@ func _physics_process(dt: float) -> void:
 			var ahead: float = max(0.0, cos(err)) if abs(err) < deg_to_rad(60.0) else 0.0
 			var push_dir: Vector3 = fwd * ahead + sled.global_basis.x * steer * 1.2
 			if push_dir.length() > 0.05 and not sled.is_dragged(self):
-				sled.push(push_dir.normalized(), global_position + fwd * 0.6 + Vector3.UP * 0.4, self)
+				sled.push(push_dir.normalized(), global_position + fwd * 0.6 + Vector3.UP * 0.4, self, damp_k(true))
 			debug = "err=%.0f° steer=%.2f ahead=%.2f 手=%s" % [rad_to_deg(err), steer, ahead, str(sled.to_local(global_position + fwd * 0.6 + Vector3.UP * 0.4).snapped(Vector3(0.1, 0.1, 0.1)))]
 			var face := s - global_position
 			face.y = 0
@@ -259,8 +268,8 @@ func _physics_process(dt: float) -> void:
 		if to_top > 6.0:
 			state = State.PUSH   # 頂上からずり落ちたら押し直す
 
-	velocity.x = dir.x * SPEED
-	velocity.z = dir.z * SPEED
+	velocity.x = dir.x * SPEED * damp_k(false)
+	velocity.z = dir.z * SPEED * damp_k(false)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
 	move_and_slide()
 	if dir.length() > 0.1:
@@ -288,8 +297,8 @@ func _stand_at_post(dt: float) -> void:
 	var to := post.global_position - global_position
 	to.y = 0
 	var dir := to.normalized() if to.length() > 0.15 else Vector3.ZERO
-	velocity.x = dir.x * SPEED
-	velocity.z = dir.z * SPEED
+	velocity.x = dir.x * SPEED * damp_k(false)
+	velocity.z = dir.z * SPEED * damp_k(false)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
 	move_and_slide()
 	var face := dir
@@ -469,8 +478,8 @@ func _go_five(dt: float) -> void:
 		if not _five_sent and to.length() < 0.6 and Emotes._forward(self).dot(face.normalized()) > 0.6:
 			hub.send({"kind": "hands", "who": id, "hands": _five_shape})
 			_five_sent = true
-	velocity.x = dir.x * SPEED
-	velocity.z = dir.z * SPEED
+	velocity.x = dir.x * SPEED * damp_k(false)
+	velocity.z = dir.z * SPEED * damp_k(false)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
 	move_and_slide()
 	_pose_doll()
@@ -564,8 +573,8 @@ func _lounge(dt: float) -> void:
 		return
 	var dir := _detour(to.normalized())
 	var before := global_position
-	velocity.x = dir.x * SPEED * 0.7
-	velocity.z = dir.z * SPEED * 0.7
+	velocity.x = dir.x * SPEED * 0.7 * damp_k(false)
+	velocity.z = dir.z * SPEED * 0.7 * damp_k(false)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
 	move_and_slide()
 	look_at(global_position + dir, Vector3.UP)

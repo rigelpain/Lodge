@@ -31,6 +31,8 @@ const Craft := preload("res://craft.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Doll := preload("res://doll.gd")
 const PersonIcon := preload("res://person_icon.gd")
+const ABOVE_HOOP := 72.0   # 刺繍枠（自分の小窓）の上の縁から、I・N・R の札の下までの間（1080 で px）。上のねじ（30 px ほど）と、
+                            # 枠の右上に縫う体の調子のバッジ（badges.gd）を避ける（2026-11-01 代表「インベントリボタンを少し上に上げて干渉しないように」）
 
 var main: Node3D
 var craft: Node
@@ -625,7 +627,7 @@ class View extends Control:
 		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
 			var fr: Control = sc._frame
 			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
-			bottom = fr.position.y - 44.0 * u   # 刺繍枠の上のねじ（小窓の縁から 1080 で 30 px ほど飛び出す。PR #48）の上
+			bottom = fr.position.y - ABOVE_HOOP * u   # 刺繍枠の上のねじと、右上のバッジ（badges.gd）の上
 		var off := Icons.tuck_off(Rect2(cx - total / 2.0, bottom - ch, total, ch), size)   # 何もしないでいると画面の外へ（hud.gd の _update_tuck）
 		cx += off.x
 		bottom += off.y
@@ -669,7 +671,7 @@ class View extends Control:
 		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
 			var fr: Control = sc._frame
 			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
-			bottom = fr.position.y - 44.0 * u
+			bottom = fr.position.y - ABOVE_HOOP * u
 		var h := 46.0 * u
 		var x0 := cx - total / 2.0
 		var y := bottom - 78.0 * u - 10.0 * u - 8.0 * u - h / 2.0   # I・N・R の札の上

@@ -65,6 +65,8 @@ const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
+const Damp := preload("res://damp.gd")
+const Badges := preload("res://badges.gd")
 ## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
 ## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
 const WARDROBE_AT := Vector2(21.25, 2.2)
@@ -113,6 +115,8 @@ var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
+var damp: Damp                # 紙の人形の「よれ」（湿り気）の配り役（damp.gd）。人より先に置く。人が名前（"Damp"）で探す
+var badges: Badges            # 体の調子のバッジ（badges.gd）。湿り気・ご飯の効き目などが入れ、hud.gd が描く
 var seats: Seats              # ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団）の配り役。人より先に置く
 
 
@@ -231,6 +235,14 @@ func _ready() -> void:
 	emotes = Emotes.new()
 	emotes.name = "Emotes"
 	add_child(emotes)
+	badges = Badges.new()
+	badges.name = "Badges"
+	add_child(badges)
+	damp = Damp.new()
+	damp.name = "Damp"
+	damp.hub = emotes
+	damp.badges = badges
+	add_child(damp)
 
 	if not args.has("no-player"):
 		player = Player.new()

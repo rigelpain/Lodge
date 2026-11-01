@@ -636,6 +636,14 @@ func catch_from_sack() -> bool:
 	return mode == Mode.GRIP
 
 
+## 紙の体の湿り気（damp.gd）の倍率: push なら押す力、そうでなければ歩く速さ
+func damp_k(push: bool) -> float:
+	var dm := get_parent().get_node_or_null("Damp")
+	if dm == null or id < 0:
+		return 1.0
+	return dm.push_k(id) if push else dm.speed_k(id)
+
+
 func _key(k: Key) -> float:
 	return 1.0 if Input.is_physical_key_pressed(k) else 0.0
 
@@ -807,7 +815,7 @@ func _walk(dt: float, with_rope: bool) -> void:
 		speed = SPEED_CROUCH
 	if with_rope:
 		# 紐が張っていれば、手の位置から引く。引いている間は歩みが重くなる
-		var over: float = sled.pull_rope(_hand_world())
+		var over: float = sled.pull_rope(_hand_world(), damp_k(true))
 		if over > 0.0:
 			pulling = true
 			speed = SPEED_TAUT
@@ -817,6 +825,7 @@ func _walk(dt: float, with_rope: bool) -> void:
 		d.y = 0
 		if d.length() > sled.ROPE_LEN + 0.3:
 			global_position = anchor + d.normalized() * (sled.ROPE_LEN + 0.3) + Vector3(0, global_position.y - anchor.y, 0)
+	speed *= damp_k(false)   # 紙の体が湿ると遅く、パリッとすると速く（damp.gd）
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
 	if is_on_floor():
@@ -862,7 +871,7 @@ func _grip(dt: float) -> void:
 	if input.length() > 0.0 and not dragged:
 		var dir := (global_basis * Vector3(input.x, 0, input.y))
 		dir.y = 0
-		sled.push(dir.normalized(), target + Vector3.UP * 0.5, self)
+		sled.push(dir.normalized(), target + Vector3.UP * 0.5, self, damp_k(true))
 		pushing = true
 
 	if dragged:
