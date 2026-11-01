@@ -19,6 +19,7 @@ const STEP := 1.0 / 12.0                   # 揺れのコマ（12 fps）
 const FIRE := Color(1.0, 0.60, 0.32)       # 火の灯りの色。炉（lodge.gd の light_fire）と、部屋の電球色のあいだ
 const FADE_BEGIN := 20.0                   # この距離から先は灯りを薄くして消す（外から見るとき・2 階から 1 階の遠く）
 const FADE_LEN := 6.0
+const DAY_DIM := 0.45                      # 昼の灯りの強さの倍率（daycycle.gd の daylight() が 1 のとき）
 const FL1 := 0.45                          # 1 階の床（lodge/dims.py）
 const FL2 := 6.10                          # 2 階の床
 
@@ -185,9 +186,13 @@ func _process(dt: float) -> void:
 		var sy := size.y * (0.88 + 0.22 * ((h >> 8) % 9) / 8.0)
 		var tilt := Basis.from_euler(Vector3(0.0, 0.25 * (((h >> 16) % 3) - 1), 0.10 * (((h >> 12) % 5) - 2) / 2.0))
 		f.transform = Transform3D(base.basis * tilt * Basis.from_scale(Vector3(sx, sy, sx)), base.origin)
+	# 昼は外の光が入るので、火の灯りは控えめに（昼まで夜と同じ強さだと、部屋じゅうが橙に染まる）
+	var cycle := get_node_or_null("/root/DayCycle")
+	var day: float = cycle.daylight() if cycle else 0.0
+	var k := lerpf(1.0, DAY_DIM, day)
 	for i in _lights.size():
 		var h := hash(Vector2i(n, 1000 + i))
-		_lights[i].light_energy = _base[i] * (0.96 + 0.08 * (h % 9) / 8.0)
+		_lights[i].light_energy = _base[i] * k * (0.96 + 0.08 * (h % 9) / 8.0)
 
 
 ## 道具 1 種類の形を組み、素材ごとに 1 つの面へまとめる（同じ種類はどこでも同じ形なので、1 度だけ作って使い回す）
