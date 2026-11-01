@@ -121,9 +121,25 @@ var _flip_hold := 0.0
 var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
 var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
 
+# 何も操作しないで IDLE_T 秒たったら、HUD を画面の外へ引っこめて景色だけにする（2026-11-01 代表「無操作状態で5秒経つとHUDを
+# 画面外に撤収させて景色だけを堪能させるようにしてほしい」）。キー・マウス・ゲームパッドのどれかに触れたら、すぐ戻す。
+# 物ごとに、いちばん近い辺へすべり出る（hud_icons.gd の tuck_off）。この画面だけのことで、ほかの人には知らせない
+const IDLE_T := 5.0
+const TUCK_OUT := 0.8         # 出ていく長さ (s)。少し内へ引いてから、すっと外へ
+const TUCK_IN := 0.3          # 戻る長さ (s)。初めのコマでほとんど戻り、少し行きすぎてから収まる
+const TUCK_BACK := 1.2        # 引き・行きすぎの強さ（back の曲線。1.2 でずらしの 5% ほど）
+const JOY_DEAD := 0.2         # ゲームパッドのスティックのこれより小さい傾きは、触れていないとみなす
+var idle_limit := IDLE_T      # --hud-idle=<秒> で変えられる。0 なら引っこめない
+var _idle := 0.0              # 何も操作していない長さ (s)
+var _tuck := 0.0              # 引っこめの進み（0 出ている … 1 外。曲線を掛ける前）
+var _tuck_clock := 0.0        # コマ撮りの刻みの時計
+
 
 func _ready() -> void:
 	layer = 3
+	if main:
+		idle_limit = maxf(0.0, float(main.args.get("hud-idle", str(IDLE_T))))
+	get_window().window_input.connect(_on_any_input)
 	_tag_view = View.new()   # 左下の名札（風で入れ物ごと傾ける）。ほかの表示より下に
 	_tag_view.hud = self
 	_tag_view.part = "tag"
@@ -188,6 +204,7 @@ func _input(e: InputEvent) -> void:
 
 
 func _process(dt: float) -> void:
+	_update_tuck(dt)
 	if main == null or main.sled == null:
 		return
 	var p: CharacterBody3D = main.player
@@ -219,6 +236,64 @@ func _process(dt: float) -> void:
 	if plates:
 		_update_plates()
 	_view.queue_redraw()
+
+
+# ---- 無操作で引っこめる ------------------------------------------------------------------
+
+## 窓に届いた入力（ほかの物が受け取って止める前）。どれかに触れたら、無操作の長さを 0 に戻す。マウスは少し動かしただけでも
+func _on_any_input(e: InputEvent) -> void:
+	if e is InputEventJoypadMotion and absf(e.axis_value) < JOY_DEAD:
+		return
+	if e is InputEventMouseMotion and e.relative == Vector2.ZERO and e.velocity == Vector2.ZERO:
+		return
+	if e is InputEventPanGesture and e.delta == Vector2.ZERO:   # トラックパッドのスクロールの終わりの知らせ（動いていない）
+		return
+	_idle = 0.0
+
+
+## 引っこめない画面が開いている: 設定・売り台・ミシン・装備・着せ替え・身ぶりの輪（入力を待っている）
+func _waiting_screen() -> bool:
+	if main == null:
+		return false
+	if main.settings != null and main.settings.is_open:
+		return true
+	var p = main.player
+	if p and (p.menu_open or p.get("shopping") or (p.get("ring") != null and p.ring.visible)):
+		return true
+	var cu = main.get("craft_ui")
+	if cu and (cu.get("shop_open") or cu.get("machine_open") or cu.get("gear_open")):
+		return true
+	var wu = main.get("wardrobe_ui")
+	return wu != null and wu.get("is_open")
+
+
+## 押しっぱなしのキー・ボタンと、傾けたままのスティック（入力の知らせが来ないので、毎コマ見る）
+func _holding() -> bool:
+	if Input.is_anything_pressed():
+		return true
+	for j in Input.get_connected_joypads():
+		for ax in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y, JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y, JOY_AXIS_TRIGGER_LEFT, JOY_AXIS_TRIGGER_RIGHT]:
+			if absf(Input.get_joy_axis(j, ax)) >= JOY_DEAD:
+				return true
+	return false
+
+
+## 無操作の長さを数え、引っこめの度合いを Icons.tuck に入れる。出入りは back の曲線（出るときは少し内へ引いてから、
+## 戻るときは少し行きすぎてから収まる。紙の札をつまんで抜き差しする軽さ）。コマ撮りのときは、人形と同じ 12 コマ／秒に刻む
+func _update_tuck(dt: float) -> void:
+	if idle_limit <= 0.0 or _waiting_screen() or _holding():
+		_idle = 0.0
+	else:
+		_idle += dt
+	var out := idle_limit > 0.0 and _idle >= idle_limit
+	_tuck = move_toward(_tuck, 1.0 if out else 0.0, dt / (TUCK_OUT if out else TUCK_IN))
+	var was := _tuck_clock
+	_tuck_clock += dt
+	if Icons.wind_stepped and floorf(was * 12.0) == floorf(_tuck_clock * 12.0) and _tuck > 0.0:
+		return
+	Icons.tuck = _tuck * _tuck * ((TUCK_BACK + 1.0) * _tuck - TUCK_BACK)
+	if main and main.get("_pip_layer") != null and main.pip_frame:   # 右上の 360° 映像の窓（窓の層ごと）
+		main._pip_layer.offset = Icons.tuck_off(main.pip_frame.get_global_rect(), _view.size)
 
 
 # ---- ソリの札 ------------------------------------------------------------------------
@@ -493,7 +568,8 @@ func _place_hints() -> void:
 				continue
 			at = cam.unproject_position(h.world)
 			sz = 66.0 * u
-		h.draw_at = at + Vector2(0, (1.0 - ease(h.a, 0.5)) * 10.0 * u)
+		var bw := _badge_w(h, sz)
+		h.draw_at = at + Vector2(0, (1.0 - ease(h.a, 0.5)) * 10.0 * u) + Icons.tuck_off(Rect2(at - Vector2(bw, sz) / 2.0, Vector2(bw, sz)), _view.size)
 		h.draw_sz = sz
 		h.shown = true
 
@@ -527,7 +603,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		_tag_view.pivot_offset = Vector2(tr.position.x, tr.position.y + tr.size.y * 0.5)
 		var fp := flip_pose()
 		_tag_view.rotation = Icons.wind_angle(1.0, -0.09, 0.05)
-		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui()) + Vector2(0, -16.0 * ui() * fp[1])
+		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui()) + Vector2(0, -16.0 * ui() * fp[1]) + Icons.tuck_off(tr, _view.size)
 		_tag_view.scale = Vector2(maxf(fp[0], 0.01), 1.0)
 		_tag_view.queue_redraw()
 	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
@@ -814,18 +890,19 @@ func flip_pose() -> Array:
 func _update_plates() -> void:
 	var u := ui()
 	plates.begin()
-	plates.moving = Icons.wind > 0.001 or _spd_a > 0.01
+	plates.moving = Icons.wind > 0.001 or _spd_a > 0.01 or (Icons.tuck != 0.0 and Icons.tuck != 1.0)   # 引っこめ・戻りの途中も毎コマ
 	if _tag_a > 0.01:
 		var tr: Rect2 = _view.tag_rect(u)
 		var piv := Vector2(tr.position.x, tr.get_center().y)
+		var toff := Icons.tuck_off(tr, _view.size)
 		for k in range(1, 3):   # 束の後ろの札（あれば。後ろほど奥へ）
 			if k < cards.size():
 				var bo: Array = _view.back_offset(u, k)
 				plates.plate("tagb%d" % k, _painter.bind("tagback:%d" % k), tr, 12.0 * u, 7.0 * u, "paper", piv,
-					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0], 0.03 * k, 3 - k)
+					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0] + toff, 0.03 * k, 3 - k)
 		var fp := flip_pose()
 		plates.plate("tag", _painter.bind("tag"), tr, 12.0 * u, 8.0 * u, "paper", piv,
-			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]), 0.0, 3)
+			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]) + toff, 0.0, 3)
 	if _spd_a > 0.01:   # 速さの表示: 立体のボビンと、縫い目を縫うフェルトのリボンの板（ボビンから吊るす）
 		var g := Speedo.layout(speedo_box_now(), _spd_pop)
 		# 回る向き: 糸はボビンの左下から下へ出ていくので、左側が下へ動く向き（画面で反時計回り）に回して糸を送り出す。
@@ -871,9 +948,10 @@ func speedo_box() -> Rect2:
 	return Rect2(22.0 * u, top, 126.0 * u, maxf(bottom - top, 200.0 * u))
 
 
-## いまの置き場（出てくるときは、上からふわっと下りてくる）
+## いまの置き場（出てくるときは、上からふわっと下りてくる。引っこめているときは画面の外へ）
 func speedo_box_now() -> Rect2:
 	var r := speedo_box()
+	r.position += Icons.tuck_off(r, _view.size)
 	r.position.y -= (1.0 - ease(_spd_a, 0.6)) * 24.0 * ui()
 	return r
 
@@ -1154,6 +1232,7 @@ class View extends Control:
 		var font := ThemeDB.fallback_font
 		var fs := int(round(14.0 * u))
 		var at := Vector2(10.0, 6.0) * u + Vector2(0, font.get_ascent(fs))
+		at += Icons.tuck_off(Rect2(Vector2.ZERO, Vector2(200.0, 24.0) * u), size)
 		var parts := [["%d fps" % d.fps, Icons.RED if d.fps < 30 else Icons.THREAD],
 			["%s ms" % (str(d.ms) if d.ms >= 0 else "--"), Icons.THREAD]]
 		for x in parts:
@@ -1170,7 +1249,7 @@ class View extends Control:
 			return
 		sc.plain_frame = true   # 小窓の側は、赤い糸の縁取りだけ
 		var fr: Control = sc._frame
-		var c := fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui())   # 小窓のずれを除いた真ん中（揺れは下で同じだけかける）
+		var c: Vector2 = fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui()) + sc.offset   # 小窓のずれを除いた真ん中（揺れは下で同じだけかける）。引っこめは小窓の層ごと
 		var tex: Texture2D = hud.hoop_texture()
 		if tex == null:
 			return
@@ -1187,6 +1266,7 @@ class View extends Control:
 		if main.pip_label == null or main._pip_layer == null or main.pip_mode != 0 or not main._pip_layer.visible:
 			return
 		var lr: Rect2 = main.pip_label.get_global_rect()
+		lr.position += main._pip_layer.offset   # 引っこめは窓の層ごと
 		var font: Font = main.pip_label.get_theme_font("font")
 		var tw: float = font.get_string_size(main.pip_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 		Icons.icon(self, "back", Vector2(lr.position.x + tw + 14.0, lr.position.y + lr.size.y / 2.0), 22.0, 0.95)

@@ -28,6 +28,7 @@ static var wind_t := 0.0        # 揺れの時計 (s)
 static var wind_stepped := true # 12 コマ／秒に刻む（人形と同じコマ撮り）。false でなめらか（見比べ用）
 static var printing := false   # 立体の板に貼る印刷を描いているあいだ true（板の影は 3D で落とすので、外の落ち影を描かない）
 static var user_scale := 1.0   # 設定の「HUD の大きさ」（settings.gd が入れる）
+static var tuck := 0.0         # HUD を画面の外へ引っこめた度合い（0 出ている … 1 外。少しだけ負にもなる）。hud.gd が無操作の長さから入れる
 static var _felt: ImageTexture
 static var _o := Vector2.ZERO   # いま描いている絵の中心（画面）
 static var _s := 1.0            # 1 単位あたりの画面の px
@@ -37,6 +38,19 @@ static var _s := 1.0            # 1 単位あたりの画面の px
 ## hud.gd・craft_ui.gd・emote_ring.gd・daycycle.gd の表示はみなこれでそろえる
 static func ui_scale(view_h: float) -> float:
 	return clampf(view_h / 1080.0, 0.6, 2.0) * user_scale
+
+
+## 引っこめるときのずらし (px): 画面の場所 r の物を、いちばん近い辺（外へ出しきるのにずらす量がいちばん少ない辺）から、
+## 落ち影と風の揺れの分も含めて画面の外へ出す。tuck を掛けて返す（hud.gd の _update_tuck）
+static func tuck_off(r: Rect2, vs: Vector2) -> Vector2:
+	if tuck == 0.0:
+		return Vector2.ZERO
+	var pad := 0.03 * vs.y
+	var best := Vector2(-(r.end.x + pad), 0.0)
+	for v in [Vector2(vs.x - r.position.x + pad, 0.0), Vector2(0.0, -(r.end.y + pad)), Vector2(0.0, vs.y - r.position.y + pad)]:
+		if v.length() < best.length():
+			best = v
+	return best * tuck
 
 
 ## 風の揺れの時計: コマ撮りなら 12 コマ／秒に刻んだ時間

@@ -289,6 +289,11 @@ func _process(dt: float) -> void:
 	_frame.pivot_offset = _frame.size * 0.5
 	_frame.rotation = Icons.wind_angle(5.0, 0.0, 0.03)
 	_frame.position += Icons.wind_offset(5.0, 2.5 * ui())
+	# 何もしないでいると、小窓は層ごと画面の外へ引っこむ（hud.gd の _update_tuck）。刺繍枠（hud.gd）もこの offset で追う
+	# （刺繍枠の木の輪とねじは小窓より外へ出るので、その分も広げる。上の I・N・R の札と一緒に右へ抜ける）
+	var u := ui()
+	var fr := Rect2(_frame.position, _frame.size).grow(12.0 * u).grow_side(SIDE_TOP, 34.0 * u)
+	offset = Icons.tuck_off(fr, get_viewport().get_visible_rect().size)
 	var dc := get_node_or_null("/root/DayCycle")
 	if dc and "dial_right" in dc:
 		dc.dial_right = 16.0 + width()
