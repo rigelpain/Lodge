@@ -34,8 +34,9 @@ const EYE := {"kasa": Vector3(0, 1.01, -0.1), "origami": Vector3(0, 1.235, -0.1)
 	"robo": Vector3(0, 0.67, -0.12), "musha": Vector3(0, 0.53, -0.1), "ningyo": Vector3(0, 0.715, -0.11), "golem": Vector3(0, 1.135, -0.18)}
 ## 座ったとき、腰の骨の付け根を座面からどれだけ上に置くか（骨の座標の空間）
 const SIT_HIPS := 0.07
-## ロッジの席に座ったときの太ももの角度（rad。下へ垂れた形から前へ。π/2 で水平）。座面に沿わせ、水平より少し下げる
-const SIT_THIGH := 1.40
+## ロッジの席に座ったときの太ももの角度のいちばん小さい所（rad。下へ垂れた形から前へ。π/2 で水平）。
+## ふだんは膝の芯が座面から脚の太さぶん上に来る角度で、腰の付け根が低い人形でも、これより下へは垂らさない
+const SIT_THIGH_MIN := 1.20
 ## 口の位置（頭の骨の付け根から、人形の大きさのまま）。白い息が出る
 const MOUTH := {"kasa": Vector3(0, 0.08, -0.24), "origami": Vector3(0, 0.07, -0.27), "news": Vector3(0, 0.13, -0.3),
 	"robo": Vector3(0, 0.05, -0.15), "musha": Vector3(0, 0.04, -0.12), "ningyo": Vector3(0, 0.04, -0.14), "golem": Vector3(0, 0.04, -0.1)}
@@ -104,6 +105,7 @@ var point := Vector3.INF     # 腕を伸ばして指す所（世界）。gaze �
 var sled: Node3D = null
 var sit_stage := 0           # ロッジの席（seats.gd）: 0 立つ、1 中腰、2 座る（持ち主が毎フレーム入れる。act が SIT のとき）
 var seat_drop := 0.45        # 座面から足を下ろす床までの高さ (m)（持ち主が入れる）
+var seat_edge := 0.2         # 腰を下ろした所から、座面の前の縁までの奥行き (m)（持ち主が入れる）。膝がこれより前なら浮いている
 var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標）
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
 var lean := Vector2.ZERO     # 乗っているときの体重移動（x 右、y 前）
@@ -411,10 +413,20 @@ func _len(i: int) -> float:
 
 ## 二関節の腕で、手が target（骨の座標の空間）に来るように曲げる
 func _reach(side: String, target: Vector3, to_wrist := false) -> void:
+	var j := _arm_joints(side, target, to_wrist)
+	if j.is_empty():
+		return
+	_aim(_id("upper_arm." + side), j[1] - j[0])
+	var fo := _id("forearm." + side)
+	_aim(fo, j[2] - _head_of(fo))
+
+
+## _reach で曲げたときの [肩, 肘, 手]（骨の座標の空間）。腕の骨がなければ空
+func _arm_joints(side: String, target: Vector3, to_wrist := false) -> Array:
 	var up := _id("upper_arm." + side)
 	var fo := _id("forearm." + side)
 	if up < 0 or fo < 0:
-		return
+		return []
 	var s := _head_of(up)
 	var a := _len(up)
 	# 手首（前腕の先）を合わせるか、手のなかほどを合わせるか
@@ -427,8 +439,7 @@ func _reach(side: String, target: Vector3, to_wrist := false) -> void:
 	pole = (pole - dir * pole.dot(dir)).normalized()
 	var ang := acos(clampf((a * a + d * d - b * b) / (2.0 * a * d), -1.0, 1.0))
 	var elbow := s + (dir * cos(ang) + pole * sin(ang)) * a
-	_aim(up, elbow - s)
-	_aim(fo, (s + dir * d) - _head_of(fo))
+	return [s, elbow, s + dir * d]
 
 
 func _apply() -> void:
@@ -440,49 +451,332 @@ func _apply() -> void:
 		skel.set_bone_pose_scale(sk, Vector3(1, _squash, 1))
 
 
-## 座るときに腰を落とす量（骨の座標の空間）
+## 座るときに腰を落とす量（骨の座標の空間）。腰の骨の付け根を座面から SIT_HIPS の所へ
 func _sit_drop() -> float:
 	return skel.get_bone_global_rest(_id("hips")).origin.y - SIT_HIPS
 
 
-## ロッジの席に座る（seats.gd）。腰の骨の付け根を座面のすぐ上へ下ろし、裾は座面に広げ、太ももは座面に沿って前へ、すねは下へ垂らす。
-## 脚が長くて足が床に届くときは、すねを前へ出して足を床に置く（床を突き抜けない）。脚の短い人形は足が浮く。
-## 太ももを座面に沿わせて上げないので、膝が机の天板の裏に当たらない。両手は膝の上。返り値は胸を前へ曲げる量
+## ロッジの席に座るときに腰を落とす量。脚の付け根が腰よりずっと低い人形は、脚の付け根が座面の上（脚の太さぶん上）に
+## 残る所まで（脚が座面に沈まない）。ソリでは脚が座布団に埋もれてケープに隠れるのでよいが、椅子では脚が座面を突き抜ける
+func _chair_drop() -> float:
+	var drop := _sit_drop()
+	var th := _id("thigh.L")
+	if th >= 0:
+		drop = minf(drop, skel.get_bone_global_rest(th).origin.y - _seat_shape()[3])
+	return drop
+
+
+## ロッジの席に座る（seats.gd）。腰の骨の付け根を座面のすぐ上へ下ろし、裾は座面に広げ、太ももは座面に沿って前へ。
+## 膝が座面の上にあれば（脚が短い、座面が深い）、すねも前へ投げ出して座面の上に置く（すねが座面にめりこまない）。
+## 膝が座面の前の縁より前で浮いていれば、膝を曲げてすねを垂らす。垂らしたすねは座面の縁に当たらない所まで前へ出し、
+## 足が床に届くなら、すねを前へ振り出して足の裏を床に置く（床を突き抜けない）。
+## 太ももを座面に沿わせて上げないので、膝が机の天板の裏に当たらない。両手は膝の上（体に埋もれるなら体の外、_sit_hand）。
+## 返り値は胸を前へ曲げる量
 func _sit_chair() -> float:
 	var X := Vector3.RIGHT
-	_hips_drop = _sit_drop()
+	_hips_drop = _chair_drop()
 	_squash = 0.12
 	_update_all()
-	var floor_y := -seat_drop / _scale   # 骨の座標の空間。座面が 0
+	var floor_y := -seat_drop / _scale   # 骨の座標の空間。座面が 0、前が -Z
+	var edge := seat_edge / _scale
+	var lr: float = _seat_shape()[3]     # 脚の太さ
 	for s in ["L", "R"]:
 		var th := _id("thigh." + s)
 		var sh := _id("shin." + s)
 		var ft := _id("foot." + s)
 		if th < 0 or sh < 0 or ft < 0:
 			continue
-		var sole := skel.get_bone_global_rest(ft).origin.y   # 足首から足の裏まで（立った形の足首の高さ）
-		var knee_y := _head_of(th).y - _len(th) * cos(SIT_THIGH)
+		# 太もも: 膝の芯が座面から脚の太さぶん上に来るまで前へ倒す（水平より上げない）
+		var hip := _head_of(th)
+		var bend := clampf(acos(clampf((hip.y - lr) / _len(th), -1.0, 1.0)), SIT_THIGH_MIN, PI * 0.5)
+		_turn_axis("thigh." + s, X, bend)
+		_update_all()
+		var knee := _head_of(sh)
 		var shin := _len(sh)
-		_turn_axis("thigh." + s, X, SIT_THIGH)
-		var reach := knee_y - shin - sole
-		if reach < floor_y:
+		var sole := skel.get_bone_global_rest(ft).origin.y   # 足首から足の裏まで（立った形の足首の高さ）
+		# すねの角度（真下から前へ。0 で垂らす、π/2 で前へ投げ出す）: 座面の縁の高さで、すねの芯が縁より脚の太さぶん前に出る角度
+		var fwd := 0.0
+		var ahead := edge + lr - (-knee.z)   # 膝から、すねが越えるべき縁の先まで
+		if ahead > 0.0:
+			fwd = atan2(ahead, knee.y - lr) if knee.y > lr else PI * 0.5
+		fwd = clampf(fwd, 0.0, PI * 0.5)
+		if knee.y - shin * cos(fwd) - sole < floor_y:
 			# 足が床に届く: すねを前へ振り出して、足の裏を床に
-			var fwd := acos(clampf((knee_y - sole - floor_y) / shin, -1.0, 1.0))
-			_turn_axis("shin." + s, X, -(SIT_THIGH - fwd))
-		else:
-			_turn_axis("shin." + s, X, -SIT_THIGH)
-		# 手は膝の上
-		var hip := skel.global_transform * _head_of(th)
-		var knee := skel.global_transform * _head_of(sh)
-		_hold[0 if s == "L" else 1] = [self, to_local(hip.lerp(knee, 0.75)) + Vector3(0, 0.06 * _scale, 0)]
+			fwd = maxf(fwd, acos(clampf((knee.y - sole - floor_y) / shin, -1.0, 1.0)))
+		_turn_axis("shin." + s, X, -(bend - fwd))
+	_update_all()
+	for s in ["L", "R"]:
+		var th := _id("thigh." + s)
+		var sh := _id("shin." + s)
+		if th < 0 or sh < 0:
+			continue
+		var p := _sit_hand(s, _head_of(th), _head_of(sh))
+		if p != Vector3.INF:
+			_hold[0 if s == "L" else 1] = [self, to_local(skel.global_transform * p)]
 	return 0.08
+
+
+## 座ったときの手の所（骨の座標の空間）。膝の上に置き、体（胸・腰・裾・脚）に埋もれるなら、上・前・外のいちばん近い向きへ体の外に出す。
+## 膝まで届かなければ（脚が短くお腹の丸い人形）、膝の方へ伸ばした先を体の前へ出す。それでも届かないか、座面の縁より前に出る
+## （腕を前へ伸ばして袖が机に当たる）か、前腕が体を通るなら、
+## 立ったときのまま腕を垂らす（INF を返す）。垂らした手が体に入るなら、その手を体の外へ出し、それもだめなら体の横に下ろして
+## 座面の脇へ（届かなければ、腕を伸ばした先）
+func _sit_hand(side: String, hip: Vector3, knee: Vector3) -> Vector3:
+	var sx := 1.0 if side == "R" else -1.0
+	var r: float = _seat_shape()[2]        # 手を体から離す
+	var ra: float = _seat_shape()[1] * 0.3  # 前腕の芯を体から離す
+	var up := _id("upper_arm." + side)
+	var s := _head_of(up)
+	var reach := (_len(up) + _len(_id("forearm." + side)) + _len(_id("hand." + side)) * 0.5) * 0.97
+	var want := hip.lerp(knee, 0.75) + Vector3(0, 0.06, 0)
+	if want.distance_to(s) < reach and not _in_seat_body(want, r):
+		return want
+	var p := _out_of_body(want, r, [Vector3.UP, Vector3.FORWARD, Vector3(sx, 0, 0)])
+	if p.distance_to(s) >= reach:
+		# 膝まで届かない: 膝の方へ伸ばせるだけ伸ばし、体の前（お腹や太ももの上）へ出す
+		for i in 3:
+			p = _out_of_body(s + (p - s).normalized() * minf(p.distance_to(s), reach), r, [Vector3.FORWARD, Vector3(sx, 0, 0), Vector3.UP])
+	if p.distance_to(s) < reach * 1.02 and -p.z <= seat_edge / _scale and _forearm_clear(side, p, ra):
+		return p
+	# 立ったときの腕の垂らし方のままで手が体の外なら、そのまま（人形の形は、立って腕を垂らしたときに体に当たらないように作ってある）。
+	# 座ってつぶれた裾に手が入るなら、裾の上へ出す
+	var hd := _id("hand." + side)
+	if hd >= 0:
+		var g: Transform3D = _g[hd]
+		var h := g.origin + g.basis.y.normalized() * _len(hd) * 0.5
+		if not _in_seat_body(h, ra):
+			return Vector3.INF
+		h = _out_of_body(h, r, [Vector3.UP, Vector3.FORWARD, Vector3(sx, 0, 0)])
+		if h.distance_to(s) < reach and _forearm_clear(side, h, ra):
+			return h
+	var q := Vector3(s.x, r, hip.lerp(knee, 0.25).z)
+	for i in 3:
+		q = _out_of_body(q, r, [Vector3(sx, 0, 0)])
+		if q.distance_to(s) <= reach:
+			break
+		q = s + (q - s).normalized() * reach
+	return q
+
+
+## 前腕から手（target）までが、体の中を通らないか
+func _forearm_clear(side: String, target: Vector3, r: float) -> bool:
+	var j := _arm_joints(side, target)
+	if j.is_empty():
+		return true
+	for i in range(1, 5):
+		if _in_seat_body((j[1] as Vector3).lerp(j[2], i / 4.0), r):
+			return false
+	return true
+
+
+## 点 p を、向き dirs のうち体の外にいちばん近く出られる向きへ、体の外（r だけ離して）まで動かす
+func _out_of_body(p: Vector3, r: float, dirs: Array) -> Vector3:
+	if not _in_seat_body(p, r):
+		return p
+	var step := 0.01
+	for k in 80:
+		for d in dirs:
+			var q: Vector3 = p + d * step * (k + 1)
+			if not _in_seat_body(q, r):
+				return q
+	return p
+
+
+# ---------------------------------------------------------------- 体の形（座った手）
+
+const SEAT_BODY := ["hips", "chest", "skirt", "thigh.L", "thigh.R", "shin.L", "shin.R"]
+const SEAT_SLICES := 10
+const SEAT_CELL := 0.025       # 輪切りの升の大きさ（人形の大きさのまま）
+const SEAT_PAD := 7            # 形のまわりに足す升（手の太さぶん離して調べられる）
+static var _seat_cache := {}   # 人形の種類 → [{骨の番号: [下の端, 段の高さ, 升の x と z の始まり, 升の数 x, z, 段ごとの升（体までの升の数）]}, 前腕の太さ, 手の太さ, 脚の太さ]
+
+
+## 体（胸・腰・裾・脚）の形を、骨ごとにその骨の座標で、骨に沿って輪切りにした段の升目で覚える。
+## 前腕の太さは、前腕の点の骨からの離れの真ん中。手の太さは、右手の点の真ん中からの離れの真ん中。
+## 脚の太さは、太もも・すねの点の骨からの離れの真ん中（座ったすねを座面の縁から離す）。人形の種類ごとに一度だけ測る
+func _seat_shape() -> Array:
+	if _seat_cache.has(kind):
+		return _seat_cache[kind]
+	var pts := {}
+	var arm := []
+	var hand := PackedVector3Array()
+	var leg := []
+	for m in _body.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		if mi.skin == null:
+			continue
+		var bone_of := []
+		for b in mi.skin.get_bind_count():
+			var bi := mi.skin.get_bind_bone(b)
+			bone_of.append(bi if bi >= 0 else skel.find_bone(mi.skin.get_bind_name(b)))
+		for si in mi.mesh.get_surface_count():
+			var arr := mi.mesh.surface_get_arrays(si)
+			var vs: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+			var bones = arr[Mesh.ARRAY_BONES]
+			var weights = arr[Mesh.ARRAY_WEIGHTS]
+			if bones == null or weights == null:
+				continue
+			var per: int = bones.size() / vs.size()
+			var idx: PackedInt32Array = arr[Mesh.ARRAY_INDEX] if arr[Mesh.ARRAY_INDEX] != null else PackedInt32Array(range(vs.size()))
+			for t in range(0, idx.size() - 2, 3):
+				# 面の最初の頂点のいちばん重い骨のものとし、面の上に 3 cm ほどおきに点を打つ（大きな平たい面の途中が抜けない）
+				var top := 0
+				for j in per:
+					if weights[idx[t] * per + j] > weights[idx[t] * per + top]:
+						top = j
+				var bind: int = bones[idx[t] * per + top]
+				var bn := skel.get_bone_name(bone_of[bind])
+				var is_arm := bn.begins_with("forearm")
+				var is_hand := bn == "hand.R"
+				var is_leg := bn.begins_with("thigh") or bn.begins_with("shin")
+				if not is_arm and not is_hand and not (bn in SEAT_BODY):
+					continue
+				var to_bone := mi.skin.get_bind_pose(bind)
+				var a := to_bone * vs[idx[t]]
+				var b := to_bone * vs[idx[t + 1]]
+				var c := to_bone * vs[idx[t + 2]]
+				var n := clampi(ceili(maxf(maxf(a.distance_to(b), b.distance_to(c)), c.distance_to(a)) / 0.03), 1, 24)
+				for i in n + 1:
+					for j in n + 1 - i:
+						var v := a + (b - a) * (float(i) / n) + (c - a) * (float(j) / n)
+						if is_arm:
+							arm.append(Vector2(v.x, v.z).length())
+						elif is_hand:
+							hand.append(v)
+						else:
+							if is_leg:
+								leg.append(Vector2(v.x, v.z).length())
+							if not pts.has(bone_of[bind]):
+								pts[bone_of[bind]] = PackedVector3Array()
+							pts[bone_of[bind]].append(v)
+	var shape := {}
+	for bi in pts:
+		var vs: PackedVector3Array = pts[bi]
+		var lo := Vector3.INF
+		var hi := -Vector3.INF
+		for v in vs:
+			lo = lo.min(v)
+			hi = hi.max(v)
+		var dy := maxf(hi.y - lo.y, 0.01) / SEAT_SLICES
+		var ox := lo.x - SEAT_PAD * SEAT_CELL
+		var oz := lo.z - SEAT_PAD * SEAT_CELL
+		var nx := int((hi.x - lo.x) / SEAT_CELL) + 1 + SEAT_PAD * 2
+		var nz := int((hi.z - lo.z) / SEAT_CELL) + 1 + SEAT_PAD * 2
+		var occ := []
+		for i in SEAT_SLICES:
+			var g := PackedByteArray()
+			g.resize(nx * nz)
+			occ.append(g)
+		for v in vs:
+			var k := clampi(int((v.y - lo.y) / dy), 0, SEAT_SLICES - 1)
+			occ[k][int((v.z - oz) / SEAT_CELL) * nx + int((v.x - ox) / SEAT_CELL)] = 1
+		var slices := []
+		for g in occ:
+			slices.append(_seat_slice(g, nx, nz))
+		shape[bi] = [lo.y, dy, ox, oz, nx, nz, slices]
+	arm.sort()
+	var mid := Vector3.ZERO
+	for v in hand:
+		mid += v / hand.size()
+	var hr := []
+	for v in hand:
+		hr.append(v.distance_to(mid))
+	hr.sort()
+	leg.sort()
+	_seat_cache[kind] = [shape, arm[arm.size() / 2] if not arm.is_empty() else 0.03, hr[hr.size() / 2] if not hr.is_empty() else 0.03,
+		leg[leg.size() / 2] if not leg.is_empty() else 0.04]
+	return _seat_cache[kind]
+
+
+## 輪切りの 1 段の升目（形の面が通る升が 1）を、中まで埋めて、升ごとに体までの升の数（縦横斜めに数える）にする。
+## 中を埋めるのは、横の並びでも縦の並びでも面にはさまれた升（離れた飾りの紐と体の間は埋めない）
+func _seat_slice(occ: PackedByteArray, nx: int, nz: int) -> PackedByteArray:
+	var row_lo := PackedInt32Array()
+	var row_hi := PackedInt32Array()
+	row_lo.resize(nz)
+	row_hi.resize(nz)
+	row_lo.fill(nx)
+	row_hi.fill(-1)
+	var col_lo := PackedInt32Array()
+	var col_hi := PackedInt32Array()
+	col_lo.resize(nx)
+	col_hi.resize(nx)
+	col_lo.fill(nz)
+	col_hi.fill(-1)
+	for z in nz:
+		for x in nx:
+			if occ[z * nx + x]:
+				row_lo[z] = mini(row_lo[z], x)
+				row_hi[z] = maxi(row_hi[z], x)
+				col_lo[x] = mini(col_lo[x], z)
+				col_hi[x] = maxi(col_hi[x], z)
+	var d := PackedByteArray()
+	d.resize(nx * nz)
+	for z in nz:
+		for x in nx:
+			var inside := occ[z * nx + x] == 1 or (x >= row_lo[z] and x <= row_hi[z] and z >= col_lo[x] and z <= col_hi[x])
+			d[z * nx + x] = 0 if inside else 255
+	# 体までの升の数: 前から後ろ、後ろから前の 2 回なめる
+	for z in nz:
+		for x in nx:
+			var v := d[z * nx + x]
+			if x > 0:
+				v = mini(v, d[z * nx + x - 1] + 1)
+			if z > 0:
+				v = mini(v, d[(z - 1) * nx + x] + 1)
+				if x > 0:
+					v = mini(v, d[(z - 1) * nx + x - 1] + 1)
+				if x < nx - 1:
+					v = mini(v, d[(z - 1) * nx + x + 1] + 1)
+			d[z * nx + x] = v
+	for z in range(nz - 1, -1, -1):
+		for x in range(nx - 1, -1, -1):
+			var v := d[z * nx + x]
+			if x < nx - 1:
+				v = mini(v, d[z * nx + x + 1] + 1)
+			if z < nz - 1:
+				v = mini(v, d[(z + 1) * nx + x] + 1)
+				if x < nx - 1:
+					v = mini(v, d[(z + 1) * nx + x + 1] + 1)
+				if x > 0:
+					v = mini(v, d[(z + 1) * nx + x - 1] + 1)
+			d[z * nx + x] = v
+	return d
+
+
+## 点 p（骨の座標の空間）が、いまの姿勢の体（胸・腰・裾・脚）の中（r だけふくらませて）に入るか。裾は座ってつぶれた分も
+func _in_seat_body(p: Vector3, r: float) -> bool:
+	var sk := _id("skirt")
+	var shape: Dictionary = _seat_shape()[0]
+	for bi in shape:
+		var c: Array = shape[bi]
+		var l := (_g[bi] as Transform3D).affine_inverse() * p
+		var sq := maxf(_squash, 0.05) if bi == sk else 1.0
+		var ly := l.y / sq
+		var ry := r / sq
+		var lo: float = c[0]
+		var dy: float = c[1]
+		if ly < lo - ry or ly > lo + dy * SEAT_SLICES + ry:
+			continue
+		var ox: float = c[2]
+		var oz: float = c[3]
+		var nx: int = c[4]
+		var nz: int = c[5]
+		var ix := floori((l.x - ox) / SEAT_CELL)
+		var iz := floori((l.z - oz) / SEAT_CELL)
+		if ix < 0 or iz < 0 or ix >= nx or iz >= nz:
+			continue
+		var g: PackedByteArray = c[6][clampi(int((ly - lo) / dy), 0, SEAT_SLICES - 1)]
+		if g[iz * nx + ix] * SEAT_CELL <= r + SEAT_CELL * 0.5:
+			return true
+	return false
 
 
 ## 目の所（人形の座標、m）。座っているときは腰を落とした分だけ低い（姿勢のコマや揺れには付き合わない）
 func eye_point(sitting: bool) -> Vector3:
 	var e: Vector3 = EYE.get(kind, EYE["kasa"])
 	if sitting:
-		e.y -= _sit_drop()
+		e.y -= _chair_drop() if act == Act.SIT else _sit_drop()
 	return e * _scale
 
 
@@ -684,7 +978,7 @@ func _pose() -> void:
 		Act.SIT:
 			if sit_stage == 1:
 				# 中腰: 腰を半分落とし、膝を曲げる（ソリに乗り込むときと同じ）
-				_hips_drop = _sit_drop() * 0.55
+				_hips_drop = _chair_drop() * 0.55
 				_squash = 0.55
 				_update_all()
 				for s in ["L", "R"]:

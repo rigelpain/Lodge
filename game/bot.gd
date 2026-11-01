@@ -632,3 +632,4 @@ func _pose_lounge() -> void:
 		doll.facing = st.face
 		doll.sit_stage = _sit_stage
 		doll.seat_drop = st.pos.y - st.floor
+		doll.seat_edge = st.edge

@@ -28,7 +28,8 @@ const SIT_IN := STEP_IN + 2  # 座りきるまでのコマ
 const SIT_OUT := 2           # 立ちきるまでのコマ（中腰 1 コマ）
 
 var lodge: Node3D
-var seats: Array = []        # 席: {kind, pos（腰を下ろす座面の上、世界）, face（座って向く向き、水平）, floor（足を下ろす高さ）, stand（立つ所）}
+var seats: Array = []        # 席: {kind, pos（腰を下ろす座面の上、世界）, face（座って向く向き、水平）, floor（足を下ろす高さ）, stand（立つ所）,
+                             #      edge（pos から座面の前の縁までの奥行き、m）, size（座面の幅と奥行き、m）}
 var taken := {}              # 席の番号 → 座っている人の番号
 var seat_of := {}            # 人の番号 → 席の番号
 var _found := false
@@ -177,7 +178,7 @@ func _find() -> void:
 			var n := maxi(1, int(long / BENCH_STEP))
 			for j in n:
 				var p := c + along * (long * ((j + 0.5) / n - 0.5))
-				_add(kind, Vector3(p.x, top, p.z), face, floor_y)
+				_add(kind, Vector3(p.x, top, p.z), face, floor_y, _edge(b, p, face), (along * BENCH_STEP + across * (b.size.x + b.size.z - long)).abs())
 			continue
 		var hit := _table_dir(space, Vector3(c.x, top + 0.12, c.z))
 		if hit.is_empty():
@@ -187,13 +188,19 @@ func _find() -> void:
 		if kind == "zabuton":
 			p += face * maxf(0.0, hit[1] - KOTATSU_HIPS)
 			floor_y = b.position.y - KOTATSU_PIT
-			_add(kind, p, face, floor_y, Vector3(c.x, b.position.y, c.z))
+			_add(kind, p, face, floor_y, _edge(b, p, face), b.size, Vector3(c.x, b.position.y, c.z))
 			continue
-		_add(kind, p, face, floor_y)
+		_add(kind, p, face, floor_y, _edge(b, p, face), b.size)
 
 
-## 席を足す（座標はロッジの座標で受け、世界にして持つ）。center は立つ所を測る中心（座布団は座布団のまんなか）
-func _add(kind: String, p: Vector3, face: Vector3, floor_y: float, center := Vector3.INF) -> void:
+## p（ロッジの座標）から face の向きに、座面の箱 b の前の縁までの奥行き (m)。座布団で縁を越えていれば 0
+static func _edge(b: AABB, p: Vector3, face: Vector3) -> float:
+	var half := absf(face.dot(b.size)) * 0.5
+	return maxf(0.0, (b.get_center() - p).dot(face) + half)
+
+
+## 席を足す（座標はロッジの座標で受け、世界にして持つ）。size は座面の箱の大きさ（ロッジの座標）。center は立つ所を測る中心（座布団は座布団のまんなか）
+func _add(kind: String, p: Vector3, face: Vector3, floor_y: float, edge: float, size: Vector3, center := Vector3.INF) -> void:
 	var c := center if center != Vector3.INF else Vector3(p.x, floor_y, p.z)
 	var stand: Vector3 = c - face * STAND_BACK[kind]
 	stand.y = c.y if center != Vector3.INF else floor_y
@@ -205,6 +212,8 @@ func _add(kind: String, p: Vector3, face: Vector3, floor_y: float, center := Vec
 		"face": fw.normalized(),
 		"floor": lodge.to_global(Vector3(p.x, floor_y, p.z)).y,
 		"stand": lodge.to_global(stand),
+		"edge": edge * lodge.global_basis.get_scale().x,
+		"size": Vector2(absf(face.cross(Vector3.UP).dot(size)), absf(face.dot(size))) * lodge.global_basis.get_scale().x,
 	})
 
 
