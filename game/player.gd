@@ -1509,6 +1509,8 @@ func _on_craft(ev: Dictionary) -> void:
 		"doll":   # 衣装掛けで選んだ人形に着替える
 			set_doll(String(ev.doll))
 		"sewn":   # 自分の縫ったソリが、最後に触ったソリになる（左下の札がその場所を出す）
+			if ev.get("gear", false):   # 米袋は装備の枠に入り、床にソリは出ない
+				return
 			var made: RigidBody3D = craft.sleds.get(int(ev.id))
 			if made:
 				_touched(made)
