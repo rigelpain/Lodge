@@ -5,11 +5,11 @@ extends Node3D
 ## 形は手芸の世界のもの:
 ##   フェルトの石の輪（灰・茶・青みの羊毛玉をつぶした形）、灰色のフェルトの敷物、
 ##   毛糸を巻いた木の薪を櫓に組んだもの（下に横たえた薪 2 本）、
-##   炎は布（赤・橙のフェルト）とクラフト紙（黄）を切って重ね、2 枚を十字に差し込んだもの。熾火は小さな羊毛玉
+##   炎と灯りは火の手本の部品（flame.gd。布と紙を切って重ね、十字に差し込んだ炎）。熾火は小さな羊毛玉
 ## 動きは人形と同じ 12 コマ／秒（コマの間は止める）:
 ##   組む   石が 1 コマに 1 つずつ置かれ、薪が上から落ちてくる（LAY_FRAMES）
 ##   火がつく 炎が 2 コマごとに大きくなる（LIGHT_FRAMES）
-##   燃える 炎は切り紙を 2 コマごとに差し替える（4 つの切り方。置き換えのコマ撮り）。灯りも 1 コマごとに揺らぐ。薪はだんだん焦げる
+##   燃える 炎と灯りの揺れは flame.gd。薪はだんだん焦げる
 ##   弱る   燃え尽きる前の FADE 秒で、炎と灯りが小さくなる
 ##   消える 燃え尽きる（LIFE 秒）か、組んだ人が F で雪をかける（fire_out）。炎が消えて、雪のしぶきが上がる。薪は炭の色に
 ##   片づく 消えて AFTER 秒たつと、石と薪が 1 コマずつ縮んで消える
@@ -18,6 +18,14 @@ extends Node3D
 
 const Look := preload("res://look.gd")
 const Audio := preload("res://audio.gd")
+const Flame := preload("res://flame.gd")
+
+## 品目: 持ち物としての焚き火セット（名前・値段・絵）。売り場はここを読む。
+## 2026-11-01 代表「そういう道具類を売ってくれる山男？山師？みたいなキャラが欲しい」: 本当の売り場は山の道具を売る山男。
+## 山男の店ができるまでは、仮に売り子のおじさんの売り台に並べている（craft_ui.gd の _goods）
+const ITEM := {"kind": "campfire"}
+const NAME := "焚き火セット"
+const PRICE := 15            # ボタン（木の何個分）。1 つで 1 回燃える（LIFE、3 分）。布 10 と米袋の型紙 20 のあいだ
 
 const LIFE := 180.0          # 燃えている秒（組んでから）
 const FADE := 30.0           # 燃え尽きる前に弱っていく秒
@@ -28,17 +36,9 @@ const DRY_K := 2.5           # 乾く速さの倍率（暖炉 1。すぐそば�
 const WARM := 16.0           # すぐそばで、外の気温をこれだけ上げる (°C。temperature.gd)
 const RING_R := 0.36         # 石の輪の半径 (m)
 const STONES := 9
-const LIGHT_COLOR := Color(1.0, 0.60, 0.30)
-const LIGHT_ENERGY := 2.6
 const LIGHT_RANGE := 7.5
 const STONE_COLORS := [Color(0.40, 0.38, 0.37), Color(0.34, 0.29, 0.26), Color(0.46, 0.44, 0.41), Color(0.30, 0.33, 0.37)]
 const YARN_COLORS := [Color(0.80, 0.24, 0.20), Color(0.88, 0.66, 0.20), Color(0.24, 0.32, 0.55), Color(0.92, 0.88, 0.78), Color(0.25, 0.52, 0.34)]
-## 炎の 3 枚: [色, 大きさ, 光る強さ, 紙か]（外から赤いフェルト・橙のフェルト・黄のクラフト紙）
-const FLAME_LAYERS := [[Color(0.84, 0.22, 0.12), 1.0, 0.45, false], [Color(0.95, 0.50, 0.14), 0.7, 0.6, false], [Color(1.0, 0.82, 0.36), 0.42, 0.8, true]]
-const FLAME_W := 0.25        # 炎の幅の半分 (m)
-const FLAME_H := 0.9        # 炎の高さ (m)
-const CUTS := 4              # 炎の切り方の数
-
 var fire_id := -1            # craft.gd の番号
 var owner_id := -1           # 組んだ人の番号（その人だけが F で消せる）
 var age := 0.0               # 組んでからの秒
@@ -48,11 +48,9 @@ var _k := -1                 # いまのコマ
 var _parts: Array = []       # [節, 出るコマ, 落ちてくるか]
 var _logs: Array[StandardMaterial3D] = []
 var _log_base: Array[Color] = []
-var _planes: Array[Node3D] = []   # 炎の板（十字に 2 枚）。子は層ごとの MeshInstance3D
-var _cuts: Array = []        # 層ごとの、切り方ごとの ArrayMesh
+var _flame: Node3D          # 炎と灯り（flame.gd）
 var _embers: Array[MeshInstance3D] = []
 var _ember_mat: StandardMaterial3D
-var _light: OmniLight3D
 var _bed: AudioStreamPlayer3D
 var _crack: AudioStreamPlayer3D
 var _crack_t := 0.5
@@ -169,43 +167,12 @@ func _build() -> void:
 		sm.rings = 4
 		var e := _mesh(sm, _ember_mat, Vector3(cos(a), 0, sin(a)) * _rng.randf_range(0.06, 0.16) + Vector3.UP * 0.035)
 		_embers.append(e)
-	# 炎: 切り方ごとの形を作っておき、十字の 2 枚の層に差し替える
-	for li in FLAME_LAYERS.size():
-		var list := []
-		for c in CUTS:
-			list.append(_flame_mesh(c, li))
-		_cuts.append(list)
-	for pi in 2:
-		var plane := Node3D.new()
-		plane.position = Vector3(0, 0.06, 0)
-		add_child(plane)
-		# 斜面に組んでも、炎はまっすぐ上へ（焚き火の傾きを打ち消す）
-		var yaw := global_basis.get_euler().y + pi * PI / 2.0 + 0.4
-		plane.set_meta("upright", global_basis.orthonormalized().inverse() * Basis(Vector3.UP, yaw))
-		for li in FLAME_LAYERS.size():
-			var col: Color = FLAME_LAYERS[li][0]
-			var m: StandardMaterial3D = Look.paper(col) if FLAME_LAYERS[li][3] else Look.felt(col, 3.0)
-			m.cull_mode = BaseMaterial3D.CULL_DISABLED
-			m.rim_enabled = false
-			m.emission_enabled = true
-			m.emission = col
-			m.emission_energy_multiplier = FLAME_LAYERS[li][2]
-			for side in ([0.0] if li == 0 else [-1.0, 1.0]):   # 外の層は 1 枚、内の層は表と裏に 1 枚ずつ（どちらから見ても重なって見える）
-				var mi := MeshInstance3D.new()
-				mi.material_override = m
-				mi.position.z = side * 0.007 * li
-				mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-				mi.set_meta("layer", li)
-				plane.add_child(mi)
-		_planes.append(plane)
-	_light = OmniLight3D.new()
-	_light.light_color = LIGHT_COLOR
-	_light.omni_range = LIGHT_RANGE
-	_light.omni_attenuation = 1.3
-	_light.light_energy = 0.0
-	_light.shadow_enabled = false
-	_light.position = Vector3(0, 0.55, 0)
-	add_child(_light)
+	_flame = Flame.new()
+	_flame.position = Vector3(0, 0.06, 0)
+	_flame.seed = fire_id
+	_flame.light_range = LIGHT_RANGE
+	_flame.level = 0.0
+	add_child(_flame)
 
 
 ## 毛糸を 2 か所に巻いた木の薪（長さは y 向き）
@@ -232,56 +199,6 @@ func _log(r: float, length: float, i: int) -> Node3D:
 		band.position.y = length * y
 		lg.add_child(band)
 	return lg
-
-
-## 炎の切り紙 1 枚の形: 下が丸く、上に舌が 1〜3 本。はさみで切ったように縁を少しがたつかせる
-func _flame_mesh(cut: int, layer: int) -> ArrayMesh:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 101 + cut * 37 + layer * 11
-	var s: float = FLAME_LAYERS[layer][1]
-	var w := FLAME_W * s
-	var h := FLAME_H * s * rng.randf_range(0.9, 1.08)
-	var tips: int = [2, 2, 1][layer] + (1 if cut % 2 == 1 and layer == 0 else 0)
-	var pts: Array[Vector2] = []
-	# 下の丸み（右から左へ）
-	for j in 7:
-		var a := PI * (0.05 + 0.9 * j / 6.0)
-		pts.append(Vector2(cos(a) * w, -sin(a) * w * 0.35))
-	# 左の縁から舌を 1 本ずつ（いちばん高い舌は真ん中あたり）
-	var lean := rng.randf_range(-0.25, 0.25) * w
-	for t in tips:
-		var x0 := lerpf(-w, w, float(t) / tips)
-		var x1 := lerpf(-w, w, float(t + 1) / tips)
-		var mid := (x0 + x1) / 2.0
-		var centre := 1.0 - absf(mid) / w
-		var th := h * lerpf(0.55, 1.0, centre) * rng.randf_range(0.85, 1.1)
-		var base_y := h * lerpf(0.18, 0.38, centre) if t > 0 else h * 0.12
-		pts.append(Vector2(x0 * 0.92, base_y))
-		pts.append(Vector2(lerpf(x0, mid, 0.25) + rng.randf_range(-0.01, 0.01), th * 0.55))   # 舌はふっくら（根元から半ばまで幅を保つ）
-		pts.append(Vector2(lerpf(x0, mid, 0.6) + lean * centre * 0.6, th * 0.85))
-		pts.append(Vector2(mid + lean * centre, th))
-		pts.append(Vector2(lerpf(x1, mid, 0.55) + lean * centre * 0.6, th * 0.8))
-		pts.append(Vector2(lerpf(x1, mid, 0.2) + rng.randf_range(-0.01, 0.01), th * 0.5))
-	pts.append(Vector2(w * 0.95, h * 0.12))
-	# はさみのがたつき: 辺の途中に、少しずれた点を足す
-	var cutpts := PackedVector2Array()
-	for j in pts.size():
-		var a: Vector2 = pts[j]
-		var b: Vector2 = pts[(j + 1) % pts.size()]
-		cutpts.append(a)
-		var n := (b - a).orthogonal().normalized()
-		cutpts.append((a + b) / 2.0 + n * rng.randf_range(-0.006, 0.006))
-	if Geometry2D.is_polygon_clockwise(cutpts):
-		cutpts.reverse()
-	var idx := Geometry2D.triangulate_polygon(cutpts)
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	st.set_normal(Vector3.BACK)
-	for i in idx:
-		var p: Vector2 = cutpts[i]
-		st.set_uv(Vector2(p.x, -p.y) * 2.0)
-		st.add_vertex(Vector3(p.x, p.y, 0))
-	return st.commit()
 
 
 func _cyl(top: float, bottom: float, h: float) -> CylinderMesh:
@@ -331,36 +248,13 @@ func _step(k: int) -> void:
 	var char_k := clampf(age / LIFE, 0.0, 1.0) * 0.55 + (0.35 if _out_age >= 0.0 else 0.0)
 	for i in _logs.size():
 		_logs[i].albedo_color = _log_base[i].lerp(Color(0.12, 0.10, 0.09), char_k)
-	# 炎: 2 コマごとに切り方を替える（同じ切り方は続けない）。大きさは火の強さ
-	var step := k / 2
-	for pi in _planes.size():
-		var plane: Node3D = _planes[pi]
-		var on := lv > 0.0 and gone > 0.0
-		plane.visible = on
-		if not on:
-			continue
-		var cut := int(_hash(step * 3 + pi * 17) * CUTS)
-		if cut == int(_hash((step - 1) * 3 + pi * 17) * CUTS):
-			cut = (cut + 1) % CUTS
-		var jit := 1.0 + (_hash(step * 5 + pi) - 0.5) * 0.12
-		var up_b: Basis = plane.get_meta("upright")
-		plane.basis = (up_b * Basis(Vector3.BACK, (_hash(step * 7 + pi * 3) - 0.5) * 0.12)).scaled_local(Vector3(lv * (2.0 - jit), lv * jit, lv))
-		for c in plane.get_children():
-			var mi := c as MeshInstance3D
-			var li: int = mi.get_meta("layer")
-			var lc := cut if li == 0 else (cut + li + int(_hash(step + li) * 2.0)) % CUTS   # 内の層は外とずらす（いっしょに動かない）
-			mi.mesh = _cuts[li][lc]
+	_flame.level = lv if gone > 0.0 else 0.0
 	# 熾火: コマごとにいくつかが明るく、いくつかが暗く。消えたら灰色
 	for i in _embers.size():
 		_embers[i].visible = k >= LAY_FRAMES and gone > 0.0
 		_embers[i].scale = Vector3.ONE * (1.0 if _hash(k * 11 + i) > 0.35 else 0.7)
 	_ember_mat.emission_energy_multiplier = 1.4 * lv if lv > 0.0 else 0.0
 	_ember_mat.albedo_color = Color(0.95, 0.40, 0.12) if lv > 0.0 else Color(0.25, 0.23, 0.22)
-	# 灯り: コマごとに揺らぐ
-	var flick := 0.82 + 0.18 * _hash(k * 13 + 5)
-	_light.light_energy = LIGHT_ENERGY * lv * flick
-	_light.position = Vector3((_hash(k * 3) - 0.5) * 0.06, 0.55 + (_hash(k * 5) - 0.5) * 0.05, (_hash(k * 9) - 0.5) * 0.06)
-	_light.visible = lv > 0.0
 
 
 ## 0 〜 1 の決まった乱数（コマの番号から。どの画面でも同じ揺れ方）
@@ -381,7 +275,23 @@ func _sound(dt: float) -> void:
 		_audio.fire_crack(_crack, level())
 
 
-# ---------------------------------------------------------------- 持ち物の形
+# ---------------------------------------------------------------- 持ち物の形と絵
+
+## 品目の絵（売り台の札・持ち物の列・看板。64 × 64 の箱、中心が原点）: 毛糸で縛った薪 3 本（切り口を見せて積む）と、丸めたクラフト紙の焚きつけ。
+## 描く前に hud_icons.gd の _o・_s が入っていること（craft_icons.gd の item が入れる）
+static func icon(ci: CanvasItem, c: Vector2, sc: float, a: float) -> void:
+	var Icons := preload("res://hud_icons.gd")
+	var bark := Color(0.52, 0.34, 0.20)
+	var ring := Color(0.86, 0.72, 0.52)
+	var kraft := Color(0.84, 0.72, 0.52)
+	Icons.patch(ci, Icons.xf(Icons.rr(-26, -10, 52, 32, 6), 0.0, c + Vector2(0, 4) * sc, sc), bark.darkened(0.25), a, false)
+	for p in [Vector2(-12, 10), Vector2(12, 10), Vector2(0, -8)]:
+		Icons.patch(ci, Icons.circ(c + p * sc, 11.0 * sc, 18), bark, a, true, bark.lightened(0.35))
+		Icons.patch(ci, Icons.circ(c + p * sc, 7.5 * sc, 16), ring, a, false)
+		ci.draw_arc(Icons._o + (c + p * sc) * Icons._s, 3.5 * sc * Icons._s, 0, TAU, 12, Color(bark.r, bark.g, bark.b, a), maxf(1.0 * Icons._s, 1.0), true)
+	Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(-26, 2), Vector2(-8, -2), Vector2(8, -2), Vector2(26, 2)]), 0.0, c, sc), Icons.RED, 3.2, a)
+	Icons.patch(ci, Icons.xf(Icons.ell(Vector2(18, -18), 9, 7, 12), 0.0, c, sc), kraft, a, true, kraft.darkened(0.35))
+
 
 ## 手に持った焚き火セット: 毛糸で縛った薪 3 本の束に、丸めたクラフト紙の焚きつけを挟んだもの（player.gd の held_shape）
 static func kit_shape() -> Node3D:

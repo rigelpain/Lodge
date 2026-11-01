@@ -110,7 +110,7 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 		"fabric":
 			_fabric(ci, Vector2.ZERO, 1.0, Fabrics.color(it.get("fabric", "red")), a)
 		"campfire":
-			campfire_kit(ci, Vector2.ZERO, 1.0, a)
+			preload("res://campfire.gd").icon(ci, Vector2.ZERO, 1.0, a)
 		"folded":
 			_folded(ci, Vector2.ZERO, it.get("sled", "mid"), Fabrics.color(it.get("fabric", "red")), a)
 			# 包みの面に貼った名札（手に持った包みと同じ並び）。窓に、広げた姿がくるくる回る
@@ -143,7 +143,7 @@ static func item_name(it: Dictionary) -> String:
 				return "畳んだ米袋" + ("（%s）" % fab if fab != "" else "")
 			return "畳んだ%s（%s）" % [sled, fab] if fab != "" else "畳んだ" + sled
 		"campfire":
-			return "焚き火セット"
+			return preload("res://campfire.gd").NAME
 		"food":
 			var dish: String = DISH_NAMES.get(it.get("dish", ""), "料理")
 			return dish if preload("res://food.gd").done(it) else "%sのもと" % dish
@@ -533,19 +533,6 @@ static func _fabric(ci: CanvasItem, c: Vector2, sc: float, col: Color, a: float)
 	Icons.patch(ci, Icons.xf(Icons.rr(-22, -16, 44, 24, 4), 0.0, c, sc), col, a, true, col.lightened(0.45) if col.get_luminance() < 0.6 else col.darkened(0.45))
 	Icons.patch(ci, Icons.xf(PackedVector2Array([Vector2(10, 8), Vector2(22, 8), Vector2(22, -2)]), 0.0, c, sc), col.lightened(0.2), a, false)
 	Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(-22, -2), Vector2(22, -2)]), 0.0, c, sc), col.darkened(0.3), 0.8, 0.6 * a)
-
-
-## 焚き火セット: 毛糸で縛った薪 3 本（切り口を見せて積む）と、丸めたクラフト紙の焚きつけ
-static func campfire_kit(ci: CanvasItem, c: Vector2, sc: float, a: float) -> void:
-	var bark := Color(0.52, 0.34, 0.20)
-	var ring := Color(0.86, 0.72, 0.52)
-	Icons.patch(ci, Icons.xf(Icons.rr(-26, -10, 52, 32, 6), 0.0, c + Vector2(0, 4) * sc, sc), bark.darkened(0.25), a, false)
-	for p in [Vector2(-12, 10), Vector2(12, 10), Vector2(0, -8)]:
-		Icons.patch(ci, Icons.circ(c + p * sc, 11.0 * sc, 18), bark, a, true, bark.lightened(0.35))
-		Icons.patch(ci, Icons.circ(c + p * sc, 7.5 * sc, 16), ring, a, false)
-		ci.draw_arc(Icons._o + (c + p * sc) * Icons._s, 3.5 * sc * Icons._s, 0, TAU, 12, Color(bark.r, bark.g, bark.b, a), maxf(1.0 * Icons._s, 1.0), true)
-	Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(-26, 2), Vector2(-8, -2), Vector2(8, -2), Vector2(26, 2)]), 0.0, c, sc), Icons.RED, 3.2, a)
-	Icons.patch(ci, Icons.xf(Icons.ell(Vector2(18, -18), 9, 7, 12), 0.0, c, sc), KRAFT, a, true, KRAFT.darkened(0.35))
 
 
 ## 燃えている焚き火: 灰色の石の輪、薪の櫓、赤・橙・黄の切り紙の炎（lit が false なら炎は小さく）

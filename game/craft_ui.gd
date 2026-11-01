@@ -95,7 +95,7 @@ func _ready() -> void:
 	layer = 4
 	for k in Craft.PATTERNS:
 		_goods.append({"kind": "pattern", "sled": k})
-	_goods.append({"kind": "campfire"})   # 焚き火セット（型紙の段の右の端。旅のおじいさんの持ち物）
+	_goods.append(preload("res://campfire.gd").ITEM.duplicate())   # 焚き火セット（型紙の段の右の端）。本当の売り場は山男の店。できるまでの仮
 	for f in Fabrics.ORDER:
 		_goods.append({"kind": "fabric", "fabric": f})
 	_view = View.new()

@@ -79,8 +79,6 @@ const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 ## 最初の小は、米袋で漕いで丘を 3 分ほど、大は、中に 3 人で大きな山を 6 分半・小ひとりで 11 分・米袋ひとりで 20〜50 分ほど（design/snow-buttons の表）
 const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
 const FABRIC_PRICE := 10
-## 焚き火セットの値段（木の何個分）。1 つで 1 回燃える（campfire.gd の LIFE、3 分）。布より少し高く、米袋の型紙より安い
-const CAMPFIRE_PRICE := 15
 ## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
 const DYE_PRICE := 15
 const PATTERNS := ["sack", "small", "mid", "large"]
@@ -351,7 +349,7 @@ static func price(item: Dictionary) -> int:
 	if item.get("kind") == "fabric":
 		return FABRIC_PRICE
 	if item.get("kind") == "campfire":
-		return CAMPFIRE_PRICE
+		return preload("res://campfire.gd").PRICE
 	return 99
 
 

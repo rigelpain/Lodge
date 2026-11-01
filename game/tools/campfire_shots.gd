@@ -111,7 +111,7 @@ func _run() -> void:
 	await _shot("01_shop")
 	var before: int = c.wallet(who)
 	_check(main.craft_ui.buy(), "焚き火セットを買えた")
-	_check(c.wallet(who) == before - c.CAMPFIRE_PRICE, "ボタンが %d 減った（%d → %d）" % [c.CAMPFIRE_PRICE, before, c.wallet(who)])
+	_check(c.wallet(who) == before - Campfire.PRICE, "ボタンが %d 減った（%d → %d）" % [Campfire.PRICE, before, c.wallet(who)])
 	_check(c.held(who).get("kind", "") == "campfire", "買った焚き火セットを手に持っている")
 	await _wait(0.4)
 	main.craft_ui.close_shop()
