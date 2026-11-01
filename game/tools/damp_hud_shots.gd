@@ -1,8 +1,9 @@
 extends SceneTree
 ## 「よれ」のゲージとバッジ（damp_hud.gd・badges.gd）を、ゲームの画面で撮る（確かめ用）。
-##   Godot --path game --resolution 1600x900 -s res://tools/damp_hud_shots.gd -- --dir=/path [--values=10,60,120,190] [--mate=30] [--place=foot|fire] [--frames=12]
+##   Godot --path game --resolution 1600x900 -s res://tools/damp_hud_shots.gd -- --dir=/path [--values=10,60,120,190] [--mate=30] [--place=foot|fire] [--frames=12] [--coming=40]
 ## 値ごとに、一人称（値_fp.png）と三人称（値_tp.png）。あなたの値は固定し（なじませない）、仲間（2.2 m 先）には --mate の値を入れる。
 ## --place=fire はロッジの暖炉の前（暖炉を背に、こちらを向いた仲間）
+## --coming はご飯でこれから戻る量（しつけ糸とご飯のバッジを見る）
 
 const Doll := preload("res://doll.gd")
 
@@ -47,6 +48,7 @@ func _run() -> void:
 	for v in Array(String(args.get("values", "10,60,120,190")).split_floats(",")):
 		main.damp.put(p.id, v)
 		main.damp.put(b.id, mate)
+		main.damp.pending[p.id] = float(args.get("coming", "0"))
 		for view in ["fp", "tp"]:
 			p.set_third(view == "tp")
 			await _frames(70)
