@@ -2,6 +2,7 @@ extends Node
 
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
+const Craft := preload("res://craft.gd")
 ## Lodge の音。考え方は design/sound-concept.md。
 ## 場にあるものしか鳴らさない。外は響かない。言葉はない（声は言葉にならない「ワ〜」「ウン」「ンーン」だけ）。
 ##
@@ -80,6 +81,9 @@ func _ready() -> void:
 	var hub := world.get_node_or_null("Emotes")
 	if hub:
 		hub.happened.connect(_on_emote)
+	var craft := world.get_node_or_null("Craft")
+	if craft:
+		craft.happened.connect(_on_craft)
 
 
 # ---- 読み込み ---------------------------------------------------------------
@@ -103,11 +107,15 @@ func _wav(name: String) -> AudioStreamWAV:
 
 ## 番号つきの音から、前と違うものを選ぶ
 func _pick(prefix: String, count: int) -> AudioStreamWAV:
+	return _wav(_pick_name(prefix, count))
+
+
+func _pick_name(prefix: String, count: int) -> String:
 	var i := rng.randi_range(1, count)
 	if count > 1 and _last_pick.get(prefix, 0) == i:
 		i = i % count + 1
 	_last_pick[prefix] = i
-	return _wav("%s_%02d" % [prefix, i])
+	return "%s_%02d" % [prefix, i]
 
 
 func _p3(parent: Node3D, bus: String, db: float, unit := 6.0, max_dist := 60.0) -> AudioStreamPlayer3D:
@@ -620,6 +628,136 @@ func button(what: String, at: Vector3, frame: int, tier := 0) -> void:
 			_emote_sound(ev, 0, "shears", 2, -3.0, rng.randf_range(0.96, 1.05), at, false)
 		"swish":
 			_emote_sound(ev, 0, "swish", 2, -14.0, rng.randf_range(1.3, 1.45), at, false)
+
+
+# ---- 売り台で買う・厨房で調理する（2026-11-01 代表「購入音、ミシンでの制作音、食べ物の調理音をしっかり作ってほしい」） --------
+# 画面の決定音にはしない。番台のお皿・レジ・品物を包む手もとで鳴る音として、店の所から 3D で鳴らす（Inside）。
+# 音は sound/gen/shop.py と sound/gen/cook.py。ミシンの音は sewing_machine.gd が自分で鳴らす
+
+## 店ごとの 3 つの層: [払いの音, その数, レジ, 包む]。払いは、払った数（木のボタンの段に分けた枚数）だけ粒を落とす
+const SHOP_SOUNDS := {
+	"patch": ["pay_button", 6, "till_patch", "wrap_paper"],    # パッチワークのおじいさんの番台（型紙と布）
+	"snow": ["pay_snowball", 3, "till_snow", "wrap_bag"],      # 雪だるまの番台（ペレット。お代は雪玉）
+	"pal": ["pay_button", 6, "till_pal", "wrap_tissue"],       # 2 階の衣装掛けの横の売り台（頭・肩の小物とミニオン）
+}
+## 店の所（ロッジの中の節の名前）。見つからなければ買った人の所で鳴らす
+const SHOP_NODES := {"patch": "Bandai_counter_patch", "snow": "Bandai_counter_indigo", "pal": "PalStall"}
+const PAY_GAP := 0.075     # 払いの粒の間 (s)。sound/gen/shop.py の PAY_GAP と同じ
+const TILL_AFTER := 0.12   # 最後の払いからレジまで
+const WRAP_AFTER := 0.55   # レジから包むまで
+var _purses := {}          # 人の番号 → 前に見た財布の中身（払った数を、出来事の前後の差で知る）
+
+
+## 工房（craft.gd）の出来事から、買ったことを拾う。buy はおじいさん、pal_buy は 2 階の売り台、
+## 名前に food か pellet を含む買う出来事は雪だるまの店（feature/snowman-food の売り場が出す名前に合わせる）
+func _on_craft(ev: Dictionary) -> void:
+	var craft: Node = world.get_node_or_null("Craft")
+	var who: int = ev.get("who", -1)
+	var now: int = int(craft.wallets.get(who, 0)) if craft else 0
+	var paid: int = int(_purses.get(who, now)) - now
+	_purses[who] = now
+	var kind := String(ev.get("kind", ""))
+	if kind != "buy" and not kind.ends_with("_buy"):
+		return
+	if kind == "buy" and ev.get("item") is Dictionary:
+		paid = Craft.price(ev.item)
+	var shop := "patch"
+	if kind == "pal_buy":
+		shop = "pal"
+	elif "food" in kind or "pellet" in kind:
+		shop = "snow"
+	var hub := world.get_node_or_null("Emotes")
+	var buyer: Node3D = hub.who_of(who) if hub and hub.has_method("who_of") else null
+	var at: Vector3 = buyer.global_position + Vector3.UP * 1.0 if buyer else _listener()
+	var n: int = int(ev.get("n", ev.get("count", 1)))
+	if shop != "snow":
+		n = Craft.pieces(paid).size() if paid > 0 else 1
+	purchase(shop, at, n, Craft.pieces(paid) if paid > 0 else [])
+
+
+## 買ったときの音。shop は SHOP_SOUNDS の店、near は店が見つからないときに鳴らす所、count は払いの粒の数、
+## looks は払ったボタンの段（"wood" "brass" "pearl" "raden"。真鍮・白蝶貝の粒はその素材の音で落ちる）
+func purchase(shop: String, near: Vector3, count := 1, looks := []) -> void:
+	var s: Array = SHOP_SOUNDS.get(shop, SHOP_SOUNDS.patch)
+	var at := near
+	if lodge:
+		var node := lodge.find_child(SHOP_NODES.get(shop, ""), true, false) as Node3D
+		if node == null and world.get("pal_stall") is Node3D and shop == "pal":
+			node = world.pal_stall
+		if node:
+			at = node.global_position + Vector3.UP * 0.95   # 台の上（お皿・レジの高さ）
+	var t := 0.0
+	count = clampi(count, 1, 6)
+	for i in count:
+		var look: String = looks[i] if i < looks.size() else "wood"
+		var pick := 0
+		if s[0] == "pay_button":   # 01〜03 木・04〜05 真鍮・06 白蝶貝（螺鈿も貝の音）
+			pick = {"wood": rng.randi_range(1, 3), "brass": rng.randi_range(4, 5)}.get(look, 6)
+		var name_: String = "%s_%02d" % [s[0], pick] if pick > 0 else _pick_name(s[0], s[1])
+		_one_shot(at, name_, -10.0 - 1.0 * i, rng.randf_range(0.94, 1.06), t)
+		t += PAY_GAP * rng.randf_range(0.8, 1.25)
+	t += TILL_AFTER
+	_one_shot(at, _pick_name(s[2], 3), -6.0, rng.randf_range(0.98, 1.02), t)
+	_one_shot(at, _pick_name(s[3], 3), -9.0, rng.randf_range(0.95, 1.05), t + WRAP_AFTER)
+
+
+## 厨房の装置の音（雪だるまの食べ物屋の調理が呼ぶ）。device は "iron"（アイロン台）・"press"（プレス機）・
+## "dryer"（乾燥機）・"drink"（飲み物のスチーマー）。step は:
+##   "in"   ペレットを入れた。入れる音のあと、動いている音（ループ）を装置の所で始める
+##   "done" できた。ループを止めて、できた音
+##   "stop" ループだけ止める（途中でやめた）
+## at は装置の Node3D（動いても付いていく）か、位置
+const COOK_DB := {"iron": -8.0, "press": -9.0, "dryer": -9.0, "drink": -8.0}
+var _cook_loops := {}      # 装置 → ループの AudioStreamPlayer3D
+
+
+func cook(device: String, step: String, at: Variant) -> void:
+	if not COOK_DB.has(device):
+		push_warning("調理の装置がない: " + device)
+		return
+	var pos: Vector3 = (at as Node3D).global_position + Vector3.UP * 1.2 if at is Node3D else at
+	var db: float = COOK_DB[device]
+	match step:
+		"in":
+			_one_shot(pos, _pick_name("cook_%s_in" % device, 2), db, rng.randf_range(0.96, 1.04))
+			var p: AudioStreamPlayer3D = _cook_loops.get(device)
+			if p == null:
+				p = _p3(world, "Inside", -60.0, 4.0, 40.0)
+				p.stream = _wav("cook_%s_loop" % device)
+				_cook_loops[device] = p
+			p.global_position = pos
+			p.volume_db = -60.0
+			p.play(rng.randf_range(0.0, 3.0))
+			var tw := create_tween()
+			tw.tween_interval(0.5)
+			tw.tween_property(p, "volume_db", db - 4.0, 0.6)
+		"done", "stop":
+			var p: AudioStreamPlayer3D = _cook_loops.get(device)
+			if p and p.playing:
+				var tw := create_tween()
+				tw.tween_property(p, "volume_db", -60.0, 0.35)
+				tw.tween_callback(p.stop)
+			if step == "done":
+				_one_shot(pos, _pick_name("cook_%s_done" % device, 2), db, rng.randf_range(0.96, 1.04))
+
+
+## 1 回だけ鳴らす 3D の音（delay 秒あとに、at で）。鳴り終わったら消える
+func _one_shot(at: Vector3, name_: String, db: float, pitch := 1.0, delay := 0.0) -> void:
+	var s := _wav(name_)
+	if s == null:
+		return
+	var p := _p3(world, "Inside", db, 3.0, 35.0)
+	p.global_position = at
+	p.stream = s
+	p.pitch_scale = pitch
+	p.finished.connect(p.queue_free)
+	var go := func() -> void:
+		p.play()
+		_note(name_, false, at)
+	if delay > 0.0:
+		get_tree().create_timer(delay).timeout.connect(go)
+	else:
+		go.call()
 
 
 func _play_step(w: Dictionary, s: AudioStreamWAV, db: float, pitch: float, is_player: bool) -> void:
