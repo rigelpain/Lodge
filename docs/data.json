@@ -559,6 +559,116 @@
             "note": "録音（Vrymaa・bbrocer、CC0）。皿が触れる 4 つと、卓に置く 2 つ"
           }
         ]
+      },
+      {
+        "name": "雪だるまの食べ物屋",
+        "items": [
+          {
+            "name": "調理の曲: プレス機",
+            "prefix": "cook_music_press",
+            "note": "装置に仕込んだオルゴール（調理しているあいだ装置から鳴る）。120 BPM・8 秒のループ。下にフェルトのどすん。earshot: music box z +3.0"
+          },
+          {
+            "name": "調理の曲: アイロン台",
+            "prefix": "cook_music_iron",
+            "note": "同じ旋律に、布をこする小さなシャカシャカ。earshot: music box z +2.8"
+          },
+          {
+            "name": "調理の曲: 乾燥機",
+            "prefix": "cook_music_dryer",
+            "note": "同じ旋律に、木の玉がころころ転がる 3 連。earshot: z +3.0"
+          },
+          {
+            "name": "調理の曲: スチーマー",
+            "prefix": "cook_music_drink",
+            "note": "同じ旋律に、泡のぽこぽこ。earshot: z +3.7"
+          },
+          {
+            "name": "雪だるまのベル",
+            "prefix": "cook_bell",
+            "note": "ペレットが売れたとき、右手のベルを振る「ちりりん」。earshot z +2.6"
+          },
+          {
+            "name": "ペレットのぽこ",
+            "prefix": "cook_pellet",
+            "note": "ペレットが跳ねる・手や装置に収まる。earshot「bubble pop」z +2.8"
+          },
+          {
+            "name": "プレス機のぼすっ",
+            "prefix": "cook_press",
+            "note": "2 拍ごとに台ごと沈む。きしみ → 綿の熱板が合わさる → 湯気。earshot z +2.2（キックドラムに寄る。弱め）"
+          },
+          {
+            "name": "アイロンのジュー",
+            "prefix": "cook_sizzle",
+            "note": "アイロン台で焼くあいだ。earshot z +2.8"
+          },
+          {
+            "name": "揚げるぱちぱち",
+            "prefix": "cook_fry",
+            "note": "乾燥機で揚げ物（たい焼き・コロッケなど）。earshot: 焚き火のぱちぱちに寄る（58%）"
+          },
+          {
+            "name": "茹でるぐつぐつ",
+            "prefix": "cook_boil",
+            "note": "乾燥機で麺。earshot z +4.1"
+          },
+          {
+            "name": "乾燥機の胴",
+            "prefix": "cook_drum",
+            "note": "胴が回る低いうなりと、柔らかい当たり。earshot z +2.9"
+          },
+          {
+            "name": "スチーマー: ぽとん",
+            "prefix": "cook_plop",
+            "note": "タンクにペレットが落ちる。earshot z +3.0"
+          },
+          {
+            "name": "スチーマー: ごぼごぼ",
+            "prefix": "cook_gurgle",
+            "note": "タンクの泡。earshot z +3.8"
+          },
+          {
+            "name": "スチーマー: ぷしゅっ",
+            "prefix": "cook_puff",
+            "note": "頭から湯気。earshot z +2.6"
+          },
+          {
+            "name": "できあがりのチン",
+            "prefix": "cook_done",
+            "note": "装置のタイマー（装置から鳴る）。earshot z +2.7"
+          }
+        ]
+      },
+      {
+        "name": "食べる",
+        "items": [
+          {
+            "name": "もぐもぐ",
+            "prefix": "eat_chew",
+            "note": "やわらかい物（おにぎり・肉まん・ホットケーキなど）。合成の仮の音。earshot では食べる音に聞こえない（z +0.3）"
+          },
+          {
+            "name": "さくっ",
+            "prefix": "eat_crunch",
+            "note": "皮がぱりっとした物（たい焼き・コロッケ・ポテトなど）。合成の仮の音（z +0.9、小枝が折れる音に寄る）"
+          },
+          {
+            "name": "ずずっ",
+            "prefix": "eat_slurp",
+            "note": "麺をすする。合成の仮の音（z +0.6、風を切る音に寄る）"
+          },
+          {
+            "name": "ずっ・こくっ",
+            "prefix": "eat_sip",
+            "note": "飲み物をひと口。合成の仮の音（z +0.2）"
+          },
+          {
+            "name": "ほっ",
+            "prefix": "eat_ah",
+            "note": "食べ終えて、ほっと息。合成の仮の音"
+          }
+        ]
       }
     ],
     "ask": [
