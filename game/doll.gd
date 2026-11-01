@@ -129,6 +129,7 @@ var _cold := -1.0            # 白い息の見え方（0 暖かくて見えな�
 var _cold_want := 1.0
 var _cold_t := 0.0
 var _shiver := 0.0           # 寒さのふるえ（0 〜 1）。口もとの気温から、数秒でなじむ
+var warm_food := 0.0          # 食べたぬくもりの効き（0〜0.85。warmth.gd が入れる）。ふるえをこの割合だけ弱める
 var _shiver_want := 0.0
 var _calm := 0.0             # 暖かさの落ち着き（0 〜 1）。揺れがゆっくりになる
 var _calm_want := 0.0
@@ -1111,7 +1112,7 @@ func _blow_breath(dt: float) -> void:
 		var temp := get_node_or_null("/root/Temperature")
 		var c: float = temp.at(_long.global_position) if temp else 0.0
 		_cold_want = Temp.breath_of(c) if temp else 1.0
-		_shiver_want = Temp.shiver_of(c) if temp else 0.0
+		_shiver_want = (Temp.shiver_of(c) if temp else 0.0) * (1.0 - warm_food)   # 食べたぬくもりで、外でもふるえにくい（warmth.gd）
 		_calm_want = Temp.calm_of(c) if temp else 0.0
 		if _cold < 0.0:
 			_cold = _cold_want   # はじめは、その場の寒さから
@@ -1178,10 +1179,10 @@ func _aim_toward(i: int, dir: Vector3, w: float) -> void:
 ## emotes.gd の KINDS と同じ長さ（コマ）。0 は終わりを持ち主が決める
 const EMOTE_FRAMES := {
 	"high_five": 12, "shake": 24, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
-	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18,
+	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18, "eat": 16,
 }
 ## 腕を使う身ぶり。このあいだは手の形を出さない
-const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit"]
+const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit", "eat"]
 
 
 ## いまの身ぶりと、始まってからのコマ数（このコマ）。終わっていたら消す
@@ -1312,6 +1313,10 @@ func _emote_body(kind_: String, k: int) -> float:
 		"nn":
 			_em_head.x = [0.35, 0.35, -0.35, -0.35, 0.35, 0.35, -0.3, -0.3, 0.2, 0.2, -0.1, -0.1, 0.0, 0.0][k]
 			_em_head.y = -0.08
+		"eat":
+			# ひと口: 料理を見下ろして口へ運び（0〜4）、もぐもぐと 2 回うなずくように噛んで（5〜11）、顔を上げる
+			_em_head.y = [-0.18, -0.24, -0.2, -0.12, -0.05, -0.1, 0.0, -0.1, 0.0, -0.08, 0.0, 0.02, 0.04, 0.03, 0.01, 0.0][k]
+			return [0.04, 0.06, 0.05, 0.03, 0.0, 0.03, 0.0, 0.03, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][k]
 		"oi":
 			# 呼ぶ: 小さく息を吸ってかがみ（ため）、胸を張って顔を上げ、遠くへ声を届ける
 			if k < 2:
@@ -1425,6 +1430,14 @@ func _emote_arms(kind_: String, k: int) -> void:
 			elif k < 11:
 				for side in ["L", "R"]:
 					_arm(side, Vector3(0.75, 0.3, -0.35), Vector3(0.55, 0.85, -0.3))   # 両手を開いて上へ
+		"eat":
+			# 右手（料理を持つ手）を口の前へ運び、噛むあいだそこに置き、下ろす。口の所は頭の骨と腕の長さから決めるので、
+			# 7 体（頭の大きさ・腕の長さがちがう）のどれでも口の前に来る
+			var arm_r := _len(_id("upper_arm.R")) + _len(_id("forearm.R"))
+			var mouth := head + Vector3(0.03, -0.1, -0.42) * arm_r
+			var low := sh + Vector3(0.18, -0.35, -0.55) * arm_r   # 胸の前（持っているときの所）
+			var f: float = [0.0, 0.45, 0.85, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.7, 0.35, 0.1, 0.0][k]
+			_hand_to("R", low.lerp(mouth, f))
 		"oi":
 			if k >= 1 and k < 16:
 				# 空いた手を口の横に当てて、メガホンに（高い片手のひらで場所を示しながら呼べる）
@@ -1467,6 +1480,11 @@ func _emote_breath(kind_: String, k: int) -> void:
 			if k == 2:
 				_puff(1.15, 0.6)
 				_next_breath = _frame + 24
+		"eat":
+			# 最後のひと口を飲み込んだら、ほっと温かい息（寒い所では白く見える）
+			if k == 13 and emote.get("last", false):
+				_puff(1.5, 1.1)
+				_next_breath = _frame + 30
 		"oi":
 			# 声を伸ばすあいだ、大きな白い息を吐き続ける
 			if k == 2:

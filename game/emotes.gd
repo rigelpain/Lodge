@@ -40,6 +40,7 @@ const KINDS := {
 	"nn": {"frames": 14, "root": false},          # 声「ンーン」いやいや
 	"huh": {"frames": 16, "root": false},         # 声「ウン？」首をかしげる
 	"oi": {"frames": 18, "root": false},          # 声「おーーーい」遠くの人を呼ぶ（空いた手を口に当てる）
+	"eat": {"frames": 16, "root": false},         # 手の料理をひと口（右手を口へ運び、もぐもぐ。ev.last で最後のひと口: ほっと息）
 }
 const VOICES := ["wa", "un", "nn", "huh", "oi"]
 const HANDS := Palm.HANDS
