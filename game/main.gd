@@ -83,6 +83,7 @@ const PalsUi := preload("res://pals_ui.gd")
 const PAL_STALL_X := 2.85
 const DyeVat := preload("res://dye_vat.gd")
 const DyeUi := preload("res://dye_ui.gd")
+const Net := preload("res://net.gd")
 ## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
 ## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
 const WARDROBE_AT := Vector2(21.25, 2.2)
@@ -154,6 +155,7 @@ var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
 var damp: Damp                # 紙の人形の「よれ」（湿り気）の配り役（damp.gd）。人より先に置く。人が名前（"Damp"）で探す
 var badges: Badges            # 体の調子のバッジ（badges.gd）。湿り気・ご飯の効き目などが入れ、hud.gd が描く
+var net: Net                  # 通信（net.gd）。--host でホスト、--join=IP でつなぐ
 var seats: Seats              # ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団）の配り役。人より先に置く
 
 
@@ -241,6 +243,11 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
+	if args.has("host") or args.has("join"):
+		# 通信で遊ぶときは、仲間（CPU）を置かない（仲間はそれぞれの画面の中だけにいて、ほかの人には見えないので）
+		for k in ["bots", "lodge-bots"]:
+			if not args.has(k):
+				args[k] = "0"
 
 	_make_world()
 	_make_ground()
@@ -317,6 +324,16 @@ func _ready() -> void:
 			b.position = get_node("Lodge").to_global(Vector3(6.0 + 3.0 * i, 0.6, -4.0))
 			add_child(b)
 			_add_pals(b)
+
+	net = Net.new()
+	net.name = "Net"
+	net.main = self
+	add_child(net)
+	if net.start(args) and player and net.spawn_slot() > 0:
+		# つなぐ側は、ホストの横に並んで始める（同じ所に重ならないように）
+		var slot := net.spawn_slot()
+		var at := START + Vector3(2.5 * ceili(slot / 2.0) * (1 if slot % 2 == 1 else -1), 0, 1.5)
+		player.position = at + Vector3(0, height(at.x, at.z) + 0.2, 0)
 
 	if not args.has("no-buttons"):
 		snow_buttons = SnowButtons.new()
@@ -1341,6 +1358,11 @@ func _physics_process(dt: float) -> void:
 		get_tree().quit()
 
 
+## ソリをふもとに戻す（Backspace。通信ではホストの画面だけ。net.gd）
+func reset_sled() -> void:
+	sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
+
+
 ## 音量の区分のバス。音楽は Speaker → Music → Outdoor、効果音は Inside・Self → SFX → Master、
 ## ボイスは Voice → Master。audio.gd の環境のバス（Outdoor・Inside）はそのまま生かす。
 ## 送り先は自分より前のバスにしか指定できないので、挿す位置に注意する
@@ -1437,7 +1459,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			if player: player.menu_open = settings.is_open
 			return
 		if e.physical_keycode == KEY_BACKSPACE:   # R はランタンの点け消し（player.gd）
-			sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
+			net.reset_sled()   # 通信でつないでいるときは、ホストが戻す
 		elif e.physical_keycode == KEY_P and _pip_layer:
 			# 右上の 360° 映像を消す／出す（消している間は描画もしない）
 			pip_hidden = not pip_hidden
