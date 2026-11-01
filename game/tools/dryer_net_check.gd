@@ -94,7 +94,7 @@ func _run() -> void:
 		await _wait(1.5)   # 時計は画面ごとに少しずれるので、ホストが先に入るまで待つ
 		_say("相手が中にいるときに入る: %s（入れないはず）" % st.ride(p))
 		await _watch(5)
-	await _wait(2.0)
+	await _wait(8.0)   # B で入った人が乾ききって出るまで（#106 で、乾くまで 4 秒ほどになった）
 	_front(-1.0 if host else 1.0)
 	# C: ホストが乾燥機で調理する
 	if host:
