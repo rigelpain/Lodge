@@ -79,6 +79,7 @@ func _cook(kind: String, prefix: String, shots: Array) -> void:
 	st.use(p)
 	var cam := Camera3D.new()
 	cam.fov = 45.0
+	cam.cull_mask = p.cam.cull_mask   # プレイヤーのカメラと同じ層だけ（一人称の手のミトンを映さない）
 	root.add_child(cam)
 	match kind:
 		"dryer":   # 丸い戸の窓の正面から

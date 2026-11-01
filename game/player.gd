@@ -801,10 +801,11 @@ func _pose_doll() -> void:
 		doll.facing = pl.face
 		doll.sit_stage = pl.stage
 		doll.seat_drop = DRUM_DROP
-		if pl.spin != 0.0:
+		if pl.stage == 2:   # 胴の中: 体ごと回され、手足と頭はぶらぶら（dryer_flop.gd）
 			doll.spin_axis = _drum.front()
 			doll.spin = pl.spin
 			doll.spin_at = _drum.drum_center()
+			doll.flop = pl.get("flop", {})
 	# 人形の顔は、カメラの見ている向きの 6 m 先を見る。測る所は、一人称ではカメラ（目）、三人称では頭。
 	# 三人称でカメラから測ると、カメラが 6 m 後ろなら見る先が頭そのものに、9 m なら頭の 3 m 後ろになり、首がねじれていた
 	var from := _gaze_from if third and _gaze_from != Vector3.INF else cam.global_position

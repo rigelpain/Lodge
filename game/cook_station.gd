@@ -11,8 +11,9 @@ extends Node3D
 ##   できあがり タイマーの「チン」。仕上がった物（料理か、次の装置へ持っていく途中の物）が装置からぽんと出て、入れた人の手へ飛ぶ
 ##   持ち物がいっぱいなら、装置の上に置いたまま待つ（もう一度 F で受け取る）
 ## 乾燥機には人も入れる（2026-11-01 代表「手にペレット持ってない状態のとき F で入ってキャラ乾燥させれるようにしてほしい」）:
-##   手にペレットを持たずに乾燥機の前で F。丸い戸へとび込み（6 コマ）、胴の真ん中で丸まって胴といっしょに回る（16 コマで 1 回り）。
-##   姿は丸い戸の窓（透明なフィルム）から見える。回っているあいだに紙の水が抜けて、いちばんパリッと（−40）まで 2 秒ほど（damp.gd）。
+##   手にペレットを持たずに乾燥機の前で F。丸い戸へとび込み（6 コマ）、胴の中でぐにゃんぐにゃんに回される（dryer_flop.gd:
+##   羽根に持ち上げられ、てっぺんの手前で離れてくるっと落ち、手足と頭はぶらぶら。顔は丸い戸の窓へ向く）。
+##   姿は丸い戸の窓（透明なフィルム）から見える。回っているあいだに紙の水が抜けて、いちばんパリッと（−40）まで 4 秒ほど（damp.gd）。
 ##   乾ききって 1.5 秒以上回ったら、ひとりでに戸からとび出す（5 コマ）。もう一度 F でも出る。
 ##   入る・出るは「誰が」の短い出来事（craft.gd の dry_in・dry_out）。ホストが空きを確かめて全員に配るので、どの画面でも
 ##   同じ人が同じコマに入って回る。中に人がいるあいだは調理できず、誰かが調理しているあいだは入れない
@@ -22,6 +23,7 @@ const Props := preload("res://props.gd")
 const Food := preload("res://food.gd")
 const Look := preload("res://look.gd")
 const CookMotion := preload("res://cook_motion.gd")
+const DryerFlop := preload("res://dryer_flop.gd")
 
 const USE_R := {"press": 2.4, "iron": 2.8, "dryer": 2.9, "drink": 2.5}   # 装置の真ん中からこの距離で使える (m)
 const RUN := {"press": 48, "iron": 60, "dryer": 60, "drink": 72}        # 調理のコマ数（12 コマで 1 秒）
@@ -62,6 +64,7 @@ var _out_f := -1             # 出ると決まったコマ（-1 はまだ）
 var _ride_from := Vector3.ZERO   # 入る前に立っていた所
 var _cook_until := -1        # 誰か（ほかの画面の人も）が調理しているあいだ、このコマまで入れない
 var _ride_snd: Array = []
+var _flop: DryerFlop         # 中の人の体の物理（入るたびに作る。dryer_flop.gd）
 var _mo: CookMotion          # 動く部品（アイロン・プレス機の上の板・乾燥機の胴と中身。cook_motion.gd）
 
 
@@ -494,6 +497,7 @@ func begin_ride(id: int, frame: int) -> void:
 	rider_node = hub.people.get(id) if hub else null
 	_ride_f = frame
 	_out_f = -1
+	_flop = DryerFlop.new(SPIN * 12.0, Vector2(HIP, 0.0))   # とび込んで、胴の真ん中の下から
 	_ride_from = rider_node.global_position if is_instance_valid(rider_node) else stand_point()
 	if is_instance_valid(rider_node) and rider_node.has_method("enter_drum"):
 		rider_node.enter_drum(self)
@@ -524,7 +528,18 @@ func should_leave(water: float, crisp: float) -> bool:
 	return _out_f < 0 and ((water <= crisp + 0.5 and k >= RIDE_MIN) or k >= RIDE_MAX)
 
 
-## コマ f での中の人の居場所と姿勢: {pos 足もと, spin 回った角, stage 0 立つ・1 中腰・2 丸まる, face 向き, done 出きった}
+## 胴の中のコマ k（とび込んだあと）の体（dryer_flop.gd）: at 付け根の世界の位置、pos は人形が spin で胴の真ん中のまわりに
+## 回される前の位置（人形は pos を spin_at のまわりに spin だけ回して置くので、回したあとが at になる）
+func _flop_pose(k: int) -> Dictionary:
+	var s: Dictionary = _flop.at(k)
+	var c := drum_center()
+	var fw := front()
+	var side := Basis(fw, PI / 2.0) * Vector3.DOWN
+	var off: Vector3 = Vector3.DOWN * s.p.x + side * s.p.y
+	return {"at": c + off, "pos": c + Basis(fw, -s.th) * off, "spin": s.th, "flop": s.flop, "land": s.land}
+
+
+## コマ f での中の人の居場所と姿勢: {pos 足もと, spin 回った角, stage 0 立つ・1 中腰・2 丸まる, face 向き, done 出きった, flop 手足の振れ}
 func ride_pose(f: int) -> Dictionary:
 	var c := drum_center()
 	var fw := front()
@@ -534,13 +549,17 @@ func ride_pose(f: int) -> Dictionary:
 		var u := f - _out_f
 		if u >= RIDE_OUT - 1:
 			return {"pos": stand_point(), "spin": 0.0, "stage": 0, "face": fw, "done": u >= RIDE_OUT}
-		return {"pos": _hop(seat, door, stand_point(), (u + 1.0) / RIDE_OUT), "spin": 0.0, "stage": 1, "face": fw, "done": false}
+		var from: Vector3 = _flop_pose(_out_f - _ride_f - RIDE_IN).at if _flop else seat   # 胴の中で回されていた所から
+		return {"pos": _hop(from, door, stand_point(), (u + 1.0) / RIDE_OUT), "spin": 0.0, "stage": 1, "face": fw, "done": false}
 	var k := f - _ride_f
 	if k < 0:
 		return {"pos": _ride_from, "spin": 0.0, "stage": 0, "face": -fw, "done": false}
 	if k < RIDE_IN:
 		return {"pos": _hop(_ride_from, door, seat, (k + 1.0) / RIDE_IN), "spin": 0.0, "stage": 1, "face": -fw if k < RIDE_IN - 1 else fw, "done": false}
-	return {"pos": seat, "spin": (k - RIDE_IN) * SPIN, "stage": 2, "face": fw, "done": false}
+	if _flop == null:
+		return {"pos": seat, "spin": (k - RIDE_IN) * SPIN, "stage": 2, "face": fw, "done": false}
+	var fp := _flop_pose(k - RIDE_IN)
+	return {"pos": fp.pos, "spin": fp.spin, "stage": 2, "face": fw, "done": false, "flop": fp.flop}
 
 
 ## a から戸の b をくぐって c へ（2 次のベジェ。戸の前で少し上へ弧を描く）
@@ -567,6 +586,10 @@ func _ride_fx(f: int) -> void:
 					_ride_snd.append(a)
 	if k >= RIDE_IN and not out:
 		_dryer(k - RIDE_IN)
+		if _flop and _flop.at(k - RIDE_IN).land:   # 壁に落ちた「ぽすっ」
+			var audio = main.get_node_or_null("Audio")
+			if audio:
+				audio.kitchen(_dev, "cook_press", -15.0, 3, 1.25)
 	elif out:
 		_end_fx()
 

@@ -243,10 +243,11 @@ func _pose_doll() -> void:
 		doll.facing = pl.face
 		doll.sit_stage = pl.stage
 		doll.seat_drop = preload("res://player.gd").DRUM_DROP
-		if pl.spin != 0.0:
+		if pl.stage == 2:   # 胴の中: 体ごと回され、手足と頭はぶらぶら（dryer_flop.gd）
 			doll.spin_axis = _drum.front()
 			doll.spin = pl.spin
 			doll.spin_at = _drum.drum_center()
+			doll.flop = pl.get("flop", {})
 	# 雪玉・帯の米袋・ランタンは、配り役（ホストが決めて配った値）から。player.gd の _pose_doll と同じ
 	if hub:
 		var n: int = hub.balls_of(id)
