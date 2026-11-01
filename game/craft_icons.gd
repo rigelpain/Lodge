@@ -43,6 +43,14 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 		"shears":   # 雪に縫い留めたボタンと、その糸を切る裁ちばさみ
 			coin(ci, Vector2(-8, 12), 13.0, a)
 			_shears(ci, Vector2(8, -6), a)
+		"peg":   # ペグを刺す: 雪の盛り上がりに、上から打ち込む待ち針のペグと、下向きの矢印
+			_snow_mound(ci, Vector2(0, 22), a)
+			peg(ci, Vector2(-2, 10), 0.9, Icons.RED, a, 0.0)
+			Icons.arrow(ci, Vector2(16, -22), Vector2(16, 2), Icons.THREAD, a, 2.4)
+		"unpeg":   # ペグを抜く: 雪から引き上げる待ち針のペグと、上向きの矢印
+			_snow_mound(ci, Vector2(0, 22), a)
+			peg(ci, Vector2(-2, 2), 0.9, Icons.RED, a, 0.0)
+			Icons.arrow(ci, Vector2(16, 2), Vector2(16, -22), Icons.THREAD, a, 2.4)
 		"sack":   # 米袋（口を麻ひもで縛った、クラフト紙の袋に赤い帯）
 			rice_sack(ci, Vector2(0, 2), 1.0, KRAFT, Color("B8402E"), a)
 		"gear":   # 装備の画面: 背負いかばん（2026-10-29 代表「Iのインベントリは別でカードつくってバックか装備のアイコンが良い」）
@@ -100,6 +108,13 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 				ci.draw_texture_rect(t, Rect2(center - Vector2(s, s) / 2.0, Vector2(s, s)), false, Color(1, 1, 1, a))
 		"pattern":
 			_pattern(ci, Vector2.ZERO, 1.0, it.get("sled", "mid"), a)
+		"peg":   # ペグの束: 本数だけ待ち針のペグを扇に並べ、毛糸でひと巻きに束ねる（文字を使わず、本の数で見せる）
+			var n := clampi(int(it.get("n", 1)), 1, 9)
+			var heads := [Icons.RED, Color(0.24, 0.32, 0.55), Color(0.88, 0.66, 0.20)]
+			for k in n:
+				var f := (k - (n - 1) * 0.5)
+				peg(ci, Vector2(f * 3.2, 14), 0.78 if n > 3 else 0.9, heads[k % 3], a, f * (0.5 / maxf(n - 1, 1)) * 1.4)
+			Icons.patch(ci, Icons.rr(-8.0 - n * 1.0, 8, 16.0 + n * 2.0, 6, 3), Color(0.93, 0.89, 0.80), a, false)
 		"fabric":
 			_fabric(ci, Vector2.ZERO, 1.0, Fabrics.color(it.get("fabric", "red")), a)
 		"folded":
@@ -133,6 +148,8 @@ static func item_name(it: Dictionary) -> String:
 			if it.get("sled") == "sack":
 				return "畳んだ米袋" + ("（%s）" % fab if fab != "" else "")
 			return "畳んだ%s（%s）" % [sled, fab] if fab != "" else "畳んだ" + sled
+		"peg":
+			return "ペグ（%d本）" % int(it.get("n", 1))
 		"food":
 			var dish: String = DISH_NAMES.get(it.get("dish", ""), "料理")
 			return dish if preload("res://food.gd").done(it) else "%sのもと" % dish
@@ -450,6 +467,22 @@ static func _shears(ci: CanvasItem, c: Vector2, a: float) -> void:
 		Icons.patch(ci, Icons.circ(ring, 5.5, 14), Color(0.1, 0.08, 0.1), a, false)
 		Icons.patch(ci, Icons.circ(ring, 3.0, 12), Icons.CAP, a, false)
 	Icons.patch(ci, Icons.circ(c + Vector2(0, 2), 2.0, 10), BRASS, a, false)
+
+
+## 待ち針のペグ（peg.gd の形）: 先を尖らせた白木の杭に毛糸の巻き、てっぺんにフェルトの玉。
+## base は雪の面の所（杭の先はその下に隠れる）、tilt は傾き (rad)
+static func peg(ci: CanvasItem, base: Vector2, sc: float, head: Color, a: float, tilt: float) -> void:
+	var wood := Color(0.78, 0.62, 0.42)
+	var shaft := PackedVector2Array([Vector2(-2.6, -40), Vector2(2.6, -40), Vector2(2.6, -2), Vector2(0, 4), Vector2(-2.6, -2)])
+	Icons.patch(ci, Icons.xf(shaft, tilt, base, sc), wood, a, false, Color(0, 0, 0, 0))
+	Icons.patch(ci, Icons.xf(Icons.rr(-4.2, -22, 8.4, 7, 2), tilt, base, sc), Color(0.93, 0.89, 0.80), a, false)
+	Icons.patch(ci, Icons.xf(Icons.rr(-3.6, -30, 7.2, 3, 1), tilt, base, sc), head.lerp(Color(0.95, 0.92, 0.85), 0.35), a, false, Color(0, 0, 0, 0), false)
+	Icons.patch(ci, Icons.xf(Icons.circ(Vector2(0, -45), 7.5, 16), tilt, base, sc), head, a, false)
+
+
+## 雪の小さな盛り上がり（案内の絵の足もと）
+static func _snow_mound(ci: CanvasItem, c: Vector2, a: float) -> void:
+	Icons.patch(ci, Icons.ell(c, 24, 7, 18), Color(0.97, 0.97, 1.0), a, false, Color(0, 0, 0, 0))
 
 
 ## 値段: 段ごとに分けたボタンを並べる（価値の低い順に左から。財布の山と同じ向き。3 個ずつの段）。center は画面の px、

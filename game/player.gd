@@ -385,6 +385,10 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.DRUM:
 					_drum.leave(id)   # 乾燥機から出る
 					return
+				var pg := peg_near()
+				if pg:
+					pull_peg(pg)   # ソリを留めているペグを抜く（乗ったままでも、乗っているソリのペグに届けば）
+					return
 				if crouching and mode == Mode.WALK and _snow_ahead():
 					emote("make_ball")   # しゃがんで雪面に手を伸ばす: 雪玉を丸める
 					return
@@ -1365,6 +1369,9 @@ func _left_click() -> void:
 		_eating = true
 		_bite()
 		return
+	if craft and held().get("kind", "") == "peg":   # ペグを持っていれば、ソリの前の雪に刺して紐を結ぶ（雪玉は投げない）
+		plant_peg()
+		return
 	if ball_count() > 0 and mode != Mode.DRUM:   # 乾燥機の中からは投げない
 		if not held().is_empty() and craft:
 			craft.send({"kind": "hand", "who": id, "slot": -1})
@@ -1372,6 +1379,83 @@ func _left_click() -> void:
 		wind_up()
 	elif hands_name == "high_both":
 		emote("clap")
+
+
+# ---------------------------------------------------------------- ペグ（peg.gd・sled.gd の peg_to）
+
+const PEG_AHEAD := 0.7        # ペグを刺す所: 足もとから見ている向きへ (m)
+const PEG_REACH := 1.5        # 歩いていて F でペグを抜ける距離（水平, m）
+const PEG_RIDE_REACH := 4.2   # 乗ったまま F で、乗っているソリのペグを抜ける距離 (m)。前の席からなら届く
+
+
+## 手のペグを刺せるソリと、刺す所 [ソリ, 雪の点]。刺せなければ []。
+## 雪の上で（ロッジの床には刺さない）、足もとの少し前が、まだ留めていないソリの引き紐の届く所
+func peg_target() -> Array:
+	if craft == null or held().get("kind", "") != "peg" or not (mode == Mode.WALK or mode == Mode.ROPE) or menu_open:
+		return []
+	var w := get_parent()
+	if not w.has_method("height"):
+		return []
+	var fwd := -global_basis.z
+	fwd.y = 0.0
+	var at := global_position + fwd.normalized() * PEG_AHEAD
+	at.y = w.height(at.x, at.z) + (w.snow_lift(at.x, at.z) if w.has_method("snow_lift") else 0.0)
+	if absf(at.y - global_position.y) > 0.8 or (w.has_method("lodge_weight") and w.lodge_weight(at.x, at.z) < 1.0):
+		return []
+	var best: RigidBody3D = null
+	var near := INF
+	for s in get_tree().get_nodes_in_group("sleds"):
+		if not is_instance_valid(s) or not s.visible or s.freeze or s.peg != null or not s.has_method("rope_root"):
+			continue
+		var d: float = at.distance_to(s.rope_root())
+		if d <= s.ROPE_LEN and d < near:
+			best = s
+			near = d
+	return [best, at] if best else []
+
+
+## 手のペグを刺す（出来事を出す。刺さるのは配られてから）
+func plant_peg() -> bool:
+	var pt := peg_target()
+	if pt.is_empty():
+		return false
+	if mode == Mode.ROPE:
+		let_go()   # 持っていた紐は、そのままペグに結ぶ
+	var ok: bool = craft.send({"kind": "peg", "who": id, "slot": int(craft.hands.get(id, -1)), "sled": craft.sled_path(pt[0]), "at": pt[1]})
+	var hud = get_parent().get("hud")
+	if ok and hud:
+		hud.learn("peg")
+	return ok
+
+
+## F で抜けるペグの刺さったソリ（なければ null）。歩いていればそばのペグ、乗っていれば乗っているソリのペグ
+func peg_near() -> RigidBody3D:
+	if craft == null or menu_open:
+		return null
+	if mode == Mode.RIDE:
+		if sled and "peg" in sled and is_instance_valid(sled.peg) and sled.peg.global_position.distance_to(global_position) < PEG_RIDE_REACH:
+			return sled
+		return null
+	if mode != Mode.WALK:
+		return null
+	var best: RigidBody3D = null
+	var near := PEG_REACH
+	for s in get_tree().get_nodes_in_group("sleds"):
+		if not is_instance_valid(s) or not ("peg" in s) or not is_instance_valid(s.peg):
+			continue
+		var d := Vector2(s.peg.global_position.x - global_position.x, s.peg.global_position.z - global_position.z).length()
+		if d < near:
+			best = s
+			near = d
+	return best
+
+
+func pull_peg(s: RigidBody3D) -> bool:
+	var ok: bool = craft.send({"kind": "unpeg", "who": id, "sled": craft.sled_path(s)})
+	var hud = get_parent().get("hud")
+	if ok and hud:
+		hud.learn("unpeg")
+	return ok
 
 
 ## 手の料理を食べ始める（装備の画面の「食べる」）。食べ終わるまでひと口ずつ続ける
@@ -1871,6 +1955,17 @@ func _face_held_fp() -> void:
 
 ## 手に持った物の小さな形（一人称の右手と、確かめ用）
 static func held_shape(it: Dictionary) -> Node3D:
+	if it.get("kind") == "peg":   # ペグの束: 待ち針の形を、束の本数だけ扇に並べる（peg.gd）
+		var bunch := Node3D.new()
+		var n := clampi(int(it.get("n", 1)), 1, 3)
+		for k in n:
+			var pg := preload("res://peg.gd").make(Color(0.80, 0.24, 0.20))
+			pg.scale = Vector3.ONE * 0.14
+			pg.position = Vector3((k - (n - 1) * 0.5) * 0.025, -0.06, 0.0)
+			pg.rotation.z = (k - (n - 1) * 0.5) * -0.22
+			bunch.add_child(pg)
+		bunch.rotation.x = -0.35
+		return bunch
 	if it.get("kind") == "food":   # 雪だるまの店のペレット（途中は押されたペレット）か、できあがった料理（food.gd）
 		var done := FoodMenu.done(it)
 		var f := PropsLib.make(FoodMenu.dish_glb(it.dish) if done else FoodMenu.pellet_glb(it.dish))

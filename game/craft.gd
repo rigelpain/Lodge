@@ -49,6 +49,9 @@ extends Node
 ##                             装置に残った物は入れた人が F でもう一度出す
 ##   dry_in    {}              手にペレットを持たずに、厨房の乾燥機に入る（空いていて、誰も調理していなければ。cook_station.gd）
 ##   dry_out   {}              乾燥機から出る（中の人の画面が決める: 乾ききったか、F）
+##   peg       {slot, sled, at}  手のペグの束から 1 本を、ソリ（sled は main からのパス）の前の雪の at に刺し、引き紐の先を結ぶ。
+##                             ソリはそこに留まる（sled.gd の peg_to）。束の本数が 0 になれば持ち物から消える。ev.color に玉の色
+##   unpeg     {sled}            ソリのペグを抜く（誰でも。抜いたペグは使い切りで消える）。ソリはまた滑れる
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
@@ -75,6 +78,12 @@ const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 ## 最初の小は、米袋で漕いで丘を 3 分ほど、大は、中に 3 人で大きな山を 6 分半・小ひとりで 11 分・米袋ひとりで 20〜50 分ほど（design/snow-buttons の表）
 const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
 const FABRIC_PRICE := 10
+## ペグ（peg.gd）。売り子のおじさんが PEG_PACK 本の束で売る。1 回刺すと 1 本使い、抜いたペグは使い切り。
+## 束は持ち物の 1 つの場所に PEG_STACK 本までまとまる（同じ場所に買い足せる）
+const PEG_PRICE := 6
+const PEG_PACK := 3
+const PEG_STACK := 9
+const PEG_SPEED := 3.0         # これより速く滑っているソリには刺せない (m/s)。歩いて追いつける速さまでは刺せ、紐が張ったところで止まる
 ## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
 const DYE_PRICE := 15
 const PATTERNS := ["sack", "small", "mid", "large"]
@@ -342,6 +351,8 @@ static func price(item: Dictionary) -> int:
 		return PATTERN_PRICE.get(item.get("sled", ""), 99)
 	if item.get("kind") == "fabric":
 		return FABRIC_PRICE
+	if item.get("kind") == "peg":
+		return PEG_PRICE
 	return 99
 
 
@@ -388,7 +399,11 @@ func snapshot() -> Dictionary:
 		var gs := sack_sled(who)
 		if gs:
 			out[who] = {"fabric": gs.fabric, "at": gs.global_transform}
-	return {"wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "sacks": sacks,
+	var pegs := []   # ペグで留めてあるソリ
+	for s in get_tree().get_nodes_in_group("sleds") if is_inside_tree() else []:
+		if is_instance_valid(s.peg):
+			pegs.append({"sled": sled_path(s), "at": s.peg.global_position, "color": s.peg.color})
+	return {"pegs": pegs, "wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "sacks": sacks,
 		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
 		"lantern_sel": lantern_sel, "lamps": lamps, "next_sled": _next_sled, "sleds": placed, "sack_out": out}
 
@@ -420,6 +435,10 @@ func load_snapshot(d: Dictionary) -> void:
 		gs.set_meta("gear_of", int(who))
 		gs.global_transform = spec.at
 		sack_out[int(who)] = gs
+	for p in d.get("pegs", []):
+		var s := _sled_at(String(p.sled))
+		if s:
+			s.peg_to(p.at, p.color, false)
 
 
 ## ホストの判定
@@ -431,10 +450,17 @@ func _apply(ev: Dictionary) -> bool:
 		"buy":
 			var item: Dictionary = ev.item
 			var cost := price(item)
-			if wallets[who] < cost or free_slot(who) < 0:
+			var stack := _peg_stack(who) if item.get("kind") == "peg" else -1
+			if wallets[who] < cost or free_slot(who) < 0 and stack < 0:
 				return false
 			wallets[who] -= cost
-			ev["slot"] = _put(who, item)   # 買った物を手に持つ（手持ちがいっぱいなら、かばんへ）
+			if stack >= 0:   # ペグは持っている束に足す（その束を手に持つ）
+				bags[who][stack]["n"] = int(bags[who][stack].get("n", 0)) + PEG_PACK
+				ev["slot"] = stack
+				if stack < HAND_SLOTS:
+					hands[who] = stack
+			else:
+				ev["slot"] = _put(who, item.duplicate())   # 買った物を手に持つ（手持ちがいっぱいなら、かばんへ）
 		"hand":
 			var i := int(ev.slot)
 			if i >= HAND_SLOTS or (i >= 0 and (i >= bags[who].size() or bags[who][i].is_empty())):
@@ -739,6 +765,26 @@ func _apply(ev: Dictionary) -> bool:
 				return false
 			if lantern_index(who, look) < 0:
 				lanterns[who].append({"look": look})
+		"peg":
+			var b: Array = bags[who]
+			var i := int(ev.get("slot", -1))
+			var s := _sled_at(String(ev.get("sled", "")))
+			if i < 0 or i >= b.size() or b[i].get("kind", "") != "peg" or int(b[i].get("n", 0)) <= 0 or s == null:
+				return false
+			if not replay and (s.peg != null or s.linear_velocity.length() > PEG_SPEED or ev.at.distance_to(s.rope_root()) > s.ROPE_LEN):
+				return false   # もう留めてある・滑っている・紐が届かない
+			ev["color"] = color_of(who)
+			if s.peg_to(ev.at, ev.color, not replay) == null:
+				return false
+			b[i]["n"] = int(b[i].n) - 1
+			if int(b[i].n) <= 0:
+				_clear(who, i)
+		"unpeg":
+			var s := _sled_at(String(ev.get("sled", "")))
+			if s == null or s.peg == null:
+				return false
+			ev["at"] = s.peg.global_position
+			s.unpeg()
 		"earn":
 			if int(ev.get("n", 0)) <= 0:
 				return false
@@ -806,9 +852,30 @@ func _origami(ev: Dictionary, unfolding: bool, at: Transform3D, from_who := true
 	(world if world else get_parent()).add_child(o)
 
 
-## 誰も乗っていない・つかんでいない・紐を持っていないソリだけ畳める
+## 誰も乗っていない・つかんでいない・紐を持っていない・ペグで留めていないソリだけ畳める
 func _free(s: Node3D) -> bool:
-	return s.riders.is_empty() and s.holders.is_empty() and s.rope_holder == null
+	return s.riders.is_empty() and s.holders.is_empty() and s.rope_holder == null and s.peg == null
+
+
+## 持ち物の中の、まだ PEG_PACK 本を足せるペグの束の場所（なければ -1）
+func _peg_stack(who: int) -> int:
+	var b := bag(who)
+	for i in b.size():
+		if b[i].get("kind", "") == "peg" and int(b[i].get("n", 0)) + PEG_PACK <= PEG_STACK:
+			return i
+	return -1
+
+
+## ソリの名前（main からのパス。通信でも同じソリを指す。net.gd の sled_at と同じ）
+func sled_path(s: Node) -> String:
+	return String(world.get_path_to(s)) if world and s else ""
+
+
+func _sled_at(path: String) -> RigidBody3D:
+	if world == null or path == "":
+		return null
+	var s := world.get_node_or_null(NodePath(path)) as RigidBody3D
+	return s if s and "peg" in s else null
 
 
 ## 実寸のソリを置く。wait コマのあいだは止めておく（広げる動きのあいだ）

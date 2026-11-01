@@ -69,6 +69,17 @@ const FALL_NET := 2.0          # 安全網: 雪面よりこれだけ下へ沈ん
 
 signal slipped(who: Node3D)    # 引きずられて手が離れた
 
+# ---- ペグで斜面に留める（2026-11-01 代表「斜面にそりを留める消耗品があると休憩したり焚き火ができる」。形と動きは peg.gd）
+# 引き紐の先をペグに結ぶ。留めているあいだは、乗っていても、どんな坂でも止まっている（休める・そばで焚き火ができる）。
+# 押すと紐のたるみの分だけは動くが、紐が張るとそれ以上は行かない。乗ったまま雪をかいても、蹴っても進まない。
+# 紐は持てない（ペグに結んである）。滑るには、誰かがペグを抜く（F。乗ったままでも届けば抜ける）。抜いたペグは使い切り。
+# 通信ではホストのソリの力で止まり、つなぐ側はホストの姿を写す（ペグの見た目と紐の結び先は craft の出来事で全員に）
+const PEG_HOLD := 1.2          # 留めているときの静止摩擦の上限（重さに対する割合）。1 を超えれば、どの坂でも留まる
+const PEG_K := 5000.0          # 紐が張ったときに引き戻す力 (N/m。中より重いソリは重さに比べて強く。大に 8 人で押しても伸びは 0.2 m ほど)
+const PEG_DAMP := 6.0          # 張った紐の向きに動く速さを弱める力（重さ × これ, N per m/s）
+const PEG_PULL_MAX := 30000.0  # 引き戻す力の上限 (N)
+var peg: Node3D = null         # 刺さっているペグ（peg.gd。ソリの子で、世界に留まる）。なければ null
+
 var kind := "mid"              # 置く前に決める（main.gd の --sled=sack|small|mid|large）
 ## メインカラー（ソリの主なフェルトと、滑りあとの糸の色）。透明（a = 0）なら KINDS の既定。
 ## 置く前に入れるか、置いたあとは set_main_color で（のちのカスタマイズの画面・通信はここを呼ぶ）。main.gd の --sled-color=
@@ -368,7 +379,7 @@ func _downhill_fast(v: float) -> bool:
 
 
 func take_rope(who: Node3D) -> bool:
-	if rope_holder != null and rope_holder != who:
+	if peg or rope_holder != null and rope_holder != who:   # ペグに結んである紐は持てない
 		return false
 	rope_holder = who
 	parked = false
@@ -459,7 +470,7 @@ func go_dir(n: Vector3) -> Vector3:
 ## 乗っている人が足で雪を蹴る（Space を押すたび）。蹴れたら true
 func kick(who: Node3D) -> bool:
 	var K: Dictionary = KINDS[kind]
-	if K.get("kick", 0.0) <= 0.0 or not riders.has(who) or linear_velocity.length() < KICK_MIN_SPEED:
+	if K.get("kick", 0.0) <= 0.0 or not riders.has(who) or linear_velocity.length() < KICK_MIN_SPEED or peg:
 		return false
 	var n := _ground_normal()
 	var f := go_dir(n)                     # 地面に沿った、いま滑っている向き（後ろ向き・横向きでも）
@@ -475,6 +486,60 @@ func kick(who: Node3D) -> bool:
 	apply_central_impulse(f * dv * mass)    # 体の速さを dv だけ（乗っている人も一緒に動くので、体の重さで足りる）
 	kicked.emit(who)
 	return true
+
+
+## 引き紐の付け根（世界）。ペグに結ぶ紐はここから ROPE_LEN まで届く
+func rope_root() -> Vector3:
+	return to_global(ROPE_ANCHOR)
+
+
+## at（雪の面の点、世界）にペグを刺して、引き紐の先を結ぶ。head は玉の色。check なら、紐が届かなければ null
+## （つなぐ側がなぞるときは、ソリの姿が少し遅れているので確かめない）
+func peg_to(at: Vector3, head: Color, check := true) -> Node3D:
+	if check and at.distance_to(rope_root()) > ROPE_LEN + 0.3:
+		return null
+	unpeg(false)
+	if rope_holder and rope_holder.has_method("let_go"):
+		rope_holder.let_go()
+	var Peg := preload("res://peg.gd")
+	peg = Peg.new()
+	peg.name = "Peg"
+	peg.color = head
+	add_child(peg)
+	peg.global_transform = Transform3D(Basis(), at)
+	peg.drive()
+	parked = false
+	return peg
+
+
+## ペグを抜く。show なら抜く動き（先が曲がって倒れ、消える）。ペグは使い切り
+func unpeg(show := true) -> void:
+	if peg == null or not is_instance_valid(peg):
+		peg = null
+		return
+	var p := peg
+	peg = null
+	if show:
+		p.name = "PulledPeg"
+		p.pull_out()
+	else:
+		p.queue_free()
+
+
+## ペグに結んだ紐が張ったら、付け根を引き戻す（紐の長さ ROPE_LEN まではたるみで動ける）
+func _peg_pull() -> void:
+	if peg == null:
+		return
+	var a := rope_root()
+	var d: Vector3 = peg.tie_point() - a
+	var over := d.length() - ROPE_LEN
+	if over <= 0.0:
+		return
+	var dir := d.normalized()
+	var r := global_basis * ROPE_ANCHOR
+	var v_out := -(linear_velocity + angular_velocity.cross(r)).dot(dir)   # 紐を伸ばす向きの速さ
+	var f := minf(over * PEG_K * maxf(1.0, _k) + maxf(v_out, 0.0) * mass * PEG_DAMP, PEG_PULL_MAX)
+	apply_force(dir * f, r)
 
 
 ## ホストのソリの姿が届いた（net.gd）
@@ -545,6 +610,7 @@ func reset_to(pos: Vector3) -> void:
 			who.let_go()
 	if rope_holder and rope_holder.has_method("let_go"):
 		rope_holder.let_go()
+	unpeg(false)   # ふもとへ戻すときは、刺さっていたペグもなくなる
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
 	global_transform = Transform3D(Basis(), pos + Vector3.UP * place_lift())
@@ -973,7 +1039,7 @@ func _physics_process(dt: float) -> void:
 	# 誰も押していない空のソリは、ずり落ちる雪の抵抗（つかまれていても同じ。止める力はつかんだ人が出す）
 	if descent:
 		linear_damp = 0.0
-	elif pushers > 0 or parked:
+	elif pushers > 0 or parked or peg:
 		linear_damp = CLIMB_DAMP
 	else:
 		linear_damp = 0.0   # 空のソリのずり落ちる抵抗は SLIDE_DRAG（下の「止める力」と一緒にかける）
@@ -1018,12 +1084,12 @@ func _physics_process(dt: float) -> void:
 	var brakers := _brakers()
 	# 空のソリの雪の摩擦は、押されていないときだけ（押して登るときの雪の抵抗は CLIMB_DAMP に入っている）
 	var snow: float = 0.0 if riding or pushers > 0 else SLIDE_GRIP * mass * 9.8 * abs(n.y)
-	if speed < DRAG_STOP_SPEED and (pushers > 0 or parked or brakers > 0 or not riding):
+	if speed < DRAG_STOP_SPEED and (pushers > 0 or parked or brakers > 0 or not riding or peg):
 		var g := Vector3(0, -9.8, 0)
 		var g_t := g - n * g.dot(n)
 		var hold := -g_t * mass
-		var cap: float = HOLD_FRICTION * mass * 9.8 * abs(n.y)
-		if pushers == 0 and not parked:
+		var cap: float = (PEG_HOLD if peg else HOLD_FRICTION) * mass * 9.8 * abs(n.y)
+		if pushers == 0 and not parked and not peg:
 			cap = minf(cap, brakers * STOP_FORCE * mass / load_mass() + snow)
 		if hold.length() > cap:
 			hold = hold.normalized() * cap
@@ -1036,14 +1102,15 @@ func _physics_process(dt: float) -> void:
 		# 乗っている人の重さは、止める力を分け合う重さに入れる（ソリと乗っている人をまとめて止める）
 		var v_t := linear_velocity - n * linear_velocity.dot(n)
 		var stop := brakers * STOP_FORCE * mass / load_mass() + snow
-		if not riding and pushers == 0 and not parked:
+		if not riding and pushers == 0 and not parked and not peg:
 			stop += SLIDE_DRAG * v_t.length()
 		if v_t.length() > 0.01 and stop > 0.0:
 			apply_central_force(-v_t.normalized() * minf(stop, v_t.length() * mass / dt))
 		hold_debug = "なし(速さ%.2f 押%d/%d 乗%d 止%d)" % [speed, _push_count, pushers, riders.size(), brakers]
 	# 頂上などで、乗ったまま前傾すると手で雪をかいて動き出す。
 	# 雪をかく力は坂を登る向きには効かない（平らな所と下りでだけ進む）。乗って W で登ると、降りて押すより速くなるため
-	if riding and _n_fwd > 0 and speed < 1.5:
+	_peg_pull()
+	if riding and _n_fwd > 0 and speed < 1.5 and not peg:
 		var f := go_dir(n)                                      # 地面に沿った、いま滑っている向き（ほとんど止まっていれば前）
 		var down := Vector3.DOWN - n * Vector3.DOWN.dot(n)      # 地面に沿った下り
 		if down.length() > 0.01:
