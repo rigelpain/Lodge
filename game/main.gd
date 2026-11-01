@@ -906,6 +906,14 @@ func _furnish_lodge() -> void:
 	pal_stall.player = player
 	pal_stall.transform = wardrobe.transform * Transform3D(Basis(), Vector3(PAL_STALL_X, 0, 0.2))
 	lodge.add_child(pal_stall)
+	# そのとなりの染め桶: 前で F を押すと服を染める（竿の左の端の少し前。正面は竿と同じ西）
+	dye_vat = DyeVat.new()
+	dye_vat.name = "DyeVat"
+	dye_vat.player = player
+	dye_vat.craft = craft
+	dye_vat.position = wardrobe.position + wardrobe.basis * DYE_VAT_AT
+	dye_vat.rotation.y = wardrobe.rotation.y
+	lodge.add_child(dye_vat)
 
 
 ## 持ち主（あなた・仲間）に、頭・肩の小物とミニオン（companions.gd）を付ける。--bot-pals で仲間に付ける物を決める（確かめ用）
@@ -921,14 +929,6 @@ func _add_pals(host: Node3D) -> void:
 	c.host = host
 	c.craft = craft
 	add_child(c)
-	# そのとなりの染め桶: 前で F を押すと服を染める（竿の端の少し前。正面は竿と同じ西）
-	dye_vat = DyeVat.new()
-	dye_vat.name = "DyeVat"
-	dye_vat.player = player
-	dye_vat.craft = craft
-	dye_vat.position = wardrobe.position + wardrobe.basis * DYE_VAT_AT
-	dye_vat.rotation.y = wardrobe.rotation.y
-	lodge.add_child(dye_vat)
 
 
 ## 番台 1 つ: パッチワーク（または藍）のフェルトを張った木のカウンター。上に、店番の側を向いたレジと、払いを受けるお皿。
