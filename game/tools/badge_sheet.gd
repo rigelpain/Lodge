@@ -1,11 +1,9 @@
 extends SceneTree
-## 体の調子のバッジ（badges.gd）と「よれ」のゲージ（damp_hud.gd）の見本を 1 枚に描く（確かめ用）。
+## 体の調子のバッジ（badges.gd）の見本を 1 枚に描く（確かめ用）。
 ##   Godot --path game --resolution 1500x620 -s res://tools/badge_sheet.gd -- --out=/path/badges.png
-## 上の段: 押す力と速さの、下降 2 本・下降 1 本・上昇。下の段: ゲージを値ごとに（damp.gd の段のバッジつき）
+## 押す力と速さの、下降 2 本・下降 1 本・上昇
 
 const Badges := preload("res://badges.gd")
-const DampHud := preload("res://damp_hud.gd")
-const Damp := preload("res://damp.gd")
 
 var args := {}
 
@@ -34,17 +32,6 @@ func _draw(ci: Control) -> void:
 			Badges.draw_badge(ci, {"key": stat, "dir": st[0], "level": st[1], "icon": stat}, Vector2(x, 105), 120.0)
 			x += 150.0
 		x += 70.0
-	var vals := [10, 60, 120, 175, 200]
-	for i in vals.size():
-		var cc := Vector2(200 + i * 280, 480)
-		ci.draw_circle(cc, 62.0, Color(0.95, 0.92, 0.85))
-		ci.draw_arc(cc, 66.0, 0, TAU, 48, Color(0.62, 0.45, 0.28), 9.0, true)
-		var s: Array = Damp.STAGES[Damp.stage_of(vals[i])]
-		var bs := []
-		if s[5] != 0:
-			for stat in ["push", "speed"]:
-				bs.append({"key": "damp_" + stat, "dir": s[5], "level": s[6], "icon": stat})
-		DampHud.draw(ci, cc, 62.0, 0.55, vals[i], 1.0, bs, {})
 
 
 func _shoot() -> void:

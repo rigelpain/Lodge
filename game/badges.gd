@@ -17,9 +17,6 @@ const DOWN := Color(0.24, 0.32, 0.55)      # 下降のワッペン（藍のフ�
 const UP := Color(0.90, 0.68, 0.22)        # 上昇のワッペン（山吹のフェルト）
 const DOWN_THREAD := Color(0.95, 0.95, 1.0)
 const UP_THREAD := Color(0.80, 0.24, 0.20)
-const DROP := Color(0.66, 0.82, 0.95)
-const FIRE_FELT := Color(0.93, 0.55, 0.24)  # ゲージの上端の炎のワッペン
-const WATER_FELT := Color(0.30, 0.45, 0.72) # ゲージの下端の水のワッペン
 const ARROW_UP := Color(0.85, 0.26, 0.18)   # 上がる矢印（赤い糸）
 const ARROW_DOWN := Color(0.22, 0.34, 0.62) # 下がる矢印（藍の糸）
 const ARROW_STRETCH := 0.1     # 上がる矢印の伸び縮み（長さの割合の振れ。控えめに）
@@ -91,15 +88,6 @@ static func _arrow(ci: CanvasItem, from: Vector2, to: Vector2, col: Color, a: fl
 	Icons.patch(ci, head, col, a, false)
 
 
-## ゲージの端の小さなワッペン（"fire" 炎・"drop" 水）
-static func end_patch(ci: CanvasItem, icon: String, center: Vector2, size: float, a := 1.0) -> void:
-	Icons._o = center
-	Icons._s = size / 64.0
-	Icons.patch(ci, Icons.circ(Vector2.ZERO, 30.0, 24), FIRE_FELT if icon == "fire" else WATER_FELT, a, true, Color(1, 1, 1, 0.9))
-	Icons._s = size / 64.0 * 1.25
-	draw_icon(ci, icon, a)
-
-
 ## バッジの中の絵（いまの _o・_s の箱。半径 20 ほどに収める）
 static func draw_icon(ci: CanvasItem, name: String, a := 1.0) -> void:
 	match name:
@@ -107,26 +95,26 @@ static func draw_icon(ci: CanvasItem, name: String, a := 1.0) -> void:
 			_push(ci, a)
 		"speed":
 			_speed(ci, a)
-		"drop":
-			_drop(ci, Vector2(0, -2), 1.0, a)
-		"fire":
-			_fire(ci, a)
-		"bowl":
-			_bowl(ci, a)
 		_:
 			Icons.icon(ci, name, Icons._o, Icons._s * 40.0, a)
 
 
-## 押す力: 袖から伸びた腕の、赤い手袋の手のひら（指を上に）で、木の板（ソリの縁）をぐっと押す。腕の上下に力の線
+## 押す力: 腕を曲げて力こぶを見せる（2026-11-01 代表「押す力は力こぶのワッペンにしてほしい」）。生成りのフェルトの腕を、
+## 縁を縫ったアップリケにする。肩に赤い半袖、ひじから上へ曲げた前腕の先に握りこぶし。力こぶの上に力の線を白い糸で
 static func _push(ci: CanvasItem, a: float) -> void:
-	Icons.patch(ci, Icons.rr(10, -19, 8, 38, 2.5), Icons.WOOD, a, false)
-	Icons.thread(ci, PackedVector2Array([Vector2(14, -16), Vector2(14, 16)]), Icons.WOOD.lightened(0.3), 0.9, 0.7 * a)
-	Icons.patch(ci, Icons.rr(-24, -1, 22, 11, 3), Icons.PAPER, a, true)                 # 袖（生成りのフェルト）
-	Icons.patch(ci, Icons.xf(Icons.rr(-4, -2, 6, 13, 2), 0.0, Vector2.ZERO), Icons.RED.darkened(0.3), a, false)   # 袖口
-	Icons.patch(ci, Icons.rr(0, -16, 10, 26, 5), Icons.RED, a, true)                    # 手のひら（指を上に、板に当てる）
-	Icons.patch(ci, Icons.xf(Icons.ell(Vector2.ZERO, 2.6, 5.5, 12), -0.6, Vector2(-0.5, -3)), Icons.RED.darkened(0.1), a, false)   # 親指
-	for y in [-11.0, 17.0]:
-		Icons.thread(ci, PackedVector2Array([Vector2(-24, y), Vector2(-9, y)]), Icons.PAPER, 1.8, 0.95 * a)
+	var skin := Icons.PAPER
+	# 上腕（肩から右のひじまで。上の縁がもり上がって力こぶ）と、ひじから上へ立てた前腕を 1 枚のフェルトで
+	var arm := PackedVector2Array([Vector2(-21, 5), Vector2(-18, 0), Vector2(-15, -6), Vector2(-10, -10), Vector2(-4, -10),
+			Vector2(0, -6), Vector2(2, -2), Vector2(4, -11), Vector2(15, -11), Vector2(16, 3), Vector2(13, 11), Vector2(6, 15), Vector2(-21, 15)])
+	Icons.patch(ci, arm, skin, a, true)
+	Icons.patch(ci, Icons.rr(1, -25, 17, 15, 6), skin, a, true)                          # 握りこぶし
+	Icons.thread(ci, PackedVector2Array([Vector2(5, -17), Vector2(14, -17)]), skin.darkened(0.35), 1.2, 0.9 * a)   # 指の折り目
+	Icons.thread(ci, PackedVector2Array([Vector2(-14, 1), Vector2(-9, -3), Vector2(-3, -2), Vector2(0, 2)]), skin.darkened(0.3), 1.2, 0.8 * a)   # 力こぶのふくらみ
+	Icons.patch(ci, Icons.rr(-26, 1, 9, 16, 3), Icons.RED, a, true)                      # 肩の半袖
+	for k in 3:   # 力の線
+		var t := -2.4 + k * 0.45
+		var d := Vector2(cos(t), sin(t))
+		Icons.thread(ci, PackedVector2Array([Vector2(-8, -6) + d * 8.0, Vector2(-8, -6) + d * 13.0]), Color(1, 1, 1), 1.8, 0.95 * a)
 
 
 ## 速さ: 赤いフェルトの靴が前へ駆け、かかとの後ろに速さの線と小さな雪けむり
@@ -141,47 +129,3 @@ static func _speed(ci: CanvasItem, a: float) -> void:
 	Icons.patch(ci, Icons.xf(boot, -0.12, Vector2(2, 2)), Icons.RED, a, true)
 	Icons.patch(ci, Icons.xf(Icons.rr(-11, 7, 29, 4.5, 2), -0.12, Vector2(2, 2)), Icons.PAPER, a, false)   # 靴底
 	Icons.patch(ci, Icons.xf(Icons.rr(-10, -16, 12, 4, 1.5), -0.12, Vector2(2, 2)), Icons.PAPER, a, false)  # はき口の折り返し
-
-
-## しずく: 水色のフェルトの涙形に、白い糸の照り
-static func _drop(ci: CanvasItem, c: Vector2, k: float, a: float) -> void:
-	var p := PackedVector2Array()
-	p.append(c + Vector2(0, -17) * k)
-	for i in 15:
-		var t := deg_to_rad(-40.0 + 260.0 * i / 14.0)   # 右上から下を回って左上へ
-		p.append(c + (Vector2(0, 4) + Vector2(cos(t), sin(t)) * 11.0) * k)
-	Icons.patch(ci, p, DROP, a, false)
-	var hl := PackedVector2Array()
-	for i in 5:
-		var t := deg_to_rad(200.0 + 50.0 * i / 4.0)
-		hl.append(c + (Vector2(0, 4) + Vector2(cos(t), sin(t)) * 6.5) * k)
-	Icons.thread(ci, hl, Color(1, 1, 1), 1.6, 0.9 * a)
-
-
-## 炎（暖炉の火）: 赤いフェルトの炎に、山吹の芯
-static func _fire(ci: CanvasItem, a: float) -> void:
-	var outer := PackedVector2Array([Vector2(0, -18), Vector2(7, -8), Vector2(12, 1), Vector2(10, 10), Vector2(3, 14), Vector2(-5, 14),
-			Vector2(-11, 9), Vector2(-12, 0), Vector2(-7, -6), Vector2(-5, 1), Vector2(-2, -8)])
-	Icons.patch(ci, outer, Color(0.80, 0.22, 0.16), a, false)
-	var inner := PackedVector2Array([Vector2(1, -5), Vector2(6, 3), Vector2(5, 10), Vector2(-1, 12), Vector2(-6, 9), Vector2(-5, 3), Vector2(-2, 4)])
-	Icons.patch(ci, inner, Color(1.0, 0.82, 0.32), a, false)
-
-
-## ご飯で乾いている: 藍のフェルトの椀に赤い縁、上に白い糸の湯気が 3 すじ（12 コマでゆらぐ）
-static func _bowl(ci: CanvasItem, a: float) -> void:
-	var t := floorf(Time.get_ticks_msec() / 1000.0 * 12.0) / 12.0   # 人形と同じコマ撮り
-	for k in 3:
-		var x := -8.0 + k * 8.0
-		var sway := sin(t * TAU * 0.5 + k * 1.7) * 1.6
-		var steam := PackedVector2Array()
-		for i in 7:
-			var y := -4.0 - i * 2.6
-			steam.append(Vector2(x + sin(i * 0.9 + k) * 2.2 + sway * i / 6.0, y))
-		Icons.thread(ci, steam, Color(1, 1, 1), 1.8, 0.95 * a)
-	var bowl := PackedVector2Array()
-	for i in 13:
-		var u := PI * i / 12.0   # 左の縁から下を回って右の縁へ
-		bowl.append(Vector2(-cos(u) * 17.0, 2.0 + sin(u) * 14.0))
-	Icons.patch(ci, bowl, Icons.NAVY, a, true)
-	Icons.patch(ci, Icons.rr(-18, -1, 36, 5, 2.5), Icons.RED, a, false)          # 椀の縁
-	Icons.patch(ci, Icons.rr(-6, 15, 12, 3.5, 1.5), Icons.NAVY.darkened(0.25), a, false)   # 高台

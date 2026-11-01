@@ -40,7 +40,7 @@ extends Node
 ##                             みんなの画面で、その人の小物とミニオンが替わる（companions.gd）
 ##   food_buy  {item}          雪だるまの店でペレットを買う（item は food.gd の {kind:"food", dish, step:0}）。雪玉で払う（emotes.gd の spend）
 ##   cook      {slot, station} 手のペレット（料理の途中）を厨房の装置に入れる。持ち物から出て、装置が持つ（cook_station.gd）
-##   bite      {slot}          手の料理をひと口食べる（3 口でなくなる。ev.ate に料理の名前が入る。warmth.gd がぬくもりを足す）
+##   bite      {slot}          手の料理をひと口食べる（3 口でなくなる。ev.ate に料理の名前が入る。食べても体の調子は変わらない。雰囲気づくりの道具）
 ##   cooked    {item, station} 装置が仕上げた物（一段進んだ item）を、入れた人の持ち物に戻して手に持たせる。いっぱいなら断る（装置に残る）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）

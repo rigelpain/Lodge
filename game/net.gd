@@ -76,7 +76,7 @@ func receive(pid: int, m: Array) -> void:
 				main.craft.load_snapshot(m[1])
 				main.emotes.load_snapshot(m[2])
 				if main.get("damp"):
-					main.damp.values.merge(m[3], true)
+					main.damp.load_snapshot(m[3])
 		"told":
 			if from_host:
 				_told(m[1])
@@ -161,7 +161,7 @@ func _on_peer(pid: int) -> void:
 	remotes[pid] = r
 	print("来た: 番号 ", pid)
 	if is_host():
-		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot(), main.damp.values if main.get("damp") else {}])
+		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot(), main.damp.snapshot() if main.get("damp") else {}])
 
 
 func _on_gone(pid: int) -> void:
@@ -274,11 +274,9 @@ func _my_state() -> Dictionary:
 		"c": d.crouch, "pt": d.point, "ps": d.point_sides, "ss": d.sit_stage, "sd": d.seat_drop}
 	if p.sled and is_instance_valid(p.sled):
 		s["sl"] = main.get_path_to(p.sled)
-	# 体の調子: 紙の湿り気（damp.gd、整数）と食べたぬくもり（warmth.gd）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
+	# 体の調子: 紙の水（damp.gd、整数）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
 	if main.damp:
-		s["dv"] = int(roundf(main.damp.value(p.id)))
-	if main.warmth:
-		s["wf"] = snappedf(float(main.warmth.food.get(p.id, 0.0)), 0.01)
+		s["dw"] = int(roundf(main.damp.water_of(p.id)))
 	match int(p.mode):
 		1:   # つかんでいる
 			s["h"] = p.handle

@@ -67,9 +67,8 @@ void fragment() {
 	vec3 wet_col = mix(col * 0.7, col * col, 0.5) * 1.12 * stain_tint;   // 濃く、色が沈む（2 乗で彩度が少し上がる）
 	col = mix(col, wet_col, damp * 0.85);
 	col *= 1.0 - rim * 0.28;
-	// パリッと: 明るく澄んだ色（少しだけ温かく。暖炉で乾いた紙）
-	vec3 crisp_col = (col - 0.5) * 1.12 + 0.5;   // 色がくっきり（濃淡が締まる）
-	crisp_col = crisp_col * 1.1 + vec3(0.035, 0.02, -0.01);   // 明るく、少しだけ温かく
+	// パリッと: 濃淡が少し締まる。明るさと色はそのまま（明るくすると白く飛ぶ。2026-11-01 代表「明度上げ過ぎ、キャラが白飛びしてる」）
+	vec3 crisp_col = (col - 0.5) * 1.08 + 0.5;
 	col = mix(col, clamp(crisp_col, 0.0, 1.0), crisp);
 	ALBEDO = col;
 	ROUGHNESS = mix(mix(0.9, 0.38, damp), 0.97, crisp);
@@ -83,7 +82,7 @@ void fragment() {
 	NORMAL_MAP_DEPTH = 1.0 + 1.6 * wet - 0.45 * crisp;
 	// 濡れた紙は光が透ける（後ろからの光で、明るく色づく）
 	BACKLIGHT = col * 0.55 * damp;
-	// 張った紙の縁の明るさ
-	RIM = 0.7 * crisp;
+	// 張った紙の縁の明るさ（控えめに）
+	RIM = 0.25 * crisp;
 	RIM_TINT = 0.75;
 }

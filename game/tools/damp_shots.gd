@@ -1,8 +1,8 @@
 extends SceneTree
-## 紙の人形の湿り気（damp.gd・doll.gd の damp）の見た目を撮る（確かめ用）。
-##   段ごとに 7 体を並べて: Godot --path game --resolution 1600x600 -s res://tools/damp_shots.gd -- --dir=/path [--place=foot|inside] [--values=0,120,200]
+## 紙の人形の水（damp.gd・doll.gd の damp）の見た目を撮る（確かめ用）。値は −40（パリパリ）〜 100（びしょびしょ）
+##   段ごとに 7 体を並べて: Godot --path game --resolution 1600x600 -s res://tools/damp_shots.gd -- --dir=/path [--place=foot|inside] [--values=100,0,-40]
 ##     → lineup_場所_値.png（値ごとに 1 枚）
-##   1 体を段ごとに並べて: ... -- --stages --kinds=kasa,golem --dir=/path [--values=0,60,120,170,200]
+##   1 体を段ごとに並べて: ... -- --stages --kinds=kasa,golem --dir=/path [--values=100,60,20,-20,-40]
 ##     → stages_場所_人形.png（左から値の順）
 ## 人形の値はそのまま入れる（なじむのを待たない）。--seq でそこから 6 コマ続けて撮る（コマの間隔を見る）
 
@@ -50,7 +50,7 @@ func _run() -> void:
 	var dir: String = args.get("dir", "/tmp")
 	DirAccess.make_dir_recursive_absolute(dir)
 	var place: String = args.get("place", "foot")
-	var values: Array = Array(String(args.get("values", "0,120,200")).split_floats(","))
+	var values: Array = Array(String(args.get("values", "100,0,-40")).split_floats(","))
 	if args.has("stages"):
 		for kind in String(args.get("kinds", "kasa")).split(","):
 			await _row(place, values.map(func(_v): return kind), values, dir.path_join("stages_%s_%s.png" % [place, kind]))
@@ -61,7 +61,7 @@ func _run() -> void:
 	quit()
 
 
-## 人形を横一列に並べて撮る（kinds[i] の人形に values[i] の湿り気）
+## 人形を横一列に並べて撮る（kinds[i] の人形に values[i] の水）
 func _row(place: String, kinds: Array, values: Array, path: String) -> void:
 	var lodge: Node3D = main.get_node("Lodge")
 	var center: Vector3
@@ -118,7 +118,7 @@ func _row(place: String, kinds: Array, values: Array, path: String) -> void:
 			root.get_texture().get_image().save_png(path.get_basename() + "_seq_%02d.png" % k)
 	for i in n:
 		var d: Doll = hosts[i].get_child(0)
-		print("%s %-8s 湿り気=%4d 見た目=%.2f 段=%s" % [place, d.kind, int(values[i]), d._damp_shown, Damp.STAGES[Damp.stage_of(float(values[i]))][1]])
+		print("%s %-8s 水=%4d 見た目=%.2f 段=%s" % [place, d.kind, int(values[i]), d._damp_shown, Damp.STAGES[Damp.stage_of(float(values[i]))][1]])
 	for h in hosts:
 		h.queue_free()
 	await _frames(5)
