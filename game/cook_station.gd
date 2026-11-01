@@ -497,7 +497,9 @@ func begin_ride(id: int, frame: int) -> void:
 	rider_node = hub.people.get(id) if hub else null
 	_ride_f = frame
 	_out_f = -1
-	_flop = DryerFlop.new(SPIN * 12.0, Vector2(HIP, 0.0))   # とび込んで、胴の真ん中の下から
+	var doll = rider_node.get("doll") if is_instance_valid(rider_node) else null
+	var ext: Vector3 = doll.drum_extent() if doll else Vector3(-0.1, 0.8, 0.3)   # 人形の大きさ（胴に当てる。大きければ縮める）
+	_flop = DryerFlop.new(SPIN * 12.0, Vector2(HIP, 0.0), ext)   # とび込んで、胴の真ん中の下から
 	_ride_from = rider_node.global_position if is_instance_valid(rider_node) else stand_point()
 	if is_instance_valid(rider_node) and rider_node.has_method("enter_drum"):
 		rider_node.enter_drum(self)
@@ -536,10 +538,11 @@ func _flop_pose(k: int) -> Dictionary:
 	var fw := front()
 	var side := Basis(fw, PI / 2.0) * Vector3.DOWN
 	var off: Vector3 = Vector3.DOWN * s.p.x + side * s.p.y
-	return {"at": c + off, "pos": c + Basis(fw, -s.th) * off, "spin": s.th, "flop": s.flop, "land": s.land}
+	return {"at": c + off, "pos": c + Basis(fw, -s.th) * off, "spin": s.th, "flop": s.flop, "land": s.land, "fit": s.fit}
 
 
-## コマ f での中の人の居場所と姿勢: {pos 足もと, spin 回った角, stage 0 立つ・1 中腰・2 丸まる, face 向き, done 出きった, flop 手足の振れ}
+## コマ f での中の人の居場所と姿勢: {pos 足もと, spin 回った角, stage 0 立つ・1 中腰・2 丸まる, face 向き, done 出きった, flop 手足の振れ,
+## fit 人形の大きさの倍（胴に収まらない人形は、とび込むあいだに縮み、出るとき戻る）}
 func ride_pose(f: int) -> Dictionary:
 	var c := drum_center()
 	var fw := front()
@@ -550,16 +553,18 @@ func ride_pose(f: int) -> Dictionary:
 		if u >= RIDE_OUT - 1:
 			return {"pos": stand_point(), "spin": 0.0, "stage": 0, "face": fw, "done": u >= RIDE_OUT}
 		var from: Vector3 = _flop_pose(_out_f - _ride_f - RIDE_IN).at if _flop else seat   # 胴の中で回されていた所から
-		return {"pos": _hop(from, door, stand_point(), (u + 1.0) / RIDE_OUT), "spin": 0.0, "stage": 1, "face": fw, "done": false}
+		var fit: float = lerpf(_flop.fit if _flop else 1.0, 1.0, (u + 1.0) / RIDE_OUT)
+		return {"pos": _hop(from, door, stand_point(), (u + 1.0) / RIDE_OUT), "spin": 0.0, "stage": 1, "face": fw, "done": false, "fit": fit}
 	var k := f - _ride_f
 	if k < 0:
 		return {"pos": _ride_from, "spin": 0.0, "stage": 0, "face": -fw, "done": false}
 	if k < RIDE_IN:
-		return {"pos": _hop(_ride_from, door, seat, (k + 1.0) / RIDE_IN), "spin": 0.0, "stage": 1, "face": -fw if k < RIDE_IN - 1 else fw, "done": false}
+		return {"pos": _hop(_ride_from, door, seat, (k + 1.0) / RIDE_IN), "spin": 0.0, "stage": 1, "face": -fw if k < RIDE_IN - 1 else fw, "done": false,
+				"fit": lerpf(1.0, _flop.fit if _flop else 1.0, (k + 1.0) / RIDE_IN)}
 	if _flop == null:
 		return {"pos": seat, "spin": (k - RIDE_IN) * SPIN, "stage": 2, "face": fw, "done": false}
 	var fp := _flop_pose(k - RIDE_IN)
-	return {"pos": fp.pos, "spin": fp.spin, "stage": 2, "face": fw, "done": false, "flop": fp.flop}
+	return {"pos": fp.pos, "spin": fp.spin, "stage": 2, "face": fw, "done": false, "flop": fp.flop, "fit": fp.fit}
 
 
 ## a から戸の b をくぐって c へ（2 次のベジェ。戸の前で少し上へ弧を描く）

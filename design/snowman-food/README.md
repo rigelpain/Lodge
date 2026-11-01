@@ -16,6 +16,7 @@
 | [10_motion_dryer_ramen.jpg](10_motion_dryer_ramen.jpg)・[gif](10_motion_dryer_ramen.gif) | 調理の動き: 乾燥機の胴が回り、ラーメンの汁・麺・具が透明なビニールの窓ごしに回りながら踊る |
 | [11_motion_dryer_fry.jpg](11_motion_dryer_fry.jpg) | 調理の動き: たい焼きを揚げる（たい焼きと油の粒） |
 | [12_motion_dryer_ride.jpg](12_motion_dryer_ride.jpg)・[gif](../damp/13-dryer-ride.gif) | 人形が乾燥機に入って、ぐにゃんぐにゃんに回される（顔は窓へ。dryer_flop.gd） |
+| [14_dryer_ride_kinds.jpg](14_dryer_ride_kinds.jpg) | 7 体の人形が乾燥機で回される（上からゴーレム・笠・武者・新聞・人形・折り紙・ロボット）。胴に収まらない人形は縮む |
 | [13_motion_drink.jpg](13_motion_drink.jpg) | 調理の動き: 衣類スチーマー（前からの動きのまま） |
 | [shots/](shots/) | ゲームの中と Blender の確かめの絵 |
 

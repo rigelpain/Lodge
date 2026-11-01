@@ -107,6 +107,7 @@ var seat_drop := 0.45        # 座面から足を下ろす床までの高さ (m)
 var spin_axis := Vector3.ZERO   # 乾燥機の胴といっしょに回る軸（世界。ZERO なら回らない。持ち主が毎フレーム入れる。cook_station.gd）
 var spin := 0.0              # その軸まわりに回った角 (rad)
 var spin_at := Vector3.ZERO  # 回る中心（世界。胴の真ん中）
+var drum_fit := 1.0          # 乾燥機の胴の中で、人形を小さくする倍（胴に収まらない大きな人形。dryer_flop.gd。持ち主が毎フレーム入れる）
 var flop := {}               # 胴の中で、手足と頭が戸の向きのまわりにぶらぶら振れる角 (rad。dryer_flop.gd の arm.L・leg.R・head など)
 var _foot_shade: Decal       # 足もとの影（胴の中では隠す）
 var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標）
@@ -295,6 +296,36 @@ func play(ev: Dictionary) -> void:
 			emote["until"] = int(ev.frame)   # 吐くのをやめる（少しで胸が戻る）
 		return
 	emote = ev
+
+
+## 乾燥機の胴の中の大きさ（m、人形の座標。dryer_flop.gd が胴の壁に当てる）: 胴の中の姿勢（_drum_sprawl）で
+## x はいちばん低い骨（足）、y は頭のてっぺん、z は頭の高さでの体の軸からの広さ（笠のつば・頭巾。_measure_body の上 3 割の段の太さ）。
+## 腕や裾の広さは入れない（腕は胴の中でぶらぶら振れる）。
+## 人形の種類と大きさだけで決まる（どの画面でも同じ）
+func drum_extent() -> Vector3:
+	var c: Array = _body_cache.get(kind, [])
+	var hold := _hold
+	_reset()
+	_drum_sprawl()
+	var lo := INF
+	var head := 0.0
+	var to_doll := _body.transform * (_body.global_transform.affine_inverse() * skel.global_transform)   # 骨の座標 → 人形の座標
+	for i in _order:
+		var y := (to_doll * (_g[i] as Transform3D).origin).y
+		lo = minf(lo, y)
+		if i == _id("head"):
+			head = y
+	var r := 0.2
+	var top := head + 0.25 * _scale
+	if not c.is_empty():
+		r = 0.0
+		var radii: PackedFloat32Array = c[0]
+		for bi in range(int(radii.size() * 0.7), radii.size()):
+			r = maxf(r, radii[bi])
+		top = head + (float(c[1]) - float(c[2]))   # 頭の骨から頭のてっぺん（笠）まで
+	_reset()
+	_hold = hold
+	return Vector3(lo, top, r)
 
 
 ## 頭のてっぺんの高さ (m)
@@ -633,6 +664,8 @@ func _physics_process(dt: float) -> void:
 		var r := Basis(spin_axis.normalized(), spin)
 		b = r * b
 		pos = spin_at + r * (pos - spin_at)
+	if drum_fit != 1.0:
+		b = b.scaled(Vector3.ONE * drum_fit)
 	global_transform = Transform3D(b, pos)
 
 	# 歩みは進んだ道のりで刻む（足と地面のずれを小さく）

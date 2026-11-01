@@ -785,6 +785,7 @@ func _physics_process(dt: float) -> void:
 func _pose_doll() -> void:
 	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE, Doll.Act.SIT, Doll.Act.SIT][mode]
 	doll.spin_axis = Vector3.ZERO
+	doll.drum_fit = 1.0
 	doll.sled = sled
 	doll.grip = handle if mode == Mode.GRIP else Vector3.INF
 	doll.effort = pushing or pulling
@@ -801,6 +802,7 @@ func _pose_doll() -> void:
 		doll.facing = pl.face
 		doll.sit_stage = pl.stage
 		doll.seat_drop = DRUM_DROP
+		doll.drum_fit = pl.get("fit", 1.0)   # 胴に収まらない大きな人形は縮める
 		if pl.stage == 2:   # 胴の中: 体ごと回され、手足と頭はぶらぶら（dryer_flop.gd）
 			doll.spin_axis = _drum.front()
 			doll.spin = pl.spin

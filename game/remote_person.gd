@@ -237,12 +237,14 @@ func _pose_doll() -> void:
 	doll.sit_stage = int(_s.get("ss", 0))
 	doll.seat_drop = float(_s.get("sd", 0.45))
 	doll.spin_axis = Vector3.ZERO
+	doll.drum_fit = 1.0
 	if _drum:   # 乾燥機の中: 届いた姿でなく、この画面の乾燥機のコマで（player.gd の _pose_doll と同じ）
 		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
 		doll.act = Doll.Act.SIT
 		doll.facing = pl.face
 		doll.sit_stage = pl.stage
 		doll.seat_drop = preload("res://player.gd").DRUM_DROP
+		doll.drum_fit = pl.get("fit", 1.0)   # 胴に収まらない大きな人形は縮める
 		if pl.stage == 2:   # 胴の中: 体ごと回され、手足と頭はぶらぶら（dryer_flop.gd）
 			doll.spin_axis = _drum.front()
 			doll.spin = pl.spin
