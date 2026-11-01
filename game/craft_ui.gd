@@ -95,9 +95,9 @@ func _ready() -> void:
 	layer = 4
 	for k in Craft.PATTERNS:
 		_goods.append({"kind": "pattern", "sled": k})
+	_goods.append(preload("res://peg.gd").item())   # ペグの束（仮: 型紙の段の右の端。本当の売り場は、山の道具を売る山男）
 	for f in Fabrics.ORDER:
 		_goods.append({"kind": "fabric", "fabric": f})
-	_goods.append({"kind": "peg", "n": Craft.PEG_PACK})   # ペグの束（布の段の右の端。斜面にソリを留める）
 	_view = View.new()
 	_view.ui = self
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -1043,9 +1043,10 @@ class View extends Control:
 		var area_w := w * 0.74
 		for i in ui._goods.size():
 			var it: Dictionary = ui._goods[i]
-			var pattern: bool = it.kind == "pattern"
-			var idx: int = i if pattern else i - Craft.PATTERNS.size()
-			var per: int = Craft.PATTERNS.size() if pattern else ui._goods.size() - Craft.PATTERNS.size()   # 下の段: 布とペグ
+			var pattern: bool = it.kind != "fabric"   # 上の段: 型紙と焚き火セット。下の段: 布
+			var top_n: int = ui._goods.size() - Fabrics.ORDER.size()
+			var idx: int = i if pattern else i - top_n
+			var per: int = top_n if pattern else Fabrics.ORDER.size()
 			var cw := (area_w - 40.0 * u) / per - 14.0 * u
 			var ch := (250.0 if pattern else 200.0) * u
 			var cx := r.position.x + 30.0 * u + idx * (cw + 14.0 * u)

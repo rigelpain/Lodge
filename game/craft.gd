@@ -78,12 +78,8 @@ const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 ## 最初の小は、米袋で漕いで丘を 3 分ほど、大は、中に 3 人で大きな山を 6 分半・小ひとりで 11 分・米袋ひとりで 20〜50 分ほど（design/snow-buttons の表）
 const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
 const FABRIC_PRICE := 10
-## ペグ（peg.gd）。売り子のおじさんが PEG_PACK 本の束で売る。1 回刺すと 1 本使い、抜いたペグは使い切り。
-## 束は持ち物の 1 つの場所に PEG_STACK 本までまとまる（同じ場所に買い足せる）
-const PEG_PRICE := 6
-const PEG_PACK := 3
-const PEG_STACK := 9
-const PEG_SPEED := 3.0         # これより速く滑っているソリには刺せない (m/s)。歩いて追いつける速さまでは刺せ、紐が張ったところで止まる
+## ペグの名前・値段・束の本数は peg.gd（品目の定義をそこにまとめる）
+const Peg := preload("res://peg.gd")
 ## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
 const DYE_PRICE := 15
 const PATTERNS := ["sack", "small", "mid", "large"]
@@ -351,8 +347,8 @@ static func price(item: Dictionary) -> int:
 		return PATTERN_PRICE.get(item.get("sled", ""), 99)
 	if item.get("kind") == "fabric":
 		return FABRIC_PRICE
-	if item.get("kind") == "peg":
-		return PEG_PRICE
+	if Peg.is_item(item):
+		return Peg.PRICE
 	return 99
 
 
@@ -450,12 +446,12 @@ func _apply(ev: Dictionary) -> bool:
 		"buy":
 			var item: Dictionary = ev.item
 			var cost := price(item)
-			var stack := _peg_stack(who) if item.get("kind") == "peg" else -1
+			var stack := _peg_stack(who) if Peg.is_item(item) else -1
 			if wallets[who] < cost or free_slot(who) < 0 and stack < 0:
 				return false
 			wallets[who] -= cost
 			if stack >= 0:   # ペグは持っている束に足す（その束を手に持つ）
-				bags[who][stack]["n"] = int(bags[who][stack].get("n", 0)) + PEG_PACK
+				bags[who][stack]["n"] = int(bags[who][stack].get("n", 0)) + Peg.PACK
 				ev["slot"] = stack
 				if stack < HAND_SLOTS:
 					hands[who] = stack
@@ -769,9 +765,9 @@ func _apply(ev: Dictionary) -> bool:
 			var b: Array = bags[who]
 			var i := int(ev.get("slot", -1))
 			var s := _sled_at(String(ev.get("sled", "")))
-			if i < 0 or i >= b.size() or b[i].get("kind", "") != "peg" or int(b[i].get("n", 0)) <= 0 or s == null:
+			if i < 0 or i >= b.size() or not Peg.is_item(b[i]) or int(b[i].get("n", 0)) <= 0 or s == null:
 				return false
-			if not replay and (s.peg != null or s.linear_velocity.length() > PEG_SPEED or ev.at.distance_to(s.rope_root()) > s.ROPE_LEN):
+			if not replay and (s.peg != null or s.linear_velocity.length() > Peg.PLANT_SPEED or ev.at.distance_to(s.rope_root()) > s.ROPE_LEN):
 				return false   # もう留めてある・滑っている・紐が届かない
 			ev["color"] = color_of(who)
 			if s.peg_to(ev.at, ev.color, not replay) == null:
@@ -857,11 +853,11 @@ func _free(s: Node3D) -> bool:
 	return s.riders.is_empty() and s.holders.is_empty() and s.rope_holder == null and s.peg == null
 
 
-## 持ち物の中の、まだ PEG_PACK 本を足せるペグの束の場所（なければ -1）
+## 持ち物の中の、まだ 1 束（Peg.PACK 本）を足せるペグの束の場所（なければ -1）
 func _peg_stack(who: int) -> int:
 	var b := bag(who)
 	for i in b.size():
-		if b[i].get("kind", "") == "peg" and int(b[i].get("n", 0)) + PEG_PACK <= PEG_STACK:
+		if Peg.is_item(b[i]) and int(b[i].get("n", 0)) + Peg.PACK <= Peg.STACK:
 			return i
 	return -1
 

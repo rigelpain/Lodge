@@ -115,7 +115,7 @@ func _flow(_dt: float) -> void:
 			var w0: int = craft.wallet(id)
 			var ok: bool = craft.send({"kind": "buy", "who": id, "item": {"kind": "peg", "n": 3}})
 			var it: Dictionary = player.held()
-			_ok("買う: ペグの束 %d 本、財布 %d → %d" % [int(it.get("n", 0)), w0, craft.wallet(id)], ok and it.get("kind") == "peg" and int(it.n) == 3 and craft.wallet(id) == w0 - craft.PEG_PRICE)
+			_ok("買う: ペグの束 %d 本、財布 %d → %d" % [int(it.get("n", 0)), w0, craft.wallet(id)], ok and it.get("kind") == "peg" and int(it.n) == 3 and craft.wallet(id) == w0 - preload("res://peg.gd").PRICE)
 			craft.send({"kind": "buy", "who": id, "item": {"kind": "peg", "n": 3}})
 			_ok("買い足すと同じ束に: %d 本、持ち物の数 %d" % [int(player.held().get("n", 0)), craft.count(id)], int(player.held().get("n", 0)) == 6 and craft.count(id) == 1)
 			_place(r)
@@ -302,7 +302,7 @@ func _shot() -> void:
 			if t - _t0 > 0.5:
 				player.global_position = main.shopkeeper.global_position + main.shopkeeper.global_basis.z * -1.5
 				main.craft_ui.open_shop()
-				main.craft_ui.select(main.craft_ui._goods.size() - 1)
+				main.craft_ui.select(main.craft_ui._goods.find(preload("res://peg.gd").item()))
 				_next()
 		8:
 			if t - _t0 > 1.0:

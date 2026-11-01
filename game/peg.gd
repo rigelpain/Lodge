@@ -6,6 +6,17 @@ extends Node3D
 ## 抜いたペグは先が曲がって使えなくなる（使い切り）。抜く動きのあと、雪の上に倒れて消える。
 
 const Look := preload("res://look.gd")
+const Icons := preload("res://hud_icons.gd")
+
+# ---- 品目（持ち物としてのペグ）。名前・値段・束・絵はここだけで決める。
+# 売り場はここを読む（いまは仮に、型紙と布の売り子のおじさんの売り台 craft_ui.gd。のちに山の道具を売る山男の売り場へ移る）。
+# 持ち物は {kind: "peg", n: 本数}。1 回刺すと 1 本使い、抜いたペグは使い切り。束は持ち物の 1 つの場所に STACK 本までまとまる
+const KIND := "peg"
+const NAME := "ペグ"
+const PRICE := 6             # 1 束の値段（木のボタンの何個分）
+const PACK := 3              # 1 束の本数
+const STACK := 9             # 持ち物の 1 つの場所にまとまる本数の上限（同じ場所に買い足せる）
+const PLANT_SPEED := 3.0     # これより速く滑っているソリには刺せない (m/s)。歩いて追いつける速さまでは刺せ、紐が張ったところで止まる
 
 const SCALE := 1.5           # 下の寸法をまとめて大きくする（ソリの横で、遠くからも待ち針の玉が見えるように）
 const LEN := 0.62            # 杭の長さ（玉まで, m。SCALE の前）
@@ -21,6 +32,51 @@ var _shape: Node3D
 var _k := -1                 # 動きのコマ（-1 は止まっている）
 var _pulling := false
 var _t := 0.0
+
+
+## 売る品物（1 束）
+static func item(n := PACK) -> Dictionary:
+	return {"kind": KIND, "n": n}
+
+
+static func is_item(it: Dictionary) -> bool:
+	return it.get("kind", "") == KIND
+
+
+## 持ち物の名前（持ち物の列の上に出す）
+static func item_name(it: Dictionary) -> String:
+	return "%s（%d本）" % [NAME, int(it.get("n", 1))]
+
+
+## 持ち物・品物の絵（craft_icons.gd の item から。64 × 64 の箱、Icons._o・_s は呼ぶ側が決めてある）:
+## 本数だけ待ち針のペグを扇に並べ、毛糸でひと巻きに束ねる（文字を使わず、本の数で見せる）
+static func icon(ci: CanvasItem, it: Dictionary, a: float) -> void:
+	var n := clampi(int(it.get("n", 1)), 1, STACK)
+	var heads := [Icons.RED, Color(0.24, 0.32, 0.55), Color(0.88, 0.66, 0.20)]
+	for k in n:
+		var f := (k - (n - 1) * 0.5)
+		draw(ci, Vector2(f * 3.2, 14), 0.78 if n > 3 else 0.9, heads[k % 3], a, f * (0.5 / maxf(n - 1, 1)) * 1.4)
+	Icons.patch(ci, Icons.rr(-8.0 - n * 1.0, 8, 16.0 + n * 2.0, 6, 3), YARN, a, false)
+
+
+## 案内の絵（刺す・抜く）: 雪の盛り上がりに待ち針のペグと、下向き（刺す）か上向き（抜く）の矢印
+static func hint(ci: CanvasItem, a: float, planting: bool) -> void:
+	Icons.patch(ci, Icons.ell(Vector2(0, 22), 24, 7, 18), Icons.SNOW, a, false)
+	draw(ci, Vector2(-2, 10 if planting else 2), 0.9, Icons.RED, a, 0.0)
+	if planting:
+		Icons.arrow(ci, Vector2(16, -22), Vector2(16, 2), Icons.THREAD, a, 2.4)
+	else:
+		Icons.arrow(ci, Vector2(16, 2), Vector2(16, -22), Icons.THREAD, a, 2.4)
+
+
+## 待ち針のペグの絵（2D）: 先を尖らせた白木の杭に毛糸の巻き、てっぺんにフェルトの玉。
+## base は雪の面の所（杭の先はその下に隠れる）、tilt は傾き (rad)
+static func draw(ci: CanvasItem, base: Vector2, sc: float, head: Color, a: float, tilt: float) -> void:
+	var shaft := PackedVector2Array([Vector2(-2.6, -40), Vector2(2.6, -40), Vector2(2.6, -2), Vector2(0, 4), Vector2(-2.6, -2)])
+	Icons.patch(ci, Icons.xf(shaft, tilt, base, sc), WOOD, a, false)
+	Icons.patch(ci, Icons.xf(Icons.rr(-4.2, -22, 8.4, 7, 2), tilt, base, sc), YARN, a, false)
+	Icons.patch(ci, Icons.xf(Icons.rr(-3.6, -30, 7.2, 3, 1), tilt, base, sc), head.lerp(Color(0.95, 0.92, 0.85), 0.35), a, false, Color(0, 0, 0, 0), false)
+	Icons.patch(ci, Icons.xf(Icons.circ(Vector2(0, -45), 7.5, 16), tilt, base, sc), head, a, false)
 
 
 ## ペグの形（原点が雪の面。+Y が上。SCALE 倍の大きさ）。手に持つ形にも使う（player.gd の held_shape）
