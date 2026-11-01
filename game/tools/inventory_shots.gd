@@ -1,7 +1,7 @@
 extends SceneTree
 ## 持ち物（手持ち 6 ＋ かばん 6）を一人称で撮る（確かめ用）。
 ##   Godot --path game --resolution 1600x900 -s res://tools/inventory_shots.gd -- --bots=0 --no-sound --no-pip --hud-idle=0 --out=/path/a.png
-##     [--items=10] [--held=1] [--gear（装備の画面）| --machine（ミシンの画面）] [--menu=N（N 番を押した小窓）] [--drag=N（N 番を引きずっている）]
+##     [--items=10] [--held=1] [--wait=秒（撮る前に待つ。--hud-idle と合わせて引っこんだ所を撮る）] [--gear（装備の画面）| --machine（ミシンの画面）] [--menu=N（N 番を押した小窓）] [--drag=N（N 番を引きずっている）]
 ## 名前の札は持ち替えてから 2 秒で消えるので、持ち替えて 0.6 秒で撮る
 
 const ITEMS := [
@@ -57,7 +57,7 @@ func _run() -> void:
 		var i := int(args.drag)
 		var r: Rect2 = ui._inv_rects[i]
 		ui._drag = {"from": i, "start": r.get_center(), "at": (ui._inv_rects[4] as Rect2).get_center() + Vector2(6, -4), "moved": true}
-	await create_timer(0.3).timeout
+	await create_timer(0.3 + float(args.get("wait", "0"))).timeout
 	await process_frame
 	var path: String = args.get("out", "/tmp/inventory.png")
 	root.get_texture().get_image().save_png(path)
