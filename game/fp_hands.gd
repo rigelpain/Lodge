@@ -4,6 +4,7 @@ extends RefCounted
 ## 手の所（Node3D）の -z が腕の先の向き。袖はそこから肩のほう（+z）へ伸びる。
 
 const Look := preload("res://look.gd")
+const Outfit := preload("res://outfit.gd")
 
 ## 人形ごとの袖（右、左）と手の色。leg は米袋に座ったときに見える膝から下の裾、foot は足先
 const STYLE := {
@@ -27,9 +28,9 @@ const SLEEVE_LEN := 0.22
 const MOUTH_R := 0.078       # 袖口の半径
 
 
-## 片方の手（side: 1 右、-1 左）を作り、layers の層に置く
-static func make(kind: String, side: int, layers: int) -> Node3D:
-	var st: Dictionary = STYLE.get(kind, STYLE["kasa"])
+## 片方の手（side: 1 右、-1 左）を作り、layers の層に置く。outfit は染めた服の色（doll.gd の outfit と同じ形）
+static func make(kind: String, side: int, layers: int, outfit: Array = []) -> Node3D:
+	var st: Dictionary = _dyed(kind, outfit)
 	var root := Node3D.new()
 	var cloth := _cloth(st["sleeve"][0 if side > 0 else 1])
 	var wide: float = SLEEVE_WIDE.get(kind, 1.0)
@@ -91,6 +92,21 @@ static func sleeve_r(z: float, kind := "") -> float:
 	return MOUTH_R * float(SLEEVE_WIDE.get(kind, 1.0)) * lerpf(1.0, 0.72, clampf((z - 0.03) / SLEEVE_LEN, 0.0, 1.0))
 
 
+## STYLE の袖と脚の布の色を、染めた服の色に塗り直した写し（人形の絵と同じ決まり。outfit.gd の tint）
+static func _dyed(kind: String, outfit: Array) -> Dictionary:
+	var st: Dictionary = STYLE.get(kind, STYLE["kasa"]).duplicate(true)
+	if outfit.is_empty():
+		return st
+	var dye := func(spec: Array) -> Array:
+		var out := spec.duplicate()
+		for j in range(1, out.size()):
+			out[j] = Outfit.tint(kind, Color(out[j]), outfit).to_html(false)
+		return out
+	st["sleeve"] = [dye.call(st["sleeve"][0]), dye.call(st["sleeve"][1])]
+	st["leg"] = dye.call(st["leg"])
+	return st
+
+
 static func _cloth(spec: Array) -> StandardMaterial3D:
 	var cloth: StandardMaterial3D
 	match spec[0]:
@@ -117,8 +133,8 @@ static func _cloth(spec: Array) -> StandardMaterial3D:
 
 
 ## 米袋に座ったときの、一人称で見える両脚（腿・すね・足先）。置き方は pose_legs で
-static func make_legs(kind: String, layers: int) -> Node3D:
-	var st: Dictionary = STYLE.get(kind, STYLE["kasa"])
+static func make_legs(kind: String, layers: int, outfit: Array = []) -> Node3D:
+	var st: Dictionary = _dyed(kind, outfit)
 	var root := Node3D.new()
 	var cloth := _cloth(st["leg"])
 	var foot_m := Look.paper(Color(st["foot"]))

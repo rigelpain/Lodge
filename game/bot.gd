@@ -96,14 +96,21 @@ func _ready() -> void:
 		seats.happened.connect(_on_seat)
 
 
-## 人形を替える出来事（通信では、ほかの人が衣装掛けで選んだ人形がここに届く）。人形を作り直す
+## 人形を替える出来事（通信では、ほかの人が衣装掛けで選んだ人形がここに届く）。人形を作り直す。
+## 服を染めた出来事（dye・outfit）では、いまの人形ならその色に染め直す（作り直さない）
 func _on_craft(ev: Dictionary) -> void:
-	if ev.get("who", -1) != id or ev.kind != "doll" or doll.kind == ev.doll:
+	if ev.get("who", -1) != id:
+		return
+	if ev.kind in ["dye", "outfit"] and String(ev.doll) == doll.kind:
+		doll.dress(craft.outfit_of(id, doll.kind))
+		return
+	if ev.kind != "doll" or doll.kind == ev.doll:
 		return
 	var at := doll.global_transform
 	doll.queue_free()
 	doll = Doll.new()
 	doll.kind = String(ev.doll)
+	doll.outfit = craft.outfit_of(id, doll.kind)
 	add_child(doll)
 	doll.global_transform = at
 

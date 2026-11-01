@@ -5,11 +5,13 @@ extends CanvasLayer
 ##   板の左に手芸の巻き尺（目盛りは 10 cm ごと、50 cm と 1 m は長く。数字はなし）。選んでいる人形の頭の高さに、
 ##   巻き尺から全部の札を横切る赤い糸を張る（2026-10-31 代表「キャラ選択では身長の差がわかるような表示にしてほしい」）。
 ##   いま着ている人形の札には、赤い糸の結び目（あなたの印）。選んでいる札は赤い糸で囲む（持ち上げると床の線がずれるので、持ち上げない）。
+##   染め桶（dye_ui.gd）で染めた人形は、札の中でも染めた色で回る。
 ##   札を押すか、A/D（←/→）で選んで Enter か Space で着替える。閉じるのは右上の × の縫い目か、F か Esc
 ## 着替えは craft.gd の出来事 doll（みんなに配られ、通信ではほかの人の画面でもその人の人形が作り直される）。
 ## 回る人形は、開いているあいだだけ札ごとに小さな画面（SubViewport）を作って撮る
 
 const Doll := preload("res://doll.gd")
+const Outfit := preload("res://outfit.gd")
 const Icons := preload("res://hud_icons.gd")
 
 const SHOT := Vector2i(220, 300)   # 札の中の絵の大きさ (px)
@@ -76,6 +78,7 @@ func close() -> void:
 	player.menu_open = false
 	player.set("shopping", false)
 	for s in _shots:
+		Outfit.strip(s[1])   # 染めた見本の材質を先に外す
 		(s[0] as Node).queue_free()
 	_shots.clear()
 	_view.queue_redraw()
@@ -123,6 +126,9 @@ func _make_shots() -> void:
 		var inst: Node3D = (load(Doll.SCENES[k]) as PackedScene).instantiate()
 		inst.scale = Vector3.ONE * float(Doll.SCALE[k])   # ゲームの中と同じ大きさ
 		spin.add_child(inst)
+		var dyed: Array = craft.outfit_of(int(player.get("id")), k) if craft else []
+		if not dyed.is_empty():   # 染め桶で染めた人形は、その色で（outfit.gd の見本の材質）
+			Outfit.set_params(Outfit.preview_material(inst), k, dyed)
 		var cam := Camera3D.new()   # 遠近のない撮り方: 札の絵の高さが、そのまま身長に比例する
 		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 		cam.size = VIEW_H

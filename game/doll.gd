@@ -4,6 +4,7 @@ const Look := preload("res://look.gd")
 const FpHands := preload("res://fp_hands.gd")
 const Palm := preload("res://palm.gd")
 const Lantern := preload("res://lantern.gd")
+const Outfit := preload("res://outfit.gd")
 ## 人形（person/build_dolls.py と person/ideas/characters/roughs.py で作り、骨を入れて焼いた glb）を骨で動かす。
 ## 7 体: kasa 笠と千代紙の人形 / origami 多面体の折り紙の人 / news 新聞紙と麻布の人形 /
 ## robo 紙のロボット / musha 折り紙の武者 / ningyo 絹の人形 / golem 継ぎはぎの巨人。骨の名前は 7 体で同じ。
@@ -75,6 +76,7 @@ enum Act { WALK, PUSH, ROPE, RIDE, SIT }
 
 var kind := "kasa"
 var layers := 1
+var outfit: Array = []       # 服の布ごとの色（outfit.gd の CLOTH の順。Color か null でもとのまま）。作る前に入れる。あとから替えるときは dress()
 
 # 持ち主が毎フレーム入れる
 var act := Act.WALK
@@ -171,6 +173,9 @@ func _ready() -> void:
 	_make_damp(inst)
 	for m in inst.find_children("*", "MeshInstance3D", true, false):
 		(m as MeshInstance3D).layers = layers
+	_body = inst
+	if not outfit.is_empty():
+		dress(outfit)
 	for i in skel.get_bone_count():
 		_b[skel.get_bone_name(i)] = i
 		var r := skel.get_bone_rest(i)
@@ -541,6 +546,30 @@ func _skirt_mesh(mi: MeshInstance3D) -> Array:
 		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, a, [], {}, Mesh.ARRAY_FLAG_USE_8_BONE_WEIGHTS if per == 8 else 0)
 		out.surface_set_material(si, src.surface_get_material(si))
 	return [out, skin]
+
+
+# ---------------------------------------------------------------- 服の色（outfit.gd）
+
+var _body: Node3D            # glb の人形
+var _src_albedo: Texture2D   # 焼いたままの色の絵
+var _dress_n := 0            # 着替えの番号（待つあいだに次の着替えが来たら、前のは捨てる）
+
+
+## 服の色を替える（cols は布ごとの Color か null）。塗り直した絵ができたら差し替える（1 コマ遅れる）
+func dress(cols: Array) -> void:
+	outfit = cols.duplicate()
+	if _body == null:
+		return
+	if _src_albedo == null:
+		_src_albedo = Outfit.albedo(_body)
+	_dress_n += 1
+	Outfit.dress_into(self, _body, kind, _src_albedo, outfit, _dress_n)
+
+
+## 消える前に、写した材質を外す（outfit.gd の strip）
+func _exit_tree() -> void:
+	if _body:
+		Outfit.strip(_body)
 
 
 # ---------------------------------------------------------------- 動き

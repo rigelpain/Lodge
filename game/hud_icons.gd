@@ -316,6 +316,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"pal_head": _pals(ci, a, tint, "head")
 		"pal_shoulder": _pals(ci, a, tint, "shoulder")
 		"pal_pet": _pals(ci, a, tint, "pet")
+		"dye": _dye(ci, a, tint)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
 		_:   # 工房の絵（型紙・布・畳む・広げる。craft_icons.gd）
@@ -814,6 +815,16 @@ static func _tiny_fox(ci: CanvasItem, feet: Vector2, k: float, a: float) -> void
 	patch(ci, ell(h, 6.0 * k, 4.5 * k, 12), fox, a, false)
 	patch(ci, PackedVector2Array([h + Vector2(3, -2) * k, h + Vector2(11, 1) * k, h + Vector2(3, 3) * k]), fox, a, false)   # 鼻先
 	patch(ci, PackedVector2Array([feet + Vector2(0, -2) * k, feet + Vector2(4, -2) * k, feet + Vector2(3, -12) * k]), Color(0.96, 0.92, 0.85), a, false)   # 胸の白
+## 染め桶: 輪で締めた木の桶に染め液、縁から染めた布が垂れる（布と液は tint の色）
+static func _dye(ci: CanvasItem, a: float, col: Color) -> void:
+	patch(ci, PackedVector2Array([Vector2(-24, -8), Vector2(24, -8), Vector2(19, 24), Vector2(-19, 24)]), WOOD, a, false)
+	for x in [-12.0, 0.0, 12.0]:   # 側板の継ぎ目
+		thread(ci, PackedVector2Array([Vector2(x, -6), Vector2(x * 0.8, 22)]), WOOD.darkened(0.35), 1.4, a)
+	for y in [-1.0, 16.0]:   # 縄の輪
+		thread(ci, PackedVector2Array([Vector2(-23 + (y + 8) * 0.15, y), Vector2(23 - (y + 8) * 0.15, y)]), Color(0.78, 0.66, 0.44), 3.0, a)
+	patch(ci, ell(Vector2(0, -8), 24.0, 6.0), col.darkened(0.15), a, false)   # 染め液
+	patch(ci, PackedVector2Array([Vector2(6, -12), Vector2(18, -12), Vector2(19, 8), Vector2(13, 12), Vector2(7, 6)]), col, a, true)   # 縁に掛けた布
+	thread(ci, PackedVector2Array([Vector2(-10, -30), Vector2(-4, -6)]), WOOD.darkened(0.2), 3.0, a)   # 櫂
 
 
 static func _return(ci: CanvasItem, a: float) -> void:

@@ -490,7 +490,9 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if p.has_method("pal_stall_near") and p.pal_stall_near() and not p.shopping:
 		_hint("pals", ["F"], "pals", main.pal_stall.global_position + Vector3.UP * 1.6)
 	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
-	if p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
+	if p.has_method("dye_near") and p.dye_near() and not p.shopping:
+		_hint("dye", ["F"], "dye", main.dye_vat.global_position + Vector3.UP * 1.3)   # 染め桶: F で服を染める（桶と布の絵）
+	elif p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
 		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)
 
 	# 名札の結び目のそば: G の長押しで、自分のソリの名札を外す・名札入れの名札を持ち主のいないソリに付ける
