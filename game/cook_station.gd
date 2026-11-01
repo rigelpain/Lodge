@@ -2,9 +2,10 @@ extends Node3D
 ## 厨房の巨大な調理の装置 1 台（main.gd の KITCHEN が装置ごとに 1 つ付ける）。プレイヤーが手のペレットを入れて F で調理する
 ## （2026-11-01 代表と決めた: 調理はプレイヤー。道は food.gd）。動きは人形と同じ 12 コマ／秒に刻む（1 拍 = 6 コマ。調理の曲は 120 BPM）。
 ##   入れる   手のペレットが弧を描いて装置へ飛ぶ（6 コマ）。装置のオルゴールが鳴りはじめる（装置から鳴る。sound/gen/cook.py）
-##   press    プレス機: 2 拍ごとに台ごとぐっと沈んで「ぼすっ」、綿の湯気がぽん（4 秒）
-##   iron     アイロン台: 「ジュー」が続き、台が小刻みに揺れ、1 拍ごとに湯気（5 秒）
-##   dryer    乾燥機: 胴が回ってがたがた揺れる（揚げ物は「ぱちぱち」、麺は「ぐつぐつ」）。上の漏斗から湯気（5 秒）
+##   press    プレス機: 2 拍ごとに上の板が下りて押さえ、台ごとぐっと沈んで「ぼすっ」、綿の湯気がぽん（4 秒）
+##   iron     アイロン台: 「ジュー」が続き、アイロンが布の上へ下りて 1 拍ごとに行き来し、折り返しで湯気（5 秒）
+##   dryer    乾燥機: 胴が回り、料理の中身が透明な窓ごしに回りながら踊る（揚げ物は「ぱちぱち」、麺は「ぐつぐつ」）。上の漏斗から湯気（5 秒）
+##   動く部品（アイロン・上の板・胴）と中身は cook_motion.gd・cook_tumble.gd
 ##   drink    衣類スチーマー: ふたが開いてペレットがぽとん → タンクに泡がごぼごぼ → ホースのふくらみが上って頭から湯気がぷしゅっ
 ##            （2 回）→ 棚にカップが出る（6 秒）
 ##   できあがり タイマーの「チン」。仕上がった物（料理か、次の装置へ持っていく途中の物）が装置からぽんと出て、入れた人の手へ飛ぶ
@@ -20,6 +21,7 @@ const Doll := preload("res://doll.gd")
 const Props := preload("res://props.gd")
 const Food := preload("res://food.gd")
 const Look := preload("res://look.gd")
+const CookMotion := preload("res://cook_motion.gd")
 
 const USE_R := {"press": 2.4, "iron": 2.8, "dryer": 2.9, "drink": 2.5}   # 装置の真ん中からこの距離で使える (m)
 const RUN := {"press": 48, "iron": 60, "dryer": 60, "drink": 72}        # 調理のコマ数（12 コマで 1 秒）
@@ -60,6 +62,7 @@ var _out_f := -1             # 出ると決まったコマ（-1 はまだ）
 var _ride_from := Vector3.ZERO   # 入る前に立っていた所
 var _cook_until := -1        # 誰か（ほかの画面の人も）が調理しているあいだ、このコマまで入れない
 var _ride_snd: Array = []
+var _mo: CookMotion          # 動く部品（アイロン・プレス機の上の板・乾燥機の胴と中身。cook_motion.gd）
 
 
 func _ready() -> void:
@@ -73,10 +76,14 @@ func _ready() -> void:
 	if kind == "dryer":
 		add_to_group("dryers")   # damp.gd が、中で回っている人を乾かす
 		_open_window.call_deferred()
+	_mo = CookMotion.new(self, _dev)
+	_mo.mount.call_deferred()   # 乾燥機の窓を抜いたあと（胴の羽根を抜かない）
 
 
 func _m(name: String) -> Vector3:
 	var n: Node3D = _mark.get(name)
+	if n == null and _mo:
+		n = _mo.mark(name)   # 書き出しで名前に番号が付いた目印（cook_006 など）
 	return n.global_position if n else _dev.global_position + Vector3.UP * 1.0
 
 
@@ -155,6 +162,7 @@ func _process(_dt: float) -> void:
 		"drink":
 			_drink(r)
 	if r >= RUN[kind]:
+		_mo.rest()
 		_finish()
 
 
@@ -186,30 +194,46 @@ func _arrive() -> void:
 
 
 func _press(r: int) -> void:
-	# 2 拍（12 コマ）ごとに、台ごとぐっと沈む: 沈む 2 コマ・戻りすぎ 1 コマ・戻る
-	var c := r % 12
-	var sq: float = [0.9, 0.86, 1.04, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0][c] if r > 0 else 1.0
+	# 2 拍（12 コマ）ごとに、上の板が下りて閉じ、押さえて「ぼすっ」と綿の湯気、台ごとぐっと沈む。ゆっくり開いて、また下りる
+	var audio = main.get_node_or_null("Audio")
+	if r == 0 and audio:
+		audio.kitchen(_dev, "cook_press_in", -8.0, 2)   # つめ車のレバーを引き下ろす
+	var shut := _mo.press(r)
+	var c := (r - CookMotion.SHUT) % 12
+	var sq: float = [0.93, 0.9, 1.03, 1.0][c] if c < 4 and r >= CookMotion.SHUT else 1.0
 	_squash(Vector3(1.0 + (1.0 - sq) * 0.5, sq, 1.0 + (1.0 - sq) * 0.5))
-	if c == 0 and r > 0:
-		var audio = main.get_node_or_null("Audio")
+	if shut:
 		if audio:
 			audio.kitchen(_dev, "cook_press", -6.0, 3)
 		_puff(_m("cook") + Vector3.UP * 0.3, 0.35)
 		if _vis:   # 粒は押されて平たくなっていく
-			var k := minf(1.0, r / 36.0)
+			var k := minf(1.0, (r + 10) / 36.0)
 			_vis.scale = Vector3(2.0 + k * 0.8, 2.0 - k * 1.1, 2.0 + k * 0.8)
+	if r == RUN.press - 5 and audio:
+		audio.kitchen(_dev, "cook_press_done", -8.0, 2)   # たまった湯気が抜けて、レバーが戻る
 
 
 func _iron(r: int) -> void:
-	_squash(Vector3(1.0 + (0.01 if (r / 3) % 2 == 0 else -0.005), 1.0, 1.0))
-	if r % 6 == 0:
-		_puff(_m("cook") + Vector3(randf_range(-0.2, 0.2), 0.2, randf_range(-0.1, 0.1)), 0.16)
+	# アイロンが鍋敷きから布の上へ下り、当て布の上を行き来して押す。折り返しで湯気。最後に鍋敷きへ戻る（cook_motion.gd）
+	var o := _mo.iron(r, RUN.iron)
+	var audio = main.get_node_or_null("Audio")
+	if audio and o.land:
+		audio.kitchen(_dev, "cook_iron_in", -8.0, 2)     # アイロンを下ろす「ごとん」
+	if audio and o.lift:
+		audio.kitchen(_dev, "cook_iron_done", -8.0, 2)   # 持ち上げて、こもった湯気が「しゅわっ」
+	if o.turn:
+		_puff(_mo.iron_tip(), 0.18)
+	if _vis and o.press > 0.0:   # 粒は押されて平たく広がっていく
+		var k: float = o.press
+		_vis.scale = Vector3(2.0 + k * 0.9, 2.0 - k * 1.1, 2.0 + k * 0.9)
 
 
 func _dryer(r: int) -> void:
 	_dev.transform = _rest
-	_dev.rotate_object_local(Vector3.FORWARD, [0.015, -0.012, 0.01, -0.015][(r / 2) % 4])
-	_dev.position += Vector3.UP * (0.02 if (r / 3) % 2 == 0 else 0.0)
+	_dev.rotate_object_local(Vector3.FORWARD, [0.008, -0.006, 0.005, -0.008][(r / 2) % 4])
+	_dev.position += Vector3.UP * (0.012 if (r / 3) % 2 == 0 else 0.0)
+	# 胴が回り、料理の中身が胴の中で回りながら踊る（人が入って回るときは中身なし。cook_motion.gd・cook_tumble.gd）
+	_mo.dryer(r, String(item.get("dish", "")) if who >= 0 and r > 2 else "")
 	if r % 12 == 0:
 		_puff(_m("hopper") + Vector3.UP * 0.3, 0.38)
 	if _vis and r == 2:
@@ -550,6 +574,7 @@ func _ride_fx(f: int) -> void:
 func _end_fx() -> void:
 	if who < 0:
 		_dev.transform = _rest
+		_mo.rest()
 	for a in _ride_snd:
 		if is_instance_valid(a):
 			a.queue_free()
