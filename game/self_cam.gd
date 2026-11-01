@@ -15,7 +15,9 @@ const PX := 224               # 描く大きさ（正方形の px）。窓とほ
 const STITCH_PX := 2.6        # 糸 1 本の、画面での幅（1080 のとき, px）
 const EVERY := 2              # 何コマに 1 回描くか
 const DIAM := 236.0           # 画面での丸窓の直径（1080 のとき, px）
-const MARGIN := 18.0          # 画面の端からの間（1080 のとき, px）
+const MARGIN := Vector2(92.0, 56.0)   # 画面の右・下の端からの間（1080 のとき, px）。左の縁に縫った濡れゲージと右上のバッジ（damp_hud.gd）が
+                                      # 画面の端に寄りすぎないよう、端から離す（2026-11-01 代表「刺繍と濡れゲージが画面はしにくっつきそうだから、
+                                      # もう少し画面中央に寄せましょう」）
 const FOV := 36.0
 const DIST := 3.0             # 人形からの距離の目安 (m)。実際は全身が収まるよう _extent() から決める
 const MARGIN_K := 1.3         # 全身の高さに対する窓の高さ（上下の余白）
@@ -211,6 +213,8 @@ const MASK_SHADER := """
 shader_type canvas_item;
 uniform float px = 236.0;        // 窓の直径（画面の px）
 uniform float pitch = 2.4;       // 糸 1 本の幅（画面の px）
+uniform float wet = 0.0;         // 地の麻布の濡れ（0 〜 1。damp.gd の水）。まばらなしみが増えて広がる
+uniform float crisp = 0.0;       // 地の麻布のパリッと（0 〜 1。火で乾かしすぎた所。織り目が少しくっきり）
 const vec2 SHEEN_DIR = vec2(-0.55, -0.83);   // 左上からの光（艶の向き）
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -226,6 +230,62 @@ vec3 thread_color(vec3 c) {
 	return floor(c * 7.0 + 0.5) / 7.0;
 }
 
+float vnoise(vec2 p) {
+	vec2 i = floor(p);
+	vec2 f = fract(p);
+	f = f * f * (3.0 - 2.0 * f);
+	return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x), mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+}
+
+float fbm(vec2 p) {
+	float v = 0.0;
+	float a = 0.5;
+	for (int k = 0; k < 4; k++) {
+		v += a * vnoise(p);
+		p = p * 2.03 + vec2(13.1, 7.7);
+		a *= 0.5;
+	}
+	return v;
+}
+
+// 布のしみ 1 つ（id の升の）の濃さ（0 〜 1）。大きさ・濃さ・出る順はしみごとにばらばら。wet が出る順を越えたしみから現れて広がる。
+// 形は少し楕円にゆがみ、縁は布の目でにじむ。濡れているしみは真ん中がいちばん濃く、外へ行くほど連続して淡くなる
+// （水は布を伝って広がり、縁ほど水が少ない。縁が濃い輪じみは乾いたあとの汚れの跡なので、濡れているあいだは描かない）
+float stain(vec2 id, vec2 uv, float w) {
+	const float CELL = 0.17;
+	float order = hash(id + 3.1);                                   // 出る順（小さいほど先）
+	float grow = smoothstep(order * 0.85, order * 0.85 + 0.3, w);
+	if (grow <= 0.0) {
+		return 0.0;
+	}
+	vec2 ctr = (id + vec2(hash(id + 1.7), hash(id + 8.3))) * CELL;
+	float rad = (0.025 + 0.15 * pow(hash(id + 5.9), 2.0)) * grow;   // 小さなしずくから大きなしみまで
+	float an = hash(id + 4.4) * 3.14159;
+	vec2 ax = vec2(cos(an), sin(an));
+	vec2 rel = uv - ctr;
+	rel = vec2(dot(rel, ax) * (0.75 + 0.5 * hash(id + 6.6)), dot(rel, vec2(-ax.y, ax.x)));
+	float d = length(rel) * (1.0 + (fbm(rel * 9.0 / max(rad, 0.02) * 0.12 + id * 3.0) - 0.5) * 0.7) + (fbm(uv * 30.0) - 0.5) * 0.01;
+	float k = 0.45 + 0.55 * hash(id + 2.4);                         // しみごとの濃さ
+	float t = clamp(1.0 - d / max(rad, 0.001), 0.0, 1.0);           // 縁 0 〜 真ん中 1
+	return k * pow(t, 0.6) * smoothstep(0.0, 0.25, t);              // 真ん中から外へ連続して淡く、縁はふわっと消える
+}
+
+// 布のしみをまとめた濃さ。重なった所は濃い方に合わせ、境はなめらかにつなぐ（2026-11-01 代表「濡れの重なりのとこは
+// 濃度を濃い方にあわせて、境界の輪郭も馴染むように」）
+float stains(vec2 uv, float w) {
+	const float CELL = 0.17;
+	vec2 c = floor(uv / CELL);
+	float dark = 0.0;
+	for (int dx = -1; dx <= 1; dx++) {
+		for (int dy = -1; dy <= 1; dy++) {
+			float x = stain(c + vec2(float(dx), float(dy)), uv, w);
+			float h = clamp(0.5 + 0.5 * (x - dark) / 0.12, 0.0, 1.0);   // なめらかな max（濃い方へ寄せ、境をなじませる）
+			dark = mix(dark, x, h) + 0.12 * h * (1.0 - h) * 0.5;
+		}
+	}
+	return min(dark, 1.0);
+}
+
 bool is_cloth(vec3 c, vec3 ground) {
 	return length(c - ground) < 0.04;
 }
@@ -237,7 +297,17 @@ void fragment() {
 	vec3 ground = texture(TEXTURE, vec2(0.02, 0.02)).rgb;       // 背景の色（窓の外の隅には何も映らない）
 	vec3 c = soft(TEXTURE, UV, e);
 	vec3 q = thread_color(c);
-	vec3 col = ground * (0.97 + 0.03 * sin(p.x * 2.6) * sin(p.y * 2.6));   // 麻布の織り目（明るさは本体の光で照らした背景のまま）
+	// 麻布の織り目（明るさは本体の光で照らした背景のまま）。パリッとすると、乾いて張った布の織り目が少しくっきりする
+	float weave = sin(p.x * 2.6) * sin(p.y * 2.6);
+	float mott = fbm(UV * 3.0);
+	vec3 col = ground * (0.97 + (0.03 + 0.03 * crisp) * weave);
+	// 濡れ: 布のあちこちに、まばらにしみが出る。しみは大きさも濃さもばらばらで、濡れるほど増えて広がる。乾くときは
+	// しみが一つずつ縮んで消えていく（まばらに乾く）。びしょびしょに近いと、しみのあいだも全体に湿る
+	// （2026-11-01 代表「刺繍の地の布をまばらに濡らす感じにしよう。乾くときもまばらに乾いてく」「濡れの濃淡つけるのと、シミの大小をランダムに」）
+	float st = stains(UV, wet);
+	float soak = max(st, smoothstep(0.75, 1.0, wet) * (0.55 + 0.2 * mott));
+	vec3 soaked = ground * vec3(0.40, 0.42, 0.46) * (0.94 + 0.08 * mott) * (0.98 + 0.02 * weave);
+	col = mix(col, soaked, clamp(soak, 0.0, 1.0));
 	if (!is_cloth(c, ground)) {
 		// 糸の向き: 色の塊ごとに決め、場所でゆるく曲げる
 		float ang = hash(q.rg * 7.0 + q.b * 3.0) * 3.14159 + 0.35 * sin(p.x * 0.045 + p.y * 0.03 + q.r * 5.0);
@@ -259,7 +329,7 @@ void fragment() {
 		vec3 qy = thread_color(soft(TEXTURE, UV + vec2(0.0, 1.6 * e), e));
 		float edge = step(0.25, length(qx - q) + length(qy - q));
 		th = mix(th, q * 0.5 * mix(0.8, 1.1, bulge), edge * 0.5);
-		col = th;
+		col = th * mix(1.0, 0.7, clamp(soak, 0.0, 1.0));   // 濡れた所の糸も水を吸って沈む
 	}
 	col = mix(col, ground, smoothstep(0.9, 1.0, r) * 0.25);
 	COLOR = vec4(col, 1.0 - smoothstep(0.985, 1.0, r));
@@ -280,7 +350,7 @@ func ui() -> float:
 
 ## 丸窓が画面の右から占める幅（px）。日時計はこの左に置く
 func width() -> float:
-	return (DIAM + MARGIN) * ui() if not hidden else 0.0
+	return (DIAM + MARGIN.x) * ui() if not hidden else 0.0
 
 
 func _process(dt: float) -> void:
@@ -289,6 +359,11 @@ func _process(dt: float) -> void:
 	_frame.pivot_offset = _frame.size * 0.5
 	_frame.rotation = Icons.wind_angle(5.0, 0.0, 0.03)
 	_frame.position += Icons.wind_offset(5.0, 2.5 * ui())
+	# 何もしないでいると、小窓は層ごと画面の外へ引っこむ（hud.gd の _update_tuck）。刺繍枠（hud.gd）もこの offset で追う
+	# （刺繍枠の木の輪とねじは小窓より外へ出るので、その分も広げる。上の I・N・R の札と一緒に右へ抜ける）
+	var u := ui()
+	var fr := Rect2(_frame.position, _frame.size).grow(12.0 * u).grow_side(SIDE_TOP, 34.0 * u)
+	offset = Icons.tuck_off(fr, get_viewport().get_visible_rect().size)
 	var dc := get_node_or_null("/root/DayCycle")
 	if dc and "dial_right" in dc:
 		dc.dial_right = 16.0 + width()
@@ -319,7 +394,7 @@ func _layout() -> void:
 	var u := ui()
 	var vs := get_viewport().get_visible_rect().size
 	var d := DIAM * u
-	_frame.position = vs - Vector2(d, d) - Vector2(MARGIN, MARGIN) * u
+	_frame.position = vs - Vector2(d, d) - MARGIN * u
 	_frame.size = Vector2(d, d)
 	_frame.view.position = Vector2.ZERO
 	_frame.view.size = _frame.size
@@ -397,7 +472,8 @@ var _last_body := Vector3.ZERO
 func _sync_held() -> void:
 	var doll = player.doll
 	var it: Dictionary = player.held()
-	var key := "" if it.is_empty() else "%s/%s/%s/%s" % [it.get("kind", ""), it.get("fabric", ""), it.get("tag", ""), it.get("sled", "")]
+	var key := "" if it.is_empty() else "%s/%s/%s/%s/%s/%s" % [it.get("kind", ""), it.get("fabric", ""), it.get("tag", ""), it.get("sled", ""),
+			it.get("dish", ""), str(it.get("step", "")) + "." + str(it.get("bites", ""))]
 	if _held != null and not is_instance_valid(_held):   # 着替えると、前の体の手に付けていた物は体と一緒に消える。新しい体に付け直す
 		_held = null
 		_held_key = "-"

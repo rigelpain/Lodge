@@ -1,12 +1,14 @@
 extends CanvasLayer
-## 工房の画面: 持ち物の列と、売り子の売り台。文字は使わない（絵は craft_icons.gd と hud_icons.gd）。
-##   持ち物の列（画面の下のまんなか）: 左端が素手（手袋）、続けて持っている物。手に持っている物は少し持ち上がり、赤い糸で囲む。
-##     右端に財布（木のボタンを数だけ積む）。ホイールで手に持つ物を替える（player.gd）。持ち物がなく売り台も閉じていれば出さない
+## 工房の画面: 持ち物の列と、売り子の売り台。文字は使わない（絵は craft_icons.gd と hud_icons.gd）。手に持つ物の名前の札だけは例外。
+##   持ち物は手持ち 6 ＋ かばん 6 の決まった場所（craft.gd の HAND_SLOTS・SLOTS。空いた場所はそのまま空いている）。
+##   持ち物の列（画面の下のまんなか）: 左端が素手（手袋）、続けて手持ちの 6 マス（空いたマスは縫い目だけ）。手に持っている物は
+##     少し持ち上がり、赤い糸で囲む。持ち替えたとき、列の上に名前の紙の札を 2 秒ほど出す。
+##     右端に財布（木のボタンを数だけ積む）。ホイールで手に持つ物を替える（player.gd）。手持ちが空で売り台も閉じていれば出さない
 ##   売り台（おじさんに F）: 上の段に型紙 4 枚、下の段に布 6 色。どれも絵と、値段のボタンの数。
 ##     品物を押して選び、右の買うボタン（ボタン → 手袋）で買う。足りない品物は薄く、買えないときは買うボタンが震える。
 ##     閉じるのは右上の × の縫い目か、F か Esc
 ##   ミシンの画面（ミシンの前で F か T）: 上に型紙の枠と布の枠、その右にできるソリ（広げた姿がくるくる回る）と縫うボタン。
-##     下に自分の持ち物が並び、押すと型紙は型紙の枠、布は布の枠に入る（枠を押すと外す）。開いたときは、手に持っている物か
+##     下に自分の持ち物が 2 段（手持ち・かばん）で並び、押すと型紙は型紙の枠、布は布の枠に入る（枠を押すと外す）。開いたときは、手に持っている物か
 ##     最初の型紙・布が入っている。足りない枠は破線の空き枠で、おじさん（売り台の絵）を指す矢印が出る。
 ##     縫うボタンで、型紙と布をいっしょに使って 7 つの場面が始まる（片方だけ使われることはない）
 ##   装備の画面（I）: 左の上に自分の名前（打って替える）とキャラの色（12 色から押して選ぶ）。HUD の札の人の形の色と、頭の上の名前になる
@@ -16,7 +18,8 @@ extends CanvasLayer
 ##     まんなかの段は名札: 左に大きく、右に部品（形・紙の色・縁の糸・吊るす糸・判子）の見本の列。名札の下に、どの名札を替えるかの札の列:
 ##     いつもの柄（針の印。これから縫うソリに付く）・自分のソリ（回る姿）・畳んだソリ・名札入れの外した名札。
 ##     押した札の名札だけが替わる（名札はソリごと。いつもの柄と名前と色は保存して、次に起動しても同じ）。
-##     右の下の段に、持ち物（型紙・布）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
+##     右の下に、手持ち（上の段）とかばん（下の段, 緑のフェルトの巾着）。引きずって入れ替える（行き先に物があれば入れ替わる）。
+##     押して離すと上に小窓: できあがった料理なら食べる（おにぎり）、どれでも捨てる（編みかご）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
 ##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: 取った所からボタンが画面を飛んで財布へ入り、
 ##     財布がぽんと跳ねる。財布に着くたびに、素材ごとの取得音（audio.gd の coin。木コッ・真鍮チン・白蝶貝シャラン・螺鈿）。
@@ -31,6 +34,8 @@ const Craft := preload("res://craft.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Doll := preload("res://doll.gd")
 const PersonIcon := preload("res://person_icon.gd")
+const ABOVE_HOOP := 72.0   # 刺繍枠（自分の小窓）の上の縁から、I・N・R の札の下までの間（1080 で px）。上のねじ（30 px ほど）と、
+                            # 枠の右上に縫う体の調子のバッジ（badges.gd）を避ける（2026-11-01 代表「インベントリボタンを少し上に上げて干渉しないように」）
 
 var main: Node3D
 var craft: Node
@@ -50,7 +55,14 @@ var name_edit: LineEdit      # 装備の画面の、名前を打つ欄
 var _name_rect := Rect2()
 var _opt_hover := -1         # 指している見本（_opt_rects の番号）
 var _pick := {"pattern": -1, "fabric": -1}   # ミシンの画面で枠に入れた持ち物の番号
-var _bag_rects: Array = []   # ミシンの画面の持ち物の札
+var _bag_rects: Array = []   # ミシンの画面の持ち物の札（持ち物の場所の番号順。空いた場所は Rect2()）
+var _inv_rects: Array = []   # 装備の画面の、手持ちとかばんのマス（場所の番号順）
+var _drag := {}              # 装備の画面で引きずっている持ち物 {from, start, at, moved}
+var _inv_menu := -1          # 装備の画面で押した持ち物の場所（食べる・捨てるの小窓を出している）。-1 は出していない
+var _menu_rects: Array = []  # その小窓のボタン [Rect2, "eat" / "trash"]
+var _name_t := 0.0           # 手に持つ物の名前の札を出しておく残りの秒
+var _name_key := ""          # 名前の札を出した物（持ち替えたら出し直す）
+const NAME_T := 2.0          # 持ち替えたとき、名前の札を出しておく秒（最後の 0.4 秒で消える）
 var _slot_rects := {}        # "pattern" / "fabric" → 枠
 var _sew_rect := Rect2()
 var _view: View
@@ -235,11 +247,11 @@ func open_machine() -> void:
 	var bag: Array = craft.bag(_who())
 	var held: int = craft.hands.get(_who(), -1)
 	for kind in ["pattern", "fabric"]:
-		if held >= 0 and held < bag.size() and bag[held].kind == kind:
+		if held >= 0 and held < bag.size() and bag[held].get("kind", "") == kind:
 			_pick[kind] = held
 			continue
 		for i in bag.size():
-			if bag[i].kind == kind:
+			if bag[i].get("kind", "") == kind:
 				_pick[kind] = i
 				break
 	_open_panel()
@@ -255,7 +267,7 @@ func close_machine() -> void:
 ## 持ち物の i 番を枠に入れる（同じ物なら外す）
 func pick(i: int) -> void:
 	var bag: Array = craft.bag(_who())
-	if i < 0 or i >= bag.size() or not bag[i].kind in ["pattern", "fabric"]:
+	if i < 0 or i >= bag.size() or not bag[i].get("kind", "") in ["pattern", "fabric"]:
 		_shake = 1.0
 		return
 	var kind: String = bag[i].kind
@@ -279,12 +291,89 @@ func sew() -> bool:
 	return ok
 
 
+## 装備の画面の手持ちとかばん: 引きずって入れ替える（行き先に物があれば入れ替わる）。押して離すと、食べる・捨てるの小窓。
+## 小窓のボタンは離したときに効く（食べ始めの左ボタンの離しで、食べるのが止まらないように）。扱った入力なら true
+func _inv_input(e: InputEvent) -> bool:
+	var at_slot := func(p: Vector2) -> int:
+		for i in _inv_rects.size():
+			if (_inv_rects[i] as Rect2).has_point(p):
+				return i
+		return -1
+	if e is InputEventMouseMotion and not _drag.is_empty():
+		_drag.at = e.position
+		if not _drag.moved and e.position.distance_to(_drag.start) > 8.0:
+			_drag.moved = true
+			_inv_menu = -1
+		return true
+	if not (e is InputEventMouseButton and e.button_index == MOUSE_BUTTON_LEFT):
+		return false
+	var who := _who()
+	var b: Array = craft.bag(who)
+	if e.pressed:
+		for m in _menu_rects:
+			if (m[0] as Rect2).has_point(e.position):
+				return true   # 小窓のボタン: 離したときに
+		var i: int = at_slot.call(e.position)
+		if i >= 0 and i < b.size() and not b[i].is_empty():
+			_drag = {"from": i, "start": e.position, "at": e.position, "moved": false}
+			return true
+		if _inv_menu >= 0:
+			_inv_menu = -1   # 小窓の外を押した: 閉じる
+			return i >= 0
+		return i >= 0
+	# 離した
+	for m in _menu_rects:
+		if (m[0] as Rect2).has_point(e.position) and _inv_menu >= 0:
+			var slot := _inv_menu
+			_inv_menu = -1
+			if m[1] == "trash":
+				craft.send({"kind": "drop", "who": who, "slot": slot})
+			elif m[1] == "eat":
+				eat_slot(slot)
+			return true
+	if _drag.is_empty():
+		return false
+	var from: int = _drag.from
+	var moved: bool = _drag.moved
+	_drag = {}
+	if moved:
+		var to: int = at_slot.call(e.position)
+		if to >= 0 and to != from:
+			craft.send({"kind": "move", "who": who, "from": from, "to": to})
+	else:
+		_inv_menu = -1 if _inv_menu == from else from
+	return true
+
+
+## 持ち物の slot 番の料理を食べる: かばんにあれば手持ち（空き、なければ手に持っている所）へ出し、手に持って画面を閉じ、食べ始める
+func eat_slot(slot: int) -> void:
+	var who := _who()
+	var b: Array = craft.bag(who)
+	var to := slot
+	if slot >= Craft.HAND_SLOTS:
+		to = -1
+		for i in Craft.HAND_SLOTS:
+			if b[i].is_empty():
+				to = i
+				break
+		if to < 0:
+			to = maxi(craft.hands.get(who, -1), 0)
+		if not craft.send({"kind": "move", "who": who, "from": slot, "to": to}):
+			return
+	craft.send({"kind": "hand", "who": who, "slot": to})
+	close_gear()
+	if player.has_method("eat_held"):
+		player.eat_held()
+
+
 ## 装備の画面を開く
 func open_gear() -> void:
 	if shop_open or machine_open or gear_open or player == null:
 		return
 	gear_open = true
 	tag_edit = {}
+	_drag = {}
+	_inv_menu = -1
 	name_edit.text = craft.name_of(_who())
 	_open_panel()
 
@@ -421,6 +510,8 @@ func _gear_input(e: InputEvent) -> void:
 	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode in [KEY_ESCAPE, KEY_I]:
 		close_gear()
 		get_viewport().set_input_as_handled()
+	elif _inv_input(e):
+		get_viewport().set_input_as_handled()
 	elif e is InputEventMouseMotion:
 		_hover = -1
 		for i in _gear_rects.size():
@@ -538,8 +629,14 @@ func select(i: int) -> void:
 func _process(dt: float) -> void:
 	if craft == null or player == null:
 		return
-	var show: bool = shop_open or machine_open or gear_open or not craft.bag(_who()).is_empty()
+	var show: bool = shop_open or machine_open or gear_open or craft.has_hand_items(_who())
 	_bar_a = move_toward(_bar_a, 1.0 if show else 0.0, dt * 4.0)
+	var held_it: Dictionary = craft.held(_who())
+	var key := "" if held_it.is_empty() else "%d %s" % [craft.hands.get(_who(), -1), held_it]
+	if key != _name_key:
+		_name_key = key
+		_name_t = NAME_T if key != "" else 0.0
+	_name_t = maxf(0.0, _name_t - dt)
 	_shake = maxf(0.0, _shake - dt * 2.5)
 	_coin_pop = maxf(0.0, _coin_pop - dt * 2.5)
 	var nb: int = player.ball_count() if player.has_method("ball_count") else 0
@@ -625,7 +722,10 @@ class View extends Control:
 		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
 			var fr: Control = sc._frame
 			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
-			bottom = fr.position.y - 44.0 * u   # 刺繍枠の上のねじ（小窓の縁から 1080 で 30 px ほど飛び出す。PR #48）の上
+			bottom = fr.position.y - ABOVE_HOOP * u   # 刺繍枠の上のねじと、右上のバッジ（badges.gd）の上
+		var off := Icons.tuck_off(Rect2(cx - total / 2.0, bottom - ch, total, ch), size)   # 何もしないでいると画面の外へ（hud.gd の _update_tuck）
+		cx += off.x
+		bottom += off.y
 		var spec: Dictionary = craft.sack(who)
 		var lamp: Dictionary = craft.lantern(who)
 		var cards := [["I", "gear"], ["N", "sack"], ["R", "lamp"]]
@@ -666,10 +766,13 @@ class View extends Control:
 		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
 			var fr: Control = sc._frame
 			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
-			bottom = fr.position.y - 44.0 * u
+			bottom = fr.position.y - ABOVE_HOOP * u
 		var h := 46.0 * u
 		var x0 := cx - total / 2.0
 		var y := bottom - 78.0 * u - 10.0 * u - 8.0 * u - h / 2.0   # I・N・R の札の上
+		var off := Icons.tuck_off(Rect2(x0, y - h / 2.0, total + 10.0 * u, h), size)   # 何もしないでいると画面の外へ（針の先まで）
+		x0 += off.x
+		y += off.y
 		var navy := Doll.STOCK_NAVY   # 人形の袖のストックと同じ藍のフェルト（白い雪の上でも、白い雪玉が映える）
 		var hemp := Color(0.70, 0.57, 0.38)
 		var red := Doll.STOCK_RED
@@ -748,23 +851,26 @@ class View extends Control:
 			var p1 := p0 + d.rotated(0.9 * sin(k + seed)) * r * (0.08 + 0.08 * absf(sin(k * 1.7 + seed)))
 			draw_line(p0, p1, Color(0.97, 0.97, 0.95, 0.7 * a), maxf(0.7, r / 18.0), true)
 
-	## 持ち物の列
+	## 持ち物の列: 素手と、手持ちの 6 マス（空いたマスは縫い目だけ）。かばんの物は装備の画面で
 	func _draw_bar(u: float, a: float) -> void:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
 		var bag: Array = craft.bag(who)
 		var held: int = craft.hands.get(who, -1)
-		var cell := 66.0 * u
-		var gap := 8.0 * u
-		var n := bag.size() + 1
+		var cell := 58.0 * u   # 7 マスでも 1280×720 で左下の札・右下の刺繍枠とぶつからない大きさ
+		var gap := 6.0 * u
+		var n := Craft.HAND_SLOTS + 1
 		var coins: int = craft.wallet(who) - ui._pending
 		var wallet_w := maxf(96.0 * u, _coins_w(coins, 9.0 * u) + 16.0 * u)
 		var w := n * cell + (n - 1) * gap + 24.0 * u + wallet_w
 		var x0 := size.x / 2.0 - w / 2.0
 		var y := size.y - 20.0 * u - cell
+		var off := Icons.tuck_off(Rect2(x0 - 56.0 * u, y - 60.0 * u, w + 68.0 * u, cell + 70.0 * u), size)   # 何もしないでいると画面の外へ（名前の札まで）
+		x0 += off.x
+		y += off.y
 		Icons.screen()
 		Icons.patch(self, Icons.rr(x0 - 12.0 * u, y - 10.0 * u, w + 24.0 * u, cell + 20.0 * u, 16.0 * u), Icons.PAPER, 0.85 * a, false)
-		if not bag.is_empty():   # 持ち替えの案内: Z（と、ホイール・二本指スクロール）
+		if craft.has_hand_items(who):   # 持ち替えの案内: Z（と、ホイール・二本指スクロール）
 			Icons.keycap(self, "Z", Vector2(x0 - 44.0 * u, y + cell * 0.32), 30.0 * u, a)
 			Icons.icon(self, "mouse_wheel", Vector2(x0 - 44.0 * u, y + cell * 0.86), 34.0 * u, a)
 		for i in n:
@@ -772,6 +878,10 @@ class View extends Control:
 			var r := Rect2(x0 + i * (cell + gap), y, cell, cell)
 			var on := slot == held
 			var pop: float = ui._pop.get(slot, 0.0)
+			if slot >= 0 and (slot >= bag.size() or bag[slot].is_empty()):   # 空いたマス: 縫い目だけ
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(r.position.x + 4.0 * u, r.position.y + 4.0 * u, cell - 8.0 * u, cell - 8.0 * u, 9.0 * u), Icons.PAPER_EDGE, 2.0 * u, 5.0 * u, 4.0 * u, 0.9 * a, true)
+				continue
 			if on:
 				r.position.y -= 8.0 * u
 			Icons.screen()
@@ -789,6 +899,89 @@ class View extends Control:
 		# 財布: ボタンを数だけ、山に積む
 		var wx := x0 + n * (cell + gap) + 16.0 * u
 		_coins(wx, y + cell - 4.0 * u, coins, 9.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI)), a)
+		# 手に持っている物の名前: 持ち替えたとき、列のまんなかの上に紙の札で少しのあいだ（左下の札とぶつからない所）。
+		# ゲームの中に文字を出さない決まりの例外（2026-11-01 代表「手に持ってる物の名前をインベントリHUDの上に小さく表示」）
+		var it: Dictionary = craft.held(who)
+		if not it.is_empty() and ui._name_t > 0.0:
+			_name_tag(CraftIcons.item_name(it), Vector2(x0 + w / 2.0 - 12.0 * u, y - 18.0 * u), u, a * clampf(ui._name_t / 0.4, 0.0, 1.0))
+
+	## 装備の画面の右下: 手持ち（上の段, 6 マス）と、かばん（下の段, 6 マス。口を紐で絞ったフェルトの巾着の上）。
+	## 引きずって入れ替える。押すと、食べる・捨てるの小窓（_draw_inv_menu）
+	func _draw_hand_and_bag(u: float, bag: Array, x0: float, y0: float) -> void:
+		var cell := 72.0 * u
+		var gap := 8.0 * u
+		var row := cell + 6.0 * u
+		var held: int = ui.craft.hands.get(ui._who(), -1)
+		var from: int = ui._drag.get("from", -1) if ui._drag.get("moved", false) else -1
+		var rects: Array = []
+		for k in 2:
+			var y := y0 + 26.0 * u + k * (row + 6.0 * u)
+			var gx := x0 + 110.0 * u
+			Icons.screen()
+			if k == 1:
+				var bw := Craft.HAND_SLOTS * cell + (Craft.HAND_SLOTS - 1) * gap + 20.0 * u
+				Icons.patch(self, Icons.rr(gx - 10.0 * u, y - 6.0 * u, bw, cell + 12.0 * u, 14.0 * u), Color(0.30, 0.38, 0.30), 0.95, true, Icons.CAP)
+				Icons.thread(self, PackedVector2Array([Vector2(gx - 4.0 * u, y - 6.0 * u), Vector2(gx + bw - 16.0 * u, y - 6.0 * u)]), Icons.WOOD, 3.0 * u, 1.0)
+			Icons.icon(self, "hand" if k == 0 else "gear", Vector2(gx - 36.0 * u, y + cell / 2.0), 40.0 * u, 1.0)
+			for i in Craft.HAND_SLOTS:
+				var slot := k * Craft.HAND_SLOTS + i
+				var r := Rect2(gx + i * (cell + gap), y, cell, cell)
+				rects.append(r)
+				var over: bool = from >= 0 and slot != from and r.has_point(ui._drag.at)
+				Icons.screen()
+				if slot >= bag.size() or bag[slot].is_empty() or slot == from:   # 空いたマス（引きずっている物の元の場所も）
+					Icons.dashes(self, Icons.rr(r.position.x + 3.0 * u, r.position.y + 3.0 * u, cell - 6.0 * u, cell - 6.0 * u, 9.0 * u), Icons.RED if over else Icons.CAP, 2.0 * u, 5.0 * u, 4.0 * u, 1.0 if over else 0.6, true)
+					continue
+				Icons.patch(self, Icons.rr(r.position.x, r.position.y, cell, cell, 10.0 * u), Icons.CAP, 0.95, true, Icons.PAPER_EDGE)
+				CraftIcons.item(self, bag[slot], r.get_center(), cell * 0.82, 1.0)
+				if slot == held or over or slot == ui._inv_menu:
+					Icons.screen()
+					Icons.dashes(self, Icons.rr(r.position.x - 3.0 * u, r.position.y - 3.0 * u, cell + 6.0 * u, cell + 6.0 * u, 12.0 * u), Icons.RED, 2.4 * u, 6.0 * u, 3.5 * u, 1.0 if slot != held or over else 0.7, true)
+		ui._inv_rects = rects
+		_draw_inv_menu(u, bag)
+		if from >= 0 and from < bag.size() and not bag[from].is_empty():   # 引きずっている物は、指の先に
+			Icons.screen()
+			Icons.patch(self, Icons.rr(ui._drag.at.x - cell / 2.0, ui._drag.at.y - cell / 2.0, cell, cell, 10.0 * u), Icons.CAP, 0.9, true, Icons.PAPER_EDGE)
+			CraftIcons.item(self, bag[from], ui._drag.at, cell * 0.9, 1.0)
+
+	## 押した持ち物の上の小窓: できあがった料理なら食べる、どれでも捨てる（編みかご）
+	func _draw_inv_menu(u: float, bag: Array) -> void:
+		ui._menu_rects = []
+		var i: int = ui._inv_menu
+		if i < 0 or i >= ui._inv_rects.size() or i >= bag.size() or bag[i].is_empty():
+			return
+		var acts: Array = (["eat"] if preload("res://food.gd").done(bag[i]) else []) + ["trash"]
+		var bs := 56.0 * u
+		var pad := 8.0 * u
+		var cr: Rect2 = ui._inv_rects[i]
+		var w := acts.size() * bs + (acts.size() + 1) * pad
+		var h := bs + pad * 2.0
+		var x := clampf(cr.get_center().x - w / 2.0, 8.0 * u, size.x - w - 8.0 * u)
+		var y := cr.position.y - h - 10.0 * u
+		Icons.screen()
+		Icons.patch(self, Icons.rr(x, y, w, h, 12.0 * u), Icons.PAPER, 1.0, true, Icons.PAPER_EDGE)
+		Icons.patch(self, PackedVector2Array([Vector2(cr.get_center().x - 8.0 * u, y + h - 1.0), Vector2(cr.get_center().x + 8.0 * u, y + h - 1.0), Vector2(cr.get_center().x, y + h + 9.0 * u)]), Icons.PAPER, 1.0, false)
+		for k in acts.size():
+			var br := Rect2(x + pad + k * (bs + pad), y + pad, bs, bs)
+			var hot := br.has_point(get_local_mouse_position())
+			Icons.screen()
+			Icons.patch(self, Icons.rr(br.position.x, br.position.y, bs, bs, 10.0 * u), Icons.CAP.darkened(0.06 if hot else 0.0), 1.0, true, Icons.RED if hot else Icons.PAPER_EDGE)
+			Icons.icon(self, acts[k], br.get_center(), bs * (0.86 if hot else 0.8), 1.0)
+			ui._menu_rects.append([br, acts[k]])
+
+	## 名前の紙の札（下の縁のまんなかを at に）。字は藍の糸の刺繍の字
+	func _name_tag(nm: String, at: Vector2, u: float, a: float) -> void:
+		if nm == "" or a <= 0.01:
+			return
+		var fs := 18.0 * u
+		var font: Font = Icons._bold_font()
+		var tw := font.get_string_size(nm, HORIZONTAL_ALIGNMENT_LEFT, -1, int(round(fs))).x
+		var w := tw + 24.0 * u
+		var h := fs + 14.0 * u
+		var x := clampf(at.x - w / 2.0, 8.0 * u, size.x - w - 8.0 * u)
+		Icons.screen()
+		Icons.patch(self, Icons.rr(x, at.y - h, w, h, 6.0 * u), Icons.PAPER, a, true, Icons.PAPER_EDGE)
+		Icons.stitched_text(self, nm, Vector2(x + 12.0 * u, at.y - h / 2.0), fs, Color(Icons.THREAD, a))
 
 	## 財布のボタンを、左 x0・下 y から、段ごとの山に積んで描く（左から木・真鍮・白蝶貝・螺鈿。価値の低い順。どの段も 9 枚までなので 1 山。
 	## 螺鈿だけは 10 枚ごとに山を足す）。木の山は 0 枚でも場所を取る（飛んでくるボタンの行き先）。
@@ -833,6 +1026,9 @@ class View extends Control:
 		var h := 9.0 * cr * 0.55 + cr * 2.6
 		var x0 := size.x / 2.0 - w / 2.0
 		var y1 := size.y - 22.0 * u
+		var off := Icons.tuck_off(Rect2(x0, y1 - h, w, h), size)   # 何もしないでいると画面の外へ
+		x0 += off.x
+		y1 += off.y
 		Icons.screen()
 		Icons.patch(self, Icons.rr(x0, y1 - h, w, h, 14.0 * u), Icons.PAPER, 0.85 * a, true, Icons.PAPER_EDGE)
 		_coins(x0 + 14.0 * u, y1 - 8.0 * u, coins, cr * (1.0 + 0.3 * sin(ui._coin_pop * PI)), a)
@@ -856,7 +1052,7 @@ class View extends Control:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
 		var coins: int = craft.wallet(who)
-		var full: bool = craft.bag(who).size() >= Craft.SLOTS
+		var full: bool = craft.free_slot(who) < 0
 		var w := 1040.0 * u
 		var h := 600.0 * u
 		var r := Rect2(size.x / 2.0 - w / 2.0, size.y * 0.44 - h / 2.0, w, h)
@@ -1002,16 +1198,27 @@ class View extends Control:
 		Icons.patch(self, Icons.circ(bc, bs * 0.5 * big, 28), Icons.RED if ready else Icons.RED.lerp(Icons.PAPER_EDGE, 0.6), 1.0, true, Icons.CAP)
 		Icons.patch(self, Icons.circ(bc, bs * 0.36 * big, 24), Icons.CAP, 1.0, false)
 		Icons.icon(self, "needle", bc, bs * 0.62 * big, 1.0)
-		# 下の段: 自分の持ち物
+		# 下の 2 段: 自分の持ち物（上が手持ち、下がかばん。どちらの型紙・布でも縫える）
 		var rects: Array = []
-		var bw := 104.0 * u
-		var by := r.end.y - 40.0 * u - 120.0 * u
-		var x0 := r.position.x + 40.0 * u
+		var bw := 84.0 * u
+		var bh := 84.0 * u
+		var x0 := r.position.x + 90.0 * u
+		var by0 := r.end.y - 34.0 * u - 2.0 * bh - 12.0 * u
+		for k in 2:
+			Icons.screen()
+			Icons.icon(self, "hand" if k == 0 else "gear", Vector2(x0 - 40.0 * u, by0 + k * (bh + 12.0 * u) + bh / 2.0), 38.0 * u, 1.0)
 		for i in bag.size():
 			var it: Dictionary = bag[i]
+			var col := i % Craft.HAND_SLOTS
+			var by := by0 + (i / Craft.HAND_SLOTS) * (bh + 12.0 * u)
+			if it.is_empty():
+				rects.append(Rect2())
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(x0 + col * (bw + 12.0 * u) + 3.0 * u, by + 3.0 * u, bw - 6.0 * u, bh - 6.0 * u, 10.0 * u), Icons.CAP, 2.0 * u, 5.0 * u, 4.0 * u, 0.45, true)
+				continue
 			var usable: bool = it.kind in ["pattern", "fabric"]
 			var picked: bool = ui._pick.get(it.kind, -1) == i
-			var card := Rect2(x0 + i * (bw + 14.0 * u), by - (8.0 * u if picked else (4.0 * u if ui._hover == i else 0.0)), bw, 120.0 * u)
+			var card := Rect2(x0 + col * (bw + 12.0 * u), by - (6.0 * u if picked else (3.0 * u if ui._hover == i else 0.0)), bw, bh)
 			rects.append(card)
 			Icons.screen()
 			Icons.patch(self, Icons.rr(card.position.x, card.position.y, bw, card.size.y, 12.0 * u), Icons.CAP, 1.0 if usable else 0.55, true, Icons.PAPER_EDGE)
@@ -1227,19 +1434,8 @@ class View extends Control:
 			oy += ceili(float(n) / per) * (sw + 9.0 * u) + 8.0 * u
 		ui._opt_rects = opts
 		_draw_edit_row(u, Rect2(x0, ty + 226.0 * u, 272.0 * u, 76.0 * u))
-		# 右下: 持ち物（見るだけ）
-		var bag: Array = craft.bag(who)
-		var by := r.end.y - 40.0 * u - 104.0 * u
-		Icons.screen()
-		Icons.icon(self, "hand", Vector2(x0 + 26.0 * u, by + 52.0 * u), 44.0 * u, 1.0)
-		for i in bag.size():
-			var card := Rect2(x0 + 56.0 * u + i * 96.0 * u, by, 86.0 * u, 104.0 * u)
-			Icons.screen()
-			Icons.patch(self, Icons.rr(card.position.x, card.position.y, card.size.x, card.size.y, 10.0 * u), Icons.CAP, 0.9, true, Icons.PAPER_EDGE)
-			CraftIcons.item(self, bag[i], card.get_center(), card.size.x * 0.82, 1.0)
-		if bag.is_empty():
-			Icons.screen()
-			Icons.dashes(self, Icons.rr(x0 + 56.0 * u, by, 86.0 * u, 104.0 * u, 10.0 * u), Icons.CAP, 2.0 * u, 6.0 * u, 4.0 * u, 0.5, true)
+		# 右下: 手持ちとかばん（引きずって入れ替える。押すと食べる・捨てる）
+		_draw_hand_and_bag(u, craft.bag(who), x0 + 4.0 * u, r.end.y - 30.0 * u - 2 * 82.0 * u - 10.0 * u)
 		# 右上: 閉じる
 		var xs := 46.0 * u
 		var xc := Vector2(r.end.x - 34.0 * u, r.position.y + 34.0 * u)

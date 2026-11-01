@@ -64,6 +64,8 @@ const DRAG_SLIP_SPEED := 8.0   # これより速いと手がもたない（つ�
 const BODY_MIN_MASS := 15.0    # 物理の体の重さの下限 (kg)。米袋（重さ 1 kg）でも揺れずに滑るため。止める計算は表の重さを使う
 const MID_MASS := 60.0         # 滑り木の抵抗・体重移動・雪かきの力はこの重さで決めた値。重さに比べて同じ効きにする
 const PUSH_FADE := Vector2(3.0, 4.0)   # 押されるソリがこの速さ (m/s) を超えると、押す力が弱まって消える（人は走るより速く押せない）
+const COL_MIN_H := 0.3         # 当たりの箱の厚さの下限 (m)。これより薄いと、強い着地で地面をすり抜ける（米袋）
+const FALL_NET := 2.0          # 安全網: 雪面よりこれだけ下へ沈んだら、その場の雪の上へ戻す (m)
 
 signal slipped(who: Node3D)    # 引きずられて手が離れた
 
@@ -100,6 +102,19 @@ var dragged := {}              # 引きずられている人 → 引きずられ
 var _pushed_by := {}           # このコマ押した人（引きずりの判定用。押している人は引きずられない）
 var _pushed_now := {}
 var helped := {}               # 押した・紐で引いた人 → その時刻（_trail_now）。雪のボタンを、乗らずに手伝った人にも分ける（snow_buttons.gd）
+# ---- 通信: つなぐ側のソリは、ホストのソリの姿を写す（net.gd）。自分の画面では力で動かさず、届いた姿と速さから
+# いまの姿を先読みして、そこへなめらかに寄せる。速さは届いた値をそのまま持つ（音・視野角・引きずりが読む）
+var net_follow := false:
+	set(v):
+		net_follow = v
+		custom_integrator = v   # かけた力・重力では動かない（_integrate_forces で姿を決める）
+const NET_PULL := 0.2          # 1 コマで、先読みした姿へ寄る割合
+const NET_SNAP := 4.0          # これより離れていたら置き直す (m)
+const NET_AHEAD := 0.3         # 届かないあいだ、先読みするのはここまで (s)
+var _net_at := Transform3D()
+var _net_v := Vector3.ZERO
+var _net_w := Vector3.ZERO
+var _net_age := -1.0           # 届いてから (s)。まだ届いていなければ負
 # ---- 乗って滑るときの、乗っている一人ひとりの力（調整する値。乗る人の数だけ足し合わさる）
 # 乗って下っているあいだは、乗っている人の重さ（RIDER_MASS）もソリと一緒に動く重さに入る。
 # 人の力は「ソリ＋乗る人」の重さで分け合うので、重いソリほど一人の力では動きにくく、そろえると効く
@@ -211,15 +226,22 @@ func _ready() -> void:
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0, -0.25, 0)
 	angular_damp = 6.0
+	# 速く着地しても地面をすり抜けないように（2026-11-01 代表「大きな山の段差を滑り飛んだときに着地と同時にすり抜けて無限に落ちた」）。
+	# 地面の当たり（HeightMapShape3D）は厚みのない面なので、1 コマで箱の半分の厚さより深く入ると、裏へ押し出されて落ちる。
+	# 動いた道すじを調べて、面の手前で止める
+	continuous_cd = true
 	var pm := PhysicsMaterial.new()
 	pm.friction = 0.04
 	physics_material_override = pm
 
+	# 当たりの箱。薄い米袋（0.15 m）は、強く着地して少し沈むだけで箱の半分を超え、裏へ押し出される。
+	# 当たりだけ COL_MIN_H まで上へ厚くする（底の高さは見た目と同じ）
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = k.box
+	var h := maxf(k.box.y, COL_MIN_H)
+	box.size = Vector3(k.box.x, h, k.box.z)
 	col.shape = box
-	col.position.y = k.box.y * 0.49
+	col.position.y = k.box.y * 0.49 + (h - k.box.y) * 0.5
 	add_child(col)
 
 	_make_body()
@@ -279,8 +301,9 @@ func set_main_color(c: Color) -> void:
 		Look.stitch_set_color(_stitch, color())
 
 
-## dir は押す向き（水平）、at は手が触れた所（世界座標）、who は押した人（引きずられている人は押せない）
-func push(dir: Vector3, at: Vector3, who: Node3D = null) -> void:
+## dir は押す向き（水平）、at は手が触れた所（世界座標）、who は押した人（引きずられている人は押せない）。
+## strength は押す人の力の倍率（紙の体の水。damp.gd の段: よれよれ 0.7 〜 パリッと 1.25）
+func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> void:
 	dir.y = 0
 	if dir.length() < 0.01 or dragged.has(who):
 		return
@@ -288,7 +311,7 @@ func push(dir: Vector3, at: Vector3, who: Node3D = null) -> void:
 	if who:
 		_pushed_now[who] = true
 		helped[who] = _trail_now
-	var f: Vector3 = dir.normalized() * PUSH_FORCE * min(1.0, dir.length())
+	var f: Vector3 = dir.normalized() * PUSH_FORCE * strength * min(1.0, dir.length())
 	f *= 1.0 - smoothstep(PUSH_FADE.x, PUSH_FADE.y, linear_velocity.dot(dir.normalized()))
 	# 力は手が触れている所にそのままかける。どう動くかは滑り木と重力が決める
 	var p := to_local(at)
@@ -357,15 +380,15 @@ func release_rope(who: Node3D) -> void:
 		rope_holder = null
 
 
-## 紐を持つ人の手の位置から、張っていれば引く。張った分の長さを返す（たるみなら負）
-func pull_rope(hand: Vector3) -> float:
+## 紐を持つ人の手の位置から、張っていれば引く。張った分の長さを返す（たるみなら負）。strength は引く人の力の倍率（push と同じ）
+func pull_rope(hand: Vector3, strength := 1.0) -> float:
 	var anchor := to_global(ROPE_ANCHOR)
 	var d := hand - anchor
 	var over := d.length() - ROPE_LEN
 	if over > 0.0:
 		var dir := d
 		dir.y = 0
-		apply_force(dir.normalized() * min(over * ROPE_K, 600.0), anchor - global_position)
+		apply_force(dir.normalized() * min(over * ROPE_K, 600.0) * strength, anchor - global_position)
 		_push_count += 1
 		if rope_holder:
 			helped[rope_holder] = _trail_now
@@ -377,9 +400,22 @@ func pull_rope(hand: Vector3) -> float:
 func mount(who: Node3D) -> Vector3:
 	if riders.size() >= SEATS.size() or who in riders:
 		return Vector3.INF
+	var at := free_seat(who)
 	riders.append(who)
 	parked = false
-	return SEATS[riders.size() - 1]
+	return at
+
+
+## ほかの人が座っていない、前からいちばん目の席（通信では、それぞれの画面で座った席がぶつかったときにも使う）。空きがなければ INF
+func free_seat(who: Node3D) -> Vector3:
+	var used := []
+	for r in riders:
+		if r != who:
+			used.append(r.get("seat"))
+	for at in SEATS:
+		if not at in used:
+			return at
+	return Vector3.INF
 
 
 func dismount(who: Node3D) -> void:
@@ -439,6 +475,34 @@ func kick(who: Node3D) -> bool:
 	apply_central_impulse(f * dv * mass)    # 体の速さを dv だけ（乗っている人も一緒に動くので、体の重さで足りる）
 	kicked.emit(who)
 	return true
+
+
+## ホストのソリの姿が届いた（net.gd）
+func net_put(at: Transform3D, lv: Vector3, av: Vector3) -> void:
+	_net_at = at
+	_net_v = lv
+	_net_w = av
+	_net_age = 0.0
+
+
+func _integrate_forces(st: PhysicsDirectBodyState3D) -> void:
+	if not net_follow or _net_age < 0.0:
+		return
+	_net_age += st.step
+	var ahead := minf(_net_age, NET_AHEAD)
+	var want := _net_at
+	want.origin += _net_v * ahead
+	if _net_w.length() > 0.001:
+		want.basis = Basis(_net_w.normalized(), _net_w.length() * ahead) * want.basis
+	var t := st.transform
+	if t.origin.distance_to(want.origin) > NET_SNAP:
+		t = want
+	else:
+		t.origin = t.origin.lerp(want.origin, NET_PULL)
+		t.basis = Basis(t.basis.get_rotation_quaternion().slerp(want.basis.get_rotation_quaternion(), NET_PULL))
+	st.transform = t
+	st.linear_velocity = _net_v
+	st.angular_velocity = _net_w
 
 
 ## 広げる動きのあいだ（frames コマ）、止めて見た目を隠しておく（craft.gd が折り紙の形を見せる）
@@ -874,7 +938,28 @@ func _update_drag_puffs() -> void:
 		puff.emitting = true
 
 
+## 安全網: 地面の下へ落ちていたら、その場の雪の上へ戻す（向きは保ち、水平の速さは残す）。乗っている人は席についてくる。
+## 通信ではホストの画面だけが決める（つなぐ側のソリはホストの姿を写すので、戻った姿も届く）
+func _catch_fall() -> void:
+	var w := get_parent()
+	if net_follow or freeze or w == null or not w.has_method("height"):
+		return
+	var p := global_position
+	var g: float = w.height(p.x, p.z)
+	if p.y > g - FALL_NET:
+		return
+	var fwd := -global_basis.z
+	fwd.y = 0.0
+	var yaw := atan2(-fwd.x, -fwd.z) if fwd.length() > 0.01 else rotation.y
+	global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(p.x, g + 0.3 + place_lift(), p.z))
+	linear_velocity = Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	angular_velocity = Vector3.ZERO
+	reset_physics_interpolation()
+	print("ソリが地面の下へ落ちたので、雪の上へ戻した: %s (%.1f, %.1f)" % [kind, p.x, p.z])
+
+
 func _physics_process(dt: float) -> void:
+	_catch_fall()
 	_update_shadow_and_trail(dt)
 	pushers = _push_count
 	_push_count = 0

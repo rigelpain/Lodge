@@ -28,6 +28,426 @@
   "loop": false
  },
  {
+  "file": "button_chari_01.wav",
+  "dur": 0.14,
+  "peak": -4.0,
+  "rms": -24.6,
+  "loop": false
+ },
+ {
+  "file": "button_chari_02.wav",
+  "dur": 0.14,
+  "peak": -4.0,
+  "rms": -25.7,
+  "loop": false
+ },
+ {
+  "file": "button_chari_03.wav",
+  "dur": 0.14,
+  "peak": -4.0,
+  "rms": -25.0,
+  "loop": false
+ },
+ {
+  "file": "button_chari_04.wav",
+  "dur": 0.14,
+  "peak": -4.0,
+  "rms": -25.5,
+  "loop": false
+ },
+ {
+  "file": "button_chari_05.wav",
+  "dur": 0.14,
+  "peak": -4.0,
+  "rms": -23.7,
+  "loop": false
+ },
+ {
+  "file": "button_chari_06.wav",
+  "dur": 0.14,
+  "peak": -4.0,
+  "rms": -25.6,
+  "loop": false
+ },
+ {
+  "file": "button_chari_07.wav",
+  "dur": 0.14,
+  "peak": -4.0,
+  "rms": -23.3,
+  "loop": false
+ },
+ {
+  "file": "button_chari_08.wav",
+  "dur": 0.14,
+  "peak": -4.0,
+  "rms": -25.8,
+  "loop": false
+ },
+ {
+  "file": "button_combo_01.wav",
+  "dur": 1.4,
+  "peak": -3.0,
+  "rms": -19.1,
+  "loop": false
+ },
+ {
+  "file": "button_combo_02.wav",
+  "dur": 1.4,
+  "peak": -3.0,
+  "rms": -18.5,
+  "loop": false
+ },
+ {
+  "file": "button_combo_03.wav",
+  "dur": 1.4,
+  "peak": -3.0,
+  "rms": -19.1,
+  "loop": false
+ },
+ {
+  "file": "button_combo_04.wav",
+  "dur": 1.4,
+  "peak": -3.0,
+  "rms": -18.9,
+  "loop": false
+ },
+ {
+  "file": "button_combo_05.wav",
+  "dur": 1.4,
+  "peak": -3.0,
+  "rms": -19.7,
+  "loop": false
+ },
+ {
+  "file": "button_combo_06.wav",
+  "dur": 1.4,
+  "peak": -3.0,
+  "rms": -18.7,
+  "loop": false
+ },
+ {
+  "file": "button_combo_07.wav",
+  "dur": 1.4,
+  "peak": -3.0,
+  "rms": -18.7,
+  "loop": false
+ },
+ {
+  "file": "button_combo_08.wav",
+  "dur": 1.4,
+  "peak": -3.0,
+  "rms": -19.2,
+  "loop": false
+ },
+ {
+  "file": "button_combo_break_01.wav",
+  "dur": 0.7,
+  "peak": -9.0,
+  "rms": -20.4,
+  "loop": false
+ },
+ {
+  "file": "button_glint_01.wav",
+  "dur": 0.6,
+  "peak": -5.0,
+  "rms": -22.2,
+  "loop": false
+ },
+ {
+  "file": "button_land_01.wav",
+  "dur": 0.25,
+  "peak": -10.0,
+  "rms": -26.0,
+  "loop": false
+ },
+ {
+  "file": "button_land_02.wav",
+  "dur": 0.25,
+  "peak": -10.0,
+  "rms": -23.9,
+  "loop": false
+ },
+ {
+  "file": "button_pop_01.wav",
+  "dur": 0.35,
+  "peak": -4.0,
+  "rms": -22.4,
+  "loop": false
+ },
+ {
+  "file": "button_pop_02.wav",
+  "dur": 0.35,
+  "peak": -4.0,
+  "rms": -21.6,
+  "loop": false
+ },
+ {
+  "file": "button_pop_03.wav",
+  "dur": 0.35,
+  "peak": -4.0,
+  "rms": -21.9,
+  "loop": false
+ },
+ {
+  "file": "button_reward_01.wav",
+  "dur": 0.8,
+  "peak": -3.0,
+  "rms": -22.9,
+  "loop": false
+ },
+ {
+  "file": "button_reward_02.wav",
+  "dur": 0.8,
+  "peak": -3.0,
+  "rms": -20.6,
+  "loop": false
+ },
+ {
+  "file": "button_reward_03.wav",
+  "dur": 1.6,
+  "peak": -3.0,
+  "rms": -20.0,
+  "loop": false
+ },
+ {
+  "file": "button_sew_01.wav",
+  "dur": 0.5,
+  "peak": -9.0,
+  "rms": -30.5,
+  "loop": false
+ },
+ {
+  "file": "button_snap_01.wav",
+  "dur": 0.22,
+  "peak": -4.0,
+  "rms": -27.0,
+  "loop": false
+ },
+ {
+  "file": "button_snap_02.wav",
+  "dur": 0.22,
+  "peak": -4.0,
+  "rms": -22.5,
+  "loop": false
+ },
+ {
+  "file": "button_snap_03.wav",
+  "dur": 0.22,
+  "peak": -4.0,
+  "rms": -25.0,
+  "loop": false
+ },
+ {
+  "file": "button_stitch_01.wav",
+  "dur": 0.3,
+  "peak": -4.0,
+  "rms": -23.6,
+  "loop": false
+ },
+ {
+  "file": "button_stitch_02.wav",
+  "dur": 0.3,
+  "peak": -4.0,
+  "rms": -22.4,
+  "loop": false
+ },
+ {
+  "file": "button_stitch_03.wav",
+  "dur": 0.3,
+  "peak": -4.0,
+  "rms": -23.6,
+  "loop": false
+ },
+ {
+  "file": "button_take_brass_01.wav",
+  "dur": 1.1,
+  "peak": -5.0,
+  "rms": -24.6,
+  "loop": false
+ },
+ {
+  "file": "button_take_pearl_01.wav",
+  "dur": 1.2,
+  "peak": -5.0,
+  "rms": -22.2,
+  "loop": false
+ },
+ {
+  "file": "button_take_raden_01.wav",
+  "dur": 2.4,
+  "peak": -3.0,
+  "rms": -15.6,
+  "loop": false
+ },
+ {
+  "file": "button_take_wood_01.wav",
+  "dur": 0.25,
+  "peak": -6.0,
+  "rms": -26.2,
+  "loop": false
+ },
+ {
+  "file": "cook_bell_01.wav",
+  "dur": 1.4,
+  "peak": -5.0,
+  "rms": -18.3,
+  "loop": false
+ },
+ {
+  "file": "cook_bell_02.wav",
+  "dur": 1.4,
+  "peak": -5.0,
+  "rms": -19.6,
+  "loop": false
+ },
+ {
+  "file": "cook_boil_loop.wav",
+  "dur": 5.7,
+  "peak": -8.0,
+  "rms": -24.0,
+  "loop": true
+ },
+ {
+  "file": "cook_done_01.wav",
+  "dur": 1.6,
+  "peak": -6.0,
+  "rms": -20.5,
+  "loop": false
+ },
+ {
+  "file": "cook_done_02.wav",
+  "dur": 1.6,
+  "peak": -6.0,
+  "rms": -20.5,
+  "loop": false
+ },
+ {
+  "file": "cook_drum_loop.wav",
+  "dur": 5.7,
+  "peak": -8.0,
+  "rms": -20.3,
+  "loop": true
+ },
+ {
+  "file": "cook_fry_loop.wav",
+  "dur": 5.7,
+  "peak": -9.0,
+  "rms": -32.5,
+  "loop": true
+ },
+ {
+  "file": "cook_gurgle_loop.wav",
+  "dur": 5.7,
+  "peak": -8.0,
+  "rms": -26.5,
+  "loop": true
+ },
+ {
+  "file": "cook_music_drink_loop.wav",
+  "dur": 8.0,
+  "peak": -6.0,
+  "rms": -17.4,
+  "loop": true
+ },
+ {
+  "file": "cook_music_dryer_loop.wav",
+  "dur": 8.0,
+  "peak": -6.0,
+  "rms": -19.5,
+  "loop": true
+ },
+ {
+  "file": "cook_music_iron_loop.wav",
+  "dur": 8.0,
+  "peak": -6.0,
+  "rms": -17.8,
+  "loop": true
+ },
+ {
+  "file": "cook_music_press_loop.wav",
+  "dur": 8.0,
+  "peak": -6.0,
+  "rms": -18.8,
+  "loop": true
+ },
+ {
+  "file": "cook_pellet_01.wav",
+  "dur": 0.2,
+  "peak": -6.0,
+  "rms": -12.4,
+  "loop": false
+ },
+ {
+  "file": "cook_pellet_02.wav",
+  "dur": 0.2,
+  "peak": -6.0,
+  "rms": -12.4,
+  "loop": false
+ },
+ {
+  "file": "cook_pellet_03.wav",
+  "dur": 0.2,
+  "peak": -6.0,
+  "rms": -12.6,
+  "loop": false
+ },
+ {
+  "file": "cook_plop_01.wav",
+  "dur": 0.6,
+  "peak": -5.0,
+  "rms": -22.4,
+  "loop": false
+ },
+ {
+  "file": "cook_press_01.wav",
+  "dur": 1.5,
+  "peak": -3.0,
+  "rms": -18.8,
+  "loop": false
+ },
+ {
+  "file": "cook_press_02.wav",
+  "dur": 1.5,
+  "peak": -3.0,
+  "rms": -18.3,
+  "loop": false
+ },
+ {
+  "file": "cook_press_03.wav",
+  "dur": 1.5,
+  "peak": -3.0,
+  "rms": -18.0,
+  "loop": false
+ },
+ {
+  "file": "cook_puff_01.wav",
+  "dur": 0.7,
+  "peak": -5.0,
+  "rms": -24.2,
+  "loop": false
+ },
+ {
+  "file": "cook_puff_02.wav",
+  "dur": 0.7,
+  "peak": -5.0,
+  "rms": -23.2,
+  "loop": false
+ },
+ {
+  "file": "cook_puff_03.wav",
+  "dur": 0.7,
+  "peak": -5.0,
+  "rms": -23.2,
+  "loop": false
+ },
+ {
+  "file": "cook_sizzle_loop.wav",
+  "dur": 5.7,
+  "peak": -9.0,
+  "rms": -27.9,
+  "loop": true
+ },
+ {
   "file": "dish_01.wav",
   "dur": 0.12,
   "peak": -9.0,
@@ -81,6 +501,125 @@
   "dur": 1.1,
   "peak": -8.0,
   "rms": -25.7,
+  "loop": false
+ },
+ {
+  "file": "eat_ah_01.wav",
+  "dur": 0.7,
+  "peak": -12.0,
+  "rms": -27.8,
+  "loop": false
+ },
+ {
+  "file": "eat_ah_02.wav",
+  "dur": 0.7,
+  "peak": -12.0,
+  "rms": -29.2,
+  "loop": false
+ },
+ {
+  "file": "eat_chew_01.wav",
+  "dur": 0.95,
+  "peak": -8.0,
+  "rms": -25.9,
+  "loop": false
+ },
+ {
+  "file": "eat_chew_02.wav",
+  "dur": 0.95,
+  "peak": -8.0,
+  "rms": -24.8,
+  "loop": false
+ },
+ {
+  "file": "eat_chew_03.wav",
+  "dur": 0.95,
+  "peak": -8.0,
+  "rms": -26.5,
+  "loop": false
+ },
+ {
+  "file": "eat_chew_04.wav",
+  "dur": 0.95,
+  "peak": -8.0,
+  "rms": -25.1,
+  "loop": false
+ },
+ {
+  "file": "eat_crunch_01.wav",
+  "dur": 0.7,
+  "peak": -8.0,
+  "rms": -38.5,
+  "loop": false
+ },
+ {
+  "file": "eat_crunch_02.wav",
+  "dur": 0.7,
+  "peak": -8.0,
+  "rms": -36.5,
+  "loop": false
+ },
+ {
+  "file": "eat_crunch_03.wav",
+  "dur": 0.7,
+  "peak": -8.0,
+  "rms": -37.0,
+  "loop": false
+ },
+ {
+  "file": "eat_crunch_04.wav",
+  "dur": 0.7,
+  "peak": -8.0,
+  "rms": -37.6,
+  "loop": false
+ },
+ {
+  "file": "eat_sip_01.wav",
+  "dur": 0.55,
+  "peak": -9.0,
+  "rms": -25.7,
+  "loop": false
+ },
+ {
+  "file": "eat_sip_02.wav",
+  "dur": 0.55,
+  "peak": -9.0,
+  "rms": -26.5,
+  "loop": false
+ },
+ {
+  "file": "eat_slurp_01.wav",
+  "dur": 0.44,
+  "peak": -9.0,
+  "rms": -23.7,
+  "loop": false
+ },
+ {
+  "file": "eat_slurp_02.wav",
+  "dur": 0.39,
+  "peak": -9.0,
+  "rms": -25.4,
+  "loop": false
+ },
+ {
+  "file": "felt_pat_01.wav",
+  "dur": 0.16,
+  "peak": -6.0,
+  "rms": -21.5,
+  "loop": false
+ },
+ {
+  "file": "felt_pat_02.wav",
+  "dur": 0.16,
+  "peak": -6.0,
+  "rms": -23.1,
+  "loop": false
+ },
+ {
+  "file": "felt_pat_03.wav",
+  "dur": 0.16,
+  "peak": -6.0,
+  "rms": -22.3,
   "loop": false
  },
  {
@@ -203,6 +742,76 @@
   "loop": true
  },
  {
+  "file": "sew_clack.wav",
+  "dur": 0.2,
+  "peak": -6.0,
+  "rms": -22.9,
+  "loop": false
+ },
+ {
+  "file": "sew_draw.wav",
+  "dur": 0.7,
+  "peak": -8.0,
+  "rms": -23.9,
+  "loop": false
+ },
+ {
+  "file": "sew_hum_loop.wav",
+  "dur": 4.0,
+  "peak": -10.0,
+  "rms": -22.3,
+  "loop": true
+ },
+ {
+  "file": "sew_pop.wav",
+  "dur": 0.3,
+  "peak": -6.0,
+  "rms": -22.2,
+  "loop": false
+ },
+ {
+  "file": "sew_snip.wav",
+  "dur": 0.35,
+  "peak": -3.0,
+  "rms": -28.0,
+  "loop": false
+ },
+ {
+  "file": "sew_stitch_01.wav",
+  "dur": 0.12,
+  "peak": -6.0,
+  "rms": -23.1,
+  "loop": false
+ },
+ {
+  "file": "sew_stitch_02.wav",
+  "dur": 0.12,
+  "peak": -6.0,
+  "rms": -22.5,
+  "loop": false
+ },
+ {
+  "file": "sew_stitch_03.wav",
+  "dur": 0.12,
+  "peak": -6.0,
+  "rms": -22.8,
+  "loop": false
+ },
+ {
+  "file": "shears_01.wav",
+  "dur": 0.4,
+  "peak": -5.0,
+  "rms": -25.5,
+  "loop": false
+ },
+ {
+  "file": "shears_02.wav",
+  "dur": 0.4,
+  "peak": -5.0,
+  "rms": -29.3,
+  "loop": false
+ },
+ {
   "file": "sled_creak_01.wav",
   "dur": 0.26,
   "peak": -12.0,
@@ -221,6 +830,27 @@
   "dur": 0.24,
   "peak": -12.0,
   "rms": -29.4,
+  "loop": false
+ },
+ {
+  "file": "snow_splat_01.wav",
+  "dur": 0.42,
+  "peak": -6.0,
+  "rms": -25.7,
+  "loop": false
+ },
+ {
+  "file": "snow_splat_02.wav",
+  "dur": 0.42,
+  "peak": -6.0,
+  "rms": -26.8,
+  "loop": false
+ },
+ {
+  "file": "snow_splat_03.wav",
+  "dur": 0.42,
+  "peak": -6.0,
+  "rms": -23.7,
   "loop": false
  },
  {
@@ -319,6 +949,314 @@
   "dur": 0.16,
   "peak": -8.0,
   "rms": -21.2,
+  "loop": false
+ },
+ {
+  "file": "swish_01.wav",
+  "dur": 0.22,
+  "peak": -10.0,
+  "rms": -23.3,
+  "loop": false
+ },
+ {
+  "file": "swish_02.wav",
+  "dur": 0.22,
+  "peak": -10.0,
+  "rms": -26.4,
+  "loop": false
+ },
+ {
+  "file": "voice_nn_golem.wav",
+  "dur": 0.61,
+  "peak": -2.4,
+  "rms": -17.2,
+  "loop": false
+ },
+ {
+  "file": "voice_nn_kasa.wav",
+  "dur": 0.61,
+  "peak": -7.0,
+  "rms": -17.2,
+  "loop": false
+ },
+ {
+  "file": "voice_nn_musha.wav",
+  "dur": 0.61,
+  "peak": -5.6,
+  "rms": -17.2,
+  "loop": false
+ },
+ {
+  "file": "voice_nn_news.wav",
+  "dur": 0.61,
+  "peak": -7.0,
+  "rms": -18.5,
+  "loop": false
+ },
+ {
+  "file": "voice_nn_ningyo.wav",
+  "dur": 0.61,
+  "peak": -8.6,
+  "rms": -17.2,
+  "loop": false
+ },
+ {
+  "file": "voice_nn_origami.wav",
+  "dur": 0.61,
+  "peak": -7.0,
+  "rms": -16.7,
+  "loop": false
+ },
+ {
+  "file": "voice_nn_robo.wav",
+  "dur": 0.61,
+  "peak": -4.2,
+  "rms": -17.2,
+  "loop": false
+ },
+ {
+  "file": "voice_oi_golem.wav",
+  "dur": 1.36,
+  "peak": -1.8,
+  "rms": -16.7,
+  "loop": false
+ },
+ {
+  "file": "voice_oi_kasa.wav",
+  "dur": 1.36,
+  "peak": -5.0,
+  "rms": -16.7,
+  "loop": false
+ },
+ {
+  "file": "voice_oi_musha.wav",
+  "dur": 1.36,
+  "peak": -1.0,
+  "rms": -16.7,
+  "loop": false
+ },
+ {
+  "file": "voice_oi_news.wav",
+  "dur": 1.36,
+  "peak": -5.0,
+  "rms": -16.5,
+  "loop": false
+ },
+ {
+  "file": "voice_oi_ningyo.wav",
+  "dur": 1.36,
+  "peak": -9.2,
+  "rms": -16.7,
+  "loop": false
+ },
+ {
+  "file": "voice_oi_origami.wav",
+  "dur": 1.36,
+  "peak": -5.0,
+  "rms": -17.1,
+  "loop": false
+ },
+ {
+  "file": "voice_oi_robo.wav",
+  "dur": 1.36,
+  "peak": -3.9,
+  "rms": -16.7,
+  "loop": false
+ },
+ {
+  "file": "voice_surprise_golem.wav",
+  "dur": 0.32,
+  "peak": -5.2,
+  "rms": -21.3,
+  "loop": false
+ },
+ {
+  "file": "voice_surprise_kasa.wav",
+  "dur": 0.32,
+  "peak": -6.0,
+  "rms": -21.3,
+  "loop": false
+ },
+ {
+  "file": "voice_surprise_musha.wav",
+  "dur": 0.32,
+  "peak": -4.4,
+  "rms": -21.3,
+  "loop": false
+ },
+ {
+  "file": "voice_surprise_news.wav",
+  "dur": 0.32,
+  "peak": -6.0,
+  "rms": -20.7,
+  "loop": false
+ },
+ {
+  "file": "voice_surprise_ningyo.wav",
+  "dur": 0.32,
+  "peak": -8.6,
+  "rms": -21.3,
+  "loop": false
+ },
+ {
+  "file": "voice_surprise_origami.wav",
+  "dur": 0.32,
+  "peak": -6.0,
+  "rms": -21.5,
+  "loop": false
+ },
+ {
+  "file": "voice_surprise_robo.wav",
+  "dur": 0.32,
+  "peak": -7.0,
+  "rms": -21.3,
+  "loop": false
+ },
+ {
+  "file": "voice_un_golem.wav",
+  "dur": 0.31,
+  "peak": -4.7,
+  "rms": -18.0,
+  "loop": false
+ },
+ {
+  "file": "voice_un_kasa.wav",
+  "dur": 0.31,
+  "peak": -7.0,
+  "rms": -18.0,
+  "loop": false
+ },
+ {
+  "file": "voice_un_musha.wav",
+  "dur": 0.31,
+  "peak": -2.5,
+  "rms": -18.0,
+  "loop": false
+ },
+ {
+  "file": "voice_un_news.wav",
+  "dur": 0.31,
+  "peak": -7.0,
+  "rms": -18.9,
+  "loop": false
+ },
+ {
+  "file": "voice_un_ningyo.wav",
+  "dur": 0.31,
+  "peak": -10.3,
+  "rms": -18.0,
+  "loop": false
+ },
+ {
+  "file": "voice_un_origami.wav",
+  "dur": 0.31,
+  "peak": -7.0,
+  "rms": -18.3,
+  "loop": false
+ },
+ {
+  "file": "voice_un_robo.wav",
+  "dur": 0.31,
+  "peak": -6.5,
+  "rms": -18.0,
+  "loop": false
+ },
+ {
+  "file": "voice_unq_golem.wav",
+  "dur": 0.41,
+  "peak": -3.5,
+  "rms": -15.9,
+  "loop": false
+ },
+ {
+  "file": "voice_unq_kasa.wav",
+  "dur": 0.41,
+  "peak": -7.0,
+  "rms": -15.9,
+  "loop": false
+ },
+ {
+  "file": "voice_unq_musha.wav",
+  "dur": 0.41,
+  "peak": -2.8,
+  "rms": -15.9,
+  "loop": false
+ },
+ {
+  "file": "voice_unq_news.wav",
+  "dur": 0.41,
+  "peak": -7.0,
+  "rms": -16.9,
+  "loop": false
+ },
+ {
+  "file": "voice_unq_ningyo.wav",
+  "dur": 0.41,
+  "peak": -8.6,
+  "rms": -15.9,
+  "loop": false
+ },
+ {
+  "file": "voice_unq_origami.wav",
+  "dur": 0.41,
+  "peak": -7.0,
+  "rms": -16.4,
+  "loop": false
+ },
+ {
+  "file": "voice_unq_robo.wav",
+  "dur": 0.41,
+  "peak": -4.4,
+  "rms": -15.9,
+  "loop": false
+ },
+ {
+  "file": "voice_wa_golem.wav",
+  "dur": 0.75,
+  "peak": -3.7,
+  "rms": -19.6,
+  "loop": false
+ },
+ {
+  "file": "voice_wa_kasa.wav",
+  "dur": 0.75,
+  "peak": -6.0,
+  "rms": -19.6,
+  "loop": false
+ },
+ {
+  "file": "voice_wa_musha.wav",
+  "dur": 0.75,
+  "peak": -2.6,
+  "rms": -19.6,
+  "loop": false
+ },
+ {
+  "file": "voice_wa_news.wav",
+  "dur": 0.75,
+  "peak": -6.0,
+  "rms": -19.6,
+  "loop": false
+ },
+ {
+  "file": "voice_wa_ningyo.wav",
+  "dur": 0.75,
+  "peak": -10.1,
+  "rms": -19.6,
+  "loop": false
+ },
+ {
+  "file": "voice_wa_origami.wav",
+  "dur": 0.75,
+  "peak": -6.0,
+  "rms": -20.1,
+  "loop": false
+ },
+ {
+  "file": "voice_wa_robo.wav",
+  "dur": 0.75,
+  "peak": -4.6,
+  "rms": -19.6,
   "loop": false
  },
  {

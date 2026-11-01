@@ -38,4 +38,18 @@
   通信を入れたら、ほかの人の画面でも、その人の帯のランタンが替わる（人形は `craft.lantern(who)` を毎フレーム読む）
 - 保存: `player.gd` の `save_tag` の `[lantern]`（持っている形と、提げている形）
 - 装備の画面（I）: ランタンの札は数に合わせて列を増やして小さくする（10 枚で 5 列 2 段）。絵は `craft_icons.gd` の `lantern`
-- 確かめ: `game/tools/lantern_variety_shots.gd --part=line|rack|ui|bots`
+- 保存は、この画面から送った出来事が返ってきたときに書く（つなぐ側は、ホストが確かめて配り返してから）
+- ランタンは装備（帯に提げる物）で、手持ち 6 ＋ かばん 6 の持ち物の場所は使わない。装備の画面（I）の左下の札に並ぶ
+- 確かめ: `game/tools/lantern_variety_shots.gd --part=line|rack|ui|load|net|bots`
+- 書き出し: GPU（Metal）の焼き付けが螺鈿で止まったまま戻らなかったので、`KIT_CPU=1` を付けて CPU で焼いた（`props/kit.py`）
+
+## ゲームの中の絵（2026-11-01）
+
+| 絵 | 何か |
+|---|---|
+| [03-line.jpg](03-line.jpg)・[04-line-close.jpg](04-line-close.jpg) | 夜の雪の上で、10 体の帯に L1〜L10 を灯して並べた |
+| [05-rack-bandai.jpg](05-rack-bandai.jpg)・[06-rack-close.jpg](06-rack-close.jpg) | おじいさんの番台の横のランタン掛け（夕方） |
+| [07-buy.jpg](07-buy.jpg) | 掛けの前で F の画面。糸巻き・編み帽子・刺繍枠を買い、糸巻きに提げ替えたところ |
+| [08-gear.jpg](08-gear.jpg) | 10 を全部持ったときの装備の画面（5 列 2 段） |
+| [09-raden-loaded.jpg](09-raden-loaded.jpg) | 保存から戻した螺鈿の灯籠を、帯に灯したところ |
+| [10-online.jpg](10-online.jpg) | 通信。左はホストの画面（つなぐ側の人の蛍かご）、右はつなぐ側の画面（ホストの人の指ぬき） |

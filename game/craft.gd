@@ -27,12 +27,24 @@ extends Node
 ##   profile   {name, color}   自分の名前と、キャラの色（COLORS の番号）を決める（装備の画面）。HUD の札で、人の形の色と頭の上の名前になる
 ##   doll      {doll}          自分の人形（doll.gd の KINDS のどれか）を替える（2 階の衣装掛け）。みんなの画面で、その人の人形が作り直される。
 ##                             入った時にも今の人形で 1 度送る（通信では、あとから来た人もこれでほかの人の人形を知る）
+##   dye       {doll, colors}  2 階の染め桶で、人形 doll の服の布を染める。colors は布ごとの色（"rrggbb"。"" はもとの色。outfit.gd の CLOTH の順）。
+##                             色は自由に選べ、色ではなく染め代（DYE_PRICE）を 1 回ごとに払う（2026-11-01 代表「全部買う、染色桶をつくって、
+##                             色に払うんじゃなくて染色代として払う」）。染めた色は人形ごとに残る（ほかの人形に着替えて戻っても同じ色）
+##   outfit    {doll, colors}  保存してある染めた色を戻す（起動したとき。値はここでは取らない）
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
 ##   lantern_buy {look}        おじいさんの番台の横のランタン掛け（lantern_rack.gd）で、形違いのランタン（lantern.gd の LOOK）を買う。
 ##                             買ったらすぐ帯に提げる（ev に index が入る）。通信ではほかの人の画面でも、その人のランタンが替わる
 ##   lantern_own {look}        持っているランタンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
+##   pal_buy   {key}           2 階の衣装掛けの横の売り台で、頭・肩の小物かミニオン（pals.gd）を買う。買ったらすぐ身につける（ev に slot が入る）
+##   pal_own   {key}           持っている小物・ミニオンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
+##   pal_wear  {slot, key}     頭（head）・肩（shoulder）・連れ（pet）に、持っている物を付ける。key が "" なら外す。
+##                             みんなの画面で、その人の小物とミニオンが替わる（companions.gd）
+##   food_buy  {item}          雪だるまの店でペレットを買う（item は food.gd の {kind:"food", dish, step:0}）。雪玉で払う（emotes.gd の spend）
+##   cook      {slot, station} 手のペレット（料理の途中）を厨房の装置に入れる。持ち物から出て、装置が持つ（cook_station.gd）
+##   bite      {slot}          手の料理をひと口食べる（3 口でなくなる。ev.ate に料理の名前が入る。食べても体の調子は変わらない。雰囲気づくりの道具）
+##   cooked    {item, station} 装置が仕上げた物（一段進んだ item）を、入れた人の持ち物に戻して手に持たせる。いっぱいなら断る（装置に残る）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
@@ -47,6 +59,8 @@ const Doll := preload("res://doll.gd")
 const Sled := preload("res://sled.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Lantern := preload("res://lantern.gd")
+const Pals := preload("res://pals.gd")
+const Food := preload("res://food.gd")
 
 ## お金はボタン（snow_buttons.gd）。最初に START_BUTTONS 個（木の何個分）持たせる。米袋の型紙と布はすぐ買えるが、小はまだ（少し滑って稼いでから）
 const START_BUTTONS := 30
@@ -57,17 +71,22 @@ const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 ## 最初の小は、米袋で漕いで丘を 3 分ほど、大は、中に 3 人で大きな山を 6 分半・小ひとりで 11 分・米袋ひとりで 20〜50 分ほど（design/snow-buttons の表）
 const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
 const FABRIC_PRICE := 10
+## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
+const DYE_PRICE := 15
 const PATTERNS := ["sack", "small", "mid", "large"]
 ## ロッジの中から外へ運び出せないソリ（tools/carry_out_check.gd で確かめた。大は西の通路の家具と壁に当たる）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
 const OUT_FRONT := ["large"]
-const SLOTS := 8               # 持ち物に入る数
+const SLOTS := 12              # 持ち物に入る数（手持ち HAND_SLOTS ＋ かばん）
+const HAND_SLOTS := 6          # 手持ち: 画面の下の列に並び、ホイールで持ち替える。残りはかばん（装備の画面で入れ替える）
+                               # （2026-11-01 代表「手持ちが6で、かばんにもう6つはいってるようなイメージで、計12アイテムを持ち運べる」）
 const FOLD_FRAMES := 30        # 畳む動きの長さ（コマ。12 コマで 1 秒）
 const UNFOLD_FRAMES := 30      # 広げる動きの長さ
 
 var world: Node                # main.gd（ソリを置く所）
+var replay := false            # つなぐ側で、ホストが確かめた出来事をなぞっている（この画面の間合いで断らない）
 var wallets := {}              # 人の番号 → ボタンの数
-var bags := {}                 # 人の番号 → 持ち物（item の配列）
+var bags := {}                 # 人の番号 → 持ち物（SLOTS 個の場所の配列。空いた場所は {}。0〜5 が手持ち、6〜11 がかばん）
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
 var _next_sled := 1
@@ -79,12 +98,15 @@ var loose_tags := {}           # 人の番号 → 帯の名札入れの、外し
 var names := {}                # 人の番号 → 名前（装備の画面で決める。HUD の札で頭の上に出す）
 var colors := {}               # 人の番号 → キャラの色（COLORS の番号）
 var dolls := {}                # 人の番号 → 人形（doll.gd の KINDS。衣装掛けで替える）
+var outfits := {}              # 人の番号 → {人形: 布ごとの色 ["rrggbb" か ""]}（染め桶で染めた服の色。染めていない人形は書かない）
 var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
 var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
 var lanterns := {}             # 人の番号 → 持っているランタンの配列 [{look}]（0 番は標準）
 var lantern_sel := {}          # 人の番号 → 提げているランタンの番号（-1 は外している）
 var lamps := {}                # 人の番号 → ランタンが点いているか
+var pals_owned := {}           # 人の番号 → 持っている頭・肩の小物とミニオンの名前の配列（pals.gd）
+var pals_wear := {}            # 人の番号 → {head, shoulder, pet} 身につけている物の名前（"" は付けていない）
 ## キャラの色（装備の画面で選ぶ。はじめは人の番号の順に、赤・藍・からし…）。フェルトの色で、名札の窓の生成りの上で見分けられる濃さ
 const COLORS := [Color(0.80, 0.24, 0.20), Color(0.24, 0.32, 0.55), Color(0.88, 0.66, 0.20), Color(0.25, 0.52, 0.34),
 	Color(0.55, 0.30, 0.58), Color(0.92, 0.50, 0.22), Color(0.22, 0.58, 0.66), Color(0.84, 0.40, 0.56),
@@ -101,7 +123,7 @@ func join(who: int) -> void:
 	if wallets.has(who):
 		return
 	wallets[who] = START_BUTTONS
-	bags[who] = []
+	bags[who] = empty_bag()
 	hands[who] = -1
 	tag_designs[who] = preload("res://sled_tags.gd").default_design(who)
 	tag_owned[who] = {}
@@ -113,6 +135,8 @@ func join(who: int) -> void:
 	lanterns[who] = [{"look": "box"}, {"look": "paper"}]
 	lantern_sel[who] = 0
 	lamps[who] = false
+	pals_owned[who] = Pals.START.duplicate()
+	pals_wear[who] = Pals.START_WEAR.duplicate()
 
 
 ## 名札の部品 part の i 番を使えるか（最初から使える部品か、手に入れた部品）
@@ -137,6 +161,16 @@ func gear_index(who: int, gear: String) -> int:
 	return -1
 
 
+## その人がその小物・ミニオンを持っているか
+func pal_owned(who: int, key: String) -> bool:
+	return key in pals_owned.get(who, [])
+
+
+## その人が slot（head・shoulder・pet）に付けている物の名前（"" は付けていない）
+func pal_worn(who: int, slot: String) -> String:
+	return String(pals_wear.get(who, {}).get(slot, ""))
+
+
 ## その人のキャラの色と名前（知らない人は灰色・名前なし）
 func color_of(who: int) -> Color:
 	return COLORS[posmod(int(colors[who]), COLORS.size())] if colors.has(who) else Color(0.55, 0.55, 0.58)
@@ -144,6 +178,25 @@ func color_of(who: int) -> Color:
 
 func doll_of(who: int) -> String:
 	return String(dolls.get(who, ""))
+
+
+## その人の人形 kind の服の色（布ごとの Color か null。染めていなければ空）。doll.gd の outfit に入れる形
+func outfit_of(who: int, kind: String) -> Array:
+	var out := []
+	for h in outfits.get(who, {}).get(kind, []):
+		out.append(Color(h) if String(h) != "" else null)
+	return out
+
+
+## 布ごとの色の並びを、通信に乗せる形（"rrggbb" か ""。布の数にそろえる）にする。色でない物は ""
+static func dye_colors(kind: String, cols: Array) -> Array:
+	var out := []
+	for i in preload("res://outfit.gd").cloth_count(kind):
+		var c = cols[i] if i < cols.size() else null
+		if c is String and String(c).is_valid_html_color():
+			c = Color(c)
+		out.append((c as Color).to_html(false) if c is Color else "")
+	return out
 
 
 func name_of(who: int) -> String:
@@ -195,6 +248,56 @@ func bag(who: int) -> Array:
 	return bags.get(who, [])
 
 
+static func empty_bag() -> Array:
+	var b := []
+	for i in SLOTS:
+		b.append({})
+	return b
+
+
+## 持ち物の数（空いた場所は数えない）
+func count(who: int) -> int:
+	return bag(who).filter(func(it): return not it.is_empty()).size()
+
+
+## 手持ち（画面の下の列）に何か入っているか
+func has_hand_items(who: int) -> bool:
+	var b := bag(who)
+	for i in mini(HAND_SLOTS, b.size()):
+		if not b[i].is_empty():
+			return true
+	return false
+
+
+## 新しい物の入る場所: 手持ちの空き → かばんの空き。いっぱいなら -1
+func free_slot(who: int) -> int:
+	var b := bag(who)
+	for i in b.size():
+		if b[i].is_empty():
+			return i
+	return b.size() if b.size() < SLOTS else -1   # 短い配列（確かめ用の道具が入れた持ち物）は、後ろが空き
+
+
+## 物を空いた場所に入れる。手持ちに入れば手に持つ（かばんなら手はそのまま）。入った場所（いっぱいなら -1）
+func _put(who: int, item: Dictionary) -> int:
+	var i := free_slot(who)
+	if i < 0:
+		return -1
+	while bags[who].size() < SLOTS:
+		bags[who].append({})
+	bags[who][i] = item
+	if i < HAND_SLOTS:
+		hands[who] = i
+	return i
+
+
+## slot の場所を空ける。手に持っていたなら素手に
+func _clear(who: int, slot: int) -> void:
+	bags[who][slot] = {}
+	if hands.get(who, -1) == slot:
+		hands[who] = -1
+
+
 func wallet(who: int) -> int:
 	return wallets.get(who, 0)
 
@@ -238,10 +341,73 @@ static func price(item: Dictionary) -> int:
 	return 99
 
 
-## 出来事を出す。持ち主が呼ぶ（いまはすぐ配る。通信ではホストへ）。断られたら false
+## 出来事を出す。持ち主が呼ぶ（一人ならすぐ配る。通信ではホストへ送り、ホストが確かめてから全員に配る）。断られたら false。
+## つなぐ側では断られたかがすぐには分からないので true を返し、結果は配られた出来事で知る（断られたら何も起きない）。
+## ミシンが縫い上げる・ボタンが入る・調理の装置が仕上げる・米袋がひとりでに帯に戻るは、ホストの画面が決める
+## （つなぐ側の画面では送らない。見た目は続けてよいので true を返し、本物はホストから届く）
+const HOST_ONLY := ["sewn", "earn", "cooked"]
+
 func send(ev: Dictionary) -> bool:
 	ev["frame"] = Doll.frame_index() + 1
+	var net := _net()
+	if net and net.online and not net.is_host():
+		if ev.kind in HOST_ONLY:
+			return true
+		if ev.get("auto", false):
+			return false
+		net.up("craft", ev)
+		return true
 	return _apply(ev)
+
+
+func _net() -> Node:
+	return world.get_node_or_null("Net") if world else null
+
+
+## いまの工房の持ち物と置いてあるソリ（あとから来た人へ、ホストが渡す）
+func snapshot() -> Dictionary:
+	var placed := []
+	for id in sleds:
+		var s: Node3D = sleds[id]
+		if is_instance_valid(s):
+			placed.append({"id": id, "kind": s.kind, "fabric": s.fabric, "at": s.global_transform, "tag": s.tag, "owner": s.owner_id})
+	var out := {}
+	for who in sack_out:
+		var gs := sack_sled(who)
+		if gs:
+			out[who] = {"fabric": gs.fabric, "at": gs.global_transform}
+	return {"wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "sacks": sacks,
+		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
+		"lantern_sel": lantern_sel, "lamps": lamps, "next_sled": _next_sled, "sleds": placed, "sack_out": out}
+
+
+## ホストから渡された持ち物と置いてあるソリで、この画面の工房を置き換える（つないだとき）。自分の人の番号の分もホストの値になる
+func load_snapshot(d: Dictionary) -> void:
+	for key in ["wallets", "bags", "hands", "tag_designs", "tag_owned", "sacks", "loose_tags", "names", "colors", "dolls",
+			"sack_sel", "lanterns", "lantern_sel", "lamps"]:
+		var mine: Dictionary = get(key)
+		mine.merge(d.get(key, {}), true)
+	for s in sleds.values():
+		if is_instance_valid(s):
+			s.queue_free()
+	sleds.clear()
+	for p in d.get("sleds", []):
+		_next_sled = int(p.id)
+		_place(p.kind, p.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, p.tag, false, int(p.owner))
+		var s: Node3D = sleds[int(p.id)]
+		s.global_transform = p.at
+	_next_sled = int(d.get("next_sled", _next_sled))
+	for who in d.get("sack_out", {}):
+		var spec: Dictionary = d.sack_out[who]
+		var gid := _place("sack", spec.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, -1, false, int(who))
+		var gs: RigidBody3D = sleds[gid]
+		sleds.erase(gid)
+		_next_sled -= 1   # 装備の米袋はソリの番号を使わない（ホストでは出したときに使ったが、その番号は上の next_sled に入っている）
+		gs.crafted = false
+		gs.name = "Sack%d" % int(who)
+		gs.set_meta("gear_of", int(who))
+		gs.global_transform = spec.at
+		sack_out[int(who)] = gs
 
 
 ## ホストの判定
@@ -253,14 +419,69 @@ func _apply(ev: Dictionary) -> bool:
 		"buy":
 			var item: Dictionary = ev.item
 			var cost := price(item)
-			if wallets[who] < cost or bags[who].size() >= SLOTS:
+			if wallets[who] < cost or free_slot(who) < 0:
 				return false
 			wallets[who] -= cost
-			bags[who].append(item)
-			hands[who] = bags[who].size() - 1   # 買った物を手に持つ
-			ev["slot"] = hands[who]
+			ev["slot"] = _put(who, item)   # 買った物を手に持つ（手持ちがいっぱいなら、かばんへ）
 		"hand":
-			hands[who] = clampi(int(ev.slot), -1, bags[who].size() - 1)
+			var i := int(ev.slot)
+			if i >= HAND_SLOTS or (i >= 0 and (i >= bags[who].size() or bags[who][i].is_empty())):
+				return false   # 手に持てるのは手持ちの物だけ
+			hands[who] = maxi(i, -1)
+		"move":
+			# 持ち物を別の場所へ（装備の画面で引きずって。行き先に物があれば入れ替える）。手に持っていた物は、手持ちにある限り持ったまま
+			var b: Array = bags[who]
+			var a := int(ev.from)
+			var c := int(ev.to)
+			if a == c or a < 0 or c < 0 or a >= b.size() or c >= b.size() or b[a].is_empty():
+				return false
+			var t: Dictionary = b[a]
+			b[a] = b[c]
+			b[c] = t
+			var h: int = hands[who]
+			if h == a:
+				hands[who] = c if c < HAND_SLOTS else -1
+			elif h == c:
+				hands[who] = a if a < HAND_SLOTS and not b[a].is_empty() else -1
+		"drop":
+			# 持ち物を捨てる（装備の画面のゴミ箱）
+			var b: Array = bags[who]
+			var i := int(ev.slot)
+			if i < 0 or i >= b.size() or b[i].is_empty():
+				return false
+			ev["item"] = b[i].duplicate()
+			_clear(who, i)
+		"food_buy":
+			var dish: String = ev.item.get("dish", "")
+			if not Food.MENU.has(dish) or free_slot(who) < 0 or world == null or world.get("emotes") == null:
+				return false
+			if not replay:   # つなぐ側がなぞるときは、ホストがもう雪玉で払っている（数はホストから届く）
+				var pay := {"kind": "spend", "who": who, "n": Food.price(dish)}
+				world.emotes.send(pay)
+				if not pay.get("ok", false):
+					return false
+			ev["slot"] = _put(who, Food.item(dish))   # 買ったペレットを手に持つ
+		"cook":
+			var b: Array = bags[who]
+			var i := int(ev.slot)
+			if i < 0 or i >= b.size() or b[i].is_empty() or Food.next_station(b[i]) != ev.station:
+				return false
+			ev["item"] = b[i].duplicate()
+			_clear(who, i)
+		"bite":
+			var b: Array = bags[who]
+			var i := int(ev.slot)
+			if i < 0 or i >= b.size() or b[i].is_empty() or not Food.done(b[i]):
+				return false
+			b[i]["bites"] = int(b[i].get("bites", 0)) + 1
+			ev["dish"] = b[i].dish
+			if int(b[i].bites) >= Food.BITES:
+				ev["ate"] = b[i].dish
+				_clear(who, i)
+		"cooked":
+			if free_slot(who) < 0:
+				return false
+			ev["slot"] = _put(who, ev.item)
 		"sew":
 			# 型紙と布は両方そろって初めて使う（片方だけ消えることはない）
 			var b: Array = bags[who]
@@ -269,11 +490,10 @@ func _apply(ev: Dictionary) -> bool:
 			if ps == fs or ps < 0 or fs < 0 or ps >= b.size() or fs >= b.size() or b[ps] != ev.pattern or b[fs] != ev.fabric \
 					or ev.pattern.get("kind") != "pattern" or ev.fabric.get("kind") != "fabric":
 				return false
-			if world and world.get("sewing") and not world.sewing.can_sew():
+			if world and world.get("sewing") and not world.sewing.can_sew() and not replay:
 				return false
-			b.remove_at(maxi(ps, fs))
-			b.remove_at(mini(ps, fs))
-			hands[who] = -1
+			_clear(who, ps)
+			_clear(who, fs)
 		"sewn":
 			ev["tag"] = tag_designs.get(who, 0)   # 持ち主の印: 縫った人の名札
 			if ev.sled == "sack" and sacks.has(who):
@@ -367,7 +587,7 @@ func _apply(ev: Dictionary) -> bool:
 			elif ev.has("slot"):
 				var b: Array = bags[who]
 				var i := int(ev.slot)
-				if i < 0 or i >= b.size() or b[i].get("kind") != "folded" or b[i].get("sled") == "sack" or not preload("res://sled_tags.gd").has_tag(b[i].get("tag", -1)):
+				if i < 0 or i >= b.size() or b[i].get("kind", "") != "folded" or b[i].get("sled") == "sack" or not preload("res://sled_tags.gd").has_tag(b[i].get("tag", -1)):
 					return false
 				var it: Dictionary = b[i].duplicate()
 				d = _usable_design(who, ev.design, it.tag if it.tag is Dictionary else {})
@@ -424,10 +644,48 @@ func _apply(ev: Dictionary) -> bool:
 					lantern_sel[who] = i
 					if i < 0:
 						lamps[who] = false
+		"pal_buy":
+			var key := String(ev.get("key", ""))
+			var cost := Pals.price(key)
+			if cost < 0 or pal_owned(who, key) or wallets[who] < cost:
+				return false
+			wallets[who] -= cost
+			pals_owned[who].append(key)
+			ev["slot"] = Pals.slot_of(key)
+			pals_wear[who][ev.slot] = key   # 買ったらすぐ身につける
+		"pal_own":
+			var key := String(ev.get("key", ""))
+			if Pals.price(key) < 0:
+				return false
+			if not pal_owned(who, key):
+				pals_owned[who].append(key)
+		"pal_wear":
+			var slot := String(ev.get("slot", ""))
+			var key := String(ev.get("key", ""))
+			if not slot in Pals.SLOTS or key != "" and (not pal_owned(who, key) or Pals.slot_of(key) != slot):
+				return false
+			pals_wear[who][slot] = key
 		"doll":
 			if not String(ev.get("doll", "")) in Doll.KINDS:
 				return false
 			dolls[who] = String(ev.doll)
+		"dye", "outfit":
+			var k := String(ev.get("doll", ""))
+			if not k in Doll.KINDS:
+				return false
+			var cols := dye_colors(k, ev.get("colors", []))
+			var mine: Dictionary = outfits.get(who, {})
+			var old: Array = mine.get(k, dye_colors(k, []))
+			if ev.kind == "dye":
+				if cols == old or wallets[who] < DYE_PRICE:   # 同じ色のままなら染めない（染め代も取らない）
+					return false
+				wallets[who] -= DYE_PRICE
+			ev["colors"] = cols
+			if cols == dye_colors(k, []):
+				mine.erase(k)
+			else:
+				mine[k] = cols
+			outfits[who] = mine
 		"lamp":
 			if lantern(who).is_empty():
 				return false
@@ -455,7 +713,7 @@ func _apply(ev: Dictionary) -> bool:
 			wallets[who] += int(ev.n)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
-			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):
+			if s == null or not is_instance_valid(s) or not foldable(s.kind) or free_slot(who) < 0 or not (_free(s) or replay):
 				return false
 			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag}   # 名札はソリごと（外したソリは -1 のまま）
 			ev["at"] = s.global_position
@@ -463,9 +721,7 @@ func _apply(ev: Dictionary) -> bool:
 			sleds.erase(int(ev.id))
 			_origami(ev, false, s.global_transform)
 			s.queue_free()
-			bags[who].append(ev.item)
-			hands[who] = bags[who].size() - 1
-			ev["slot"] = hands[who]
+			ev["slot"] = _put(who, ev.item)
 		"unfold":
 			if not _take(who, int(ev.slot), ev.item):
 				return false
@@ -476,6 +732,9 @@ func _apply(ev: Dictionary) -> bool:
 			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, t, true, who if Tags.has_tag(t) else -1)
 			_origami(ev, true, Transform3D(_basis(ev.yaw, up), ev.at))
 	happened.emit(ev)
+	var net := _net()
+	if net and net.is_host():
+		net.down("craft", ev)   # ホストが確かめた出来事を、つなぐ側へ（つなぐ側も同じ順に _apply する）
 	return true
 
 
@@ -494,10 +753,9 @@ func _usable_design(who: int, want: Dictionary, old: Dictionary) -> Dictionary:
 ## 持ち物の slot 番目が item なら取り出す。手は素手に戻す
 func _take(who: int, slot: int, item: Dictionary) -> bool:
 	var b: Array = bags[who]
-	if slot < 0 or slot >= b.size() or b[slot] != item:
+	if slot < 0 or slot >= b.size() or b[slot].is_empty() or b[slot] != item:
 		return false
-	b.remove_at(slot)
-	hands[who] = -1
+	_clear(who, slot)
 	return true
 
 
@@ -590,6 +848,9 @@ func _pop(s: RigidBody3D) -> void:
 func _physics_process(dt: float) -> void:
 	if sack_out.is_empty():
 		return
+	var net := _net()
+	if net and net.online and not net.is_host():
+		return   # ひとりでに帯に戻すのは、ホストが決める
 	var hub: Node = world.get_node_or_null("Emotes") if world else null
 	for who in sack_out.keys():
 		var gs := sack_sled(who)

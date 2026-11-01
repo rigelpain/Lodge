@@ -57,11 +57,13 @@ func _process(dt: float) -> void:
 	hour = fposmod(hour + dt * 24.0 / day_seconds, 24.0)
 	_sky_t += dt
 	_apply(_sky_t >= SKY_EVERY)
-	if _dial:
+	if _dial and is_instance_valid(_dial) and _dial.is_inside_tree():   # 場面を読み直すあいだ（スタート画面から始める）は外れている
 		_dial.offset_right = -dial_right
 		_dial.offset_left = -(Dial.R * 2 + 10 + dial_right)
 		_dial.pivot_offset = _dial.size   # 右下の角を動かさずに、HUD とそろえた大きさにする
 		_dial.scale = Vector2.ONE * preload("res://hud_icons.gd").ui_scale(_dial.get_viewport_rect().size.y)
+		# 何もしないでいると、日時計も層ごと画面の外へ引っこむ（hud.gd の _update_tuck）
+		(_dial.get_parent() as CanvasLayer).offset = preload("res://hud_icons.gd").tuck_off(_dial.get_global_rect(), _dial.get_viewport_rect().size)
 		_update_ink(dt)
 		_dial.ink = move_toward(_dial.ink, _ink_target, dt * 2.0)
 		_dial.queue_redraw()

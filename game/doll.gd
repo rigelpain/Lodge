@@ -4,6 +4,7 @@ const Look := preload("res://look.gd")
 const FpHands := preload("res://fp_hands.gd")
 const Palm := preload("res://palm.gd")
 const Lantern := preload("res://lantern.gd")
+const Outfit := preload("res://outfit.gd")
 ## 人形（person/build_dolls.py と person/ideas/characters/roughs.py で作り、骨を入れて焼いた glb）を骨で動かす。
 ## 7 体: kasa 笠と千代紙の人形 / origami 多面体の折り紙の人 / news 新聞紙と麻布の人形 /
 ## robo 紙のロボット / musha 折り紙の武者 / ningyo 絹の人形 / golem 継ぎはぎの巨人。骨の名前は 7 体で同じ。
@@ -75,6 +76,7 @@ enum Act { WALK, PUSH, ROPE, RIDE, SIT }
 
 var kind := "kasa"
 var layers := 1
+var outfit: Array = []       # 服の布ごとの色（outfit.gd の CLOTH の順。Color か null でもとのまま）。作る前に入れる。あとから替えるときは dress()
 
 # 持ち主が毎フレーム入れる
 var act := Act.WALK
@@ -132,6 +134,12 @@ var _shiver := 0.0           # 寒さのふるえ（0 〜 1）。口もとの気
 var _shiver_want := 0.0
 var _calm := 0.0             # 暖かさの落ち着き（0 〜 1）。揺れがゆっくりになる
 var _calm_want := 0.0
+var damp := 0.0              # 湿り気の見た目（damp.gd の look_of。-1 びしょびしょ 〜 0 ふつう 〜 1 パリパリ）。damp.gd が毎フレーム入れる
+var pose_step := 1.0         # 姿勢を決めるコマの間隔（12 fps のコマいくつに 1 回。湿ると 1.2・1.5）。damp.gd が毎フレーム入れる
+var _damp_mats: Array[ShaderMaterial] = []   # 紙の湿り気の材質（paper_damp.gdshader）
+var _damp_shown := INF       # 見た目の湿り気（値をなめらかに追う。姿勢もこれで決める）
+var _damp_put := INF         # 材質に入れた湿り気
+var _pose_due := -1.0        # 次に姿勢を決めるコマ。湿っていると間隔が空く（damp.gd の段）
 var _boil_k := 0.0           # クレイアニメの揺れの進み（整数ごとに新しい形。寒い所では毎コマ 1 進む）
 var _idle_t := 0.0           # 立ち止まりの揺れの時計（暖かいとゆっくり進む）
 var _next_out := 0
@@ -162,8 +170,12 @@ func _ready() -> void:
 	add_child(inst)
 	skel = inst.find_children("*", "Skeleton3D", true, false)[0]
 	_add_skirt(inst)
+	_make_damp(inst)
 	for m in inst.find_children("*", "MeshInstance3D", true, false):
 		(m as MeshInstance3D).layers = layers
+	_body = inst
+	if not outfit.is_empty():
+		dress(outfit)
 	for i in skel.get_bone_count():
 		_b[skel.get_bone_name(i)] = i
 		var r := skel.get_bone_rest(i)
@@ -536,6 +548,30 @@ func _skirt_mesh(mi: MeshInstance3D) -> Array:
 	return [out, skin]
 
 
+# ---------------------------------------------------------------- 服の色（outfit.gd）
+
+var _body: Node3D            # glb の人形
+var _src_albedo: Texture2D   # 焼いたままの色の絵
+var _dress_n := 0            # 着替えの番号（待つあいだに次の着替えが来たら、前のは捨てる）
+
+
+## 服の色を替える（cols は布ごとの Color か null）。塗り直した絵ができたら差し替える（1 コマ遅れる）
+func dress(cols: Array) -> void:
+	outfit = cols.duplicate()
+	if _body == null:
+		return
+	if _src_albedo == null:
+		_src_albedo = Outfit.albedo(_body)
+	_dress_n += 1
+	Outfit.dress_into(self, _body, kind, _src_albedo, outfit, _dress_n)
+
+
+## 消える前に、写した材質を外す（outfit.gd の strip）
+func _exit_tree() -> void:
+	if _body:
+		Outfit.strip(_body)
+
+
 # ---------------------------------------------------------------- 動き
 
 func _physics_process(dt: float) -> void:
@@ -568,9 +604,12 @@ func _physics_process(dt: float) -> void:
 	_phase += TAU * d.length() / maxf(_speed / CADENCE, 0.5) / _scale
 
 	var fi := frame_index()
-	if fi != _frame:
+	if fi != _frame and fi >= _pose_due:
+		# 湿っているとコマを飛ばす（12 → 10 → 8 fps）。飛ばしたぶんは次へ持ち越し、間隔をならす
+		_pose_due = _pose_due + pose_step if _pose_due + pose_step > fi else fi + pose_step
 		_frame = fi
 		_pose()
+	_show_damp(dt)
 	_hold_hands()
 	_apply()
 	_lantern.follow(dt, _yaw)
@@ -730,7 +769,7 @@ func _pose() -> void:
 		bend += _emote_body(em[0], em[1])
 	if em[0] != "breath" and em[0] != "oi":
 		_long.emitting = false
-	_turn_axis("chest", X, -bend)
+	_turn_axis("chest", X, -bend - _damp_bend())
 
 	if point != Vector3.INF:
 		# 指さし: 選んだ手の腕をまっすぐ伸ばして指す（両手なら両腕で「あっち！」）。手の先には指さしの手形。
@@ -791,7 +830,7 @@ func _pose() -> void:
 	# 暖かい所では、次の形へ何十コマもかけてゆっくり移る
 	var bk := floori(_boil_k)
 	var bw := smoothstep(0.0, 1.0, _boil_k - bk)
-	var boil := BOIL * (1.0 + BOIL_COLD * _shiver)
+	var boil := BOIL * (1.0 + BOIL_COLD * _shiver) * (1.0 - DAMP_BOIL * absf(damp))
 	for i in _order:
 		var a := _boil_at(bk, i)
 		if bw > 0.0:
@@ -1171,6 +1210,68 @@ func _aim_toward(i: int, dir: Vector3, w: float) -> void:
 	_aim(i, y.slerp(dir.normalized(), clampf(w, 0.0, 1.0)))
 
 
+# ---------------------------------------------------------------- 湿り気（damp.gd）
+
+const DAMP_SHADER := preload("res://person/paper_damp.gdshader")
+const DAMP_FOLLOW := 1.5      # 見た目の湿り気が値に追いつく速さ（1/s）。暖炉でじわっと乾き、雪玉でさっと濡れる見え方に
+const DAMP_SLUMP := 0.22      # びしょびしょで、胸がこれだけ前へうなだれる (rad)
+const DAMP_PROUD := 0.07      # パリパリで、胸がこれだけ起きる (rad)
+const DAMP_NECK := 0.22       # びしょびしょで、首がこれだけ下がる (rad)
+const DAMP_ARMS := 0.35       # びしょびしょで、腕がこれだけ下へ垂れる（下へ向ける割合）
+const DAMP_BOIL := 0.4        # 湿ってもパリッとしても、クレイアニメの揺れがこれだけ小さくなる（湿ると重く、張ると締まる）
+
+
+## 人形の材質（焼いた色の絵と法線の絵）を、湿り気の見える紙の材質に替える。人ごとにシミの所を変える
+func _make_damp(inst: Node3D) -> void:
+	var seed := float(get_instance_id() % 997) * 0.173
+	for m in inst.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		for s in mi.mesh.get_surface_count():
+			var src := mi.get_active_material(s) as StandardMaterial3D
+			if src == null:
+				continue
+			var sm := ShaderMaterial.new()
+			sm.shader = DAMP_SHADER
+			sm.set_shader_parameter("albedo_tex", src.albedo_texture)
+			sm.set_shader_parameter("normal_tex", src.normal_texture)
+			sm.set_shader_parameter("top", TOP[kind])
+			sm.set_shader_parameter("seed", seed)
+			mi.set_surface_override_material(s, sm)
+			_damp_mats.append(sm)
+
+
+## 材質に湿り気を入れる（なめらかに追う。0.004 より動いたか、追いついたときだけ入れ直す）
+func _show_damp(dt: float) -> void:
+	var want := clampf(damp, -1.0, 1.0)
+	var now := want if _damp_shown == INF else lerpf(_damp_shown, want, 1.0 - exp(-dt * DAMP_FOLLOW))
+	if absf(want - now) < 0.003:
+		now = want
+	_damp_shown = now
+	if absf(now - _damp_put) < 0.004 and not (now == want and now != _damp_put):
+		return
+	_damp_put = now
+	for sm in _damp_mats:
+		sm.set_shader_parameter("wet", maxf(-now, 0.0))
+		sm.set_shader_parameter("crisp", maxf(now, 0.0))
+
+
+## 湿り気の姿勢: 湿るほど胸がうなだれ、首が下がり、腕が垂れる。パリッとすると胸が起きる。返り値は胸を前へ曲げる量
+func _damp_bend() -> float:
+	var w := maxf(-_damp_now(), 0.0)
+	var c := maxf(_damp_now(), 0.0)
+	if w > 0.01:
+		_turn_axis("neck", Vector3.RIGHT, -DAMP_NECK * w)
+		for side in ["L", "R"]:
+			var x := -1.0 if side == "L" else 1.0
+			_aim_toward(_id("upper_arm." + side), Vector3(0.12 * x, -1.0, -0.1), DAMP_ARMS * w)
+			_aim_toward(_id("forearm." + side), Vector3(0.05 * x, -1.0, -0.2), DAMP_ARMS * w)
+	return DAMP_SLUMP * w - DAMP_PROUD * c
+
+
+func _damp_now() -> float:
+	return damp if _damp_shown == INF else _damp_shown
+
+
 # ---------------------------------------------------------------- 身ぶり（emotes.gd）
 # どれも「ため → 解放」。ためは短く小さく、解放で大きく。形はコマごとに決め、コマの間は止める。
 # 向きは骨の座標の空間で、右手側（R）で書く。左手は x を裏返す
@@ -1178,10 +1279,10 @@ func _aim_toward(i: int, dir: Vector3, w: float) -> void:
 ## emotes.gd の KINDS と同じ長さ（コマ）。0 は終わりを持ち主が決める
 const EMOTE_FRAMES := {
 	"high_five": 12, "shake": 24, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
-	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18,
+	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18, "eat": 16,
 }
 ## 腕を使う身ぶり。このあいだは手の形を出さない
-const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit"]
+const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit", "eat"]
 
 
 ## いまの身ぶりと、始まってからのコマ数（このコマ）。終わっていたら消す
@@ -1312,6 +1413,10 @@ func _emote_body(kind_: String, k: int) -> float:
 		"nn":
 			_em_head.x = [0.35, 0.35, -0.35, -0.35, 0.35, 0.35, -0.3, -0.3, 0.2, 0.2, -0.1, -0.1, 0.0, 0.0][k]
 			_em_head.y = -0.08
+		"eat":
+			# ひと口: 料理を見下ろして口へ運び（0〜4）、もぐもぐと 2 回うなずくように噛んで（5〜11）、顔を上げる
+			_em_head.y = [-0.18, -0.24, -0.2, -0.12, -0.05, -0.1, 0.0, -0.1, 0.0, -0.08, 0.0, 0.02, 0.04, 0.03, 0.01, 0.0][k]
+			return [0.04, 0.06, 0.05, 0.03, 0.0, 0.03, 0.0, 0.03, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][k]
 		"oi":
 			# 呼ぶ: 小さく息を吸ってかがみ（ため）、胸を張って顔を上げ、遠くへ声を届ける
 			if k < 2:
@@ -1425,6 +1530,14 @@ func _emote_arms(kind_: String, k: int) -> void:
 			elif k < 11:
 				for side in ["L", "R"]:
 					_arm(side, Vector3(0.75, 0.3, -0.35), Vector3(0.55, 0.85, -0.3))   # 両手を開いて上へ
+		"eat":
+			# 右手（料理を持つ手）を口の前へ運び、噛むあいだそこに置き、下ろす。口の所は頭の骨と腕の長さから決めるので、
+			# 7 体（頭の大きさ・腕の長さがちがう）のどれでも口の前に来る
+			var arm_r := _len(_id("upper_arm.R")) + _len(_id("forearm.R"))
+			var mouth := head + Vector3(0.03, -0.1, -0.42) * arm_r
+			var low := sh + Vector3(0.18, -0.35, -0.55) * arm_r   # 胸の前（持っているときの所）
+			var f: float = [0.0, 0.45, 0.85, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.7, 0.35, 0.1, 0.0][k]
+			_hand_to("R", low.lerp(mouth, f))
 		"oi":
 			if k >= 1 and k < 16:
 				# 空いた手を口の横に当てて、メガホンに（高い片手のひらで場所を示しながら呼べる）
@@ -1467,6 +1580,11 @@ func _emote_breath(kind_: String, k: int) -> void:
 			if k == 2:
 				_puff(1.15, 0.6)
 				_next_breath = _frame + 24
+		"eat":
+			# 最後のひと口を飲み込んだら、ほっと温かい息（寒い所では白く見える）
+			if k == 13 and emote.get("last", false):
+				_puff(1.5, 1.1)
+				_next_breath = _frame + 30
 		"oi":
 			# 声を伸ばすあいだ、大きな白い息を吐き続ける
 			if k == 2:

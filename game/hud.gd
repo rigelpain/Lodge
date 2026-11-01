@@ -4,7 +4,8 @@ extends CanvasLayer
 ##         上は丘の断面: ソリの印が動き、登った分だけ赤い糸が伸びる。
 ##         下の左はそのソリがゆっくり回る図（12 コマの刻みで 12 秒で 1 周）。いま触れている人・乗っている人を、そのソリの上の
 ##         実際の所に 3D の人型で乗せて、いっしょに回す（座る・押す・紐で引く・つかむ。人型はキャラの色、頭の上に名前）。
-##         下の右に王冠を載せた持ち主（名札を持っている人。ロッジのソリは家、名札を外したソリは空の輪）。
+##         下の右に王冠を載せた持ち主（名札を持っている人。名札を外したソリは空の輪）。ロッジのソリは持ち主の欄を出さず、
+##         回る図の窓を右いっぱいに広げる（2026-11-01 代表「オーナーのロッジ表示やめてほしい。どこにいるかじゃなくてだれかがだいじだから」）。
 ##         （2026-10-31 代表「タグにはそのタグが付いたソリがくるくる 360° 回転するアニメーションと、誰がインタラクトしてるか、
 ##         乗ってるか、だれがオーナーか」「押してる乗ってる表示は回転してるソリに、乗ってる位置押してる位置実態に合わせて」
 ##         「オーナーは王冠表示」「シンプルな人型アイコンにキャラカラー、プレイヤー名を頭の上に」）
@@ -23,6 +24,7 @@ const Plates := preload("res://hud_plates.gd")
 const SledTags := preload("res://sled_tags.gd")
 const PersonIcon := preload("res://person_icon.gd")
 const Player := preload("res://player.gd")
+const DampHud := preload("res://damp_hud.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
 const TAG_NEAR := 30.0        # ソリからこの距離より近いと札を出す (m)
 const MEET_R := 5.0           # ほかの人がこの距離に来たら身ぶりの案内
@@ -104,8 +106,8 @@ var _meet_n := 0
 var _meeting := false
 var _still_t := 0.0
 var _seen_back := false
-const TAG_K := 1.82           # 名札の大きさ（2026-10-29 代表「名札もっと大きくていい」。2026-10-31 回るソリと人を載せるので 1.3 倍に。
-                              # HUD の大きさの設定にも合わせて変わる）
+const TAG_K := 1.365          # 名札の大きさ（2026-10-29 代表「名札もっと大きくていい」。2026-10-31 回るソリと人を載せるので 1.3 倍に。
+                              # 2026-11-01 代表「タグ表示でかすぎるかも」で 75% に（design/tag-card-smaller）。HUD の大きさの設定にも合わせて変わる）
 const FLIP_LEN := 0.42        # 札をめくる長さ (s)
 const FLIP_HOLD := 6.0        # 手でめくったあと、遠くのソリの札でも出しておく長さ (s)
 var cards: Array = []         # 名札の束: [{sled, item, design, key}]。自分が持ち主のソリ（置いた・畳んで持つ）と、持ち主のいないソリに
@@ -118,11 +120,30 @@ var _flip := 0.0              # めくりの残り（1→0）
 var _flip_dir := 1
 var _flip_hold := 0.0
 var _tag_sled: RigidBody3D    # 札に出すソリ（最後に触ったソリ）
+var _damp_w := 0.0            # 水のゲージに出している値（damp.gd の値をなめらかに追う）
+var _badge_pop := {}          # バッジの名前 → 跳ねの残り（1→0）
+var _badge_seen := {}         # バッジの名前 → 最後に見た [向き, 段]（変わったら跳ねる）
 var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
+
+# 何も操作しないで IDLE_T 秒たったら、HUD を画面の外へ引っこめて景色だけにする（2026-11-01 代表「無操作状態で5秒経つとHUDを
+# 画面外に撤収させて景色だけを堪能させるようにしてほしい」）。キー・マウス・ゲームパッドのどれかに触れたら、すぐ戻す。
+# 物ごとに、いちばん近い辺へすべり出る（hud_icons.gd の tuck_off）。この画面だけのことで、ほかの人には知らせない
+const IDLE_T := 5.0
+const TUCK_OUT := 0.8         # 出ていく長さ (s)。少し内へ引いてから、すっと外へ
+const TUCK_IN := 0.3          # 戻る長さ (s)。初めのコマでほとんど戻り、少し行きすぎてから収まる
+const TUCK_BACK := 1.2        # 引き・行きすぎの強さ（back の曲線。1.2 でずらしの 5% ほど）
+const JOY_DEAD := 0.2         # ゲームパッドのスティックのこれより小さい傾きは、触れていないとみなす
+var idle_limit := IDLE_T      # --hud-idle=<秒> で変えられる。0 なら引っこめない
+var _idle := 0.0              # 何も操作していない長さ (s)
+var _tuck := 0.0              # 引っこめの進み（0 出ている … 1 外。曲線を掛ける前）
+var _tuck_clock := 0.0        # コマ撮りの刻みの時計
 
 
 func _ready() -> void:
 	layer = 3
+	if main:
+		idle_limit = maxf(0.0, float(main.args.get("hud-idle", str(IDLE_T))))
+	get_window().window_input.connect(_on_any_input)
 	_tag_view = View.new()   # 左下の名札（風で入れ物ごと傾ける）。ほかの表示より下に
 	_tag_view.hud = self
 	_tag_view.part = "tag"
@@ -187,6 +208,7 @@ func _input(e: InputEvent) -> void:
 
 
 func _process(dt: float) -> void:
+	_update_tuck(dt)
 	if main == null or main.sled == null:
 		return
 	var p: CharacterBody3D = main.player
@@ -212,12 +234,71 @@ func _process(dt: float) -> void:
 		h.a = move_toward(h.a, 1.0 if h.on else 0.0, dt * (4.0 if h.on else 3.0))
 	_layout_bottom()
 	_place_hints()
+	_update_damp(dt, p)
 	if debug_on:
 		_dbg = _debug_values()
 	_update_speedo(dt, p, menu)
 	if plates:
 		_update_plates()
 	_view.queue_redraw()
+
+
+# ---- 無操作で引っこめる ------------------------------------------------------------------
+
+## 窓に届いた入力（ほかの物が受け取って止める前）。どれかに触れたら、無操作の長さを 0 に戻す。マウスは少し動かしただけでも
+func _on_any_input(e: InputEvent) -> void:
+	if e is InputEventJoypadMotion and absf(e.axis_value) < JOY_DEAD:
+		return
+	if e is InputEventMouseMotion and e.relative == Vector2.ZERO and e.velocity == Vector2.ZERO:
+		return
+	if e is InputEventPanGesture and e.delta == Vector2.ZERO:   # トラックパッドのスクロールの終わりの知らせ（動いていない）
+		return
+	_idle = 0.0
+
+
+## 引っこめない画面が開いている: 設定・売り台・ミシン・装備・着せ替え・身ぶりの輪（入力を待っている）
+func _waiting_screen() -> bool:
+	if main == null:
+		return false
+	if main.settings != null and main.settings.is_open:
+		return true
+	var p = main.player
+	if p and (p.menu_open or p.get("shopping") or (p.get("ring") != null and p.ring.visible)):
+		return true
+	var cu = main.get("craft_ui")
+	if cu and (cu.get("shop_open") or cu.get("machine_open") or cu.get("gear_open")):
+		return true
+	var wu = main.get("wardrobe_ui")
+	return wu != null and wu.get("is_open")
+
+
+## 押しっぱなしのキー・ボタンと、傾けたままのスティック（入力の知らせが来ないので、毎コマ見る）
+func _holding() -> bool:
+	if Input.is_anything_pressed():
+		return true
+	for j in Input.get_connected_joypads():
+		for ax in [JOY_AXIS_LEFT_X, JOY_AXIS_LEFT_Y, JOY_AXIS_RIGHT_X, JOY_AXIS_RIGHT_Y, JOY_AXIS_TRIGGER_LEFT, JOY_AXIS_TRIGGER_RIGHT]:
+			if absf(Input.get_joy_axis(j, ax)) >= JOY_DEAD:
+				return true
+	return false
+
+
+## 無操作の長さを数え、引っこめの度合いを Icons.tuck に入れる。出入りは back の曲線（出るときは少し内へ引いてから、
+## 戻るときは少し行きすぎてから収まる。紙の札をつまんで抜き差しする軽さ）。コマ撮りのときは、人形と同じ 12 コマ／秒に刻む
+func _update_tuck(dt: float) -> void:
+	if idle_limit <= 0.0 or _waiting_screen() or _holding():
+		_idle = 0.0
+	else:
+		_idle += dt
+	var out := idle_limit > 0.0 and _idle >= idle_limit
+	_tuck = move_toward(_tuck, 1.0 if out else 0.0, dt / (TUCK_OUT if out else TUCK_IN))
+	var was := _tuck_clock
+	_tuck_clock += dt
+	if Icons.wind_stepped and floorf(was * 12.0) == floorf(_tuck_clock * 12.0) and _tuck > 0.0:
+		return
+	Icons.tuck = _tuck * _tuck * ((TUCK_BACK + 1.0) * _tuck - TUCK_BACK)
+	if main and main.get("_pip_layer") != null and main.pip_frame:   # 右上の 360° 映像の窓（窓の層ごと）
+		main._pip_layer.offset = Icons.tuck_off(main.pip_frame.get_global_rect(), _view.size)
 
 
 # ---- ソリの札 ------------------------------------------------------------------------
@@ -407,8 +488,20 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 番台の横のランタン掛け: F でランタンを買って提げ替える（ランタンの絵）
 	if p.has_method("lantern_rack_near") and p.lantern_rack_near() and not p.shopping:
 		_hint("lanterns", ["F"], "lamp", main.lantern_rack.global_position + Vector3.UP * 2.25)
+	# 衣装掛けの横の売り台: F で頭・肩の小物とミニオンを買って付け替える（頭に小鳥、足もとに子狐の人の形）
+	if p.has_method("pal_stall_near") and p.pal_stall_near() and not p.shopping:
+		_hint("pals", ["F"], "pals", main.pal_stall.global_position + Vector3.UP * 1.6)
+	# 雪だるまの番台: F でペレットを買う
+	if p.has_method("food_near") and p.food_near() and not p.shopping:
+		_hint("food", ["F"], "food", main.snowman_shop.counter.global_position + Vector3.UP * 1.4)
+	# 厨房の装置: 手のペレットを入れて F で調理
+	var st = p.station_near() if p.has_method("station_near") and not p.shopping else null
+	if st:
+		_hint("cook", ["F"], "cook", st.get_parent().global_position + Vector3.UP * 2.6)
 	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
-	if p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
+	if p.has_method("dye_near") and p.dye_near() and not p.shopping:
+		_hint("dye", ["F"], "dye", main.dye_vat.global_position + Vector3.UP * 1.3)   # 染め桶: F で服を染める（桶と布の絵）
+	elif p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
 		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)
 
 	# 名札の結び目のそば: G の長押しで、自分のソリの名札を外す・名札入れの名札を持ち主のいないソリに付ける
@@ -495,7 +588,8 @@ func _place_hints() -> void:
 				continue
 			at = cam.unproject_position(h.world)
 			sz = 66.0 * u
-		h.draw_at = at + Vector2(0, (1.0 - ease(h.a, 0.5)) * 10.0 * u)
+		var bw := _badge_w(h, sz)
+		h.draw_at = at + Vector2(0, (1.0 - ease(h.a, 0.5)) * 10.0 * u) + Icons.tuck_off(Rect2(at - Vector2(bw, sz) / 2.0, Vector2(bw, sz)), _view.size)
 		h.draw_sz = sz
 		h.shown = true
 
@@ -529,7 +623,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		_tag_view.pivot_offset = Vector2(tr.position.x, tr.position.y + tr.size.y * 0.5)
 		var fp := flip_pose()
 		_tag_view.rotation = Icons.wind_angle(1.0, -0.09, 0.05)
-		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui()) + Vector2(0, -16.0 * ui() * fp[1])
+		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui()) + Vector2(0, -16.0 * ui() * fp[1]) + Icons.tuck_off(tr, _view.size)
 		_tag_view.scale = Vector2(maxf(fp[0], 0.01), 1.0)
 		_tag_view.queue_redraw()
 	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
@@ -816,18 +910,19 @@ func flip_pose() -> Array:
 func _update_plates() -> void:
 	var u := ui()
 	plates.begin()
-	plates.moving = Icons.wind > 0.001 or _spd_a > 0.01
+	plates.moving = Icons.wind > 0.001 or _spd_a > 0.01 or (Icons.tuck != 0.0 and Icons.tuck != 1.0)   # 引っこめ・戻りの途中も毎コマ
 	if _tag_a > 0.01:
 		var tr: Rect2 = _view.tag_rect(u)
 		var piv := Vector2(tr.position.x, tr.get_center().y)
+		var toff := Icons.tuck_off(tr, _view.size)
 		for k in range(1, 3):   # 束の後ろの札（あれば。後ろほど奥へ）
 			if k < cards.size():
 				var bo: Array = _view.back_offset(u, k)
 				plates.plate("tagb%d" % k, _painter.bind("tagback:%d" % k), tr, 12.0 * u, 7.0 * u, "paper", piv,
-					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0], 0.03 * k, 3 - k)
+					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0] + toff, 0.03 * k, 3 - k)
 		var fp := flip_pose()
 		plates.plate("tag", _painter.bind("tag"), tr, 12.0 * u, 8.0 * u, "paper", piv,
-			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]), 0.0, 3)
+			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]) + toff, 0.0, 3)
 	if _spd_a > 0.01:   # 速さの表示: 立体のボビンと、縫い目を縫うフェルトのリボンの板（ボビンから吊るす）
 		var g := Speedo.layout(speedo_box_now(), _spd_pop)
 		# 回る向き: 糸はボビンの左下から下へ出ていくので、左側が下へ動く向き（画面で反時計回り）に回して糸を送り出す。
@@ -873,9 +968,10 @@ func speedo_box() -> Rect2:
 	return Rect2(22.0 * u, top, 126.0 * u, maxf(bottom - top, 200.0 * u))
 
 
-## いまの置き場（出てくるときは、上からふわっと下りてくる）
+## いまの置き場（出てくるときは、上からふわっと下りてくる。引っこめているときは画面の外へ）
 func speedo_box_now() -> Rect2:
 	var r := speedo_box()
+	r.position += Icons.tuck_off(r, _view.size)
 	r.position.y -= (1.0 - ease(_spd_a, 0.6)) * 24.0 * ui()
 	return r
 
@@ -896,6 +992,27 @@ func _net_ms() -> int:
 	for pp in mp.host.get_peers():
 		ms = maxi(ms, int(pp.get_statistic(ENetPacketPeer.PEER_ROUND_TRIP_TIME)))
 	return ms
+
+
+## 水のゲージ: 値をなめらかに追う。バッジの向きか段が変わったら跳ねさせる
+func _update_damp(dt: float, p: CharacterBody3D) -> void:
+	var dm = main.get("damp")
+	if p == null or dm == null:
+		return
+	_damp_w = lerpf(_damp_w, dm.water_of(p.id), 1.0 - exp(-dt * 1.5))   # 紙に水がしみる・乾く速さ（人形の見た目と同じくらい）
+	# 刺繍枠の地の麻布に、濡れとパリッとを出す（self_cam.gd の MASK_SHADER）
+	var sc = main.get("self_cam")
+	if sc and is_instance_valid(sc) and sc.get("_mat"):
+		sc._mat.set_shader_parameter("wet", clampf(_damp_w / dm.HI, 0.0, 1.0))
+		sc._mat.set_shader_parameter("crisp", clampf(_damp_w / dm.CRISP, 0.0, 1.0))
+	var now := {}
+	for b in main.badges.of(p.id):
+		now[b.key] = [b.dir, b.level]
+		if _badge_seen.get(b.key) != now[b.key]:
+			_badge_pop[b.key] = 1.0
+	_badge_seen = now
+	for k in _badge_pop.keys():
+		_badge_pop[k] = move_toward(_badge_pop[k], 0.0, dt * 2.5)
 
 
 # ---- 描く ----------------------------------------------------------------------------
@@ -938,6 +1055,7 @@ class View extends Control:
 			Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, ease(h.a, 0.5))   # 操作のための表示なので、平らで、風でも揺らさない
 		_draw_tag_hold(u)
 		_draw_hoop(u)
+		_draw_damp(u)
 		_draw_pip_back(u)
 		if hud._spd_a > 0.01:
 			_draw_speedo(u)
@@ -1003,7 +1121,8 @@ class View extends Control:
 
 	## 窓の中の絵（左上を原点に fw × fh）。上の段は丘の断面: ソリの印が進み、ふもとからの赤い糸が登った分だけ伸びる。
 	## 下の段の左は、そのソリがくるくる回る図に、いま触れている人・乗っている人を実際の所に乗せたもの（_draw_turn）。
-	## 下の段の右は、王冠を載せた持ち主（_draw_owner）。窓の地はいつも明るいので、線は濃く、印には白い縁
+	## 下の段の右は、王冠を載せた持ち主（_draw_owner）。ロッジのソリは持ち主の欄を出さず、回る図の窓を右いっぱいに広げる。
+	## 窓の地はいつも明るいので、線は濃く、印には白い縁
 	func _draw_tag_info(u: float, a: float, fw: float, fh: float, sled: RigidBody3D, item: Dictionary) -> void:
 		var main: Node3D = hud.main
 		# 丘の断面（頂上から PROFILE_R までの右半分と、頂上の向こうを少し）
@@ -1032,7 +1151,8 @@ class View extends Control:
 		Icons.patch(self, PackedVector2Array([lodge + Vector2(-5.5, 0) * u, lodge + Vector2(5.5, 0) * u, lodge + Vector2(5.5, -6) * u,
 			lodge + Vector2(0, -11) * u, lodge + Vector2(-5.5, -6) * u]), Icons.WOOD, a, false)
 		draw_rect(Rect2(lodge + Vector2(-1.7, -5) * u, Vector2(3.4, 3.0) * u), Color(1.0, 0.72, 0.30, a))
-		var tw := Rect2(Vector2(4.0, 46.0) * u, Vector2(150.0, 71.0) * u)   # 回る図の窓
+		var lodge_sled: bool = sled != null and hud.tag_owner() < 0 and SledTags.has_tag(sled.get("tag"))
+		var tw := Rect2(Vector2(4.0, 46.0) * u, Vector2(fw / u - 8.0 if lodge_sled else 150.0, 71.0) * u)   # 回る図の窓
 		if hud.shown_card().get("empty", false):   # 自分のソリがまだない: 空の丘と、空の窓だけ
 			Icons.screen()
 			Icons.dashes(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Icons.PAPER_EDGE, 1.4 * u, 5.0 * u, 3.5 * u, a, true)
@@ -1056,7 +1176,8 @@ class View extends Control:
 		else:   # 畳んだ包み
 			Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
 		_draw_turn(u, a, tw, sled, item)
-		_draw_owner(u, a, Rect2(Vector2(158.0, 46.0) * u, Vector2(fw - 160.0 * u, 71.0 * u)), sled)
+		if not lodge_sled:
+			_draw_owner(u, a, Rect2(Vector2(158.0, 46.0) * u, Vector2(fw - 160.0 * u, 71.0 * u)), sled)
 
 	## 回る図の窓: ソリがゆっくり回り（sled_tags.gd の turntable_wide。12 コマの刻みで 5° ずつ、12 秒で 1 周）、いま触れている人・
 	## 乗っている人を、そのソリの上の実際の所に 3D の人型（person_icon.gd の model。キャラの色）で乗せて、いっしょに回す。
@@ -1107,7 +1228,7 @@ class View extends Control:
 			PersonIcon.name_label(self, String(x.name), c - Vector2(0, 1.0 * u), 10.0 * u, x.col, a)
 
 	## 持ち主（名札を持っている人）: 3D の人型を正面から少し斜めに撮った図（キャラの色）に王冠と、頭の上に名前。
-	## ロッジのソリは王冠を載せた家、名札を外したソリは空の輪
+	## 名札を外したソリは空の輪（ロッジのソリには、この欄を出さない）
 	func _draw_owner(u: float, a: float, r: Rect2, sled: RigidBody3D) -> void:
 		var owner: int = hud.tag_owner()
 		var c := Vector2(r.get_center().x, r.end.y - 4.0 * u)
@@ -1127,12 +1248,6 @@ class View extends Control:
 			var top := Vector2(c.x, pr.position.y + ph * 0.12)
 			PersonIcon.crown(self, top, 13.0 * u, a)
 			PersonIcon.name_label(self, nm, top - Vector2(0, 10.0 * u), 10.0 * u, col, a)
-		elif sled and SledTags.has_tag(sled.get("tag")):   # ロッジのソリ
-			var hc := c - Vector2(0, 2.0 * u)
-			Icons.patch(self, PackedVector2Array([hc + Vector2(-13, 0) * u, hc + Vector2(13, 0) * u, hc + Vector2(13, -15) * u,
-				hc + Vector2(0, -27) * u, hc + Vector2(-13, -15) * u]), Icons.WOOD, a, false)
-			draw_rect(Rect2(hc + Vector2(-4, -12) * u, Vector2(8, 7) * u), Color(1.0, 0.72, 0.30, a))
-			PersonIcon.crown(self, hc + Vector2(0, -29.0 * u), 15.0 * u, a)
 		else:   # 名札を外したソリ: 持ち主はいない
 			Icons.dashes(self, Icons.circ(c - Vector2(0, r.size.y * 0.32), r.size.y * 0.2, 20), Icons.PAPER_EDGE, 1.5 * u, 4.0 * u, 3.0 * u, a, true)
 
@@ -1159,6 +1274,7 @@ class View extends Control:
 		var font := ThemeDB.fallback_font
 		var fs := int(round(14.0 * u))
 		var at := Vector2(10.0, 6.0) * u + Vector2(0, font.get_ascent(fs))
+		at += Icons.tuck_off(Rect2(Vector2.ZERO, Vector2(200.0, 24.0) * u), size)
 		var parts := [["%d fps" % d.fps, Icons.RED if d.fps < 30 else Icons.THREAD],
 			["%s ms" % (str(d.ms) if d.ms >= 0 else "--"), Icons.THREAD]]
 		for x in parts:
@@ -1175,7 +1291,7 @@ class View extends Control:
 			return
 		sc.plain_frame = true   # 小窓の側は、赤い糸の縁取りだけ
 		var fr: Control = sc._frame
-		var c := fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui())   # 小窓のずれを除いた真ん中（揺れは下で同じだけかける）
+		var c: Vector2 = fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui()) + sc.offset   # 小窓のずれを除いた真ん中（揺れは下で同じだけかける）。引っこめは小窓の層ごと
 		var tex: Texture2D = hud.hoop_texture()
 		if tex == null:
 			return
@@ -1186,12 +1302,27 @@ class View extends Control:
 		draw_texture_rect(tex, Rect2(c - sz / 2.0, sz), false)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
 
+	## 右下の刺繍枠の左に縫った水のゲージと体の調子のバッジ（damp_hud.gd）。自分のだけ（仲間の調子は人形の見た目で分かる）
+	func _draw_damp(u: float) -> void:
+		var sc = hud.main.get("self_cam")
+		var p = hud.main.player
+		if p == null or hud.main.get("badges") == null:
+			return
+		if sc == null or not is_instance_valid(sc) or sc.get("hidden") or sc.get("_frame") == null:
+			return
+		var fr: Control = sc._frame
+		var c := fr.position + fr.size / 2.0 - Icons.wind_offset(5.0, 2.5 * sc.ui())
+		draw_set_transform_matrix(Icons.wind_xform(c, 5.0, 0.0, 0.03, 2.5 * u))
+		DampHud.draw(self, c, fr.size.x / 2.0, u, hud.main.badges.of(p.id), hud._badge_pop)
+		draw_set_transform_matrix(Transform2D.IDENTITY)
+
 	## 右上の 360° 映像が後ろ向きのしるし（「後ろ」の文字の代わり）
 	func _draw_pip_back(u: float) -> void:
 		var main: Node3D = hud.main
 		if main.pip_label == null or main._pip_layer == null or main.pip_mode != 0 or not main._pip_layer.visible:
 			return
 		var lr: Rect2 = main.pip_label.get_global_rect()
+		lr.position += main._pip_layer.offset   # 引っこめは窓の層ごと
 		var font: Font = main.pip_label.get_theme_font("font")
 		var tw: float = font.get_string_size(main.pip_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
 		Icons.icon(self, "back", Vector2(lr.position.x + tw + 14.0, lr.position.y + lr.size.y / 2.0), 22.0, 0.95)

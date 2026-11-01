@@ -18,6 +18,7 @@ const PER_ROW := 5
 
 var main: Node3D
 var craft: Node
+var _asked := 0               # この画面から送って、まだ返ってきていない出来事の数（返ってきたら保存する）
 var player: Node3D
 var is_open := false
 var _view: Control
@@ -51,6 +52,18 @@ func _ready() -> void:
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_view)
+	if craft:
+		craft.happened.connect(_on_craft)
+
+
+## この画面で買った・提げ替えたランタンが替わったら保存する（通信では、ホストが確かめて配り返したときに。
+## つなぐ側は送った時点ではまだ替わっていない）。保存から戻すときの出来事では保存しない（_asked が 0）
+func _on_craft(ev: Dictionary) -> void:
+	if _asked <= 0 or int(ev.get("who", -1)) != _who() or player == null or not player.has_method("save_tag"):
+		return
+	if ev.kind == "lantern_buy" or (ev.kind == "equip" and ev.get("gear", "") == "lantern"):
+		_asked -= 1
+		player.save_tag()   # 次に起動しても同じ
 
 
 func _who() -> int:
@@ -99,9 +112,10 @@ func choose(i: int) -> bool:
 	var look: String = Lantern.LOOKS[i]
 	var have: int = craft.lantern_index(_who(), look)
 	var ok := false
+	_asked += 1   # 一人のときは send の中で出来事が起きるので、送る前に数える
 	if have >= 0:
 		ok = craft.send({"kind": "equip", "who": _who(), "gear": "lantern", "index": -1 if _worn() == look else have})
-	else:
+	elif craft.wallet(_who()) >= Lantern.price(look):   # ボタンが足りなければ送らない（つなぐ側の send は、断られても true を返すので）
 		ok = craft.send({"kind": "lantern_buy", "who": _who(), "look": look})
 		if ok:
 			var au = main.get_node_or_null("Audio") if main else null
@@ -110,9 +124,8 @@ func choose(i: int) -> bool:
 	if ok:
 		_pop = 1.0
 		_pop_i = i
-		if player.has_method("save_tag"):
-			player.save_tag()   # 次に起動しても同じ
 	else:
+		_asked = maxi(0, _asked - 1)
 		_shake = 1.0
 		_shake_i = i
 	return ok

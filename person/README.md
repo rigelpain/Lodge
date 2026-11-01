@@ -14,6 +14,8 @@
 
 ゲームの中では、ロッジ 2 階の衣装掛けで選び直せる（[アートコンセプト](../design/art-concept.md) の「人形を選ぶ」）。
 
+服の色は、衣装掛けのとなりの染め桶で染められる（色は自由、1 回ごとに染め代）。焼いた色の絵のうち、服の布の色の所だけを塗り直す（[game/outfit.gd](../game/outfit.gd) の `CLOTH` に、人形ごとの布の色）。人形の絵を焼き直したら、`CLOTH` の色も測り直す。
+
 ## ファイル
 
 | ファイル | 中身 |
@@ -40,4 +42,4 @@
 
 - 描くのは Eevee。Cycles の GPU は画面なしだと装置を探すところで止まるので使わない（焼き込みは Cycles の CPU）
 - 書き出しは 1 体 30 秒ほど。`game/person/<doll>.glb` に色と法線の画像（2048）が入る
-- ゲームの中の確かめ: `game/tools/doll_shots.gd`（3 体を並べて撮る。`--kinds=all` で 7 体）、`game/tools/wardrobe_shots.gd`（衣装掛けと、7 体に着替えた一人称・三人称）、`game/tools/play_record.gd`（押す・乗る・滑るをソリの横から録る）
+- ゲームの中の確かめ: `game/tools/doll_shots.gd`（3 体を並べて撮る。`--kinds=all` で 7 体）、`game/tools/wardrobe_shots.gd`（衣装掛けと、7 体に着替えた一人称・三人称）、`game/tools/play_record.gd`（押す・乗る・滑るをソリの横から録る）、`game/tools/outfit_shots.gd`（服の色違いを並べて撮る）、`game/tools/dye_shots.gd`（染め桶と染める画面、7 体を染めた三人称）、`game/tools/dye_check.gd`（染め代の決まり。画面なし）

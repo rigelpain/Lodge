@@ -5,6 +5,9 @@ extends SceneTree
 ##   --part=rack   番台の横のランタン掛けを、夕方のロッジで一人称・三人称・引きで撮る（--spawn=lanterns を付ける）
 ##   --part=ui     掛けの前で F の画面を開き、買う・足りない・提げ替える・外すを流して、財布と帯の形を log.txt に書く。装備の画面も撮る
 ##   --part=bots   仲間に --bot-lanterns の形を提げて、夜の外で撮る（ほかの人の画面にも、その人のランタンが見えるか）
+##   --part=load   起動の前に保存へ「10 の形を全部持ち、螺鈿を提げている」と書き、起動して戻ったかを見る。装備の画面と、帯の螺鈿を撮る
+##   --part=net    通信: 同じ Mac で 2 つ起動する（--host と --join=127.0.0.1。--port= をそろえる）。ホストは指ぬきを、
+##                 つなぐ側は掛けの画面で蛍かごを買って灯す。互いの画面で、相手の人の体（remote_person.gd）の帯の形を書いて撮る
 ## 自分の保存（user://my_tag.cfg）は、始めに写しを取り、終わりに戻す
 
 var args := {}
@@ -23,6 +26,12 @@ func _initialize() -> void:
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	if FileAccess.file_exists(TAG_FILE):
 		_saved = FileAccess.get_file_as_string(TAG_FILE)
+	if args.get("part", "") == "load":   # 起動の前に保存を書く（player.gd の _load_tag が読む）
+		var cf := ConfigFile.new()
+		cf.load(TAG_FILE)
+		cf.set_value("lantern", "owned", Array(preload("res://lantern.gd").LOOKS))
+		cf.set_value("lantern", "wear", "raden")
+		cf.save(TAG_FILE)
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
 	current_scene = main   # 昼夜の時計（daycycle.gd）が、今の場面から太陽を探す
@@ -32,6 +41,10 @@ func _initialize() -> void:
 
 func _dir() -> String:
 	return args.get("dir", "/tmp/lantern-variety")
+
+
+func _tag() -> String:
+	return "host" if args.has("host") else ("join" if args.has("join") else "")
 
 
 func _say(s: String) -> void:
@@ -173,6 +186,58 @@ func _run() -> void:
 			await _shot("11_gear")
 			if main.craft_ui.has_method("close"):
 				main.craft_ui.close()
+		"load":
+			_say("戻った: 提げている %s 点いている %s 持っている %d 形 %s" % [c.lantern(who), c.lamp_on(who), c.lanterns[who].size(),
+				c.lanterns[who].map(func(l): return l.look)])
+			_say("自分の人形の帯: %s" % p.doll.lantern)
+			await _hour(21.0)
+			c.send({"kind": "lamp", "who": who, "on": true})
+			main.craft_ui.open_gear()
+			await _wait(1.0)
+			await _shot("13_gear_all")
+			main.craft_ui.close_gear()
+			await _wait(0.3)
+			var at: Vector3 = p.global_position
+			var side: Vector3 = p.global_basis.x   # 左の腰（ランタン）の側から
+			await _cam_shot("14_raden_hip", at - side * 1.8 - p.global_basis.z * 0.6 + Vector3.UP * 0.9, at + Vector3.UP * 0.45, 50.0)
+		"net":
+			var net: Node = main.net
+			var t := 0.0
+			while net.remotes.is_empty() and t < 30.0:
+				await _wait(0.5)
+				t += 0.5
+			if net.remotes.is_empty():
+				_say("相手が来なかった")
+			else:
+				await _hour(21.0)
+				var pid: int = net.remotes.keys()[0]
+				var rp: Node3D = net.remotes[pid]
+				who = p.id
+				_say("%s: 自分 %d 相手 %d" % [_tag(), who, pid])
+				if net.is_host():
+					c.send({"kind": "earn", "who": who, "n": 600, "at": p.global_position})
+					c.send({"kind": "earn", "who": pid, "n": 600, "at": rp.global_position})   # つなぐ側にもボタンを配る
+					_say("ホスト: 指ぬきを買う %s → 提げている %s" % [c.send({"kind": "lantern_buy", "who": who, "look": "thimble"}), c.lantern(who)])
+					c.send({"kind": "lamp", "who": who, "on": true})
+				else:
+					t = 0.0
+					while c.wallet(who) < 500 and t < 10.0:
+						await _wait(0.5)
+						t += 0.5
+					_say("つなぐ側: 財布 %d" % c.wallet(who))
+					_say("つなぐ側: 蛍かごを押す %s" % main.lantern_ui.choose(7))
+					c.send({"kind": "lamp", "who": who, "on": true})
+				await _wait(4.0)
+				_say("%s: 自分の帯 %s 点いている %s 財布 %d" % [_tag(), c.lantern(who), c.lamp_on(who), c.wallet(who)])
+				_say("%s: 相手の帯 %s 点いている %s（相手の人形 %s 灯り %s）" % [_tag(), c.lantern(pid), c.lamp_on(pid), rp.doll.lantern, rp.doll.lantern_lit])
+				if not net.is_host():   # 保存の確かめ（同じ Mac の 2 つは同じ保存を使うので、ホストが写しを戻す前に）
+					var cf := ConfigFile.new()
+					cf.load(TAG_FILE)
+					_say("つなぐ側の保存: 持っている %s 提げている %s" % [cf.get_value("lantern", "owned", []), cf.get_value("lantern", "wear", "?")])
+				var at: Vector3 = rp.global_position
+				var side: Vector3 = rp.global_basis.x   # 人の左の腰（ランタン）の側から
+				await _cam_shot("15_net_%s" % _tag(), at - side * 2.6 + Vector3.UP * 1.1, at + Vector3.UP * 0.5, 50.0)
+				await _wait(6.0 if net.is_host() else 1.0)   # ホストは、つなぐ側が撮り終えるまで残る（保存の写しを戻すのも後に）
 		"bots":
 			await _hour(21.0)
 			var bots: Array = []
@@ -190,7 +255,7 @@ func _run() -> void:
 				if bots.size() > 1:
 					mid = (b0.global_position + (bots[1] as Node3D).global_position) * 0.5
 				await _cam_shot("12_bots", mid + Vector3(0, 1.4, -4.0), mid + Vector3.UP * 0.5, 55.0)
-	var f := FileAccess.open(_dir().path_join("log.txt"), FileAccess.WRITE)
+	var f := FileAccess.open(_dir().path_join("log%s.txt" % ("_" + _tag() if _tag() != "" else "")), FileAccess.WRITE)
 	f.store_string("\n".join(lines) + "\n")
 	if _saved != "":
 		var w := FileAccess.open(TAG_FILE, FileAccess.WRITE)

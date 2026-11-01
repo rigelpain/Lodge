@@ -28,6 +28,7 @@ static var wind_t := 0.0        # 揺れの時計 (s)
 static var wind_stepped := true # 12 コマ／秒に刻む（人形と同じコマ撮り）。false でなめらか（見比べ用）
 static var printing := false   # 立体の板に貼る印刷を描いているあいだ true（板の影は 3D で落とすので、外の落ち影を描かない）
 static var user_scale := 1.0   # 設定の「HUD の大きさ」（settings.gd が入れる）
+static var tuck := 0.0         # HUD を画面の外へ引っこめた度合い（0 出ている … 1 外。少しだけ負にもなる）。hud.gd が無操作の長さから入れる
 static var _felt: ImageTexture
 static var _o := Vector2.ZERO   # いま描いている絵の中心（画面）
 static var _s := 1.0            # 1 単位あたりの画面の px
@@ -37,6 +38,19 @@ static var _s := 1.0            # 1 単位あたりの画面の px
 ## hud.gd・craft_ui.gd・emote_ring.gd・daycycle.gd の表示はみなこれでそろえる
 static func ui_scale(view_h: float) -> float:
 	return clampf(view_h / 1080.0, 0.6, 2.0) * user_scale
+
+
+## 引っこめるときのずらし (px): 画面の場所 r の物を、いちばん近い辺（外へ出しきるのにずらす量がいちばん少ない辺）から、
+## 落ち影と風の揺れの分も含めて画面の外へ出す。tuck を掛けて返す（hud.gd の _update_tuck）
+static func tuck_off(r: Rect2, vs: Vector2) -> Vector2:
+	if tuck == 0.0:
+		return Vector2.ZERO
+	var pad := 0.03 * vs.y
+	var best := Vector2(-(r.end.x + pad), 0.0)
+	for v in [Vector2(vs.x - r.position.x + pad, 0.0), Vector2(0.0, -(r.end.y + pad)), Vector2(0.0, vs.y - r.position.y + pad)]:
+		if v.length() < best.length():
+			best = v
+	return best * tuck
 
 
 ## 風の揺れの時計: コマ撮りなら 12 コマ／秒に刻んだ時間
@@ -298,6 +312,11 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"untag": _tag_move(ci, a, true)
 		"tag_on": _tag_move(ci, a, false)
 		"wardrobe": _wardrobe(ci, a, tint)
+		"pals": _pals(ci, a, tint, "all")
+		"pal_head": _pals(ci, a, tint, "head")
+		"pal_shoulder": _pals(ci, a, tint, "shoulder")
+		"pal_pet": _pals(ci, a, tint, "pet")
+		"dye": _dye(ci, a, tint)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
 		_:   # 工房の絵（型紙・布・畳む・広げる。craft_icons.gd）
@@ -759,6 +778,53 @@ static func _wardrobe(ci: CanvasItem, a: float, col: Color) -> void:
 	doll(ci, Vector2(-4, 24), col, "stand", a, 0.8)
 	arc_arrow(ci, Vector2(-4, 6), 25.0, -0.35, 0.9, THREAD, a, 2.2)
 	arc_arrow(ci, Vector2(-4, 6), 25.0, PI - 0.35, PI + 0.9, THREAD, a, 2.2)
+
+
+## 頭・肩の小物とミニオン（pals.gd）: 人の形の頭や肩に小鳥、足もとに子狐。which は all（売り台の案内）・head・shoulder・pet（売り台の画面の札の段）
+static func _pals(ci: CanvasItem, a: float, col: Color, which: String) -> void:
+	var sc := 1.05
+	var feet := Vector2(-6, 30) if which in ["pet", "all"] else Vector2(0, 30)
+	doll(ci, feet, col if which != "pet" else col.lerp(PAPER_EDGE, 0.5), "stand", a, sc)
+	if which in ["head", "all"]:
+		_tiny_bird(ci, feet + Vector2(1, -41) * sc, 1.0 if which == "head" else 0.8, a)
+	if which == "shoulder":
+		_tiny_bird(ci, feet + Vector2(8, -27) * sc, 0.8, a)
+	if which in ["pet", "all"]:
+		_tiny_fox(ci, feet + Vector2(24, 0), 1.0 if which == "pet" else 0.8, a)
+
+
+## 小さな千代紙の小鳥（右を向く）
+static func _tiny_bird(ci: CanvasItem, c: Vector2, k: float, a: float) -> void:
+	var o := _o
+	var s := _s
+	patch(ci, PackedVector2Array([c + Vector2(-9, -2) * k, c + Vector2(-2, 2) * k, c + Vector2(-6, 6) * k]), RED.darkened(0.2), a, false)   # しっぽ
+	patch(ci, ell(c, 7.0 * k, 5.0 * k, 14), RED, a, false)
+	patch(ci, circ(c + Vector2(5, -5) * k, 3.6 * k, 12), RED, a, false)
+	patch(ci, PackedVector2Array([c + Vector2(8, -6) * k, c + Vector2(12, -4.5) * k, c + Vector2(8, -3.5) * k]), MUSTARD, a, false)   # くちばし
+	ci.draw_circle(o + (c + Vector2(6, -6) * k) * s, 1.0 * k * s, Color(0.1, 0.08, 0.08, a))
+
+
+## 小さな折り紙の子狐（座って右を向く）
+static func _tiny_fox(ci: CanvasItem, feet: Vector2, k: float, a: float) -> void:
+	var fox := Color(0.82, 0.45, 0.19)
+	patch(ci, PackedVector2Array([feet + Vector2(-8, 0) * k, feet + Vector2(-14, -3) * k, feet + Vector2(-10, -9) * k, feet + Vector2(-4, -2) * k]), fox.darkened(0.15), a, false)   # しっぽ
+	patch(ci, PackedVector2Array([feet + Vector2(-7, 0) * k, feet + Vector2(7, 0) * k, feet + Vector2(4, -14) * k, feet + Vector2(-3, -12) * k]), fox, a, false)
+	var h := feet + Vector2(4, -17) * k
+	for ex in [-4.0, 2.0]:   # 耳
+		patch(ci, PackedVector2Array([h + Vector2(ex - 2, -3) * k, h + Vector2(ex + 3, -3) * k, h + Vector2(ex, -10) * k]), fox, a, false)
+	patch(ci, ell(h, 6.0 * k, 4.5 * k, 12), fox, a, false)
+	patch(ci, PackedVector2Array([h + Vector2(3, -2) * k, h + Vector2(11, 1) * k, h + Vector2(3, 3) * k]), fox, a, false)   # 鼻先
+	patch(ci, PackedVector2Array([feet + Vector2(0, -2) * k, feet + Vector2(4, -2) * k, feet + Vector2(3, -12) * k]), Color(0.96, 0.92, 0.85), a, false)   # 胸の白
+## 染め桶: 輪で締めた木の桶に染め液、縁から染めた布が垂れる（布と液は tint の色）
+static func _dye(ci: CanvasItem, a: float, col: Color) -> void:
+	patch(ci, PackedVector2Array([Vector2(-24, -8), Vector2(24, -8), Vector2(19, 24), Vector2(-19, 24)]), WOOD, a, false)
+	for x in [-12.0, 0.0, 12.0]:   # 側板の継ぎ目
+		thread(ci, PackedVector2Array([Vector2(x, -6), Vector2(x * 0.8, 22)]), WOOD.darkened(0.35), 1.4, a)
+	for y in [-1.0, 16.0]:   # 縄の輪
+		thread(ci, PackedVector2Array([Vector2(-23 + (y + 8) * 0.15, y), Vector2(23 - (y + 8) * 0.15, y)]), Color(0.78, 0.66, 0.44), 3.0, a)
+	patch(ci, ell(Vector2(0, -8), 24.0, 6.0), col.darkened(0.15), a, false)   # 染め液
+	patch(ci, PackedVector2Array([Vector2(6, -12), Vector2(18, -12), Vector2(19, 8), Vector2(13, 12), Vector2(7, 6)]), col, a, true)   # 縁に掛けた布
+	thread(ci, PackedVector2Array([Vector2(-10, -30), Vector2(-4, -6)]), WOOD.darkened(0.2), 3.0, a)   # 櫂
 
 
 static func _return(ci: CanvasItem, a: float) -> void:
