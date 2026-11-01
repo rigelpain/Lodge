@@ -404,6 +404,13 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
+	# 雪だるまの番台: F でペレットを買う
+	if p.has_method("food_near") and p.food_near() and not p.shopping:
+		_hint("food", ["F"], "food", main.snowman_shop.counter.global_position + Vector3.UP * 1.4)
+	# 厨房の装置: 手のペレットを入れて F で調理
+	var st = p.station_near() if p.has_method("station_near") and not p.shopping else null
+	if st:
+		_hint("cook", ["F"], "cook", st.get_parent().global_position + Vector3.UP * 2.6)
 	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
 	if p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
 		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)

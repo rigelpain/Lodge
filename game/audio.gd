@@ -569,6 +569,18 @@ func exchange(look: String) -> void:
 
 
 ## 速さの表示の糸の上のボタンが、ぽんと外れて財布へ飛び出す（ぷつ。小さく高く、耳元で）
+## 雪だるまの店と厨房の音（sound/gen/cook.py）を、parent の所で鳴らす（ロッジの中の Inside。まわりの人にも聞こえる）。
+## count が 1 より大きければ name_01..count から前と違うものを選ぶ。_loop の音は止めるまで回るので、返した物を呼ぶ側が消す
+func kitchen(parent: Node3D, name_: String, db := -10.0, count := 1, pitch := 1.0) -> AudioStreamPlayer3D:
+	if parent == null or not is_instance_valid(parent):
+		return null
+	var p := _p3(parent, "Inside", db, 3.0, 30.0)
+	_shot(p, _pick(name_, count) if count > 1 else _wav(name_), db, pitch)
+	if not name_.ends_with("_loop"):
+		p.finished.connect(p.queue_free)
+	return p
+
+
 func coin_off() -> void:
 	var s := _pick("button_snap", 3)
 	if s == null:

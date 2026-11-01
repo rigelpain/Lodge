@@ -27,7 +27,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import kit as K  # noqa: E402
 
-A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）"))])
+A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）")),
+              ("--icons", dict(default="", help="この場所に、巨大な調理の装置のアイコン（背景を透かした絵）を描く"))])
 K.setup(A, fiber=3.0, scale=2.0, tris=2500)
 EX = K.S["export"]
 C.HEX.update({"felt_ivory": "EEE6D4", "felt_mustard": "C99A3A", "felt_indigo": "2E3F66", "felt_rust": "A8532E",
@@ -596,6 +597,9 @@ pellet_tray("pellet_tray")
 
 if A.export:
     K.export_all(A.export, A.only.split(",") if A.only else None)
+elif A.icons:   # 雪だるまの店の画面で、調理の道を見せるアイコン（game/props/kitchen/icons/。名前は main.gd の KITCHEN）
+    K.render_icons(A.icons, ["giant_heat_press", "giant_press_board", "giant_dryer", "giant_vapor"], size=192, elev=20.0, az=-20.0,
+                   rename={"giant_heat_press": "press", "giant_press_board": "iron", "giant_dryer": "dryer", "giant_vapor": "drink"})
 else:
     R = {r.name: r for r, p in K.made}
     T = 0.47

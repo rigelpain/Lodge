@@ -30,6 +30,9 @@ extends Node
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
+##   food_buy  {item}          雪だるまの店でペレットを買う（item は food.gd の {kind:"food", dish, step:0}）。雪玉で払う（emotes.gd の spend）
+##   cook      {slot, station} 手のペレット（料理の途中）を厨房の装置に入れる。持ち物から出て、装置が持つ（cook_station.gd）
+##   cooked    {item, station} 装置が仕上げた物（一段進んだ item）を、入れた人の持ち物に戻して手に持たせる。いっぱいなら断る（装置に残る）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
@@ -43,6 +46,7 @@ signal happened(ev: Dictionary)
 const Doll := preload("res://doll.gd")
 const Sled := preload("res://sled.gd")
 const Fabrics := preload("res://fabrics.gd")
+const Food := preload("res://food.gd")
 
 ## お金はボタン（snow_buttons.gd）。最初に START_BUTTONS 個（木の何個分）持たせる。米袋の型紙と布はすぐ買えるが、小はまだ（少し滑って稼いでから）
 const START_BUTTONS := 30
@@ -248,6 +252,31 @@ func _apply(ev: Dictionary) -> bool:
 			ev["slot"] = hands[who]
 		"hand":
 			hands[who] = clampi(int(ev.slot), -1, bags[who].size() - 1)
+		"food_buy":
+			var dish: String = ev.item.get("dish", "")
+			if not Food.MENU.has(dish) or bags[who].size() >= SLOTS or world == null or world.get("emotes") == null:
+				return false
+			var pay := {"kind": "spend", "who": who, "n": Food.price(dish)}
+			world.emotes.send(pay)
+			if not pay.get("ok", false):
+				return false
+			bags[who].append(Food.item(dish))
+			hands[who] = bags[who].size() - 1   # 買ったペレットを手に持つ
+			ev["slot"] = hands[who]
+		"cook":
+			var b: Array = bags[who]
+			var i := int(ev.slot)
+			if i < 0 or i >= b.size() or Food.next_station(b[i]) != ev.station:
+				return false
+			ev["item"] = b[i].duplicate()
+			b.remove_at(i)
+			hands[who] = -1
+		"cooked":
+			if bags[who].size() >= SLOTS:
+				return false
+			bags[who].append(ev.item)
+			hands[who] = bags[who].size() - 1
+			ev["slot"] = hands[who]
 		"sew":
 			# 型紙と布は両方そろって初めて使う（片方だけ消えることはない）
 			var b: Array = bags[who]

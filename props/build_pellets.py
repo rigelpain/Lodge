@@ -6,6 +6,8 @@
     /Applications/Blender.app/Contents/MacOS/Blender -b -P props/build_pellets.py -- \
         --look flat --export game/props/pellets
 
+    /Applications/Blender.app/Contents/MacOS/Blender -b -P props/build_pellets.py -- --icons game/props/pellets/icons
+
 品書きと見た目は design/snowman-food/（01_menu.png の丸の中）。名前は pellet_<料理>。
 料理の glb は props/build_food.py（game/props/food/）。
 """
@@ -20,7 +22,8 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import kit as K  # noqa: E402
 
-A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）"))])
+A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）")),
+              ("--icons", dict(default="", help="この場所に、品物ごとのアイコン（背景を透かした絵）を描く"))])
 K.setup(A, fiber=4.0, scale=1.5, tris=700)
 EX = K.S["export"]
 C.HEX.update({"felt_azuki": "6A2A34", "felt_crumb": "C98A3E", "felt_silver": "9AA6B0", "felt_shell": "8E8A84",
@@ -149,6 +152,8 @@ for key in ORDER:
 
 if A.export:
     K.export_all(A.export, only)
+elif A.icons:   # 売り場の画面のアイコン（game/props/pellets/icons/）
+    K.render_icons(A.icons, ["pellet_" + k for k in ORDER if not only or "pellet_" + k in only], size=192, pad=1.3)
 else:
     roots = {r.name: r for r, p in K.made}
     TZ = 0.75
