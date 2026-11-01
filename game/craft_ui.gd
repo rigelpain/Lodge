@@ -220,7 +220,7 @@ func _on_craft(ev: Dictionary) -> void:
 		"buy", "fold":
 			_pop[int(ev.slot)] = 1.0
 			_coin_pop = 1.0 if ev.kind == "buy" else _coin_pop
-			if ev.kind == "buy":
+			if ev.kind == "buy" and ev.item.get("kind", "") in ["pattern", "fabric"]:   # 山男の棚の品物は、山男がうなずく（mountain_man.gd）
 				var sk = main.get("shopkeeper")
 				if sk:
 					sk.sold()

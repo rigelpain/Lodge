@@ -12,6 +12,7 @@ extends RefCounted
 
 const Icons := preload("res://hud_icons.gd")
 const Fabrics := preload("res://fabrics.gd")
+const MountainGoods := preload("res://mountain_goods.gd")
 
 const KRAFT := Color(0.84, 0.72, 0.52)       # 型紙のクラフト紙
 const COIN := Color(0.70, 0.50, 0.30)        # 木のボタン
@@ -30,6 +31,14 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			_pattern(ci, Vector2(-8, 2), 0.7, "mid", a, -0.12)
 			coin(ci, Vector2(14, 14), 9.0, a)
 			coin(ci, Vector2(20, 2), 7.0, a)
+		"mountain":   # 山男の売り場: 焚き火セットとボタン
+			var o := Icons._o
+			var s := Icons._s
+			_at(o + Vector2(-6, 0) * s, 64.0 * s * 0.8)
+			MountainGoods.draw(ci, {"kind": "campfire"}, a)
+			Icons._o = o
+			Icons._s = s
+			coin(ci, Vector2(18, 14), 9.0, a)
 		"fold":
 			_folding(ci, a, true)
 		"unfold":
@@ -88,6 +97,9 @@ static var _tex := {}   # 料理の絵（パス → Texture2D）
 ## 持ち物・品物の絵を center に size px で
 static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a := 1.0) -> void:
 	_at(center, size)
+	if MountainGoods.has(it.get("kind", "")):   # 山男の棚の品物（焚き火セット・ペグ）
+		MountainGoods.draw(ci, it, a)
+		return
 	match it.get("kind", ""):
 		"food":   # 雪だるまの店のペレットか、できあがった料理（Blender で描いた絵。food.gd）
 			var Food := preload("res://food.gd")
@@ -122,6 +134,8 @@ const DISH_NAMES := {"onigiri": "おにぎり", "taiyaki": "たい焼き", "niku
 
 
 static func item_name(it: Dictionary) -> String:
+	if MountainGoods.has(it.get("kind", "")):
+		return MountainGoods.item_name(it)
 	var sled: String = SLED_NAMES.get(it.get("sled", "mid"), "ソリ")
 	var fab: String = FABRIC_NAMES.get(it.get("fabric", ""), "")
 	match it.get("kind", ""):

@@ -397,6 +397,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
 					return
+				if mode == Mode.WALK and mountain_near():
+					get_parent().mountain_ui.open()   # 玄関の外の山男: 山の道具（焚き火セット・ペグ）を買う
+					return
 				if mode == Mode.WALK and dye_near():
 					get_parent().dye_ui.open()   # 衣装掛けのとなりの染め桶: 服を染める（衣装掛けより近くで向いていれば、こちら）
 					return
@@ -1775,6 +1778,16 @@ func shop_near() -> bool:
 	if sk == null or get_parent().get("craft_ui") == null or not sk.can_talk(self):
 		return false
 	var d: Vector3 = sk.global_position - global_position
+	d.y = 0
+	return d.length() < 0.6 or (-global_basis.z).dot(d.normalized()) > 0.4
+
+
+## 山男に話しかけられる所で、山男の方を向いているか
+func mountain_near() -> bool:
+	var mm = get_parent().get("mountain_man")
+	if mm == null or get_parent().get("mountain_ui") == null or menu_open or not mm.can_talk(self):
+		return false
+	var d: Vector3 = mm.global_position - global_position
 	d.y = 0
 	return d.length() < 0.6 or (-global_basis.z).dot(d.normalized()) > 0.4
 
