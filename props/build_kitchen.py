@@ -27,11 +27,12 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import kit as K  # noqa: E402
 
-A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）"))])
+A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）")),
+              ("--icons", dict(default="", help="この場所に、巨大な調理の装置のアイコン（背景を透かした絵）を描く"))])
 K.setup(A, fiber=3.0, scale=2.0, tris=2500)
 EX = K.S["export"]
 C.HEX.update({"felt_ivory": "EEE6D4", "felt_mustard": "C99A3A", "felt_indigo": "2E3F66", "felt_rust": "A8532E",
-              "felt_moss": "6E7F4A", "felt_sky": "8FAFC8"})
+              "felt_moss": "6E7F4A", "felt_sky": "8FAFC8", "felt_water": "8FB8D8"})
 
 PELLET = {"mix": ["felt_beige", "felt_brown", "felt_red", "felt_green", "felt_yellow"],
           "red": ["felt_red", "felt_red_dark", "felt_orange"], "green": ["felt_green", "felt_tea", "felt_moss"],
@@ -362,6 +363,102 @@ def giant_dryer(name, body="felt_cream", band="felt_navy2", knob="felt_red"):
     P.finish(fuzz=0.004)
 
 
+# 衣類スチーマー（飲み物の装置。2026-11-01 代表と決めた形: design/snowman-food/07_steamer_show.png）。
+# 名前に steam を入れない（書き出しと Godot は、名前に steam を含む形を湯気の目印に替える）。2 倍する前の寸法。前は +Y。タンクは左（-X）、竿と棚と頭は右。ふたは別の glb（giant_vapor_lid）にして、Godot が目印 lid で開け閉めする
+STEAM = {"tx": -0.14, "ty": 0.04, "tr": 0.3, "tz0": 0.16, "tz1": 0.72, "water": 0.6,
+         "px": 0.34, "py": -0.24, "shelf": 1.0, "head": (0.34, 0.06, 1.42)}
+
+
+def vapor_hose():
+    """台座の右の口金から、竿の右を上って、頭の横に入るホースの道（両端は口金と頭の中に少し入れる）"""
+    hx, hy, hz = STEAM["head"]
+    return [(0.46, 0.04, 0.13), (0.56, 0.06, 0.2), (0.64, 0.08, 0.45), (0.66, 0.1, 0.8), (0.62, 0.1, 1.1),
+            (0.56, 0.08, 1.36), (0.5, 0.07, 1.43), (hx + 0.08, hy, hz)]
+
+
+def giant_vapor(name="giant_vapor"):
+    """巨大な衣類スチーマー（ゲームで高さ 3.5 m）: 藍のフェルトの台座に木の車。透明なフィルムのタンク（白糸の枠）に
+    水色の水と毛糸の水面。右に木の竿とハンガー、カップを置く丸い棚、上から湯気を吹く藍の頭。赤い毛糸のホースで台座の口金と頭をつなぐ"""
+    P = K.Parts(name, kind="cook", tool="drink", giant=True, tris=5000)
+    P.hard["wood"] = 0.01
+    tx, ty, tr, z0, z1 = STEAM["tx"], STEAM["ty"], STEAM["tr"], STEAM["tz0"], STEAM["tz1"]
+    # 台座と車
+    K.pbox(P, "felt_navy2", (0.0, -0.02, 0.09), (0.52, 0.38, 0.07), n=3.0, nz=3.0, seam_role="thread")
+    for sx in (-0.4, 0.4):
+        for sy in (-0.28, 0.24):
+            K.disc(P, "wood", (sx, sy, 0.035), 0.035, 0.04, axis="X", segs=16)
+    # 口金（ホースの根元）: 台座の右に、真鍮色のフェルトの筒と縫いの輪
+    K.dowel(P, "felt_mustard", (0.42, 0.04, 0.13), (0.5, 0.04, 0.15), 0.04, 14)
+    K.ring(P, "felt_red_dark", (0.47, 0.04, 0.14), 0.045, 0.012, axis="X", n=20)
+    # 透明なタンク（フィルム）と白糸の枠、底と口の縁
+    K.lathe(P, "glass", [(tr, z0), (tr + 0.005, z0 + 0.02), (tr + 0.005, z1 - 0.02), (tr, z1)], center=(tx, ty, 0),
+            segs=K.cuts(48, 28), closed=False)
+    K.lathe(P, "felt_cream", [(0.0, z0 - 0.01), (tr + 0.02, z0 - 0.01), (tr + 0.02, z0 + 0.025), (0.0, z0 + 0.025)],
+            center=(tx, ty, 0), segs=K.cuts(48, 28))
+    K.ring(P, "felt_cream", (tx, ty, z1), tr + 0.008, 0.016, n=48)
+    for z in (z0 + 0.03, z1 - 0.025):
+        K.stitch_ring(P, "thread", (tx, ty, z), tr + 0.008, r=0.005, dash=0.03)
+    for i in range(6):
+        a = i * math.pi / 3 + 0.26
+        K.tube(P, "thread", [(tx + (tr + 0.007) * math.cos(a), ty + (tr + 0.007) * math.sin(a), z0 + 0.03),
+                             (tx + (tr + 0.007) * math.cos(a), ty + (tr + 0.007) * math.sin(a), z1 - 0.025)], 0.004, sides=6)
+    # 水（水色のフェルト）と、毛糸の水面の波
+    wz = STEAM["water"]
+    K.lathe(P, "felt_water", [(0.0, z0 + 0.025), (tr - 0.012, z0 + 0.025), (tr - 0.012, wz), (0.0, wz)], center=(tx, ty, 0),
+            segs=K.cuts(40, 24))
+    K.tube(P, "yarn_cream", [(tx + (tr - 0.02) * math.cos(2 * math.pi * k / 64), ty + (tr - 0.02) * math.sin(2 * math.pi * k / 64),
+                              wz + 0.006 * math.sin(k * 0.8)) for k in range(65)], 0.009, sides=6)
+    # 木の竿とハンガー、竿の鉤
+    px, py = STEAM["px"], STEAM["py"]
+    K.dowel(P, "wood", (px, py, 0.14), (px, py, 1.78), 0.03, 14)
+    K.tube(P, "wood", [(px - 0.42, py, 1.6), (px, py, 1.76), (px + 0.42, py, 1.6)], 0.022, sides=10)
+    K.tube(P, "wood", [(px - 0.42, py, 1.6), (px + 0.42, py, 1.6)], 0.016, sides=10)
+    K.tube(P, "felt_tin", [(px, py, 1.76), (px, py, 1.83), (px + 0.06, py, 1.86), (px + 0.09, py, 1.81)], 0.012, sides=8)
+    # カップを置く丸い棚（腕で竿に留める）
+    sz = STEAM["shelf"]
+    K.lathe(P, "wood", [(0.17, sz - 0.02), (0.18, sz), (0.17, sz + 0.012)],   # 端は lathe が軸で閉じる（軸に潰れた輪は角の丸めで崩れる）
+            center=(px, 0.06, 0), segs=K.cuts(32, 18))
+    K.dowel(P, "wood", (px, py, sz - 0.01), (px, -0.08, sz - 0.01), 0.022, 10)
+    K.dowel(P, "wood", (px, py, sz - 0.18), (px, -0.06, sz - 0.02), 0.016, 8)
+    # 頭（藍）: 竿から腕で支え、下の面から湯気を吹く
+    hx, hy, hz = STEAM["head"]
+    K.pbox(P, "felt_navy2", (hx, hy, hz), (0.12, 0.09, 0.075), n=3.0, nz=3.0, seam_role="thread")
+    K.pbox(P, "felt_cream", (hx, hy, hz - 0.08), (0.105, 0.075, 0.012), n=4.0, nz=2.0)
+    for i in range(3):
+        for j in range(2):
+            K.disc(P, "felt_charcoal", (hx - 0.05 + 0.05 * i, hy - 0.025 + 0.05 * j, hz - 0.093), 0.008, 0.004, segs=8)
+    K.dowel(P, "wood", (px, py, hz + 0.02), (px, hy - 0.06, hz + 0.02), 0.02, 10)
+    # ホース（赤い毛糸）と、頭の側の継ぎ手
+    hose = vapor_hose()
+    K.tube(P, "yarn_red", hose, 0.032, sides=10)
+    K.ring(P, "felt_red_dark", hose[-2], 0.04, 0.011, axis="X", n=20)
+    K.dowel(P, "felt_mustard", (hx + 0.1, hy, hz), (hx + 0.15, hy, hz), 0.04, 14)
+    K.steam(P, (hx, hy, hz + 0.08), 0.18, 0.025, seed=11)
+    # 目印: ふたの蝶番、ペレットを落とす所、水面、ホースの道、湯気の出口、カップ、人の立つ所
+    P.mark("lid", (tx, ty - tr, z1 + 0.01))
+    P.mark("drop", (tx, ty, z1 + 0.25))
+    P.mark("water", (tx, ty, wz))
+    for i, h in enumerate(hose):
+        P.mark("hose_%d" % i, h)
+    P.mark("head", (hx, hy, hz - 0.1))
+    P.mark("cup", (px, 0.06, sz + 0.012))
+    P.mark("cook", (tx, ty, z1))
+    P.mark("stand", (0.0, 0.95, 0.0))
+    P.finish(fuzz=0.004)
+
+
+def giant_vapor_lid(name="giant_vapor_lid"):
+    """スチーマーのタンクのふた（赤いフェルト）。原点は後ろの蝶番。Godot が目印 lid に置いて、X で回して開ける"""
+    P = K.Parts(name, kind="cook_part", tris=900)
+    tr = STEAM["tr"]
+    K.lathe(P, "felt_red", [(0.0, 0.0), (tr + 0.02, 0.0), (tr + 0.025, 0.02), (tr + 0.01, 0.05), (0.0, 0.06)],
+            center=(0, tr, 0), segs=K.cuts(48, 28))
+    K.stitch_ring(P, "thread", (0, tr, 0.03), tr + 0.012, r=0.004, dash=0.025)
+    K.pbox(P, "wood", (0, tr, 0.08), (0.05, 0.05, 0.03), n=2.0, nz=2.0)   # つまみ
+    K.dowel(P, "felt_tin", (-0.08, 0.0, 0.01), (0.08, 0.0, 0.01), 0.015, 10)   # 蝶番
+    P.finish(fuzz=0.003)
+
+
 # ---------------------------------------------------------------- ペレットの入れ物
 def pellet_jar(name, colors, lid="felt_red", seed=0):
     """ガラスの瓶: 粒をいっぱいに入れ、フェルトの蓋を麻ひもで縛る"""
@@ -486,6 +583,8 @@ giant_heat_press("giant_heat_press", "felt_red")
 giant_heat_press("giant_heat_press_mustard", "felt_mustard")
 giant_dryer("giant_dryer", "felt_cream", "felt_navy2", "felt_red")
 giant_dryer("giant_dryer_red", "felt_red", "felt_ivory", "felt_mustard")
+giant_vapor()
+giant_vapor_lid()
 pellet_jar("pellet_jar_mix", PELLET["mix"], "felt_red", 1)
 pellet_jar("pellet_jar_red", PELLET["red"], "felt_ivory", 2)
 pellet_jar("pellet_jar_green", PELLET["green"], "felt_mustard", 3)
@@ -498,6 +597,9 @@ pellet_tray("pellet_tray")
 
 if A.export:
     K.export_all(A.export, A.only.split(",") if A.only else None)
+elif A.icons:   # 雪だるまの店の画面で、調理の道を見せるアイコン（game/props/kitchen/icons/。名前は main.gd の KITCHEN）
+    K.render_icons(A.icons, ["giant_heat_press", "giant_press_board", "giant_dryer", "giant_vapor"], size=192, elev=20.0, az=-20.0,
+                   rename={"giant_heat_press": "press", "giant_press_board": "iron", "giant_dryer": "dryer", "giant_vapor": "drink"})
 else:
     R = {r.name: r for r, p in K.made}
     T = 0.47
@@ -508,7 +610,9 @@ else:
              "press_board_cool": (-1.0, 1.0, 0), "heat_press_mustard": (-0.55, 1.0, 0),
              "pellet_jar_red": (-0.2, 1.0, 0), "pellet_jar_green": (-0.08, 1.0, 0), "pellet_jar_yellow": (0.04, 1.0, 0),
              "pellet_sack_mix": (0.35, 1.0, 0), "pellet_sack_green": (0.6, 1.0, 0), "pellet_sack_brown": (0.85, 1.0, 0)}
-    place.update({"giant_press_board": (4.2, 0.55, 0), "giant_heat_press": (6.3, 0.45, 0), "giant_dryer": (8.4, 0.5, 0)})
+    place.update({"giant_press_board": (4.2, 0.55, 0), "giant_heat_press": (6.3, 0.45, 0), "giant_dryer": (8.4, 0.5, 0),
+                  "giant_vapor": (10.3, 0.5, 0)})
+    R["giant_vapor_lid"].location = (10.3 + STEAM["tx"], 0.5 + STEAM["ty"] - STEAM["tr"], STEAM["tz1"] + 0.01)
     for n, (x, y, z) in place.items():
         R[n].location = (x, y, z)
     R["giant_press_board"].rotation_euler = (0, 0, math.radians(90))
@@ -529,5 +633,6 @@ else:
         "giant": ((6.4, 6.4, 2.0), (6.3, 0.5, 0.6), 26),
         "giant_press": ((3.0, 2.6, 1.4), (4.2, 0.5, 0.5), 30),
         "giant_dryer": ((7.4, 3.4, 1.3), (8.4, 0.5, 0.85), 30),
+        "giant_vapor": ((10.9, 3.6, 1.4), (10.3, 0.5, 0.9), 30),
     }
     K.render_views(A, cams)

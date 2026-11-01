@@ -40,6 +40,7 @@ const KINDS := {
 	"nn": {"frames": 14, "root": false},          # 声「ンーン」いやいや
 	"huh": {"frames": 16, "root": false},         # 声「ウン？」首をかしげる
 	"oi": {"frames": 18, "root": false},          # 声「おーーーい」遠くの人を呼ぶ（空いた手を口に当てる）
+	"eat": {"frames": 16, "root": false},         # 手の料理をひと口（右手を口へ運び、もぐもぐ。ev.last で最後のひと口: ほっと息）
 }
 const VOICES := ["wa", "un", "nn", "huh", "oi"]
 const HANDS := Palm.HANDS
@@ -169,6 +170,12 @@ func _apply(ev: Dictionary) -> void:
 			if balls_of(ev.who) <= 0:
 				return   # 投げる雪玉がない
 			_set_balls(ev.who, balls_of(ev.who) - 1)
+		"spend":   # 雪だるまの店で、雪玉で払う（craft.gd の food_buy が呼ぶ。足りなければ払わない。通信ではホストの craft が呼ぶ）
+			if balls_of(ev.who) < int(ev.n):
+				ev["ok"] = false
+				return
+			_set_balls(ev.who, balls_of(ev.who) - int(ev.n))
+			ev["ok"] = true
 	if ev.kind == "point":   # 指さしの向き（持ち主の画面で、向きが変わったときだけ間引いて送られる）
 		if ev.get("dir", Vector3.ZERO) == Vector3.ZERO:
 			aims.erase(ev.who)

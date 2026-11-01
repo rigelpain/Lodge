@@ -27,9 +27,21 @@ extends Node
 ##   profile   {name, color}   自分の名前と、キャラの色（COLORS の番号）を決める（装備の画面）。HUD の札で、人の形の色と頭の上の名前になる
 ##   doll      {doll}          自分の人形（doll.gd の KINDS のどれか）を替える（2 階の衣装掛け）。みんなの画面で、その人の人形が作り直される。
 ##                             入った時にも今の人形で 1 度送る（通信では、あとから来た人もこれでほかの人の人形を知る）
+##   dye       {doll, colors}  2 階の染め桶で、人形 doll の服の布を染める。colors は布ごとの色（"rrggbb"。"" はもとの色。outfit.gd の CLOTH の順）。
+##                             色は自由に選べ、色ではなく染め代（DYE_PRICE）を 1 回ごとに払う（2026-11-01 代表「全部買う、染色桶をつくって、
+##                             色に払うんじゃなくて染色代として払う」）。染めた色は人形ごとに残る（ほかの人形に着替えて戻っても同じ色）
+##   outfit    {doll, colors}  保存してある染めた色を戻す（起動したとき。値はここでは取らない）
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
 ##                             ランタンは index -1 で外す（外すと消える）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
+##   pal_buy   {key}           2 階の衣装掛けの横の売り台で、頭・肩の小物かミニオン（pals.gd）を買う。買ったらすぐ身につける（ev に slot が入る）
+##   pal_own   {key}           持っている小物・ミニオンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
+##   pal_wear  {slot, key}     頭（head）・肩（shoulder）・連れ（pet）に、持っている物を付ける。key が "" なら外す。
+##                             みんなの画面で、その人の小物とミニオンが替わる（companions.gd）
+##   food_buy  {item}          雪だるまの店でペレットを買う（item は food.gd の {kind:"food", dish, step:0}）。雪玉で払う（emotes.gd の spend）
+##   cook      {slot, station} 手のペレット（料理の途中）を厨房の装置に入れる。持ち物から出て、装置が持つ（cook_station.gd）
+##   bite      {slot}          手の料理をひと口食べる（3 口でなくなる。ev.ate に料理の名前が入る。warmth.gd がぬくもりを足す）
+##   cooked    {item, station} 装置が仕上げた物（一段進んだ item）を、入れた人の持ち物に戻して手に持たせる。いっぱいなら断る（装置に残る）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
@@ -43,6 +55,8 @@ signal happened(ev: Dictionary)
 const Doll := preload("res://doll.gd")
 const Sled := preload("res://sled.gd")
 const Fabrics := preload("res://fabrics.gd")
+const Pals := preload("res://pals.gd")
+const Food := preload("res://food.gd")
 
 ## お金はボタン（snow_buttons.gd）。最初に START_BUTTONS 個（木の何個分）持たせる。米袋の型紙と布はすぐ買えるが、小はまだ（少し滑って稼いでから）
 const START_BUTTONS := 30
@@ -53,6 +67,8 @@ const MONEY := [[1000, "raden"], [100, "pearl"], [10, "brass"], [1, "wood"]]
 ## 最初の小は、米袋で漕いで丘を 3 分ほど、大は、中に 3 人で大きな山を 6 分半・小ひとりで 11 分・米袋ひとりで 20〜50 分ほど（design/snow-buttons の表）
 const PATTERN_PRICE := {"sack": 20, "small": 100, "mid": 400, "large": 1500}
 const FABRIC_PRICE := 10
+## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
+const DYE_PRICE := 15
 const PATTERNS := ["sack", "small", "mid", "large"]
 ## ロッジの中から外へ運び出せないソリ（tools/carry_out_check.gd で確かめた。大は西の通路の家具と壁に当たる）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
@@ -76,12 +92,15 @@ var loose_tags := {}           # 人の番号 → 帯の名札入れの、外し
 var names := {}                # 人の番号 → 名前（装備の画面で決める。HUD の札で頭の上に出す）
 var colors := {}               # 人の番号 → キャラの色（COLORS の番号）
 var dolls := {}                # 人の番号 → 人形（doll.gd の KINDS。衣装掛けで替える）
+var outfits := {}              # 人の番号 → {人形: 布ごとの色 ["rrggbb" か ""]}（染め桶で染めた服の色。染めていない人形は書かない）
 var sack_sel := {}             # 人の番号 → 装備している米袋の番号（N でこれが出る）
 var sack_out := {}             # 人の番号 → いま出している米袋（ソリ）
 var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
 var lanterns := {}             # 人の番号 → 持っているランタンの配列 [{look}]（0 番は標準）
 var lantern_sel := {}          # 人の番号 → 提げているランタンの番号（-1 は外している）
 var lamps := {}                # 人の番号 → ランタンが点いているか
+var pals_owned := {}           # 人の番号 → 持っている頭・肩の小物とミニオンの名前の配列（pals.gd）
+var pals_wear := {}            # 人の番号 → {head, shoulder, pet} 身につけている物の名前（"" は付けていない）
 ## キャラの色（装備の画面で選ぶ。はじめは人の番号の順に、赤・藍・からし…）。フェルトの色で、名札の窓の生成りの上で見分けられる濃さ
 const COLORS := [Color(0.80, 0.24, 0.20), Color(0.24, 0.32, 0.55), Color(0.88, 0.66, 0.20), Color(0.25, 0.52, 0.34),
 	Color(0.55, 0.30, 0.58), Color(0.92, 0.50, 0.22), Color(0.22, 0.58, 0.66), Color(0.84, 0.40, 0.56),
@@ -110,6 +129,8 @@ func join(who: int) -> void:
 	lanterns[who] = [{"look": "box"}, {"look": "paper"}]
 	lantern_sel[who] = 0
 	lamps[who] = false
+	pals_owned[who] = Pals.START.duplicate()
+	pals_wear[who] = Pals.START_WEAR.duplicate()
 
 
 ## 名札の部品 part の i 番を使えるか（最初から使える部品か、手に入れた部品）
@@ -134,6 +155,16 @@ func gear_index(who: int, gear: String) -> int:
 	return -1
 
 
+## その人がその小物・ミニオンを持っているか
+func pal_owned(who: int, key: String) -> bool:
+	return key in pals_owned.get(who, [])
+
+
+## その人が slot（head・shoulder・pet）に付けている物の名前（"" は付けていない）
+func pal_worn(who: int, slot: String) -> String:
+	return String(pals_wear.get(who, {}).get(slot, ""))
+
+
 ## その人のキャラの色と名前（知らない人は灰色・名前なし）
 func color_of(who: int) -> Color:
 	return COLORS[posmod(int(colors[who]), COLORS.size())] if colors.has(who) else Color(0.55, 0.55, 0.58)
@@ -141,6 +172,25 @@ func color_of(who: int) -> Color:
 
 func doll_of(who: int) -> String:
 	return String(dolls.get(who, ""))
+
+
+## その人の人形 kind の服の色（布ごとの Color か null。染めていなければ空）。doll.gd の outfit に入れる形
+func outfit_of(who: int, kind: String) -> Array:
+	var out := []
+	for h in outfits.get(who, {}).get(kind, []):
+		out.append(Color(h) if String(h) != "" else null)
+	return out
+
+
+## 布ごとの色の並びを、通信に乗せる形（"rrggbb" か ""。布の数にそろえる）にする。色でない物は ""
+static func dye_colors(kind: String, cols: Array) -> Array:
+	var out := []
+	for i in preload("res://outfit.gd").cloth_count(kind):
+		var c = cols[i] if i < cols.size() else null
+		if c is String and String(c).is_valid_html_color():
+			c = Color(c)
+		out.append((c as Color).to_html(false) if c is Color else "")
+	return out
 
 
 func name_of(who: int) -> String:
@@ -228,14 +278,17 @@ static func price(item: Dictionary) -> int:
 
 ## 出来事を出す。持ち主が呼ぶ（一人ならすぐ配る。通信ではホストへ送り、ホストが確かめてから全員に配る）。断られたら false。
 ## つなぐ側では断られたかがすぐには分からないので true を返し、結果は配られた出来事で知る（断られたら何も起きない）。
-## ミシンが縫い上げる・ボタンが入る・米袋がひとりでに帯に戻るは、ホストの画面が決める（つなぐ側の画面では送らない）
-const HOST_ONLY := ["sewn", "earn"]
+## ミシンが縫い上げる・ボタンが入る・調理の装置が仕上げる・米袋がひとりでに帯に戻るは、ホストの画面が決める
+## （つなぐ側の画面では送らない。見た目は続けてよいので true を返し、本物はホストから届く）
+const HOST_ONLY := ["sewn", "earn", "cooked"]
 
 func send(ev: Dictionary) -> bool:
 	ev["frame"] = Doll.frame_index() + 1
 	var net := _net()
 	if net and net.online and not net.is_host():
-		if ev.kind in HOST_ONLY or ev.get("auto", false):
+		if ev.kind in HOST_ONLY:
+			return true
+		if ev.get("auto", false):
 			return false
 		net.up("craft", ev)
 		return true
@@ -309,6 +362,43 @@ func _apply(ev: Dictionary) -> bool:
 			ev["slot"] = hands[who]
 		"hand":
 			hands[who] = clampi(int(ev.slot), -1, bags[who].size() - 1)
+		"food_buy":
+			var dish: String = ev.item.get("dish", "")
+			if not Food.MENU.has(dish) or bags[who].size() >= SLOTS or world == null or world.get("emotes") == null:
+				return false
+			if not replay:   # つなぐ側がなぞるときは、ホストがもう雪玉で払っている（数はホストから届く）
+				var pay := {"kind": "spend", "who": who, "n": Food.price(dish)}
+				world.emotes.send(pay)
+				if not pay.get("ok", false):
+					return false
+			bags[who].append(Food.item(dish))
+			hands[who] = bags[who].size() - 1   # 買ったペレットを手に持つ
+			ev["slot"] = hands[who]
+		"cook":
+			var b: Array = bags[who]
+			var i := int(ev.slot)
+			if i < 0 or i >= b.size() or Food.next_station(b[i]) != ev.station:
+				return false
+			ev["item"] = b[i].duplicate()
+			b.remove_at(i)
+			hands[who] = -1
+		"bite":
+			var b: Array = bags[who]
+			var i := int(ev.slot)
+			if i < 0 or i >= b.size() or not Food.done(b[i]):
+				return false
+			b[i]["bites"] = int(b[i].get("bites", 0)) + 1
+			ev["dish"] = b[i].dish
+			if int(b[i].bites) >= Food.BITES:
+				ev["ate"] = b[i].dish
+				b.remove_at(i)
+				hands[who] = -1
+		"cooked":
+			if bags[who].size() >= SLOTS:
+				return false
+			bags[who].append(ev.item)
+			hands[who] = bags[who].size() - 1
+			ev["slot"] = hands[who]
 		"sew":
 			# 型紙と布は両方そろって初めて使う（片方だけ消えることはない）
 			var b: Array = bags[who]
@@ -472,10 +562,48 @@ func _apply(ev: Dictionary) -> bool:
 					lantern_sel[who] = i
 					if i < 0:
 						lamps[who] = false
+		"pal_buy":
+			var key := String(ev.get("key", ""))
+			var cost := Pals.price(key)
+			if cost < 0 or pal_owned(who, key) or wallets[who] < cost:
+				return false
+			wallets[who] -= cost
+			pals_owned[who].append(key)
+			ev["slot"] = Pals.slot_of(key)
+			pals_wear[who][ev.slot] = key   # 買ったらすぐ身につける
+		"pal_own":
+			var key := String(ev.get("key", ""))
+			if Pals.price(key) < 0:
+				return false
+			if not pal_owned(who, key):
+				pals_owned[who].append(key)
+		"pal_wear":
+			var slot := String(ev.get("slot", ""))
+			var key := String(ev.get("key", ""))
+			if not slot in Pals.SLOTS or key != "" and (not pal_owned(who, key) or Pals.slot_of(key) != slot):
+				return false
+			pals_wear[who][slot] = key
 		"doll":
 			if not String(ev.get("doll", "")) in Doll.KINDS:
 				return false
 			dolls[who] = String(ev.doll)
+		"dye", "outfit":
+			var k := String(ev.get("doll", ""))
+			if not k in Doll.KINDS:
+				return false
+			var cols := dye_colors(k, ev.get("colors", []))
+			var mine: Dictionary = outfits.get(who, {})
+			var old: Array = mine.get(k, dye_colors(k, []))
+			if ev.kind == "dye":
+				if cols == old or wallets[who] < DYE_PRICE:   # 同じ色のままなら染めない（染め代も取らない）
+					return false
+				wallets[who] -= DYE_PRICE
+			ev["colors"] = cols
+			if cols == dye_colors(k, []):
+				mine.erase(k)
+			else:
+				mine[k] = cols
+			outfits[who] = mine
 		"lamp":
 			if lantern(who).is_empty():
 				return false

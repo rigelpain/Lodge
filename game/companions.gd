@@ -1,152 +1,268 @@
 extends Node3D
 
-## 連れの動物: 頭に止まる千代紙の小鳥と、うしろをついて歩く折り紙の子狐（案。person/ideas/costume/）。
-## 形は person/ideas/costume/costume_rough.py で作った glb（--look export）。色は look.gd の紙と和柄に置き換える。
-## どちらも、持ち主が指している所（doll.point）を見る。指していなければ、小鳥は持ち主の見ている先を、子狐は持ち主の顔を見る。
-## 居場所（子狐の位置と体の向き）は毎フレームなめらか。姿勢（頭・しっぽ・跳ねる・小鳥の向き）は人形と同じ 12 コマ／秒の時計で刻む。
-## 見た目だけ。通信には乗せない。
+## 連れ: 持ち主（player.gd か bot.gd）の頭と肩に載せる小物と、うしろをついて歩くミニオン（品書きは pals.gd、形は game/pals/ の glb）。
+## 何を付けるかは craft.gd の pals_wear（出来事 pal_buy・pal_wear）。通信ではほかの人の画面でも同じ物が付く。
+##
+## 頭・肩の小物: 人形の骨（頭は head、肩は chest）に付け、人形ごとの載せる所（pals.gd の HEAD・SHOULDER）に置く。
+##   大きさはどの人形でも同じ（人形の倍率を打ち消す）。生き物は、持ち主が指している所（doll.point）を、指していなければ
+##   持ち主の見ている先を向き、ときどき首をかしげ、羽をつくろう。ハチドリは肩の上に浮いて羽ばたく。物（どんぐり・かぼちゃ・紅葉）は
+##   持ち主の動きに少し遅れて揺れる。層は人形と同じ（一人称には映さず、右上の 360° の映像・三人称・HUD の自分の顔に出る）
+##
+## ミニオン: 姿は 3 つ（walk 歩く・sit 座って待つ・sleep 丸まって寝る）を置き換える（コマ撮りの置き換え人形）。
+##   持ち主の右の少しうしろをついて歩き、止まると座り（SIT_T）、しばらくすると寝る（SLEEP_T）。座っているあいだは、指している所か
+##   持ち主の顔を見上げる。持ち主がソリに乗ると、ソリの横を走ってついて滑る（速いと遅れ、離れすぎると追いつく。代表 2026-11-01）。
+##   ロッジの中では暖炉の前（炉の長椅子の前の床）へ行って寝て待ち、持ち主が外へ出ると起きて、うしろから駆けてくる（代表 2026-11-01）。
+##   層は誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す
+##
+## 居場所（ミニオンの位置と向き）は毎フレームなめらか。姿勢（首・羽・脚・しっぽ・跳ねる）は人形と同じ 12 コマ／秒の時計で刻む。
 
-const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
-const BIRD := preload("res://companions/bird.glb")
-const KIT := preload("res://companions/kit.glb")
+const Pals := preload("res://pals.gd")
+const Audio := preload("res://audio.gd")
 
-## 人形ごとの、頭のいちばん上（glb の座標、人形の大きさのまま）。小鳥が止まる所。
-## kasa は笠の先、origami は頭巾の上、news は頭巾の前寄りの上。robo は箱の頭の上、musha は兜の鉢、ningyo は髪の上、golem は小さな頭の雪の上
-const PERCH := {"kasa": Vector3(0, 1.372, 0.0), "origami": Vector3(0, 1.49, 0.0), "news": Vector3(0, 0.955, -0.04),
-	"robo": Vector3(0, 0.79, 0.03), "musha": Vector3(0, 0.745, 0.02), "ningyo": Vector3(0, 0.89, 0.02), "golem": Vector3(0, 1.235, -0.12)}
-## 子狐の立ち位置（持ち主の座標。右の少しうしろ）
-const HEEL := Vector3(0.75, 0.0, 0.2)
-const KIT_SCALE := 1.4       # glb の大きさ（座って 0.4 m）からの倍率
-const HEAD_YAW := 1.2        # 子狐の首が回る限り（これより横は体ごと向く）
-## ソリでの子狐の座る所（持ち主の席から、ソリの座標）。膝の少し前の座面で、一人称の目の前をふさがないよう右へ寄る
-const LAP := Vector3(0.2, -0.02, -0.34)
+const HEEL := Vector3(0.75, 0.0, 0.25)   # ミニオンの立ち位置（持ち主の座標。右の少しうしろ）
+const HEAD_YAW := 1.2        # ミニオンの首が回る限り（これより横は体ごと向く）
+const SIT_T := 0.45          # 止まってから座るまで (s)
+const SLEEP_T := 25.0        # 座ってから寝るまで (s)
+const HEARTH_SLEEP_T := 2.0  # 暖炉の前に着いてから寝るまで (s)
+const RUN_MAX := 15.0        # ソリについて走る速さの上限 (m/s)。これより速いソリには遅れる
+const RIDE_SIDE := 1.7       # ソリの横の、走る所（ソリの中心から右へ, m）
+const CATCH_UP := 32.0       # これより離れたら、追いつく（持ち主のうしろへ跳ぶ）
+const HOVER := 0.07          # ハチドリが肩の上に浮く高さ (m)
 
-var host: Node3D             # 持ち主（player.gd か bot.gd。doll を持つ）
-var bird_on := true
-var kit_on := true
+var host: Node3D             # 持ち主（player.gd か bot.gd。doll と id を持つ）
+var craft: Node
 
 var _doll: Doll
-var _bird: Node3D
-var _bird_head: Node3D
-var _bird_yaw := 0.0         # 小鳥の向き（世界、コマで決める）
-var _perch := Vector3.ZERO   # 止まる所（頭の骨の座標）
-var _bird_hop := 0
-var _kit: Node3D
-var _kit_head: Node3D
-var _kit_tail: Node3D
-var _kit_yaw := 0.0
-var _kit_vel := Vector3.ZERO
-var _kit_phase := 0.0
-var _kit_hop := 0.0
-var _kit_on_sled := Vector3.INF   # 乗っているあいだの子狐の所（ソリの座標）。ソリと一緒に動き、傾く
-var _kit_ride_yaw := 0.0          # 乗っているあいだの、ソリに対しての向き
-var _was_pointing := false
+var _who := -1
+var _perch := {}             # slot → {key, node, att, local, corr, parts, move, rest, yaw, …}
+var _pet := {}               # {key, node, poses, parts, rest, gait, …}。付けていなければ空
 var _frame := -1
 var _rng := RandomNumberGenerator.new()
+var _was_pointing := false
+var _hop := 0                # 指さしが入ったとき、頭・肩の生き物がぴょんと跳ねる残りのコマ
+var _last_pos := Vector3.ZERO   # 持ち主の前のコマの所（世界）。物の揺れに
+var _sway := Vector2.ZERO    # 物の揺れ（x 前後、y 左右, rad）
+var _sway_v := Vector3.ZERO  # 持ち主の速さ（世界。前のコマ）
+
+# ミニオンの居場所
+var _pos := Vector3.ZERO
+var _vel := Vector3.ZERO
+var _yaw := 0.0
+var _phase := 0.0            # 歩く・跳ねる・転がるの進み
+var _still := 0.0            # 止まっている秒
+var _pose := "sit"
+var _want_pose := "sit"
+var _in_lodge := false       # 持ち主がロッジの中にいる（前のフレーム）
+var _hearth := Vector3.INF   # 暖炉の前の寝る所（世界）
+var _lodge: Node3D
+var _riding := false
 
 
 func _ready() -> void:
+	name = "Pals%d" % int(host.get("id"))
+	_who = int(host.get("id"))
+	if craft == null:
+		craft = host.get_parent().get_node_or_null("Craft")
+	if craft:
+		craft.happened.connect(_on_craft)
+	_lodge = host.get_parent().get_node_or_null("Lodge")
 	_doll = host.get("doll")
-	if bird_on:
-		_make_bird()
-	if kit_on:
-		_make_kit()
+	_rng.seed = hash(_who)
+	_refresh()
 
 
-static func _paint(root: Node) -> void:
-	var mats := {
-		"chiyo": Look.wagara("seigaiha", Color("B8473A"), Color("E8A07A"), 26.0),
-		"white": Look.paper(Color("F4F0E8")),
-		"beak": Look.paper(Color("D9A42C")),
-		"ink": Look.paper(Color("1E1A18")),
-		"orange": Look.paper(Color("D27330")),
-		"cream": Look.paper(Color("F2EBDD")),
-		"dark": Look.paper(Color("4A3326")),
-	}
-	for mi in root.find_children("*", "MeshInstance3D", true, false):
-		var m := mi as MeshInstance3D
-		for i in m.mesh.get_surface_count():
-			var src := m.mesh.surface_get_material(i)
-			var key := src.resource_name if src else ""
-			for k in mats:
-				if key.begins_with(k):
-					m.set_surface_override_material(i, mats[k])
+func _worn(slot: String) -> String:
+	if craft == null:
+		return Pals.START_WEAR[slot]
+	return craft.pal_worn(_who, slot)
 
 
-static func _layers(root: Node, layers: int) -> void:
-	for mi in root.find_children("*", "MeshInstance3D", true, false):
-		(mi as MeshInstance3D).layers = layers
+## 付けている物を craft から読み直す（替わった所だけ作り直す）
+func _refresh() -> void:
+	for slot in ["head", "shoulder"]:
+		var k := _worn(slot)
+		if String(_perch.get(slot, {}).get("key", "")) != k:
+			_make_perch(slot, k)
+	var pk := _worn("pet")
+	if String(_pet.get("key", "")) != pk:
+		_make_pet(pk)
 
 
-# ---------------------------------------------------------------- 小鳥
+func _on_craft(ev: Dictionary) -> void:
+	if int(ev.get("who", -1)) == _who and String(ev.kind) in ["pal_buy", "pal_wear", "pal_own"]:
+		_refresh()
 
-func _make_bird() -> void:
+
+# ---------------------------------------------------------------- 頭・肩の小物
+
+func _make_perch(slot: String, key: String) -> void:
+	var old: Dictionary = _perch.get(slot, {})
+	if old.has("att") and is_instance_valid(old.att):
+		(old.att as Node).queue_free()
+	_perch.erase(slot)
+	if key == "" or _doll == null or not is_instance_valid(_doll) or not Pals.PERCH.has(key):
+		return
 	var skel := _doll.skel
-	var hi := skel.find_bone("head")
-	if hi < 0:
+	var bone := "head" if slot == "head" else String(Pals.SHOULDER_BONE.get(_doll.kind, "chest"))
+	var bi := skel.find_bone(bone)
+	if bi < 0:
 		return
 	var att := BoneAttachment3D.new()
-	att.bone_name = "head"
+	att.bone_name = bone
 	skel.add_child(att)
-	_bird = BIRD.instantiate()
-	_paint(_bird)
-	_layers(_bird, _doll.layers)   # あなたの体と同じ層（一人称には映さず、右上の映像と三人称に出る）
-	att.add_child(_bird)
-	# 止まる所（glb の座標）を、付け根の姿勢の頭の骨から見た所に直す（頭と一緒に動く）。
-	# glb の根と骨の空間のあいだに変換が入っていてもよいように、世界の座標を通して直す
+	var node: Node3D = Pals.scene(key).instantiate()
+	Pals.paint(node, _doll.layers)   # あなたの体と同じ層（一人称には映さない）
+	att.add_child(node)
+	node.top_level = true
+	# 載せる所（glb の座標）を、付け根の姿勢の骨から見た所に直す（骨と一緒に動く）。向きも、付け根の姿勢でまっすぐ立つように直す
 	var inst := _doll.get_child(0) as Node3D
-	var perch_world := inst.global_transform * (PERCH.get(_doll.kind, PERCH["kasa"]) as Vector3)
-	var bone_world := skel.global_transform * skel.get_bone_global_rest(hi)
-	_perch = bone_world.affine_inverse() * perch_world
-	_bird.position = _perch
-	_bird_head = _bird.find_child("head", true, false)
-	_bird_yaw = _doll.global_rotation.y
+	var pts: Dictionary = Pals.HEAD if slot == "head" else Pals.SHOULDER
+	var at_world := inst.global_transform * (pts.get(_doll.kind, pts["kasa"]) as Vector3)
+	var bone_world := skel.global_transform * skel.get_bone_global_rest(bi)
+	var parts := {}
+	var rest := {}
+	for c in node.get_children():
+		if c is Node3D:
+			parts[Pals.part_name(c)] = c
+			rest[Pals.part_name(c)] = (c as Node3D).transform
+	_perch[slot] = {
+		"key": key, "node": node, "att": att,
+		"local": bone_world.affine_inverse() * at_world,
+		"corr": bone_world.basis.orthonormalized().inverse() * inst.global_basis.orthonormalized(),
+		"parts": parts, "rest": rest, "move": String(Pals.PERCH[key].move),
+		"yaw": 0.0, "preen": -100, "flap": 0.0,
+	}
+	_place_perch(_perch[slot])
 
 
-## 小鳥が見る所: 指していればそこ、でなければ持ち主の見ている先（なければ前）
-func _bird_target() -> Vector3:
+## 生き物が見る所: 指していればそこ、でなければ持ち主の見ている先（なければ前）
+func _perch_target(p: Dictionary) -> Vector3:
 	if _doll.point != Vector3.INF:
 		return _doll.point
 	if _doll.gaze != Vector3.INF:
 		return _doll.gaze
-	return _bird.global_position - _doll.global_basis.z * 5.0
+	return (p.node as Node3D).global_position - _doll.global_basis.z * 5.0
 
 
-func _pose_bird() -> void:
-	var tgt := _bird_target()
-	var d := tgt - _bird.global_position
-	_bird_yaw = atan2(-d.x, -d.z)
+func _base(p: Dictionary) -> Transform3D:
+	var att: Node3D = p.att
+	var b: Basis = att.global_basis.orthonormalized() * (p.corr as Basis)
+	return Transform3D(b, att.global_transform * (p.local as Vector3))
+
+
+## 毎フレーム: 骨の動きについていく（向きは 12 コマで決めた値）
+func _place_perch(p: Dictionary) -> void:
+	var t := _base(p)
+	var up := 0.0
+	if p.move == "hover":
+		up = HOVER + 0.012 * sin(_frame * 0.7)
+	elif _hop in [3, 2] and p.move != "thing":
+		up = 0.03
+	var b := t.basis * Basis(Vector3.UP, float(p.yaw))
+	if p.move == "thing":
+		b = b * Basis(Vector3.RIGHT, _sway.x) * Basis(Vector3.BACK, _sway.y)
+	(p.node as Node3D).global_transform = Transform3D(b, t.origin + t.basis.y * up)
+
+
+## 12 コマ: 首・羽・しっぽ
+func _pose_perch(p: Dictionary) -> void:
+	var parts: Dictionary = p.parts
+	var t := _base(p)
+	var d := t.basis.inverse() * (_perch_target(p) - t.origin)
+	var want := atan2(-d.x, -d.z)
 	var pitch := atan2(d.y, Vector2(d.x, d.z).length())
+	var mv: String = p.move
+	match mv:
+		"thing":
+			return
+		"chameleon":   # ゆっくり見回す
+			p.yaw = lerp_angle(float(p.yaw), clampf(want, -1.2, 1.2), 0.12)
+		"rabbit":
+			p.yaw = lerp_angle(float(p.yaw), clampf(want, -1.6, 1.6), 0.5)
+		_:
+			p.yaw = clampf(want, -2.4, 2.4)
+	var head: Node3D = parts.get("head")
 	var tilt := 0.0
 	if _doll.point == Vector3.INF and _frame % 17 < 3:
 		tilt = 0.35 * (1.0 if (_frame / 17) % 2 == 0 else -1.0)   # ときどき首をかしげる
-	if _bird_head:
-		_bird_head.rotation = Vector3(clampf(pitch, -0.8, 0.9), 0.0, tilt)
-	if _bird_hop > 0:
-		_bird_hop -= 1
+	# 羽をつくろう（鳥。指していないとき、ときどき 8 コマ）
+	if mv in ["bird", "crane"] and _doll.point == Vector3.INF and _frame - int(p.preen) > 70 and _rng.randf() < 0.03:
+		p.preen = _frame
+	var preen := _frame - int(p.preen) < 8
+	if head:
+		var hr := Vector3(clampf(pitch, -0.8, 0.9) if mv != "rabbit" else 0.0, 0.0, tilt)
+		if preen:
+			var side := 1.0 if (int(p.preen) / 7) % 2 == 0 else -1.0
+			hr = Vector3(-0.5, side * (1.3 + 0.15 * (_frame % 2)), 0.2 * side)
+		if mv == "rabbit":
+			hr = Vector3(0, 0, tilt * 0.5)
+		head.rotation = hr
+	# 羽: 指さしが入った・持ち主が跳んだ・速いときに広げてばたつく。ハチドリはいつも羽ばたく。鶴はゆっくり上下
+	var flap := 0.0
+	if mv == "hover":
+		flap = 0.9 if _frame % 2 == 0 else -0.5
+	elif mv == "crane":
+		flap = 0.18 * sin(_frame * 0.35)
+	elif _hop > 0 or _doll.airborne or _sway_v.length() > 6.0:
+		flap = 0.8 if _frame % 2 == 0 else 0.3
+	elif preen:
+		flap = 0.25
+	for side in [["wing_l", 1.0], ["wing_r", -1.0]]:
+		var w: Node3D = parts.get(side[0])
+		if w:
+			w.rotation = Vector3(0, 0, flap * float(side[1]))
+	var tail: Node3D = parts.get("tail")
+	if tail:
+		match mv:
+			"squirrel":
+				tail.rotation = Vector3(0.15 * sin(_frame * 0.4), 0.45 * sin(_frame * 0.27), 0)
+			"chameleon":
+				tail.rotation = Vector3(0.35 * (0.5 + 0.5 * sin(_frame * 0.08)), 0, 0)
+			_:
+				tail.rotation = Vector3(0.1 * sin(_frame * 0.5), 0, 0)
 
 
-func _place_bird() -> void:
-	var s: float = (_bird.get_parent() as Node3D).global_basis.get_scale().x
-	var up := 0.035 * s if _bird_hop in [3, 2] else 0.0
-	var at: Vector3 = (_bird.get_parent() as Node3D).global_transform * _perch
-	_bird.global_transform = Transform3D(Basis(Vector3.UP, _bird_yaw).scaled(Vector3.ONE * s), at + Vector3.UP * up)
+# ---------------------------------------------------------------- ミニオン
+
+func _make_pet(key: String) -> void:
+	if _pet.has("node") and is_instance_valid(_pet.node):
+		(_pet.node as Node).queue_free()
+	_pet = {}
+	if key == "" or not Pals.PET.has(key):
+		return
+	var node: Node3D = Pals.scene(key).instantiate()
+	Pals.paint(node, 1 | (1 << 5))   # 誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す
+	add_child(node)
+	node.top_level = true
+	var poses := {}
+	var parts := {}
+	var rest := {}
+	for c in node.get_children():
+		var pose := Pals.part_name(c)
+		if not pose in ["walk", "sit", "sleep"]:
+			continue
+		poses[pose] = c
+		parts[pose] = {}
+		rest[pose] = {}
+		for pc in c.get_children():
+			parts[pose][Pals.part_name(pc)] = pc
+			rest[pose][Pals.part_name(pc)] = (pc as Node3D).transform
+	_pet = {"key": key, "node": node, "poses": poses, "parts": parts, "rest": rest, "spec": Pals.PET[key]}
+	if _doll and is_instance_valid(_doll):
+		_pos = _heel()
+		_yaw = _doll.global_rotation.y
+	_vel = Vector3.ZERO
+	_still = SIT_T
+	_pose = "sit"
+	_want_pose = "sit"
+	_show_pose()
+	node.global_transform = Transform3D(Basis(Vector3.UP, _yaw), _pos)
 
 
-# ---------------------------------------------------------------- 子狐
-
-func _make_kit() -> void:
-	_kit = KIT.instantiate()
-	_paint(_kit)
-	add_child(_kit)
-	_kit.top_level = true
-	_kit.scale = Vector3.ONE * KIT_SCALE
-	_layers(_kit, 1 | (1 << 5))   # 誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す
-	_kit_head = _kit.find_child("head", true, false)
-	_kit_tail = _kit.find_child("tail", true, false)
-	_kit.global_position = _heel()
-	_kit_yaw = _doll.global_rotation.y
+func _show_pose() -> void:
+	for k in _pet.poses:
+		(_pet.poses[k] as Node3D).visible = k == _pose
 
 
 func _heel() -> Vector3:
@@ -155,7 +271,7 @@ func _heel() -> Vector3:
 
 
 func _ground(p: Vector3) -> float:
-	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 2.0, p + Vector3.DOWN * 6.0)
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 1.5, p + Vector3.DOWN * 6.0)
 	var ex: Array[RID] = []
 	if host is CollisionObject3D:
 		ex.append((host as CollisionObject3D).get_rid())
@@ -164,130 +280,225 @@ func _ground(p: Vector3) -> float:
 	return hit.position.y if hit else p.y
 
 
-## 子狐が見る所: 指していればそこ、乗っていれば行く先、でなければ持ち主の顔
-func _kit_target() -> Vector3:
+func _zone(p: Vector3) -> int:
+	if _lodge == null or not is_instance_valid(_lodge):
+		_lodge = host.get_parent().get_node_or_null("Lodge")
+	return Audio.zone_at(_lodge, p)
+
+
+## 暖炉の前の寝る所: 炉の長椅子の前の床（人ごとに違う長椅子）。長椅子がなければ炉の目印の前
+func _hearth_spot() -> Vector3:
+	if _hearth != Vector3.INF:
+		return _hearth
+	var seats = host.get_parent().get_node_or_null("Seats")
+	var benches := []
+	if seats:
+		for s in seats.seats:
+			if s.kind == "bench":
+				benches.append(s)
+	if not benches.is_empty():
+		var s: Dictionary = benches[posmod(_who * 3, benches.size())]
+		var p: Vector3 = s.pos + (s.face as Vector3) * 0.75
+		_hearth = Vector3(p.x, float(s.floor), p.z)
+	elif _lodge:
+		var mark := _lodge.find_child("light_fire", true, false) as Node3D
+		if mark:
+			var away := (_lodge.global_position - mark.global_position)
+			away.y = 0
+			var p := mark.global_position + away.normalized() * 1.8
+			_hearth = Vector3(p.x, _ground(p), p.z)
+	return _hearth
+
+
+## ミニオンが見る所: 指していればそこ、でなければ持ち主の顔
+func _pet_target() -> Vector3:
 	if _doll.point != Vector3.INF:
 		return _doll.point
-	if _riding():
-		return _kit.global_position - _doll.sled.global_basis.z * 5.0 + Vector3.UP * 0.4
-	return _doll.global_position + Vector3.UP * 1.3
+	return _doll.global_position + Vector3.UP * 1.2
 
 
-func _riding() -> bool:
-	return _doll.act == Doll.Act.RIDE and _doll.sled != null
-
-
-func _move_kit(dt: float) -> void:
-	var pos := _kit.global_position
-	if _riding():
-		# ソリでは持ち主の膝の前の座面に座る。所と向きはソリの座標で持つので、ソリが滑っても跳ねても傾いても離れない。
-		# 乗った直後だけ、いまの所から座る所へ跳び移る
-		var sled := _doll.sled
-		var sb := sled.global_basis.orthonormalized()
-		if _kit_on_sled == Vector3.INF:
-			_kit_on_sled = sled.to_local(pos)
-			_kit_ride_yaw = wrapf(_kit_yaw - sb.get_euler().y, -PI, PI)
-		var lap: Vector3 = sled.to_local(_doll.global_position) + LAP
-		_kit_on_sled = _kit_on_sled.lerp(lap, 1.0 - exp(-dt * 12.0))
-		_kit_ride_yaw = lerp_angle(_kit_ride_yaw, 0.0, 1.0 - exp(-dt * 10.0))
-		_kit_vel = Vector3.ZERO
-		_kit.global_transform = Transform3D((sb * Basis(Vector3.UP, _kit_ride_yaw)).scaled(Vector3.ONE * KIT_SCALE), sled.to_global(_kit_on_sled))
-		_kit_yaw = (sb * Basis(Vector3.UP, _kit_ride_yaw)).get_euler().y
-		return
+func _move_pet(dt: float) -> void:
+	var spec: Dictionary = _pet.spec
+	var riding := _doll.act == Doll.Act.RIDE and _doll.sled != null
+	var inside := _zone(_doll.global_position) == 2
+	var want: Vector3
+	var cap: float = spec.speed
+	var settle := false   # 着いたら座ってすぐ寝る所（暖炉の前）
+	if riding:
+		# ソリの横を走る: ソリの右（RIDE_SIDE）の少しうしろ。走る速さには限りがあり、速いソリには遅れる
+		var sb := _doll.sled.global_basis.orthonormalized()
+		var p: Vector3 = _doll.sled.global_position + sb.x * RIDE_SIDE + sb.z * 0.6
+		want = Vector3(p.x, _ground(p), p.z)
+		cap = maxf(cap * 1.6, RUN_MAX)
+	elif inside:
+		want = _hearth_spot()
+		if want == Vector3.INF:
+			want = _heel()
+		settle = true
 	else:
-		_kit_on_sled = Vector3.INF
-		var want := _heel()
-		var d := want - pos
+		want = _heel()
+	# 持ち主が外へ出た: 暖炉の前で寝ていたミニオンは起きて、うしろから駆けてくる（壁を抜けないよう、持ち主のうしろへ出る）
+	if _in_lodge and not inside and _zone(_pos) == 2:
+		var back := _doll.global_position + _doll.global_basis.z * 2.5
+		_pos = Vector3(back.x, _ground(back), back.z)
+		_still = 0.0
+	_in_lodge = inside
+	var d := want - _pos
+	d.y = 0
+	if d.length() > CATCH_UP or d.length() > 12.0 and not riding and not settle:
+		# 離れすぎた（速いソリに置いていかれた・跳んだ）: 持ち主のうしろへ跳んで、追いつく
+		var back := want - (_doll.global_basis.z * -1.0) * 6.0 if not riding else want + _doll.sled.global_basis.z * 8.0
+		_pos = Vector3(back.x, _ground(back), back.z)
+		d = want - _pos
 		d.y = 0
-		if d.length() > 15.0:
-			pos = want
-			d = Vector3.ZERO
-		var speed := clampf((d.length() - 0.25) * 3.0, 0.0, 7.0)
-		_kit_vel = _kit_vel.lerp(d.normalized() * speed if d.length() > 0.01 else Vector3.ZERO, 1.0 - exp(-dt * 6.0))
-		pos += _kit_vel * dt
-		pos.y = lerpf(pos.y, _ground(pos), 1.0 - exp(-dt * 20.0))
-		_kit.global_position = pos
-		_kit_phase += _kit_vel.length() * dt * 5.0
-		var face: float
-		if _kit_vel.length() > 0.4:
-			face = atan2(-_kit_vel.x, -_kit_vel.z)
+	var near := 0.15 if settle else 0.25
+	var speed := clampf((d.length() - near) * 3.0, 0.0, cap)
+	if riding and d.length() > 1.0:
+		speed = cap   # ソリについて全力で走る
+	_vel = _vel.lerp(d.normalized() * speed if d.length() > 0.02 else Vector3.ZERO, 1.0 - exp(-dt * (8.0 if riding else 6.0)))
+	_pos += _vel * dt
+	_pos.y = lerpf(_pos.y, _ground(_pos), 1.0 - exp(-dt * 20.0))
+	var spd := _vel.length()
+	_phase += spd * dt / float(spec.step) * PI
+	var face: float
+	if spd > 0.35:
+		face = atan2(-_vel.x, -_vel.z)
+		_still = 0.0
+	else:
+		_still += dt
+		if settle and d.length() < 0.5 and _lodge:   # 暖炉に体を向けて丸まる
+			var mark := _lodge.find_child("light_fire", true, false) as Node3D
+			var t := (mark.global_position if mark else _pet_target()) - _pos
+			face = atan2(-t.x, -t.z)
 		else:
 			# 止まっているときは見る所へ。首で届かない分だけ体ごと向く
-			var t := _kit_target() - pos
+			var t := _pet_target() - _pos
 			var want_yaw := atan2(-t.x, -t.z)
-			var off := wrapf(want_yaw - _kit_yaw, -PI, PI)
-			face = _kit_yaw + signf(off) * maxf(0.0, absf(off) - HEAD_YAW * 0.8)
-		_kit_yaw = lerp_angle(_kit_yaw, face, 1.0 - exp(-dt * 8.0))
-	_kit.global_basis = Basis(Vector3.UP, _kit_yaw).scaled(Vector3.ONE * KIT_SCALE)
+			var off := wrapf(want_yaw - _yaw, -PI, PI)
+			face = _yaw + signf(off) * maxf(0.0, absf(off) - HEAD_YAW * 0.8)
+	_yaw = lerp_angle(_yaw, face, 1.0 - exp(-dt * 8.0))
+	if spd > 0.35:
+		_want_pose = "walk"
+	elif _still > (HEARTH_SLEEP_T if settle and d.length() < 0.5 else SLEEP_T) or _pose == "sleep" and spd < 0.35:
+		_want_pose = "sleep"
+	elif _still > SIT_T:
+		_want_pose = "sit"
+	_riding = riding
+	(_pet.node as Node3D).global_transform = Transform3D(Basis(Vector3.UP, _yaw), _pos)
 
 
-func _pose_kit() -> void:
-	var t := float(_frame) / Doll.FPS
-	var running := _kit_vel.length() > 0.4
-	# 跳ねて走る（コマごとに高さを決める）。体は少し前へ傾く
-	_kit_hop = 0.06 * absf(sin(_kit_phase)) if running else 0.0
-	if _kit_head:
-		var tgt := _kit_target()
-		var hp := _kit_head.global_position
-		var ld := _kit.global_basis.inverse() * (tgt - hp)
-		var yaw := clampf(atan2(-ld.x, -ld.z), -HEAD_YAW, HEAD_YAW)
-		var pitch := clampf(atan2(ld.y, Vector2(ld.x, ld.z).length()), -0.6, 0.8)
-		if running:
-			yaw = 0.0
-			pitch = -0.1
-		_kit_head.rotation = Vector3(pitch, yaw, 0.0)
-	if _kit_tail:
-		var sway := 0.35 * sin(t * (9.0 if running else 2.4))
-		_kit_tail.rotation = Vector3(0.0, sway, 0.0)
-	var body := _kit.find_child("body", true, false) as Node3D
-	if body:
-		body.position.y = _kit_hop
-		body.rotation.x = -0.15 if running else 0.0
+## 12 コマ: 姿を置き換え、脚・首・しっぽを刻む
+func _pose_pet() -> void:
+	if _want_pose != _pose:
+		_pose = _want_pose
+		_show_pose()
+	var parts: Dictionary = _pet.parts.get(_pose, {})
+	var rest: Dictionary = _pet.rest.get(_pose, {})
+	var gait: String = _pet.spec.gait
+	for k in parts:   # 付け根の姿勢に戻してから
+		(parts[k] as Node3D).transform = rest[k]
+	var body: Node3D = parts.get("body")
+	var head: Node3D = parts.get("head")
+	var tail: Node3D = parts.get("tail")
+	var ph := _phase
+	match _pose:
+		"walk":
+			var big := 1.4 if _riding else 1.0
+			match gait:
+				"trot":   # 対角の脚を一緒に出す。体は歩くたびに少し上下
+					var s := sin(ph) * 0.55 * big
+					for leg in [["leg_fl", 1.0], ["leg_br", 1.0], ["leg_fr", -1.0], ["leg_bl", -1.0]]:
+						var n: Node3D = parts.get(leg[0])
+						if n:
+							n.rotation.x = s * float(leg[1])
+					var bob := 0.018 * absf(cos(ph)) * big
+					for k in ["body", "head", "tail", "leg_fl", "leg_fr", "leg_bl", "leg_br"]:
+						if parts.has(k):
+							(parts[k] as Node3D).position.y += bob
+					if head:
+						head.rotation.x = 0.06 * sin(ph * 2.0)
+					if tail:
+						tail.rotation.y = 0.3 * sin(ph)
+				"hop":   # 跳ねる: 体ごと弧を描き、跳ぶ前にうしろ脚を伸ばす
+					var u := fmod(ph / PI, 1.0)
+					var hgt := 0.12 * sin(u * PI) * big
+					for k in parts:
+						(parts[k] as Node3D).position.y += hgt
+					for leg in ["leg_bl", "leg_br"]:
+						if parts.has(leg):
+							(parts[leg] as Node3D).rotation.x = -0.7 * (1.0 - u) + 0.3
+					for leg in ["leg_fl", "leg_fr"]:
+						if parts.has(leg):
+							(parts[leg] as Node3D).rotation.x = 0.5 * u
+				"roll":   # 毛糸玉が転がる（半径 0.11 m）。ほどけた糸はうしろへ流れる
+					if body:
+						body.rotation.x = -fmod(ph * float(_pet.spec.step) / PI / 0.11, TAU)
+					if tail:
+						tail.rotation.y = 0.25 * sin(ph * 0.5)
+				"strut":   # 二本足で、首を前後に振って歩く
+					var s := sin(ph) * 0.45 * big
+					if parts.has("leg_l"):
+						(parts["leg_l"] as Node3D).rotation.x = s
+					if parts.has("leg_r"):
+						(parts["leg_r"] as Node3D).rotation.x = -s
+					if head:
+						head.position.z += 0.03 * sin(ph * 2.0)
+					if tail:
+						tail.rotation.y = 0.08 * sin(ph)
+		"sit":   # 見る所を首で追う。しっぽをゆっくり振り、息で体が少しふくらむ
+			if head:
+				var hp := head.global_position
+				var ld := (_pet.node as Node3D).global_basis.inverse() * (_pet_target() - hp)
+				head.rotation = Vector3(clampf(atan2(ld.y, Vector2(ld.x, ld.z).length()), -0.5, 0.7), clampf(atan2(-ld.x, -ld.z), -HEAD_YAW, HEAD_YAW), 0.0)
+				if _doll.point == Vector3.INF and _frame % 23 < 3:
+					head.rotation.z = 0.3   # ときどき首をかしげる
+			if tail:
+				tail.rotation.y = 0.25 * sin(_frame * 0.2)
+			if body:
+				body.scale = Vector3(1.0, 1.0 + 0.015 * sin(_frame * 0.5), 1.0)
+		"sleep":   # ゆっくり息をする。ときどきしっぽの先が動く
+			if body:
+				body.scale = Vector3(1.0 + 0.01 * sin(_frame * 0.25), 1.0 + 0.03 * sin(_frame * 0.25), 1.0)
+			if tail and _frame % 60 < 3:
+				tail.rotation.y = 0.15
 
 
 # ---------------------------------------------------------------- 時計
 
 func _physics_process(dt: float) -> void:
-	if host.get("doll") != _doll and is_instance_valid(host.get("doll")):   # 衣装掛けで着替えた: 新しい頭に小鳥を止め直す（前の小鳥は前の体と消えた）
-		_doll = host.get("doll")
-		if bird_on:
-			_make_bird()
+	if host == null or not is_instance_valid(host):
+		queue_free()
+		return
+	var d = host.get("doll")
+	if d != _doll and d != null and is_instance_valid(d):   # 衣装掛けで着替えた: 新しい体に小物を付け直す（前の小物は前の体と消えた）
+		_doll = d
+		_perch.clear()
+		_refresh()
 	if _doll == null or not is_instance_valid(_doll):
 		return
 	var pointing := _doll.point != Vector3.INF
 	if pointing and not _was_pointing:
-		_bird_hop = 4   # 指さしが入ると、小鳥がぴょんと跳ねて向き直る
+		_hop = 4   # 指さしが入ると、頭・肩の生き物がぴょんと跳ねて向き直る
 	_was_pointing = pointing
-	if _kit:
-		_move_kit(dt)
+	if not _pet.is_empty():
+		_move_pet(dt)
 	var fi := Doll.frame_index()
 	if fi != _frame:
 		_frame = fi
-		_rng.seed = hash(Vector2i(_frame, get_instance_id()))
-		if _bird:
-			_pose_bird()
-		if _kit:
-			_pose_kit()
-	if _bird:
-		_place_bird()
-	if _kit and _kit_head:
-		# 頭と体は同じ揺れで上下する（跳ねる高さはコマで決めた値）
-		_kit_head.position.y = _kit_head_base_y() + _kit_hop
-		if _kit_tail:
-			_kit_tail.position.y = _kit_tail_base_y() + _kit_hop
+		_rng.seed = hash(Vector2i(_frame, _who))
+		# 物の揺れ: 持ち主の速さの変わりに少し遅れて傾き、ばねのように戻る
+		var v := _doll.global_position
+		var vel := (v - _last_pos) * Doll.FPS if _last_pos != Vector3.ZERO else Vector3.ZERO
+		var acc := _doll.global_basis.inverse() * (vel - _sway_v) * 0.02
+		_sway = (_sway * 0.55 + Vector2(clampf(acc.z, -0.25, 0.25), clampf(-acc.x, -0.25, 0.25))) + Vector2(_rng.randf_range(-0.012, 0.012), _rng.randf_range(-0.012, 0.012))
+		_sway_v = vel
+		_last_pos = v
+		if _hop > 0:
+			_hop -= 1
+		for slot in _perch:
+			_pose_perch(_perch[slot])
+		if not _pet.is_empty():
+			_pose_pet()
+	for slot in _perch:
+		_place_perch(_perch[slot])
 
-
-var _head_y := INF
-var _tail_y := INF
-
-
-func _kit_head_base_y() -> float:
-	if _head_y == INF:
-		_head_y = _kit_head.position.y
-	return _head_y
-
-
-func _kit_tail_base_y() -> float:
-	if _tail_y == INF:
-		_tail_y = _kit_tail.position.y if _kit_tail else 0.0
-	return _tail_y

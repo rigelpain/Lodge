@@ -31,6 +31,8 @@ const Craft := preload("res://craft.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Doll := preload("res://doll.gd")
 const PersonIcon := preload("res://person_icon.gd")
+const ABOVE_HOOP := 72.0   # 刺繍枠（自分の小窓）の上の縁から、I・N・R の札の下までの間（1080 で px）。上のねじ（30 px ほど）と、
+                            # 枠の右上に縫う体の調子のバッジ（badges.gd）を避ける（2026-11-01 代表「インベントリボタンを少し上に上げて干渉しないように」）
 
 var main: Node3D
 var craft: Node
@@ -625,7 +627,10 @@ class View extends Control:
 		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
 			var fr: Control = sc._frame
 			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
-			bottom = fr.position.y - 44.0 * u   # 刺繍枠の上のねじ（小窓の縁から 1080 で 30 px ほど飛び出す。PR #48）の上
+			bottom = fr.position.y - ABOVE_HOOP * u   # 刺繍枠の上のねじと、右上のバッジ（badges.gd）の上
+		var off := Icons.tuck_off(Rect2(cx - total / 2.0, bottom - ch, total, ch), size)   # 何もしないでいると画面の外へ（hud.gd の _update_tuck）
+		cx += off.x
+		bottom += off.y
 		var spec: Dictionary = craft.sack(who)
 		var lamp: Dictionary = craft.lantern(who)
 		var cards := [["I", "gear"], ["N", "sack"], ["R", "lamp"]]
@@ -666,10 +671,13 @@ class View extends Control:
 		if sc and is_instance_valid(sc) and not sc.get("hidden") and sc.get("_frame"):
 			var fr: Control = sc._frame
 			cx = minf(fr.position.x + fr.size.x / 2.0, size.x - 12.0 * u - total / 2.0)
-			bottom = fr.position.y - 44.0 * u
+			bottom = fr.position.y - ABOVE_HOOP * u
 		var h := 46.0 * u
 		var x0 := cx - total / 2.0
 		var y := bottom - 78.0 * u - 10.0 * u - 8.0 * u - h / 2.0   # I・N・R の札の上
+		var off := Icons.tuck_off(Rect2(x0, y - h / 2.0, total + 10.0 * u, h), size)   # 何もしないでいると画面の外へ（針の先まで）
+		x0 += off.x
+		y += off.y
 		var navy := Doll.STOCK_NAVY   # 人形の袖のストックと同じ藍のフェルト（白い雪の上でも、白い雪玉が映える）
 		var hemp := Color(0.70, 0.57, 0.38)
 		var red := Doll.STOCK_RED
@@ -762,6 +770,9 @@ class View extends Control:
 		var w := n * cell + (n - 1) * gap + 24.0 * u + wallet_w
 		var x0 := size.x / 2.0 - w / 2.0
 		var y := size.y - 20.0 * u - cell
+		var off := Icons.tuck_off(Rect2(x0 - 56.0 * u, y - 30.0 * u, w + 68.0 * u, cell + 40.0 * u), size)   # 何もしないでいると画面の外へ
+		x0 += off.x
+		y += off.y
 		Icons.screen()
 		Icons.patch(self, Icons.rr(x0 - 12.0 * u, y - 10.0 * u, w + 24.0 * u, cell + 20.0 * u, 16.0 * u), Icons.PAPER, 0.85 * a, false)
 		if not bag.is_empty():   # 持ち替えの案内: Z（と、ホイール・二本指スクロール）
@@ -833,6 +844,9 @@ class View extends Control:
 		var h := 9.0 * cr * 0.55 + cr * 2.6
 		var x0 := size.x / 2.0 - w / 2.0
 		var y1 := size.y - 22.0 * u
+		var off := Icons.tuck_off(Rect2(x0, y1 - h, w, h), size)   # 何もしないでいると画面の外へ
+		x0 += off.x
+		y1 += off.y
 		Icons.screen()
 		Icons.patch(self, Icons.rr(x0, y1 - h, w, h, 14.0 * u), Icons.PAPER, 0.85 * a, true, Icons.PAPER_EDGE)
 		_coins(x0 + 14.0 * u, y1 - 8.0 * u, coins, cr * (1.0 + 0.3 * sin(ui._coin_pop * PI)), a)

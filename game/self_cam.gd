@@ -15,7 +15,10 @@ const PX := 224               # 描く大きさ（正方形の px）。窓とほ
 const STITCH_PX := 2.6        # 糸 1 本の、画面での幅（1080 のとき, px）
 const EVERY := 2              # 何コマに 1 回描くか
 const DIAM := 236.0           # 画面での丸窓の直径（1080 のとき, px）
-const MARGIN := 18.0          # 画面の端からの間（1080 のとき, px）
+const MARGIN := Vector2(92.0, 56.0)   # 画面の右・下の端からの間（1080 のとき, px）。左の縁に縫った濡れゲージと右上のバッジ（damp_hud.gd）が
+                                      # 画面の端に寄りすぎないよう、端から離す（2026-11-01 代表「刺繍と濡れゲージが画面はしにくっつきそうだから、
+                                      # もう少し画面中央に寄せましょう」）
+const GAUGE_W := 64.0         # 丸窓の左の縁に縫った濡れゲージ（damp_hud.gd）の幅（px）。日時計はさらにその左に置く
 const FOV := 36.0
 const DIST := 3.0             # 人形からの距離の目安 (m)。実際は全身が収まるよう _extent() から決める
 const MARGIN_K := 1.3         # 全身の高さに対する窓の高さ（上下の余白）
@@ -280,7 +283,7 @@ func ui() -> float:
 
 ## 丸窓が画面の右から占める幅（px）。日時計はこの左に置く
 func width() -> float:
-	return (DIAM + MARGIN) * ui() if not hidden else 0.0
+	return (DIAM + MARGIN.x) * ui() if not hidden else 0.0
 
 
 func _process(dt: float) -> void:
@@ -289,9 +292,14 @@ func _process(dt: float) -> void:
 	_frame.pivot_offset = _frame.size * 0.5
 	_frame.rotation = Icons.wind_angle(5.0, 0.0, 0.03)
 	_frame.position += Icons.wind_offset(5.0, 2.5 * ui())
+	# 何もしないでいると、小窓は層ごと画面の外へ引っこむ（hud.gd の _update_tuck）。刺繍枠（hud.gd）もこの offset で追う
+	# （刺繍枠の木の輪とねじは小窓より外へ出るので、その分も広げる。上の I・N・R の札と一緒に右へ抜ける）
+	var u := ui()
+	var fr := Rect2(_frame.position, _frame.size).grow(12.0 * u).grow_side(SIDE_TOP, 34.0 * u)
+	offset = Icons.tuck_off(fr, get_viewport().get_visible_rect().size)
 	var dc := get_node_or_null("/root/DayCycle")
 	if dc and "dial_right" in dc:
-		dc.dial_right = 16.0 + width()
+		dc.dial_right = 16.0 + width() + (GAUGE_W * ui() if not hidden else 0.0)
 	if hidden or player == null:
 		return
 	_env_t += dt
@@ -319,7 +327,7 @@ func _layout() -> void:
 	var u := ui()
 	var vs := get_viewport().get_visible_rect().size
 	var d := DIAM * u
-	_frame.position = vs - Vector2(d, d) - Vector2(MARGIN, MARGIN) * u
+	_frame.position = vs - Vector2(d, d) - MARGIN * u
 	_frame.size = Vector2(d, d)
 	_frame.view.position = Vector2.ZERO
 	_frame.view.size = _frame.size
@@ -397,7 +405,8 @@ var _last_body := Vector3.ZERO
 func _sync_held() -> void:
 	var doll = player.doll
 	var it: Dictionary = player.held()
-	var key := "" if it.is_empty() else "%s/%s/%s/%s" % [it.get("kind", ""), it.get("fabric", ""), it.get("tag", ""), it.get("sled", "")]
+	var key := "" if it.is_empty() else "%s/%s/%s/%s/%s/%s" % [it.get("kind", ""), it.get("fabric", ""), it.get("tag", ""), it.get("sled", ""),
+			it.get("dish", ""), str(it.get("step", "")) + "." + str(it.get("bites", ""))]
 	if _held != null and not is_instance_valid(_held):   # 着替えると、前の体の手に付けていた物は体と一緒に消える。新しい体に付け直す
 		_held = null
 		_held_key = "-"

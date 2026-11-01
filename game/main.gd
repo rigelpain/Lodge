@@ -10,6 +10,7 @@ const Look := preload("res://look.gd")
 ##   --no-wind     滑るときの風のエフェクトを出さない（重さを比べる用）
 ##   --cam=x,y,z,tx,ty,tz  --no-player のときのカメラの位置と見る先（ロッジを撮る用）
 ##   --hud-debug   画面の左上の隅に確かめ用の数字（fps・通信の速さ）を小さく出す
+##   --hud-idle=秒  何も操作しないでこの秒数たつと、HUD を画面の外へ引っこめる（既定 5。0 なら引っこめない）
 ##   --bot-lean=follow|off  一緒に乗った仲間が、あなたの体重移動に合わせるか（既定 follow）
 ##   --sled=KIND   ソリの大きさ（sack 米袋 1 人・small 2 人・mid 3 人（既定）・large 8 人）
 ##   --sled-color=色  ソリのメインカラー（ソリの主なフェルトと滑りあとの糸）。2F5DA8 のような 16 進か、white・navy などの色の名前
@@ -18,9 +19,13 @@ const Look := preload("res://look.gd")
 ##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
 ##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
 ##   --spawn=wardrobe  2 階の衣装掛けの前から始める（F で人形を選び直す）
+##   --spawn=dye       2 階の染め桶の前から始める（F で服を染める）
 ##   --doll=人形   あなたの始めの人形（doll.gd の KINDS: kasa・origami・news・robo・musha・ningyo・golem）。保存した人形より勝つ
 ##   --bot-dolls=人形,人形…  ソリを押す仲間の人形（既定は右が origami、左が news）
 ##   --lodge-dolls=人形,人形…  ロッジでくつろぐ仲間の人形（既定は robo・ningyo・golem・musha の順）
+##   --spawn=pals  2 階の衣装掛けの横の売り台の前から始める（F で頭・肩の小物とミニオンを買って付け替える）
+##   --no-pets     頭・肩の小物とミニオン（companions.gd）を出さない
+##   --bot-pals=名前,名前…  仲間（ソリを押す仲間とロッジの仲間）に付ける頭・肩の小物とミニオン（pals.gd の名前。確かめ用）
 
 const HILL_H := 18.0      # 丘の高さ (m)
 const HILL_R := 25.0      # 丘の広がり (m)
@@ -60,16 +65,33 @@ const SelfCam := preload("res://self_cam.gd")
 const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
 const CraftUi := preload("res://craft_ui.gd")
+const FoodUi := preload("res://food_ui.gd")
+const SnowmanShop := preload("res://snowman_shop.gd")
+const CookStation := preload("res://cook_station.gd")
+const Warmth := preload("res://warmth.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
+const Damp := preload("res://damp.gd")
+const Badges := preload("res://badges.gd")
+const Companions := preload("res://companions.gd")
+const Pals := preload("res://pals.gd")
+const PalStall := preload("res://pal_stall.gd")
+const PalsUi := preload("res://pals_ui.gd")
+## 頭・肩の小物とミニオンの売り台（pal_stall.gd）を、衣装掛けの竿の端からどれだけ横に置くか（衣装掛けの座標, m。+X は竿の右）
+const PAL_STALL_X := 2.85
+const DyeVat := preload("res://dye_vat.gd")
+const DyeUi := preload("res://dye_ui.gd")
 const Net := preload("res://net.gd")
 const Start := preload("res://start.gd")
 ## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
 ## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
 const WARDROBE_AT := Vector2(21.25, 2.2)
 const WARDROBE_FLOOR := 6.1   # 2 階の床（dims.FL2）
+## 染め桶（dye_vat.gd）の所（衣装掛けの座標。+X が竿の右の端のほう、+Z が正面）。竿の右の端の横には小物とミニオンの
+## 売り台（PAL_STALL_X）があるので、桶は竿の左の端の横
+const DYE_VAT_AT := Vector3(-2.45, 0.0, 0.35)
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
 ## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
@@ -81,6 +103,15 @@ const SHOP_YAW := PI          # 真東（番台の向こうの客）を向く
 const SNOWMAN_AT := Vector3(-4.6, 0, 0.5)
 const SNOWMAN_SCALE := 1.85
 const FRIDGE_BOX := Vector3(1.1, 2.0, 0.85)
+## 厨房の巨大な調理の装置（2026-11-01 代表の並び: 西から冷蔵庫 → プレス機 → アイロン台 → 乾燥機 → 衣類スチーマー。design/snowman-food/）。
+## [名前, glb, 置く所（slot_food_kitchen の座標）, 向き（度）, 当たりの箱 [大きさ, 中心] の列]。正面（+Z）は食堂の側
+const KITCHEN := [
+	["press", "res://props/kitchen/giant_heat_press.glb", Vector3(-2.7, 0, 0.3), 180.0, [[Vector3(1.6, 1.0, 1.96), Vector3(0, 0.5, 0)]]],
+	["iron", "res://props/kitchen/giant_press_board.glb", Vector3(0.2, 0, 0.6), 90.0, [[Vector3(3.8, 1.0, 1.24), Vector3(0, 0.5, 0)]]],
+	["dryer", "res://props/kitchen/giant_dryer.glb", Vector3(3.7, 0, -0.2), 180.0, [[Vector3(2.7, 3.46, 2.7), Vector3(0, 1.73, 0)]]],
+	["drink", "res://props/kitchen/giant_vapor.glb", Vector3(6.5, 0, 0.0), 180.0,
+		[[Vector3(2.08, 1.5, 1.52), Vector3(0, 0.75, 0.04)], [Vector3(0.14, 3.6, 0.14), Vector3(-0.68, 1.8, -0.48)]]],
+]
 ## 番台（店番の商人のカウンターとレジ。2026-10-31 代表「パッチワークおじいさんにも、雪だるまにも、番台的なカウンターとレジを」）。
 ## [カウンター, レジ, お皿に盛る物, ロッジの座標 (x, y), 正面（客の側）の向き（度。0 = 南、90 = 東。lodge/dims.py の SLOTS と同じ）]。
 ## おじいさんは真東を向いて番台の後ろに立ち、雪だるまは冷蔵庫の中から番台ごしに食堂を向く。置き方は design/lodge-layout/
@@ -108,12 +139,23 @@ var _ft_sum := 0.0
 var _ft_n := 0
 var pip_label: Label
 var sewing: Node3D            # 大きなミシンの動き（sewing_machine.gd）
+var kitchen := {}             # 厨房の装置（KITCHEN の名前 → 置いた Node3D）
+var stations: Array = []      # 厨房の装置の調理の動き（cook_station.gd）
+var snowman_shop: Node        # ご飯係の雪だるま（snowman_shop.gd）
+var food_ui: CanvasLayer      # 雪だるまの食べ物屋の売り場（food_ui.gd）
+var warmth: Node              # 体のぬくもり（warmth.gd。暖炉と、食べた物）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
+var pal_stall: Node3D         # 衣装掛けの横の、頭・肩の小物とミニオンの売り台（pal_stall.gd）
+var pals_ui: CanvasLayer      # 小物とミニオンを買って付け替える画面（pals_ui.gd）
+var dye_vat: Node3D           # 衣装掛けのとなりの染め桶（dye_vat.gd）
+var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
+var damp: Damp                # 紙の人形の「よれ」（湿り気）の配り役（damp.gd）。人より先に置く。人が名前（"Damp"）で探す
+var badges: Badges            # 体の調子のバッジ（badges.gd）。湿り気・ご飯の効き目などが入れ、hud.gd が描く
 var net: Net                  # 通信（net.gd）。--host でホスト、--join=IP でつなぐ
 var start: Start              # スタート画面（start.gd）。引数なしで起動したときだけ
 var seats: Seats              # ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団）の配り役。人より先に置く
@@ -240,6 +282,14 @@ func _ready() -> void:
 	emotes = Emotes.new()
 	emotes.name = "Emotes"
 	add_child(emotes)
+	badges = Badges.new()
+	badges.name = "Badges"
+	add_child(badges)
+	damp = Damp.new()
+	damp.name = "Damp"
+	damp.hub = emotes
+	damp.badges = badges
+	add_child(damp)
 
 	# 通信は人より先に始める（人の番号を通信の番号にするため。emotes.gd の join）
 	net = Net.new()
@@ -257,6 +307,7 @@ func _ready() -> void:
 		add_child(player)
 		player.look_at(sled.position, Vector3.UP)
 		player.rotation.x = 0
+		_add_pals(player)
 
 	for i in int(args.get("bots", "1")):
 		var b := Bot.new()
@@ -269,6 +320,7 @@ func _ready() -> void:
 		b.lean_mode = args.get("bot-lean", "follow")
 		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
 		add_child(b)
+		_add_pals(b)
 	if seats:
 		# ロッジでくつろぐ仲間: 食堂の空いた席に座った姿で始まる（bot.gd の lounge）
 		for i in int(args.get("lodge-bots", "2")):
@@ -281,6 +333,7 @@ func _ready() -> void:
 			b.lounge = true
 			b.position = get_node("Lodge").to_global(Vector3(6.0 + 3.0 * i, 0.6, -4.0))
 			add_child(b)
+			_add_pals(b)
 
 	if player and net.spawn_slot() > 0:
 		# つなぐ側は、ホストの横に並んで始める（同じ所に重ならないように）
@@ -356,6 +409,16 @@ func _ready() -> void:
 		craft_ui.craft = craft
 		craft_ui.player = player
 		add_child(craft_ui)
+		warmth = Warmth.new()
+		warmth.name = "Warmth"
+		warmth.main = self
+		add_child(warmth)
+		food_ui = FoodUi.new()
+		food_ui.main = self
+		food_ui.craft = craft
+		food_ui.player = player
+		food_ui.shop = snowman_shop
+		add_child(food_ui)
 		if wardrobe:
 			wardrobe.player = player
 		wardrobe_ui = WardrobeUi.new()
@@ -363,6 +426,30 @@ func _ready() -> void:
 		wardrobe_ui.craft = craft
 		wardrobe_ui.player = player
 		add_child(wardrobe_ui)
+		if pal_stall:
+			pal_stall.player = player
+		pals_ui = PalsUi.new()
+		pals_ui.main = self
+		pals_ui.craft = craft
+		pals_ui.player = player
+		add_child(pals_ui)
+		if args.get("spawn", "") == "pals" and pal_stall:   # --spawn=pals: 売り台の前から始める
+			var at := pal_stall.to_global(Vector3(0, 0.1, 1.5))
+			player.global_position = at
+			var to := pal_stall.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
+		if dye_vat:
+			dye_vat.player = player
+		dye_ui = DyeUi.new()
+		dye_ui.main = self
+		dye_ui.craft = craft
+		dye_ui.player = player
+		add_child(dye_ui)
+		if args.get("spawn", "") == "dye" and dye_vat:   # --spawn=dye: 2 階の染め桶の前から始める
+			var at := dye_vat.to_global(Vector3(0, 0.1, 1.3))
+			player.global_position = at
+			var to := dye_vat.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if args.get("spawn", "") == "wardrobe" and wardrobe:   # --spawn=wardrobe: 2 階の衣装掛けの前から始める
 			var at := wardrobe.to_global(Vector3(0, 0.1, 1.6))
 			player.global_position = at
@@ -801,12 +888,12 @@ func _furnish_lodge() -> void:
 		shopkeeper.rotation.y = SHOP_YAW
 		machine.get_parent().add_child(shopkeeper)
 	# 厨房: 巨大なアイロン台・プレス機・乾燥機と、卓上の道具（props/build_scenes.py の kitchen）
-	var kitchen := lodge.find_child("slot_food_kitchen", true, false) as Node3D
-	if kitchen:
+	var kitchen_slot := lodge.find_child("slot_food_kitchen", true, false) as Node3D
+	if kitchen_slot:
 		var set_node := (load("res://props/sets/kitchen.tscn") as PackedScene).instantiate()
-		kitchen.add_child(set_node)
-		Props.cook_cycle(set_node)   # 調理の仕組みができるまで: 装置が順に調理して煙を出す
-		_put_snowman(kitchen)
+		kitchen_slot.add_child(set_node)
+		_put_kitchen(kitchen_slot)
+		_put_snowman(kitchen_slot)
 	for b in BANDAI:
 		_put_bandai(lodge, b)
 	# 2 階の衣装掛け: 前で F を押すと人形を選び直す
@@ -816,6 +903,35 @@ func _furnish_lodge() -> void:
 	wardrobe.position = Vector3(WARDROBE_AT.x, WARDROBE_FLOOR, -WARDROBE_AT.y)
 	wardrobe.rotation.y = -PI / 2.0   # 竿の正面（+Z）を西へ
 	lodge.add_child(wardrobe)
+	# その横に、頭・肩の小物とミニオンの売り台（同じ壁ぎわ、正面は同じく西）
+	pal_stall = PalStall.new()
+	pal_stall.name = "PalStall"
+	pal_stall.player = player
+	pal_stall.transform = wardrobe.transform * Transform3D(Basis(), Vector3(PAL_STALL_X, 0, 0.2))
+	lodge.add_child(pal_stall)
+	# そのとなりの染め桶: 前で F を押すと服を染める（竿の左の端の少し前。正面は竿と同じ西）
+	dye_vat = DyeVat.new()
+	dye_vat.name = "DyeVat"
+	dye_vat.player = player
+	dye_vat.craft = craft
+	dye_vat.position = wardrobe.position + wardrobe.basis * DYE_VAT_AT
+	dye_vat.rotation.y = wardrobe.rotation.y
+	lodge.add_child(dye_vat)
+
+
+## 持ち主（あなた・仲間）に、頭・肩の小物とミニオン（companions.gd）を付ける。--bot-pals で仲間に付ける物を決める（確かめ用）
+func _add_pals(host: Node3D) -> void:
+	if args.has("no-pets"):
+		return
+	if host != player and args.has("bot-pals") and craft and int(host.get("id")) >= 0:
+		var who := int(host.get("id"))
+		for k in String(args["bot-pals"]).split(","):
+			craft.send({"kind": "pal_own", "who": who, "key": k})
+			craft.send({"kind": "pal_wear", "who": who, "slot": Pals.slot_of(k), "key": k})
+	var c := Companions.new()
+	c.host = host
+	c.craft = craft
+	add_child(c)
 
 
 ## 番台 1 つ: パッチワーク（または藍）のフェルトを張った木のカウンター。上に、店番の側を向いたレジと、払いを受けるお皿。
@@ -840,6 +956,9 @@ func _put_bandai(lodge: Node3D, b: Array) -> void:
 	dish.scale = Vector3.ONE * 0.5
 	dish.position = Vector3(-0.5, top, -0.08)
 	root.add_child(dish)
+	if b[2] == "snowballs" and snowman_shop:   # 雪だるまの番台: 話しかける所と、ペレットを跳ばすお皿
+		snowman_shop.counter = root
+		snowman_shop.dish_at = dish.position
 	var heap := Node3D.new()
 	heap.position = dish.position + Vector3.UP * 0.03
 	root.add_child(heap)
@@ -893,6 +1012,38 @@ func _solid(n: Node3D) -> void:
 	n.add_child(body)
 
 
+## 厨房の巨大な調理の装置を KITCHEN の並びで 1 台ずつ置く（調理で動かすので、小物の場面には結合しない）。
+## スチーマーのふた（giant_vapor_lid）は目印 lid に付ける。装置ごとに調理の動き（cook_station.gd）を付ける
+func _put_kitchen(slot: Node3D) -> void:
+	for k in KITCHEN:
+		var dev := Props.make(k[1])
+		dev.name = "Kitchen_" + String(k[0])
+		dev.position = k[2]
+		dev.rotation.y = deg_to_rad(k[3])
+		slot.add_child(dev)
+		kitchen[k[0]] = dev
+		var body := StaticBody3D.new()
+		for b in k[4]:
+			var col := CollisionShape3D.new()
+			var box := BoxShape3D.new()
+			box.size = b[0]
+			col.shape = box
+			col.position = b[1]
+			body.add_child(col)
+		dev.add_child(body)
+		var hinge := dev.find_child("lid", true, false) as Node3D
+		if hinge:
+			var lid := Props.make("res://props/kitchen/giant_vapor_lid.glb")
+			lid.name = "Lid"
+			hinge.add_child(lid)
+		var st := CookStation.new()   # F で手のペレットを入れて調理する
+		st.name = "Station"
+		st.main = self
+		st.kind = k[0]
+		dev.add_child(st)
+		stations.append(st)
+
+
 ## 厨房の奥の並びのいちばん西（ミシンの右）に、扉を開けた冷蔵庫と、中に立つご飯係の雪だるま（props/build_snowman.py）。
 ## 正面は食堂（+Z）、扉は東（厨房の側）へ開く。雪だるまは段ごとの節点（base・chest・head・arm_l・arm_r）を回せば動く（まだ動かさない）
 func _put_snowman(slot: Node3D) -> void:
@@ -907,6 +1058,11 @@ func _put_snowman(slot: Node3D) -> void:
 		var man := Props.make("res://props/snowman.glb")
 		man.name = "Snowman"
 		spot.add_child(man)
+		snowman_shop = SnowmanShop.new()   # 番台ごしにペレットを売る（売り場は food_ui.gd）
+		snowman_shop.name = "SnowmanShop"
+		snowman_shop.main = self
+		snowman_shop.man = man
+		add_child(snowman_shop)
 	var body := StaticBody3D.new()   # 冷蔵庫の箱（中の雪だるまごと。扉は通れる）
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()

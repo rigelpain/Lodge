@@ -292,8 +292,9 @@ func set_main_color(c: Color) -> void:
 		Look.stitch_set_color(_stitch, color())
 
 
-## dir は押す向き（水平）、at は手が触れた所（世界座標）、who は押した人（引きずられている人は押せない）
-func push(dir: Vector3, at: Vector3, who: Node3D = null) -> void:
+## dir は押す向き（水平）、at は手が触れた所（世界座標）、who は押した人（引きずられている人は押せない）。
+## strength は押す人の力の倍率（紙の体の湿り気。damp.gd の段: びしょびしょ 0.7 〜 パリパリ 1.25）
+func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> void:
 	dir.y = 0
 	if dir.length() < 0.01 or dragged.has(who):
 		return
@@ -301,7 +302,9 @@ func push(dir: Vector3, at: Vector3, who: Node3D = null) -> void:
 	if who:
 		_pushed_now[who] = true
 		helped[who] = _trail_now
-	var f: Vector3 = dir.normalized() * PUSH_FORCE * min(1.0, dir.length())
+	var f: Vector3 = dir.normalized() * PUSH_FORCE * strength * min(1.0, dir.length())
+	if who and who.get("push_boost") != null:
+		f *= float(who.get("push_boost"))   # 食べたぬくもりで、押す力が少し増す（warmth.gd）
 	f *= 1.0 - smoothstep(PUSH_FADE.x, PUSH_FADE.y, linear_velocity.dot(dir.normalized()))
 	# 力は手が触れている所にそのままかける。どう動くかは滑り木と重力が決める
 	var p := to_local(at)
@@ -370,15 +373,15 @@ func release_rope(who: Node3D) -> void:
 		rope_holder = null
 
 
-## 紐を持つ人の手の位置から、張っていれば引く。張った分の長さを返す（たるみなら負）
-func pull_rope(hand: Vector3) -> float:
+## 紐を持つ人の手の位置から、張っていれば引く。張った分の長さを返す（たるみなら負）。strength は引く人の力の倍率（push と同じ）
+func pull_rope(hand: Vector3, strength := 1.0) -> float:
 	var anchor := to_global(ROPE_ANCHOR)
 	var d := hand - anchor
 	var over := d.length() - ROPE_LEN
 	if over > 0.0:
 		var dir := d
 		dir.y = 0
-		apply_force(dir.normalized() * min(over * ROPE_K, 600.0), anchor - global_position)
+		apply_force(dir.normalized() * min(over * ROPE_K, 600.0) * strength, anchor - global_position)
 		_push_count += 1
 		if rope_holder:
 			helped[rope_holder] = _trail_now

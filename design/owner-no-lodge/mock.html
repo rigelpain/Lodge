@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><title>持ち主の欄の見本</title>
+<style>
+body{margin:0;background:#2b2b2b;font-family:"Hiragino Sans","Hiragino Kaku Gothic ProN",sans-serif;color:#eee}
+.wrap{display:grid;grid-template-columns:repeat(3,560px);gap:22px 18px;padding:20px}
+.cell h2{margin:0 0 6px;font-size:20px;font-weight:700}
+.cell p{margin:6px 0 0;font-size:14px;line-height:1.5;color:#ccc}
+.card{position:relative;width:530px;height:300px;overflow:hidden;background:url(../sled-tag/turn/06_lodge_sled.jpg) -15px -588px}
+.card.untag{background-image:url(../sled-tag/shots/08_untagged.jpg)}
+.pt{position:absolute;background:url(../sled-tag/turn/06_lodge_sled.jpg)}
+svg{position:absolute;left:0;top:0}
+.now h2{color:#f4a}
+</style></head><body>
+<div class="wrap" id="w"></div>
+<script>
+const OX=15, OY=588;   // 画面の絵の中の札の左上
+// 画面の絵の (sx,sy) から (w,h) を、(dx,dy) に写す
+const pt=(dx,dy,w,h,sx,sy,img)=>`<div class="pt" style="left:${dx-OX}px;top:${dy-OY}px;width:${w}px;height:${h}px;background-position:${-sx}px ${-sy}px${img?`;background-image:url(${img})`:''}"></div>`;
+// 王冠と家を、上の空いた紙で隠す
+const blank=pt(398,752,80,46,398,706)+pt(398,798,80,46,398,706)+pt(398,844,80,8,398,706);
+const svg=s=>`<svg width="530" height="300" viewBox="${OX} ${OY} 530 300">${s}</svg>`;
+const ring=`<circle cx="445" cy="798" r="29" fill="none" stroke="#b9a383" stroke-width="2.4" stroke-dasharray="7 5"/>`;
+function person(col,dash){
+  const parts=[['M445 768 L445 802',17],['M438 772 L431 806',6.5],['M452 772 L459 806',6.5],['M440 804 L440 846',7.5],['M450 804 L450 846',7.5]];
+  if(dash){
+    return `<g fill="none" stroke="#b9a383" stroke-width="2.2" stroke-dasharray="6 4" stroke-linejoin="round">
+      <circle cx="445" cy="754" r="10"/>
+      <path d="M434 766 H456 L462 806 H455 L454 846 H436 L435 806 H428 Z"/></g>`;
+  }
+  const lines=(w,c)=>parts.map(([d,s])=>`<path d="${d}" stroke="${c}" stroke-width="${s+w}" stroke-linecap="round" fill="none"/>`).join('');
+  return `<g>${lines(3,'#3a2a22')}<circle cx="445" cy="754" r="11.5" fill="#3a2a22"/>${lines(0,col)}<circle cx="445" cy="754" r="10" fill="${col}"/></g>`;
+}
+const crown=(x,y,s=1)=>`<path transform="translate(${x} ${y}) scale(${s})" d="M-15 0 L-15 -14 L-7.5 -6 L0 -16 L7.5 -6 L15 -14 L15 0 Z" fill="#e5b42f" stroke="#5a3d12" stroke-width="1.8" stroke-linejoin="round"/>`;
+const frame=`<rect x="393" y="708" width="122" height="146" rx="8" fill="none" stroke="#ff2f6d" stroke-width="3" stroke-dasharray="9 5"/>`;
+// D: 回る図の窓を右へ広げる（窓の中の空いた所と右の縁を写す）
+const widen=pt(378,708,58,148,322,708)+pt(432,708,58,148,322,708)+pt(482,708,36,148,356,708);
+const cells=[
+ {cls:'now',h:'いま：王冠を載せた家',p:'ロッジのソリの持ち主の欄（赤い点線の枠）に、王冠を載せた家。代表「どこにいるかじゃなくて、だれかがだいじ」',body:svg(frame)},
+ {h:'A：空の輪',p:'名札を外したソリと同じ点線の輪。「持ち主はいない」。ロッジのソリと名札のないソリは、札の柄（ロッジの名札か無地か）で見分ける',body:blank+svg(ring+frame)},
+ {h:'B：点線の人型',p:'王冠のない、点線だけの人の形。「まだだれのものでもない。だれでも乗れる」。名札を外したソリも同じにする',body:blank+svg(person('',true)+frame)},
+ {h:'C：売り子のおじさん',p:'ロッジにいる型紙と布の売り子のおじさん（紺のコート）を持ち主として、紺の人型に王冠。名前は出さない（文字は人の名前だけ）',body:blank+svg(person('#323f75')+crown(445,742,0.95)+frame)},
+ {h:'D：欄を空ける',p:'持ち主の欄をなくし、回る図の窓を右へ広げる。持ち主がいるソリは今までどおり右に人型と王冠',body:widen+svg(frame)},
+ {cls:'untag',h:'参考：名札を外したソリ（いま）',p:'今の点線の空の輪。A にすると、ロッジのソリもこれと同じになる',body:svg(frame.replace('#ff2f6d','#999'))},
+];
+document.getElementById('w').innerHTML=cells.map(c=>`<div class="cell ${c.cls||''}"><h2>${c.h}</h2><div class="card ${c.cls==='untag'?'untag':''}">${c.body}</div><p>${c.p}</p></div>`).join('');
+</script></body></html>

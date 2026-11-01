@@ -614,6 +614,7 @@ def _decimate(o, target):
         d.ratio = max(0.01, target / n)
         _active(o)
         bpy.ops.object.convert(target="MESH")
+    o.data.validate()   # 減らしたあとに残る、潰れた面や重なった辺を片付ける（glb の書き出しの「not valid」を防ぐ）
     o.data.shade_smooth()
 
 
@@ -858,3 +859,40 @@ def render_views(args, cams):
     for v in args.views.split(","):
         loc, tgt, lens = cams[v]
         C.render(loc, tgt, lens, os.path.abspath("%s-%s.png" % (args.prefix, v)))
+
+
+def render_icons(folder, names, size=256, elev=34.0, az=-28.0, pad=1.18, rename=None):
+    """品物を 1 つずつ、背景を透かして描く（ゲームの画面のアイコン。文字は使わない）。
+    names は根元の節点の名前。rename で書き出すファイルの名前を替える（{節点の名前: ファイルの名前}）"""
+    for r, parts in made:
+        if r.parent is None:
+            seat_threads([r] + descendants(r))
+    C.setup_render("%dx%d" % (size, size))
+    sc = bpy.context.scene
+    sc.render.film_transparent = True
+    sc.view_settings.exposure = 0.15
+    interior_light(0.9)
+    os.makedirs(folder, exist_ok=True)
+    roots = {r.name: r for r, p in made if r.parent is None}
+    for name in names:
+        for n, r in roots.items():
+            for o in [r] + descendants(r):
+                o.hide_render = n != name
+        r = roots[name]
+        bpy.context.view_layer.update()
+        lo = Vector((1e9,) * 3)
+        hi = Vector((-1e9,) * 3)
+        for o in [r] + descendants(r):
+            if o.type != "MESH" or "steam" in o.name:
+                continue
+            for c in o.bound_box:
+                p = o.matrix_world @ Vector(c)
+                lo = Vector(map(min, lo, p))
+                hi = Vector(map(max, hi, p))
+        ctr = (lo + hi) / 2
+        rad = max((hi - lo).length / 2, 0.01) * pad
+        d = Vector((math.sin(math.radians(az)) * math.cos(math.radians(elev)), math.cos(math.radians(az)) * math.cos(math.radians(elev)),
+                    math.sin(math.radians(elev))))
+        lens = 50.0
+        dist = rad / math.tan(math.atan(18.0 / lens))
+        C.render(tuple(ctr + d * dist), tuple(ctr), lens, os.path.abspath(os.path.join(folder, "%s.png" % (rename or {}).get(name, name))))

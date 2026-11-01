@@ -126,6 +126,9 @@ var _snd_next := 0
 var _snd_hum: AudioStreamPlayer3D
 var _snd_fx: AudioStreamPlayer3D
 var _snd_fx2: AudioStreamPlayer3D
+var _snd_fx3: AudioStreamPlayer3D     # 止めが明けたばね（見せるの「ぽふん」と重なる）
+var _snd_treadle: AudioStreamPlayer3D # 足踏みの踏み板
+var _snd_count := 0
 
 
 func _ready() -> void:
@@ -200,7 +203,7 @@ func _on_craft(ev: Dictionary) -> void:
 	if ev.kind != "sew":
 		return
 	_real = {"sled": ev.pattern.sled, "fabric": ev.fabric.fabric, "who": int(ev.who)}
-	_fx("sew_clack", -10.0, 1.2)
+	_fx("sew_start_%02d" % _rng.randi_range(1, 2), -7.0)   # 縫い始め: レバーを倒し、はずみ車を手で回す
 	use()
 
 
@@ -260,6 +263,7 @@ func _process(dt: float) -> void:
 	if _freeze > 0.0:   # 解放の止め: ミシンの時間だけ止める
 		_freeze -= dt
 		if _freeze <= 0.0:
+			_shot(_snd_fx3, "sew_spring", -9.0, _rng.randf_range(0.95, 1.05))   # 止めが明けて、ばねのように戻る
 			_lint.restart()
 			_lint.emitting = true
 			_squash_t = 0.0
@@ -290,7 +294,7 @@ func _set_phase(p: Phase) -> void:
 			_flash = 1.0
 			_freeze = HITSTOP
 			_squash = 0.05   # 止めのあいだは縮んだまま
-			_fx("sew_snip", -4.0)
+			_fx("sew_snip_%02d" % _rng.randi_range(1, 2), -4.0)
 		Phase.SHOW:
 			_landed = false
 			_start_product()
@@ -385,6 +389,7 @@ func _simulate(dt: float) -> void:
 				_needle_base = _needle_h
 				if u >= 1.0:
 					_stop = {}
+					_fx("sew_rest", -10.0)   # 針が上で止まる
 					_rate = 0.0
 					_feed_off = Vector3.ZERO
 			else:
@@ -530,7 +535,7 @@ func _feed_cloth(_dt: float) -> void:
 		_needle_base = lerpf(NEEDLE_LIFT, NEEDLE_MID + NEEDLE_AMP, v)
 		if v >= 1.0 and not _clacked:
 			_clacked = true
-			_fx("sew_clack", -6.0, 0.8)
+			_fx("sew_presser_%02d" % _rng.randi_range(1, 2), -6.0)   # 押さえが下り、糸がぴんと張る
 	# 糸: 布が入るまではたるみ、押さえが下りるとぴんと張って小さく震える
 	if t < 0.6:
 		_sag = lerpf(0.07, 0.11, clampf(t / 0.6, 0.0, 1.0))
@@ -568,7 +573,7 @@ func _start_product() -> void:
 		_prod_pitch = 0.0
 		_product.position = _prod_pos
 		_product.scale = _prod_scl
-		_fx2("sew_pop", -6.0, 0.8)
+		_fx2("sew_pop", -5.0, 0.85)
 		return
 	var sled := Props.make("res://props/sled_small.glb")
 	var box := _aabb(sled)   # 木の外に出す前に測る
@@ -619,7 +624,7 @@ func _move_product(_dt: float) -> void:
 	else:
 		if not _landed:
 			_landed = true
-			_fx2("sew_pop", -4.0, 0.6)
+			_fx2("sew_land_%02d" % _rng.randi_range(1, 2), -5.0, 1.1)
 		var u := clampf((t - 0.85) / 0.45, 0.0, 1.0)
 		p.y = o.y
 		p.z = lerpf(land_z, o.z, 1.0 - (1.0 - u) * (1.0 - u))
@@ -654,7 +659,7 @@ func _move_real() -> void:
 	elif t >= 0.85:
 		if not _landed:
 			_landed = true
-			_fx2("sew_pop", -3.0, 0.5)
+			_fx2("sew_land_%02d" % _rng.randi_range(1, 2), -3.0, 0.9 if _real.sled in ["mid", "large"] else 1.0)
 		grow = full
 		p = land
 		sq = 1.0 - 0.15 * exp(-(t - 0.85) * 8.0) * cos((t - 0.85) * 26.0)
@@ -874,7 +879,8 @@ func _make_lint() -> void:
 
 
 # ---- 音 ----------------------------------------------------------------------------
-## 仮の音（sound/gen/sew.py）。main.gd の Audio があるときだけ鳴らす（--no-sound では鳴らない）
+## 音は sound/gen/sew.py（縫い始め・縫っている間・できあがり。2026-11-01 に仮の音から作り直した）。
+## main.gd の Audio があるときだけ鳴らす（--no-sound では鳴らない）
 
 func _make_sound() -> void:
 	_audio = world.get_node_or_null("Audio") if world else null
@@ -887,6 +893,8 @@ func _make_sound() -> void:
 	_snd_hum.stream = _audio._wav("sew_hum_loop")
 	_snd_fx = _p3(at, -8.0)
 	_snd_fx2 = _p3(at, -8.0)
+	_snd_fx3 = _p3(at, -8.0)
+	_snd_treadle = _p3(_mark["pedal"] + Vector3(0, 0.15, 0), -10.0)
 
 
 func _p3(at: Vector3, db: float) -> AudioStreamPlayer3D:
@@ -905,10 +913,16 @@ func _stitch_sound() -> void:
 		return
 	var p := _snd_stitch[_snd_next]
 	_snd_next = (_snd_next + 1) % _snd_stitch.size()
-	p.stream = _audio._wav("sew_stitch_%02d" % (_rng.randi_range(1, 3)))
+	# 01〜03 は薄い布、04〜06 は厚い布（中・大のソリと米袋は厚く刺す）
+	var thick: bool = not _real.is_empty() and _real.sled in ["mid", "large", "sack"]
+	p.stream = _audio._wav("sew_stitch_%02d" % (_rng.randi_range(1, 3) + (3 if thick else 0)))
 	p.pitch_scale = 0.9 + 0.05 * _rate + _rng.randf_range(-0.03, 0.03)
 	p.volume_db = -14.0 + 1.0 * minf(_rate, 6.0)
 	p.play()
+	# 足踏みに仲間がいるあいだは、2 目に 1 度、踏み板がきしんで戻る
+	_snd_count += 1
+	if _helpers.x > 0 and phase == Phase.CHARGE and _snd_count % 2 == 0:
+		_shot(_snd_treadle, "sew_treadle_%02d" % _rng.randi_range(1, 3), -11.0, _rng.randf_range(0.95, 1.05))
 
 
 func _update_sound(_dt: float) -> void:
