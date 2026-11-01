@@ -58,6 +58,7 @@ var handle := Vector3.INF    # つかんでいる所（ソリの座標）
 var push_dir := Vector3.ZERO # 押す向き（ソリの座標）
 var pushing := false
 var pulling := false
+var push_world := Vector3.ZERO  # このコマ押した向き（世界、水平）。通信でほかの画面のあなたの体が同じ向きに押す（net.gd）
 var prompt := ""             # 画面に出す一言（main.gd が読む）
 var base_fov := 75.0         # 一人称の視野角（設定からだけ変える）
 var third := false           # C で三人称
@@ -862,7 +863,8 @@ func _grip(dt: float) -> void:
 	if input.length() > 0.0 and not dragged:
 		var dir := (global_basis * Vector3(input.x, 0, input.y))
 		dir.y = 0
-		sled.push(dir.normalized(), target + Vector3.UP * 0.5, self)
+		push_world = dir.normalized()
+		sled.push(push_world, target + Vector3.UP * 0.5, self)
 		pushing = true
 
 	if dragged:

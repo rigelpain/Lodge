@@ -100,6 +100,19 @@ var dragged := {}              # 引きずられている人 → 引きずられ
 var _pushed_by := {}           # このコマ押した人（引きずりの判定用。押している人は引きずられない）
 var _pushed_now := {}
 var helped := {}               # 押した・紐で引いた人 → その時刻（_trail_now）。雪のボタンを、乗らずに手伝った人にも分ける（snow_buttons.gd）
+# ---- 通信: つなぐ側のソリは、ホストのソリの姿を写す（net.gd）。自分の画面では力で動かさず、届いた姿と速さから
+# いまの姿を先読みして、そこへなめらかに寄せる。速さは届いた値をそのまま持つ（音・視野角・引きずりが読む）
+var net_follow := false:
+	set(v):
+		net_follow = v
+		custom_integrator = v   # かけた力・重力では動かない（_integrate_forces で姿を決める）
+const NET_PULL := 0.2          # 1 コマで、先読みした姿へ寄る割合
+const NET_SNAP := 4.0          # これより離れていたら置き直す (m)
+const NET_AHEAD := 0.3         # 届かないあいだ、先読みするのはここまで (s)
+var _net_at := Transform3D()
+var _net_v := Vector3.ZERO
+var _net_w := Vector3.ZERO
+var _net_age := -1.0           # 届いてから (s)。まだ届いていなければ負
 # ---- 乗って滑るときの、乗っている一人ひとりの力（調整する値。乗る人の数だけ足し合わさる）
 # 乗って下っているあいだは、乗っている人の重さ（RIDER_MASS）もソリと一緒に動く重さに入る。
 # 人の力は「ソリ＋乗る人」の重さで分け合うので、重いソリほど一人の力では動きにくく、そろえると効く
@@ -377,9 +390,22 @@ func pull_rope(hand: Vector3) -> float:
 func mount(who: Node3D) -> Vector3:
 	if riders.size() >= SEATS.size() or who in riders:
 		return Vector3.INF
+	var at := free_seat(who)
 	riders.append(who)
 	parked = false
-	return SEATS[riders.size() - 1]
+	return at
+
+
+## ほかの人が座っていない、前からいちばん目の席（通信では、それぞれの画面で座った席がぶつかったときにも使う）。空きがなければ INF
+func free_seat(who: Node3D) -> Vector3:
+	var used := []
+	for r in riders:
+		if r != who:
+			used.append(r.get("seat"))
+	for at in SEATS:
+		if not at in used:
+			return at
+	return Vector3.INF
 
 
 func dismount(who: Node3D) -> void:
@@ -439,6 +465,34 @@ func kick(who: Node3D) -> bool:
 	apply_central_impulse(f * dv * mass)    # 体の速さを dv だけ（乗っている人も一緒に動くので、体の重さで足りる）
 	kicked.emit(who)
 	return true
+
+
+## ホストのソリの姿が届いた（net.gd）
+func net_put(at: Transform3D, lv: Vector3, av: Vector3) -> void:
+	_net_at = at
+	_net_v = lv
+	_net_w = av
+	_net_age = 0.0
+
+
+func _integrate_forces(st: PhysicsDirectBodyState3D) -> void:
+	if not net_follow or _net_age < 0.0:
+		return
+	_net_age += st.step
+	var ahead := minf(_net_age, NET_AHEAD)
+	var want := _net_at
+	want.origin += _net_v * ahead
+	if _net_w.length() > 0.001:
+		want.basis = Basis(_net_w.normalized(), _net_w.length() * ahead) * want.basis
+	var t := st.transform
+	if t.origin.distance_to(want.origin) > NET_SNAP:
+		t = want
+	else:
+		t.origin = t.origin.lerp(want.origin, NET_PULL)
+		t.basis = Basis(t.basis.get_rotation_quaternion().slerp(want.basis.get_rotation_quaternion(), NET_PULL))
+	st.transform = t
+	st.linear_velocity = _net_v
+	st.angular_velocity = _net_w
 
 
 ## 広げる動きのあいだ（frames コマ）、止めて見た目を隠しておく（craft.gd が折り紙の形を見せる）
