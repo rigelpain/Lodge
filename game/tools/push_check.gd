@@ -1,5 +1,5 @@
 extends SceneTree
-## 紙の体の水と熱（damp.gd の段）で、押して登る速さがどう変わるかを測る（数字だけ出す）。
+## 紙の体の水（damp.gd の段）で、押して登る速さがどう変わるかを測る（数字だけ出す）。
 ##   Godot --headless --fixed-fps 60 --path game -s res://tools/push_check.gd -- --sled=mid --no-player --bots=0 --no-sound --no-lodge
 ##     [--people=1,2,4] [--ks=0.7,0.85,1,1.12,1.25]
 ## ふもと（頂上から 36 m）に頂上を向けて置いたソリを、人数ぶんの押す人がソリの後ろから頂上へ押し続ける（力の倍率 k）。

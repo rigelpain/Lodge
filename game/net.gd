@@ -274,10 +274,9 @@ func _my_state() -> Dictionary:
 		"c": d.crouch, "pt": d.point, "ps": d.point_sides, "ss": d.sit_stage, "sd": d.seat_drop}
 	if p.sled and is_instance_valid(p.sled):
 		s["sl"] = main.get_path_to(p.sled)
-	# 体の調子: 紙の水と熱（damp.gd、整数）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
+	# 体の調子: 紙の水（damp.gd、整数）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
 	if main.damp:
-		s["dw"] = int(roundf(main.damp.water_of(p.id)))   # 水
-		s["dh"] = int(roundf(main.damp.heat_of(p.id)))    # 熱
+		s["dw"] = int(roundf(main.damp.water_of(p.id)))
 	match int(p.mode):
 		1:   # つかんでいる
 			s["h"] = p.handle

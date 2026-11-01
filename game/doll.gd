@@ -131,7 +131,6 @@ var _cold := -1.0            # 白い息の見え方（0 暖かくて見えな�
 var _cold_want := 1.0
 var _cold_t := 0.0
 var _shiver := 0.0           # 寒さのふるえ（0 〜 1）。口もとの気温から、数秒でなじむ
-var warm := 0.0               # 体の熱でふるえを弱める割合（0〜0.85。damp.gd の熱から、damp.gd が毎フレーム入れる）
 var _shiver_want := 0.0
 var _calm := 0.0             # 暖かさの落ち着き（0 〜 1）。揺れがゆっくりになる
 var _calm_want := 0.0
@@ -1151,7 +1150,7 @@ func _blow_breath(dt: float) -> void:
 		var temp := get_node_or_null("/root/Temperature")
 		var c: float = temp.at(_long.global_position) if temp else 0.0
 		_cold_want = Temp.breath_of(c) if temp else 1.0
-		_shiver_want = (Temp.shiver_of(c) if temp else 0.0) * (1.0 - warm)   # 体の熱が高いと、外でもふるえにくい（damp.gd）
+		_shiver_want = Temp.shiver_of(c) if temp else 0.0
 		_calm_want = Temp.calm_of(c) if temp else 0.0
 		if _cold < 0.0:
 			_cold = _cold_want   # はじめは、その場の寒さから

@@ -293,7 +293,7 @@ func set_main_color(c: Color) -> void:
 
 
 ## dir は押す向き（水平）、at は手が触れた所（世界座標）、who は押した人（引きずられている人は押せない）。
-## strength は押す人の力の倍率（紙の体の水と熱。damp.gd の段: よれよれ 0.7 〜 パリッと 1.25）
+## strength は押す人の力の倍率（紙の体の水。damp.gd の段: よれよれ 0.7 〜 パリッと 1.25）
 func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> void:
 	dir.y = 0
 	if dir.length() < 0.01 or dragged.has(who):

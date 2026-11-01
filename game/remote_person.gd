@@ -24,7 +24,7 @@ var pulling := false
 var id := -1                 # 配り役（emotes.gd・craft.gd）からもらった番号。この画面の中だけの番号
 var hub: Node
 var craft: Node
-var damp_from_net := true    # 湿り気はその人の画面が決める（damp.gd はここでは動かさない。届いた "dw"・"dh" を入れる）
+var damp_from_net := true    # 湿り気はその人の画面が決める（damp.gd はここでは動かさない。届いた "dw" を入れる）
 var _s := {}                 # 最後に届いた姿
 var _age := 99.0             # 最後に届いてから (s)
 var _at := Vector3.INF       # 届いた位置
@@ -81,12 +81,12 @@ func put(s: Dictionary) -> void:
 	_s = s
 
 
-## 体の調子が届いた（"dw" 水・"dh" 熱）
+## 体の調子が届いた（"dw" 水）
 func _put_state(s: Dictionary) -> void:
 	var main := get_parent()
 	var dm = main.get("damp")
 	if dm and s.has("dw") and id >= 0:
-		dm.apply_net({"kind": "damp", "who": id, "w": s.dw, "h": s.get("dh", 50)})
+		dm.apply_net({"kind": "damp", "who": id, "w": s.dw})
 
 
 ## 紙の湿り気の押す力の倍率（damp.gd の段）
