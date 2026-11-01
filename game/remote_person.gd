@@ -7,7 +7,7 @@ const Doll := preload("res://doll.gd")
 ## 体の当たりは持たない（届いた位置へ置き直すので、ソリや人を押してしまわないように）
 ## 体の調子（紙の湿り気・食べたぬくもり）もその人の画面が決めて届く。押す・引く力にはその値を掛ける（player.gd と同じ）
 
-enum Mode { WALK, GRIP, RIDE, ROPE, SIT }   # player.gd の Mode と同じ並び
+enum Mode { WALK, GRIP, RIDE, ROPE, SIT, DRUM }   # player.gd の Mode と同じ並び
 const STALE := 0.5           # これより長く届かなければ、押す・引く・体重移動をやめる (s)
 const PULL := 12.0           # 届いた位置へ寄る速さ（1/s）
 const SNAP := 4.0            # これより離れていたら、寄らずに置き直す (m)
@@ -24,6 +24,7 @@ var pulling := false
 var id := -1                 # 配り役（emotes.gd・craft.gd）からもらった番号。この画面の中だけの番号
 var hub: Node
 var craft: Node
+var _drum: Node              # 入っている乾燥機（cook_station.gd）。入る・出るは出来事で配られるので、どの画面でも同じコマで回る
 var damp_from_net := true    # 湿り気はその人の画面が決める（damp.gd はここでは動かさない。届いた "dw" を入れる）
 var _s := {}                 # 最後に届いた姿
 var _age := 99.0             # 最後に届いてから (s)
@@ -87,6 +88,19 @@ func _put_state(s: Dictionary) -> void:
 	var dm = main.get("damp")
 	if dm and s.has("dw") and id >= 0:
 		dm.apply_net({"kind": "damp", "who": id, "w": s.dw})
+
+
+## 乾燥機に入る出来事が配られた（cook_station.gd の begin_ride）
+func enter_drum(st: Node) -> void:
+	_drum = st
+
+
+## 乾燥機の中にいる（とび込む・回る・とび出すあいだ）
+func _in_drum() -> bool:
+	if _drum and is_instance_valid(_drum) and _drum.rider == id and _drum.riding():
+		return true
+	_drum = null
+	return false
 
 
 ## 紙の湿り気の押す力の倍率（damp.gd の段）
@@ -176,6 +190,11 @@ func _physics_process(dt: float) -> void:
 	var fresh := _age < STALE
 	pushing = false
 	pulling = false
+	if _in_drum():
+		global_position = _drum.ride_pose(Doll.frame_index()).pos
+		rotation.y = lerp_angle(rotation.y, _yaw, 1.0 - exp(-PULL * dt))
+		_pose_doll()
+		return
 	match mode:
 		Mode.RIDE:
 			global_position = sled.to_global(seat)
@@ -202,7 +221,7 @@ func _physics_process(dt: float) -> void:
 
 ## 人形に、その人の画面の人形と同じ姿勢を伝える（姿勢は人形が 12 コマで刻む）
 func _pose_doll() -> void:
-	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE, Doll.Act.SIT][mode]
+	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE, Doll.Act.SIT, Doll.Act.SIT][mode]
 	doll.sled = sled
 	doll.grip = handle if mode == Mode.GRIP else Vector3.INF
 	doll.effort = bool(_s.get("e", false))
@@ -217,6 +236,17 @@ func _pose_doll() -> void:
 	doll.point_sides = _s.get("ps", [])
 	doll.sit_stage = int(_s.get("ss", 0))
 	doll.seat_drop = float(_s.get("sd", 0.45))
+	doll.spin_axis = Vector3.ZERO
+	if _drum:   # 乾燥機の中: 届いた姿でなく、この画面の乾燥機のコマで（player.gd の _pose_doll と同じ）
+		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
+		doll.act = Doll.Act.SIT
+		doll.facing = pl.face
+		doll.sit_stage = pl.stage
+		doll.seat_drop = preload("res://player.gd").DRUM_DROP
+		if pl.spin != 0.0:
+			doll.spin_axis = _drum.front()
+			doll.spin = pl.spin
+			doll.spin_at = _drum.drum_center()
 	# 雪玉・帯の米袋・ランタンは、配り役（ホストが決めて配った値）から。player.gd の _pose_doll と同じ
 	if hub:
 		var n: int = hub.balls_of(id)

@@ -8,7 +8,8 @@ const Audio := preload("res://audio.gd")
 ## 2026-11-01 代表「水だけでいいや。暖炉か焚き火で水分ゲージを減らして 0 にして、さらに火にあたっていくとパリッとしてバフになる」。
 ##   0 より上: 水。外の雪で増え（雪玉・引きずられる・雪煙・転ぶで大きく）、ロッジの中で 0 まで乾く
 ##   0 より下: 乾きすぎてパリッとした紙。火（暖炉・焚き火）のそばだけで 0 より下へ行き、外では 3 分ほどで 0 に戻る。
-##             厨房の乾燥機の前では、一瞬（2 秒ほど）でいちばんパリッと（−40）まで行く（2026-11-01 代表「一瞬で MAX までいくみたいな。いいじゃん」）
+##             厨房の乾燥機の中で回っていると、一瞬（2 秒ほど）でいちばんパリッと（−40）まで行く（2026-11-01 代表「一瞬で MAX までいくみたいな。いいじゃん」）。
+##             乾燥機には手にペレットを持たずに F で入る（2026-11-01 代表。前に立つだけでは乾かない。cook_station.gd）
 ## 値を 4 つの段に分け、段ごとに歩く速さ・押す力・姿勢のコマの間隔を変え、押す力と速さのバッジ（上がる・下がる）を出す（STAGES）。
 ## 見た目は段でなく値のまま（doll.gd の damp に毎フレーム入れる。濡れの色・シミ・垂れ・うなだれ、パリッとした張り）。
 ## ご飯は効かない（雰囲気づくりの道具。2026-11-01 代表「食べ物でのバフはやめよう」）。表は design/damp.md。
@@ -52,9 +53,7 @@ const DRY_FIRE := 4.7          # 火のすぐそばで足す速さ（すぐそ�
 const FIRE_R := 5.0            # 火の暖かさが届く (m。temperature.gd の FIRE_R と同じ)
 const CRISP_FROM := 0.15       # 暖かさ（0 〜 1。火からの近さ）がこれを超えると、0 より下（パリッと）へ行く
 const CRISP_FULL := 0.6        # ここで −40 まで行く（火から 2 m）
-const DRYER_AT := Vector3(5.5, 0.0, -0.2)   # 乾燥機の真ん中（厨房の目印 slot_food_kitchen の座標。props/sets/kitchen.tscn の当たりの箱 box_2）
-const DRYER_R := 2.6           # 乾燥機の真ん中から、これより近い（前に立つ）と乾く (m、水平。乾燥機は 2.7 m 角)
-const DRYER_DRY := 70.0        # 乾燥機の前で乾く速さ（1 秒に。100 から −40 まで 2 秒）
+const DRYER_DRY := 70.0        # 乾燥機の中で乾く速さ（1 秒に。100 から −40 まで 2 秒）
 
 const SEND_STEP := 2.0         # 値がこれだけ変わるか、段が変わったら配る
 const SEND_GAP := 0.25         # 配るのは多くても 1 秒に 4 回
@@ -65,8 +64,6 @@ var authority := true          # 値を決める。false なら受けるだけ�
 var water := {}                # 番号 → 値（−40 〜 100）
 var _fall := {}                # 番号 → 前のフレームの下向きの速さ（空中にいるあいだ）
 var _sent := {}                # 番号 → [最後に配った値, 時刻]
-var _dryer: Node3D
-var _looked := -100000
 
 
 func _ready() -> void:
@@ -182,8 +179,8 @@ func _rate(id: int, who: Node3D, dt: float) -> float:
 	var warm := _warm_at(who.global_position, temp)
 	var d: Doll = who.get("doll")
 	var dw := 0.0
-	if _at_dryer(who.global_position):
-		dw = -minf(DRYER_DRY * dt, w - CRISP)   # 乾燥機の前: 一瞬でいちばんパリッと
+	if _in_dryer(id):
+		dw = -minf(DRYER_DRY * dt, w - CRISP)   # 乾燥機の中: 一瞬でいちばんパリッと
 	elif warm > 0.0:
 		# 火のそば（中でも外でも）: 速く乾き、近ければ 0 より下（パリッと）まで
 		var floor_w := lerpf(0.0, CRISP, smoothstep(CRISP_FROM, CRISP_FULL, warm))
@@ -235,13 +232,12 @@ func _warm_at(pos: Vector3, temp: Node) -> float:
 	return warm
 
 
-## 乾燥機の前にいるか
-func _at_dryer(pos: Vector3) -> bool:
-	var dryer := _find_dryer()
-	if dryer == null:
-		return false
-	var off := pos - dryer.to_global(DRYER_AT)
-	return Vector2(off.x, off.z).length() < DRYER_R
+## 乾燥機の中で回っているか（cook_station.gd）
+func _in_dryer(id: int) -> bool:
+	for st in get_tree().get_nodes_in_group("dryers"):
+		if st.drying(id):
+			return true
+	return false
 
 
 ## 段が変わったか、値が SEND_STEP 動いたら、出来事を配る（通信の量を抑える）。バッジも入れ直す
@@ -262,15 +258,3 @@ func _publish(id: int, force: bool) -> void:
 				badges.clear(id, "damp_" + stat)
 			else:
 				badges.put(id, "damp_" + stat, st[5], st[6], stat)
-
-
-## 厨房の目印（乾燥機は DRYER_AT。なければ null。探すのは 2 秒に一度）
-func _find_dryer() -> Node3D:
-	if _dryer and is_instance_valid(_dryer):
-		return _dryer
-	var now := Time.get_ticks_msec()
-	if now - _looked < 2000:
-		return null
-	_looked = now
-	_dryer = get_tree().root.find_child("slot_food_kitchen", true, false) as Node3D
-	return _dryer

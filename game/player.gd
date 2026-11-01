@@ -35,6 +35,8 @@ const PropsLib := preload("res://props.gd")
 ## ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団。seats.gd）: 空いた席のそばで、席の方を向いて F で座る。
 ## 椅子の後ろへ歩み寄って向きを変え、腰を下ろす（12 コマ）。目線は座った人形の目の高さへ。もう一度 F か、移動キーで立つ。
 ## 座っているあいだも、身ぶり・声・手に持った物は使える。
+## 厨房の乾燥機（cook_station.gd）: 手にペレットを持たずに前で F で中へとび込み、胴の中で丸まって回って乾く（Mode.DRUM）。
+## 乾ききったら、ひとりでに戸からとび出す。もう一度 F でも出る。一人称は胴の真ん中から丸い戸の窓ごしに外を見る。
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
 const DASH := 3.4            # Shift で走る速さ
@@ -46,9 +48,11 @@ const GRAVITY := 9.8
 const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
 const FALL_NET := 2.0        # 安全網: 雪面よりこれだけ下へ落ちたら、雪の上へ戻す (m)
+const DRUM_DROP := 0.18       # 乾燥機の中で丸まるとき、腰から足までの高さ (m。小さいほど膝を抱える)
+const SPIN_SWAY := 0.39       # 乾燥機の中の一人称の揺れの速さ（コマあたり。胴の 1 回りに 1 往復ほど）
 const LET_GO_SPEED := 5.0    # 紐を持っていて、ソリがこれより速く滑ると手が離れる (m/s)。縁をつかんでいるときはソリが決める（sled.gd の引きずり）
 
-enum Mode { WALK, GRIP, RIDE, ROPE, SIT }
+enum Mode { WALK, GRIP, RIDE, ROPE, SIT, DRUM }
 
 var sled: RigidBody3D
 var cam: Camera3D
@@ -155,6 +159,7 @@ var last_item := {}          # 最後に触ったソリを畳んで持ってい�
 const SLED_SWITCH := 0.8     # 近いソリへ持ち替える差 (m)。行ったり来たりしないよう
 var seats: Seats             # ロッジの席の配り役（main.gd が置く。なければ座れない）
 var seat_i := -1             # 座っている席の番号（seats.gd）
+var _drum: Node              # 入っている乾燥機（cook_station.gd。Mode.DRUM のとき）
 var _sit_frame := -1         # 座る出来事のコマ
 var _stand_frame := -1       # 立つ出来事のコマ（座っているあいだは -1）
 var _sit_from := Vector3.ZERO   # 座ると決めたときの足もと（席の立つ所へ歩み寄る）
@@ -377,6 +382,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.SIT:
 					stand_up()
 					return
+				if mode == Mode.DRUM:
+					_drum.leave(id)   # 乾燥機から出る
+					return
 				if crouching and mode == Mode.WALK and _snow_ahead():
 					emote("make_ball")   # しゃがんで雪面に手を伸ばす: 雪玉を丸める
 					return
@@ -394,6 +402,9 @@ func _unhandled_input(e: InputEvent) -> void:
 					return
 				if mode == Mode.WALK and pal_stall_near() and (not wardrobe_near() or _facing(get_parent().pal_stall.global_position) > _facing(get_parent().wardrobe.global_position)):
 					get_parent().pals_ui.open()   # 衣装掛けの横の売り台: 頭・肩の小物とミニオンを買って付け替える
+					return
+				var dr := dryer_near()
+				if mode == Mode.WALK and dr and dr.ride(self):   # 厨房の乾燥機: 手にペレットを持っていなければ、中に入って乾く
 					return
 				var st := station_near()
 				if mode == Mode.WALK and st and st.use(self):   # 厨房の装置: 手のペレットを入れて調理する（仕上がりを受け取る）
@@ -445,7 +456,7 @@ func _unhandled_input(e: InputEvent) -> void:
 					_exhale_t = 0.0
 					emote("breath")
 			KEY_N:
-				if craft and not menu_open and not rooted() and mode != Mode.SIT:
+				if craft and not menu_open and not rooted() and mode != Mode.SIT and mode != Mode.DRUM:
 					toggle_sack()
 			KEY_R:
 				if craft and not menu_open:
@@ -460,7 +471,7 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_E:
 				if mode == Mode.RIDE:
 					get_off()
-				elif mode != Mode.SIT:
+				elif mode != Mode.SIT and mode != Mode.DRUM:
 					get_on()
 
 
@@ -527,6 +538,50 @@ func _sit_step(dt: float) -> void:
 		_sit_keys_free = true
 	elif _sit_keys_free and _sit_stage == 2 and not menu_open and not shopping:
 		stand_up()   # 移動キーでも立つ
+
+
+## 乾燥機に入る出来事が配られた（cook_station.gd の begin_ride）
+func enter_drum(st: Node) -> void:
+	if mode == Mode.GRIP or mode == Mode.ROPE:
+		let_go()
+	_drum = st
+	mode = Mode.DRUM
+	_col.disabled = true
+	velocity = Vector3.ZERO
+	crouching = false
+	# 一人称は外（丸い戸の窓）を、三人称は乾燥機の方を向く（カメラが戸の前から中の人形を見る）
+	var f: Vector3 = st.front() * (-1.0 if third else 1.0)
+	rotation.y = atan2(-f.x, -f.z)
+	var hud = get_parent().get("hud")
+	if hud:
+		hud.learn("dryer")
+
+
+## 乾燥機の中（居場所は人形と同じコマで刻む）。乾ききったら出る。出きったら歩ける
+func _drum_step(_dt: float) -> void:
+	velocity = Vector3.ZERO
+	var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
+	if pl.done or _drum.rider != id:
+		mode = Mode.WALK
+		_col.disabled = false
+		_cam_roll = 0.0
+		global_position = _drum.stand_point() + Vector3.UP * 0.05
+		_drum = null
+		return
+	global_position = pl.pos
+	var dm = get_parent().get("damp")
+	if dm and _drum.should_leave(dm.water_of(id), dm.CRISP):
+		_drum.leave(id)   # 乾ききった: ひとりでに出る
+
+
+## そばの、入れる乾燥機（前にいて、乾燥機の方を向いていて、手にペレットを持っていない）。なければ null
+func dryer_near() -> Node:
+	if mode != Mode.WALK or shopping:
+		return null
+	for st in get_parent().get("stations") if get_parent().get("stations") != null else []:
+		if st.can_ride(self) and _facing(st.get_parent().global_position) > 0.2:
+			return st
+	return null
 
 
 ## 雪の上の紐の先に近いか
@@ -716,6 +771,8 @@ func _physics_process(dt: float) -> void:
 			_keep_above_ground(FALL_NET)
 		Mode.SIT:
 			_sit_step(dt)
+		Mode.DRUM:
+			_drum_step(dt)
 	_update_point(dt)
 	_update_emote(dt)
 	_sack_events(dt)
@@ -726,7 +783,8 @@ func _physics_process(dt: float) -> void:
 
 ## 人形に、いまの動きを伝える（姿勢は人形が 12 コマで刻む）。Q を押しているあいだ手を振る（仮のキー）
 func _pose_doll() -> void:
-	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE, Doll.Act.SIT][mode]
+	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE, Doll.Act.SIT, Doll.Act.SIT][mode]
+	doll.spin_axis = Vector3.ZERO
 	doll.sled = sled
 	doll.grip = handle if mode == Mode.GRIP else Vector3.INF
 	doll.effort = pushing or pulling
@@ -738,6 +796,15 @@ func _pose_doll() -> void:
 		doll.facing = st.face
 		doll.sit_stage = _sit_stage
 		doll.seat_drop = st.pos.y - st.floor
+	if mode == Mode.DRUM:
+		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
+		doll.facing = pl.face
+		doll.sit_stage = pl.stage
+		doll.seat_drop = DRUM_DROP
+		if pl.spin != 0.0:
+			doll.spin_axis = _drum.front()
+			doll.spin = pl.spin
+			doll.spin_at = _drum.drum_center()
 	# 人形の顔は、カメラの見ている向きの 6 m 先を見る。測る所は、一人称ではカメラ（目）、三人称では頭。
 	# 三人称でカメラから測ると、カメラが 6 m 後ろなら見る先が頭そのものに、9 m なら頭の 3 m 後ろになり、首がねじれていた
 	var from := _gaze_from if third and _gaze_from != Vector3.INF else cam.global_position
@@ -962,6 +1029,10 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			if sled.kind == "sack":
 				e += SACK_EYE   # 米袋では少し後ろへもたれる（膝と紐を握った手と袋の前の縁が、画面の下に見える）
 			eye = to_local(Transform3D(sled.global_basis.orthonormalized(), global_position) * e)
+		elif mode == Mode.DRUM and _drum.drying(id):
+			# 乾燥機の中: 胴の真ん中から（人形といっしょには回らない。胴の回りに合わせて少し揺れる）
+			eye = to_local(_drum.drum_center() + Vector3.UP * 0.1)
+			_cam_roll = 0.08 * sin(Doll.frame_index() * SPIN_SWAY)
 		elif mode == Mode.SIT and _sit_stage > 0:
 			# ロッジの席: 座った人形の目の所（中腰のあいだは半ば）
 			var e := doll.eye_point(true) if _sit_stage == 2 else doll.eye_point(false).lerp(doll.eye_point(true), 0.55)
@@ -976,7 +1047,9 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	# カメラは頭のまわりをマウスの上下で回り、頭を見る向き（basis）を決める。そのあと、人形の目の高さの線が画面の cam_frame の
 	# 高さに来るよう、カメラを自分の上下の向きに平行にずらす（見下ろす角度は変えない。Camera3D の v_offset と同じ）
 	var pivot := Vector3(0, 1.6, 0)
-	if mode == Mode.SIT and _sit_stage > 0:
+	if mode == Mode.DRUM:
+		pivot = to_local(_drum.drum_center())   # 乾燥機の中: 胴の真ん中を見る（カメラは戸の前へ出る）
+	elif mode == Mode.SIT and _sit_stage > 0:
 		pivot.y -= (doll.eye_point(false).y - doll.eye_point(true).y) * (1.0 if _sit_stage == 2 else 0.55)   # 座った目の高さに合わせて下げる
 	var offset := Vector3(0, CAM_RISE, cam_dist + RIDE_CAM_PUSH * ride_fov / RIDE_FOV_MAX).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
 	var pivot_w := to_global(pivot)
@@ -1025,7 +1098,9 @@ func _cam_clear(from: Vector3, ray: Vector3) -> float:
 	q.transform = Transform3D(Basis(), from)
 	q.motion = ray
 	q.exclude = [get_rid()]
-	if space.get_rest_info(q).size() > 0:   # 頭がもう何かに触れている（座ったソリなど）: ソリは外して測り直す
+	if mode == Mode.DRUM:
+		q.exclude = [get_rid(), _drum.body_rid()]   # 乾燥機の中から、戸の外へ
+	elif space.get_rest_info(q).size() > 0:   # 頭がもう何かに触れている（座ったソリなど）: ソリは外して測り直す
 		q.exclude = [get_rid(), sled.get_rid()]
 	var r := space.cast_motion(q)
 	return maxf(0.3, ray.length() * r[0] - 0.05)
@@ -1286,7 +1361,7 @@ func _left_click() -> void:
 		_eating = true
 		_bite()
 		return
-	if ball_count() > 0:
+	if ball_count() > 0 and mode != Mode.DRUM:   # 乾燥機の中からは投げない
 		if not held().is_empty() and craft:
 			craft.send({"kind": "hand", "who": id, "slot": -1})
 		holding_ball = held().is_empty()

@@ -3,7 +3,7 @@ extends SceneTree
 ##   Godot --headless --fixed-fps 60 --path game -s res://tools/damp_check.gd -- --no-sound
 ## あなたを順に置いて、水・段・歩く速さ・押す力・人形の見た目・姿勢のコマの間隔・バッジを出す:
 ##   外（ふもと）に 60 秒立つ → 雪玉が 3 回当たる → 水 60 から暖炉のそば（1.5 m）に 30 秒 → 外に 180 秒 →
-##   乾燥機の前に 3 秒 → ロッジの中（暖炉から離れた所）に 150 秒 → 風除室に 30 秒
+##   乾燥機の前に 3 秒立つ（乾かない）→ F で乾燥機に入る（1 秒・2 秒・ひとりでに出たとき）→ ロッジの中（暖炉から離れた所）に 150 秒 → 風除室に 30 秒
 ## 仲間（押す係）は止めずに動かし、ソリを押して登るあいだの値も出す
 
 const Doll := preload("res://doll.gd")
@@ -56,7 +56,10 @@ func _run() -> void:
 		main.settings.set_open(false)
 	var lodge: Node3D = main.get_node("Lodge")
 	var fire := lodge.find_child("light_fire", true, false) as Node3D
-	var dryer := root.find_child("slot_food_kitchen", true, false) as Node3D
+	var dryer: Node = null
+	for st in main.stations:
+		if st.kind == "dryer":
+			dryer = st
 	var foot := Vector3(6.0, main.height(6.0, 30.0) + 0.1, 30.0)
 	_rows.append("| 場面 | 水 | 段 | 歩く速さ | 押す力 | 人形の見た目 | コマの間隔 | バッジ | 気温 |")
 	_rows.append("|---|---|---|---|---|---|---|---|---|")
@@ -84,12 +87,22 @@ func _run() -> void:
 	_row("外にさらに 120 秒")
 	if dryer:
 		main.damp.put(p.id, 60.0)
-		var front: Vector3 = dryer.to_global(main.damp.DRYER_AT + Vector3(0, 0, 2.0))   # 乾燥機の前（部屋の側）
-		_put(_floor(front + Vector3.UP * 0.5))
+		_put(dryer.stand_point() + Vector3.UP * 0.05)   # 乾燥機の前（部屋の側）
+		var d: Vector3 = dryer.get_parent().global_position - p.global_position
+		p.rotation.y = atan2(-d.x, -d.z)
+		await _wait(3.0)
+		_row("水 60 から乾燥機の前に立って 3 秒")
+		print("入れる: ", p.dryer_near() == dryer)
+		dryer.ride(p)
 		await _wait(1.0)
-		_row("水 60 から乾燥機の前に 1 秒")
-		await _wait(2.0)
-		_row("乾燥機の前に 3 秒")
+		_row("乾燥機に入って 1 秒（とび込み 0.5 秒）")
+		await _wait(1.0)
+		_row("乾燥機に入って 2 秒")
+		var t := 2.0
+		while p.mode == p.Mode.DRUM and t < 15.0:
+			await _wait(0.1)
+			t += 0.1
+		_row("乾燥機からひとりでに出た（入って %.1f 秒）" % t)
 	main.damp.put(p.id, 90.0)
 	_put(_floor(lodge.to_global(Vector3(14.0, 0.5, 4.0))))
 	await _wait(60.0)
