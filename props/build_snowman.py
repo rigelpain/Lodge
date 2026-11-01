@@ -315,7 +315,7 @@ def body_y(x, z, lift=0.0):
 
 
 def fridge():
-    """昔の大きな冷蔵庫: 角の丸い箱をミントのフェルトでくるみ、口の縁に玉縁。扉は開けっぱなし（蝶番は前から見て右）。
+    """昔の大きな冷蔵庫: 角の丸い箱をミントのフェルトでくるみ、口の縁に玉縁。扉は開けっぱなし（蝶番は前から見て左。2026-11-01 代表: 扉は厨房の装置の並びをふさがない側へ開く）。
     中は白い裏地で、上に冷凍の小部屋（ふたが開いて霜）、奥の壁に冷やす管のジグザグの縫い目。床から綿の冷気が少し流れ出る"""
     P = K.Parts("snowman_fridge", kind="fridge", box=[W, H, D], door_open=100.0)
     C.superellipsoid(P.m("felt_mint"), BC, BH, n_xy=NB, n_z=NB, cuts=K.cuts(16, 9))
@@ -334,9 +334,9 @@ def fridge():
         for sy in (-1, 1):
             K.lathe(P, "wood_dark", [(0.0, 0.0), (0.045, 0.0), (0.05, 0.03), (0.04, 0.07), (0.0, 0.075)],
                     center=(sx * (W / 2 - 0.12), sy * (D / 2 - 0.12), 0.0), segs=14)
-    # 蝶番（前から見て右 = -X の縁）
+    # 蝶番（前から見て左 = +X の縁）
     for z in (0.32, 1.86):
-        K.lathe(P, "wood_dark", [(0.0, -0.05), (0.022, -0.05), (0.024, 0.05), (0.0, 0.05)], center=(-W / 2 + 0.012, D / 2 + 0.04, z), segs=12)
+        K.lathe(P, "wood_dark", [(0.0, -0.05), (0.022, -0.05), (0.024, 0.05), (0.0, 0.05)], center=(W / 2 - 0.012, D / 2 + 0.04, z), segs=12)
     # 冷凍の小部屋: 天井の下に棚板と、上で吊ったふた（手前へ開いている）
     fz = 1.68
     K.box(P, "felt_liner", (0, (CY0 + D / 2 - 0.08) / 2, fz), (2 * CW, D / 2 - 0.08 - CY0, 0.03))
@@ -406,7 +406,7 @@ def fridge():
     def face_y(x, z):
         s = ((abs(x) / (W / 2 - 0.01)) ** NB + (abs(z - zc) / (h / 2)) ** NB) ** (2.4 / NB)
         return yc + dt / 2 * max(0.0, 1 - s) ** (1 / 2.4)
-    # 外: 縁の内側のなみ縫い、上に赤いフェルトの雪の結晶のしるし、右の縁に太い木の取っ手（両端を大きなボタンで留める）
+    # 外: 縁の内側のなみ縫い、上に赤いフェルトの雪の結晶のしるし、蝶番と反対の縁に太い木の取っ手（両端を大きなボタンで留める）
     pts, _n = C.ellipse_ring(W / 2 - 0.09, h / 2 - 0.09, n=NB, count=160)
     C.running_stitch(Dp.m("thread"), [Vector((p.x, face_y(p.x, zc + p.y) + 0.002, zc + p.y)) for p in pts + [pts[0]]], [Vector()],
                      dash=0.022, gap=0.014, r=0.003)
@@ -421,7 +421,7 @@ def fridge():
             tip = Vector((0, by + 0.008, bz)) + d * s * 0.05
             for b in (-0.6, 0.6):
                 K.tube(Dp, "thread", [tip, tip + (d * s).lerp(Vector((-d.z, 0, d.x)) * b, 0.6).normalized() * 0.02], 0.0026, sides=4)
-    hx, hz0, hz1 = W / 2 - 0.12, zc - 0.12, zc + 0.3
+    hx, hz0, hz1 = -(W / 2 - 0.12), zc - 0.12, zc + 0.3
     hy0, hy1 = face_y(hx, hz0), face_y(hx, hz1)
     K.tube(Dp, "wood_dark", [(hx, hy0, hz0), (hx, hy0 + 0.05, hz0 + 0.03), (hx, hy0 + 0.075, hz0 + 0.1), (hx, hy1 + 0.075, hz1 - 0.1),
                              (hx, hy1 + 0.05, hz1 - 0.03), (hx, hy1, hz1)], 0.028, sides=12)
@@ -431,7 +431,7 @@ def fridge():
         for a in (0.785, 2.356):
             K.tube(Dp, "thread", [(hx - 0.011 * math.cos(a), y + 0.022, z - 0.011 * math.sin(a)),
                                   (hx + 0.011 * math.cos(a), y + 0.022, z + 0.011 * math.sin(a))], 0.003, sides=4)
-    K.disc(Dp, "steel", (W / 2 - 0.01, yc, zc + 0.08), 0.022, 0.012, axis="X", segs=16)   # 留めのスナップ
+    K.disc(Dp, "steel", (-(W / 2 - 0.01), yc, zc + 0.08), 0.022, 0.012, axis="X", segs=16)   # 留めのスナップ
     # 内: 裏地の板、ふちに毛糸のパッキン、3 段の扉の棚（卵・ジャムとバター・瓶の牛乳）
     yi = D / 2
     K.extrude(Dp, "felt_liner", K.round_rect(W - 0.24, h - 0.24, 0.14), yi - 0.025, yi + 0.002, plane="XZ", offset=(0, 0, zc))
@@ -465,8 +465,8 @@ def fridge():
                 K.disc(Dp, "paper_white", (x, yi - 0.085, zt + 0.166), 0.02, 0.008, segs=12)
                 K.ring(Dp, "felt_red", (x, yi - 0.085, zt + 0.163), 0.02, 0.003, n=16)
     Dp.finish(fuzz=0.003)
-    shift_part(Dp, (-W / 2 + 0.012, D / 2 + 0.04, 0.0), P.root)
-    Dp.root.rotation_euler.z = math.radians(100)
+    shift_part(Dp, (W / 2 - 0.012, D / 2 + 0.04, 0.0), P.root)
+    Dp.root.rotation_euler.z = math.radians(-100)
     return P.root, [Dp.root]
 
 

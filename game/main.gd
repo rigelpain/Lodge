@@ -97,6 +97,15 @@ const SHOP_YAW := PI          # 真東（番台の向こうの客）を向く
 const SNOWMAN_AT := Vector3(-4.6, 0, 0.5)
 const SNOWMAN_SCALE := 1.85
 const FRIDGE_BOX := Vector3(1.1, 2.0, 0.85)
+## 厨房の巨大な調理の装置（2026-11-01 代表の並び: 西から冷蔵庫 → プレス機 → アイロン台 → 乾燥機 → 衣類スチーマー。design/snowman-food/）。
+## [名前, glb, 置く所（slot_food_kitchen の座標）, 向き（度）, 当たりの箱 [大きさ, 中心] の列]。正面（+Z）は食堂の側
+const KITCHEN := [
+	["press", "res://props/kitchen/giant_heat_press.glb", Vector3(-2.7, 0, 0.3), 180.0, [[Vector3(1.6, 1.0, 1.96), Vector3(0, 0.5, 0)]]],
+	["iron", "res://props/kitchen/giant_press_board.glb", Vector3(0.2, 0, 0.6), 90.0, [[Vector3(3.8, 1.0, 1.24), Vector3(0, 0.5, 0)]]],
+	["dryer", "res://props/kitchen/giant_dryer.glb", Vector3(3.7, 0, -0.2), 180.0, [[Vector3(2.7, 3.46, 2.7), Vector3(0, 1.73, 0)]]],
+	["drink", "res://props/kitchen/giant_vapor.glb", Vector3(6.5, 0, 0.0), 180.0,
+		[[Vector3(2.08, 1.5, 1.52), Vector3(0, 0.75, 0.04)], [Vector3(0.14, 3.6, 0.14), Vector3(-0.68, 1.8, -0.48)]]],
+]
 ## 番台（店番の商人のカウンターとレジ。2026-10-31 代表「パッチワークおじいさんにも、雪だるまにも、番台的なカウンターとレジを」）。
 ## [カウンター, レジ, お皿に盛る物, ロッジの座標 (x, y), 正面（客の側）の向き（度。0 = 南、90 = 東。lodge/dims.py の SLOTS と同じ）]。
 ## おじいさんは真東を向いて番台の後ろに立ち、雪だるまは冷蔵庫の中から番台ごしに食堂を向く。置き方は design/lodge-layout/
@@ -124,6 +133,7 @@ var _ft_sum := 0.0
 var _ft_n := 0
 var pip_label: Label
 var sewing: Node3D            # 大きなミシンの動き（sewing_machine.gd）
+var kitchen := {}             # 厨房の装置（KITCHEN の名前 → 置いた Node3D）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
@@ -828,12 +838,12 @@ func _furnish_lodge() -> void:
 		shopkeeper.rotation.y = SHOP_YAW
 		machine.get_parent().add_child(shopkeeper)
 	# 厨房: 巨大なアイロン台・プレス機・乾燥機と、卓上の道具（props/build_scenes.py の kitchen）
-	var kitchen := lodge.find_child("slot_food_kitchen", true, false) as Node3D
-	if kitchen:
+	var kitchen_slot := lodge.find_child("slot_food_kitchen", true, false) as Node3D
+	if kitchen_slot:
 		var set_node := (load("res://props/sets/kitchen.tscn") as PackedScene).instantiate()
-		kitchen.add_child(set_node)
-		Props.cook_cycle(set_node)   # 調理の仕組みができるまで: 装置が順に調理して煙を出す
-		_put_snowman(kitchen)
+		kitchen_slot.add_child(set_node)
+		_put_kitchen(kitchen_slot)
+		_put_snowman(kitchen_slot)
 	for b in BANDAI:
 		_put_bandai(lodge, b)
 	# 2 階の衣装掛け: 前で F を押すと人形を選び直す
@@ -947,6 +957,33 @@ func _solid(n: Node3D) -> void:
 	col.position = box.get_center()
 	body.add_child(col)
 	n.add_child(body)
+
+
+## 厨房の巨大な調理の装置を KITCHEN の並びで 1 台ずつ置く（調理で動かすので、小物の場面には結合しない）。
+## スチーマーのふた（giant_vapor_lid）は目印 lid に付ける。装置の煙は、調理の仕組みができるまで順に出す
+func _put_kitchen(slot: Node3D) -> void:
+	for k in KITCHEN:
+		var dev := Props.make(k[1])
+		dev.name = "Kitchen_" + String(k[0])
+		dev.position = k[2]
+		dev.rotation.y = deg_to_rad(k[3])
+		slot.add_child(dev)
+		kitchen[k[0]] = dev
+		var body := StaticBody3D.new()
+		for b in k[4]:
+			var col := CollisionShape3D.new()
+			var box := BoxShape3D.new()
+			box.size = b[0]
+			col.shape = box
+			col.position = b[1]
+			body.add_child(col)
+		dev.add_child(body)
+		var hinge := dev.find_child("lid", true, false) as Node3D
+		if hinge:
+			var lid := Props.make("res://props/kitchen/giant_vapor_lid.glb")
+			lid.name = "Lid"
+			hinge.add_child(lid)
+		Props.cook_cycle(dev)
 
 
 ## 厨房の奥の並びのいちばん西（ミシンの右）に、扉を開けた冷蔵庫と、中に立つご飯係の雪だるま（props/build_snowman.py）。
