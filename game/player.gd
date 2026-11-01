@@ -45,6 +45,7 @@ const JUMP := 4.5
 const GRAVITY := 9.8
 const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
+const FALL_NET := 2.0        # 安全網: 雪面よりこれだけ下へ落ちたら、雪の上へ戻す (m)
 const LET_GO_SPEED := 5.0    # 紐を持っていて、ソリがこれより速く滑ると手が離れる (m/s)。縁をつかんでいるときはソリが決める（sled.gd の引きずり）
 
 enum Mode { WALK, GRIP, RIDE, ROPE, SIT }
@@ -606,9 +607,27 @@ func get_off() -> void:
 		SackLook.set_stage(sled, was, 0)
 		global_position = sled.global_position + sled.global_basis.z * 0.6 + Vector3.UP * 0.2
 		velocity = Vector3.ZERO
+		_keep_above_ground(0.0)
 		return
 	global_position = sled.global_position + sled.global_basis.x * 1.4 + Vector3.UP * 0.5
 	velocity = Vector3.ZERO
+	# 急な坂では、ソリの横 1.4 m の所が雪面より下になる（坂の上側へ降りたとき）。地面の下に置くと、そのまま落ち続ける
+	_keep_above_ground(0.0)
+
+
+## 安全網: 雪面より below (m) 下にいたら、その場の雪の上へ戻す（地面の当たりは厚みのない面なので、下へ出ると戻れない）
+func _keep_above_ground(below: float) -> void:
+	var w := get_parent()
+	if w == null or not w.has_method("height"):
+		return
+	var g: float = w.height(global_position.x, global_position.z)
+	if global_position.y >= g - below:
+		return
+	if below > 0.0:
+		print("人が地面の下へ落ちたので、雪の上へ戻した: (%.1f, %.1f)" % [global_position.x, global_position.z])
+	global_position.y = g + 0.1
+	velocity = Vector3.ZERO
+	reset_physics_interpolation()
 
 
 # ---------------------------------------------------------------- 米袋で足で漕ぐ・追いついて止める
@@ -689,8 +708,10 @@ func _physics_process(dt: float) -> void:
 			_grip(dt)
 		Mode.ROPE:
 			_walk(dt, true)
+			_keep_above_ground(FALL_NET)
 		Mode.WALK:
 			_walk(dt, false)
+			_keep_above_ground(FALL_NET)
 		Mode.SIT:
 			_sit_step(dt)
 	_update_point(dt)
