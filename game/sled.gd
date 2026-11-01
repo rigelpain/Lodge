@@ -64,6 +64,8 @@ const DRAG_SLIP_SPEED := 8.0   # これより速いと手がもたない（つ�
 const BODY_MIN_MASS := 15.0    # 物理の体の重さの下限 (kg)。米袋（重さ 1 kg）でも揺れずに滑るため。止める計算は表の重さを使う
 const MID_MASS := 60.0         # 滑り木の抵抗・体重移動・雪かきの力はこの重さで決めた値。重さに比べて同じ効きにする
 const PUSH_FADE := Vector2(3.0, 4.0)   # 押されるソリがこの速さ (m/s) を超えると、押す力が弱まって消える（人は走るより速く押せない）
+const COL_MIN_H := 0.3         # 当たりの箱の厚さの下限 (m)。これより薄いと、強い着地で地面をすり抜ける（米袋）
+const FALL_NET := 2.0          # 安全網: 雪面よりこれだけ下へ沈んだら、その場の雪の上へ戻す (m)
 
 signal slipped(who: Node3D)    # 引きずられて手が離れた
 
@@ -224,15 +226,22 @@ func _ready() -> void:
 	center_of_mass_mode = RigidBody3D.CENTER_OF_MASS_MODE_CUSTOM
 	center_of_mass = Vector3(0, -0.25, 0)
 	angular_damp = 6.0
+	# 速く着地しても地面をすり抜けないように（2026-11-01 代表「大きな山の段差を滑り飛んだときに着地と同時にすり抜けて無限に落ちた」）。
+	# 地面の当たり（HeightMapShape3D）は厚みのない面なので、1 コマで箱の半分の厚さより深く入ると、裏へ押し出されて落ちる。
+	# 動いた道すじを調べて、面の手前で止める
+	continuous_cd = true
 	var pm := PhysicsMaterial.new()
 	pm.friction = 0.04
 	physics_material_override = pm
 
+	# 当たりの箱。薄い米袋（0.15 m）は、強く着地して少し沈むだけで箱の半分を超え、裏へ押し出される。
+	# 当たりだけ COL_MIN_H まで上へ厚くする（底の高さは見た目と同じ）
 	var col := CollisionShape3D.new()
 	var box := BoxShape3D.new()
-	box.size = k.box
+	var h := maxf(k.box.y, COL_MIN_H)
+	box.size = Vector3(k.box.x, h, k.box.z)
 	col.shape = box
-	col.position.y = k.box.y * 0.49
+	col.position.y = k.box.y * 0.49 + (h - k.box.y) * 0.5
 	add_child(col)
 
 	_make_body()
@@ -931,7 +940,28 @@ func _update_drag_puffs() -> void:
 		puff.emitting = true
 
 
+## 安全網: 地面の下へ落ちていたら、その場の雪の上へ戻す（向きは保ち、水平の速さは残す）。乗っている人は席についてくる。
+## 通信ではホストの画面だけが決める（つなぐ側のソリはホストの姿を写すので、戻った姿も届く）
+func _catch_fall() -> void:
+	var w := get_parent()
+	if net_follow or freeze or w == null or not w.has_method("height"):
+		return
+	var p := global_position
+	var g: float = w.height(p.x, p.z)
+	if p.y > g - FALL_NET:
+		return
+	var fwd := -global_basis.z
+	fwd.y = 0.0
+	var yaw := atan2(-fwd.x, -fwd.z) if fwd.length() > 0.01 else rotation.y
+	global_transform = Transform3D(Basis(Vector3.UP, yaw), Vector3(p.x, g + 0.3 + place_lift(), p.z))
+	linear_velocity = Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	angular_velocity = Vector3.ZERO
+	reset_physics_interpolation()
+	print("ソリが地面の下へ落ちたので、雪の上へ戻した: %s (%.1f, %.1f)" % [kind, p.x, p.z])
+
+
 func _physics_process(dt: float) -> void:
+	_catch_fall()
 	_update_shadow_and_trail(dt)
 	pushers = _push_count
 	_push_count = 0
