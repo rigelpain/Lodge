@@ -452,7 +452,7 @@ func _unhandled_input(e: InputEvent) -> void:
 					get_parent().craft_ui.open_gear()   # 装備の画面
 			KEY_Z:
 				# 手に持つ物を替える（Shift で逆回り）。ホイールやトラックパッドが使えないとき
-				if craft and not craft.bag(id).is_empty() and not menu_open:
+				if craft and craft.has_hand_items(id) and not menu_open:
 					cycle_hand(-1 if e.shift_pressed else 1)
 			KEY_E:
 				if mode == Mode.RIDE:
@@ -1272,6 +1272,13 @@ func _left_click() -> void:
 		emote("clap")
 
 
+## 手の料理を食べ始める（装備の画面の「食べる」）。食べ終わるまでひと口ずつ続ける
+func eat_held() -> void:
+	if craft and FoodMenu.done(held()):
+		_eating = true
+		_bite()
+
+
 ## 手の料理をひと口: 右手を口へ運んでもぐもぐ（emotes.gd の eat）。噛むコマで持ち物のひと口を数える（_eat_step）
 func _bite() -> void:
 	var it := held()
@@ -1612,7 +1619,7 @@ func _on_craft(ev: Dictionary) -> void:
 
 ## ホイール・二本指スクロールで持ち替えてよいか（画面を開いているあいだは、その画面がスクロールを使う。身ぶりの輪を出しているあいだも替えない）
 func _can_cycle() -> bool:
-	return not menu_open and not (ring and ring.visible) and craft != null and not craft.bag(id).is_empty()
+	return not menu_open and not (ring and ring.visible) and craft != null and craft.has_hand_items(id)
 
 
 ## 二本指スクロールのひと撫でで 1 つ持ち替える。指を離したあとの慣性のパンも同じひと撫でとして、続けて替えない。
@@ -1637,11 +1644,15 @@ func _pan_hand(d: Vector2) -> void:
 		_pan_done = true
 
 
-## ホイール: 素手 → 持ち物 1 → 2 → … と回す
+## ホイール: 素手 → 手持ち 1 → 2 → … と回す（空いたマスと、かばんの物は飛ばす）
 func cycle_hand(step: int) -> void:
-	var n: int = craft.bag(id).size()
-	var cur: int = craft.hands.get(id, -1)
-	var next := posmod(cur + 1 + step, n + 1) - 1
+	var order := [-1]
+	var b: Array = craft.bag(id)
+	for i in mini(preload("res://craft.gd").HAND_SLOTS, b.size()):
+		if not b[i].is_empty():
+			order.append(i)
+	var cur := order.find(craft.hands.get(id, -1))
+	var next: int = order[posmod(maxi(cur, 0) + step, order.size())]
 	craft.send({"kind": "hand", "who": id, "slot": next})
 
 

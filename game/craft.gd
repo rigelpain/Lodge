@@ -73,14 +73,16 @@ const PATTERNS := ["sack", "small", "mid", "large"]
 ## ロッジの中から外へ運び出せないソリ（tools/carry_out_check.gd で確かめた。大は西の通路の家具と壁に当たる）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
 const OUT_FRONT := ["large"]
-const SLOTS := 8               # 持ち物に入る数
+const SLOTS := 12              # 持ち物に入る数（手持ち HAND_SLOTS ＋ かばん）
+const HAND_SLOTS := 6          # 手持ち: 画面の下の列に並び、ホイールで持ち替える。残りはかばん（装備の画面で入れ替える）
+                               # （2026-11-01 代表「手持ちが6で、かばんにもう6つはいってるようなイメージで、計12アイテムを持ち運べる」）
 const FOLD_FRAMES := 30        # 畳む動きの長さ（コマ。12 コマで 1 秒）
 const UNFOLD_FRAMES := 30      # 広げる動きの長さ
 
 var world: Node                # main.gd（ソリを置く所）
 var replay := false            # つなぐ側で、ホストが確かめた出来事をなぞっている（この画面の間合いで断らない）
 var wallets := {}              # 人の番号 → ボタンの数
-var bags := {}                 # 人の番号 → 持ち物（item の配列）
+var bags := {}                 # 人の番号 → 持ち物（SLOTS 個の場所の配列。空いた場所は {}。0〜5 が手持ち、6〜11 がかばん）
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
 var _next_sled := 1
@@ -117,7 +119,7 @@ func join(who: int) -> void:
 	if wallets.has(who):
 		return
 	wallets[who] = START_BUTTONS
-	bags[who] = []
+	bags[who] = empty_bag()
 	hands[who] = -1
 	tag_designs[who] = preload("res://sled_tags.gd").default_design(who)
 	tag_owned[who] = {}
@@ -231,6 +233,56 @@ func sack_sled(who: int) -> RigidBody3D:
 
 func bag(who: int) -> Array:
 	return bags.get(who, [])
+
+
+static func empty_bag() -> Array:
+	var b := []
+	for i in SLOTS:
+		b.append({})
+	return b
+
+
+## 持ち物の数（空いた場所は数えない）
+func count(who: int) -> int:
+	return bag(who).filter(func(it): return not it.is_empty()).size()
+
+
+## 手持ち（画面の下の列）に何か入っているか
+func has_hand_items(who: int) -> bool:
+	var b := bag(who)
+	for i in mini(HAND_SLOTS, b.size()):
+		if not b[i].is_empty():
+			return true
+	return false
+
+
+## 新しい物の入る場所: 手持ちの空き → かばんの空き。いっぱいなら -1
+func free_slot(who: int) -> int:
+	var b := bag(who)
+	for i in b.size():
+		if b[i].is_empty():
+			return i
+	return b.size() if b.size() < SLOTS else -1   # 短い配列（確かめ用の道具が入れた持ち物）は、後ろが空き
+
+
+## 物を空いた場所に入れる。手持ちに入れば手に持つ（かばんなら手はそのまま）。入った場所（いっぱいなら -1）
+func _put(who: int, item: Dictionary) -> int:
+	var i := free_slot(who)
+	if i < 0:
+		return -1
+	while bags[who].size() < SLOTS:
+		bags[who].append({})
+	bags[who][i] = item
+	if i < HAND_SLOTS:
+		hands[who] = i
+	return i
+
+
+## slot の場所を空ける。手に持っていたなら素手に
+func _clear(who: int, slot: int) -> void:
+	bags[who][slot] = {}
+	if hands.get(who, -1) == slot:
+		hands[who] = -1
 
 
 func wallet(who: int) -> int:
@@ -354,51 +406,69 @@ func _apply(ev: Dictionary) -> bool:
 		"buy":
 			var item: Dictionary = ev.item
 			var cost := price(item)
-			if wallets[who] < cost or bags[who].size() >= SLOTS:
+			if wallets[who] < cost or free_slot(who) < 0:
 				return false
 			wallets[who] -= cost
-			bags[who].append(item)
-			hands[who] = bags[who].size() - 1   # 買った物を手に持つ
-			ev["slot"] = hands[who]
+			ev["slot"] = _put(who, item)   # 買った物を手に持つ（手持ちがいっぱいなら、かばんへ）
 		"hand":
-			hands[who] = clampi(int(ev.slot), -1, bags[who].size() - 1)
+			var i := int(ev.slot)
+			if i >= HAND_SLOTS or (i >= 0 and (i >= bags[who].size() or bags[who][i].is_empty())):
+				return false   # 手に持てるのは手持ちの物だけ
+			hands[who] = maxi(i, -1)
+		"move":
+			# 持ち物を別の場所へ（装備の画面で引きずって。行き先に物があれば入れ替える）。手に持っていた物は、手持ちにある限り持ったまま
+			var b: Array = bags[who]
+			var a := int(ev.from)
+			var c := int(ev.to)
+			if a == c or a < 0 or c < 0 or a >= b.size() or c >= b.size() or b[a].is_empty():
+				return false
+			var t: Dictionary = b[a]
+			b[a] = b[c]
+			b[c] = t
+			var h: int = hands[who]
+			if h == a:
+				hands[who] = c if c < HAND_SLOTS else -1
+			elif h == c:
+				hands[who] = a if a < HAND_SLOTS and not b[a].is_empty() else -1
+		"drop":
+			# 持ち物を捨てる（装備の画面のゴミ箱）
+			var b: Array = bags[who]
+			var i := int(ev.slot)
+			if i < 0 or i >= b.size() or b[i].is_empty():
+				return false
+			ev["item"] = b[i].duplicate()
+			_clear(who, i)
 		"food_buy":
 			var dish: String = ev.item.get("dish", "")
-			if not Food.MENU.has(dish) or bags[who].size() >= SLOTS or world == null or world.get("emotes") == null:
+			if not Food.MENU.has(dish) or free_slot(who) < 0 or world == null or world.get("emotes") == null:
 				return false
 			if not replay:   # つなぐ側がなぞるときは、ホストがもう雪玉で払っている（数はホストから届く）
 				var pay := {"kind": "spend", "who": who, "n": Food.price(dish)}
 				world.emotes.send(pay)
 				if not pay.get("ok", false):
 					return false
-			bags[who].append(Food.item(dish))
-			hands[who] = bags[who].size() - 1   # 買ったペレットを手に持つ
-			ev["slot"] = hands[who]
+			ev["slot"] = _put(who, Food.item(dish))   # 買ったペレットを手に持つ
 		"cook":
 			var b: Array = bags[who]
 			var i := int(ev.slot)
-			if i < 0 or i >= b.size() or Food.next_station(b[i]) != ev.station:
+			if i < 0 or i >= b.size() or b[i].is_empty() or Food.next_station(b[i]) != ev.station:
 				return false
 			ev["item"] = b[i].duplicate()
-			b.remove_at(i)
-			hands[who] = -1
+			_clear(who, i)
 		"bite":
 			var b: Array = bags[who]
 			var i := int(ev.slot)
-			if i < 0 or i >= b.size() or not Food.done(b[i]):
+			if i < 0 or i >= b.size() or b[i].is_empty() or not Food.done(b[i]):
 				return false
 			b[i]["bites"] = int(b[i].get("bites", 0)) + 1
 			ev["dish"] = b[i].dish
 			if int(b[i].bites) >= Food.BITES:
 				ev["ate"] = b[i].dish
-				b.remove_at(i)
-				hands[who] = -1
+				_clear(who, i)
 		"cooked":
-			if bags[who].size() >= SLOTS:
+			if free_slot(who) < 0:
 				return false
-			bags[who].append(ev.item)
-			hands[who] = bags[who].size() - 1
-			ev["slot"] = hands[who]
+			ev["slot"] = _put(who, ev.item)
 		"sew":
 			# 型紙と布は両方そろって初めて使う（片方だけ消えることはない）
 			var b: Array = bags[who]
@@ -409,9 +479,8 @@ func _apply(ev: Dictionary) -> bool:
 				return false
 			if world and world.get("sewing") and not world.sewing.can_sew() and not replay:
 				return false
-			b.remove_at(maxi(ps, fs))
-			b.remove_at(mini(ps, fs))
-			hands[who] = -1
+			_clear(who, ps)
+			_clear(who, fs)
 		"sewn":
 			ev["tag"] = tag_designs.get(who, 0)   # 持ち主の印: 縫った人の名札
 			if ev.sled == "sack" and sacks.has(who):
@@ -505,7 +574,7 @@ func _apply(ev: Dictionary) -> bool:
 			elif ev.has("slot"):
 				var b: Array = bags[who]
 				var i := int(ev.slot)
-				if i < 0 or i >= b.size() or b[i].get("kind") != "folded" or b[i].get("sled") == "sack" or not preload("res://sled_tags.gd").has_tag(b[i].get("tag", -1)):
+				if i < 0 or i >= b.size() or b[i].get("kind", "") != "folded" or b[i].get("sled") == "sack" or not preload("res://sled_tags.gd").has_tag(b[i].get("tag", -1)):
 					return false
 				var it: Dictionary = b[i].duplicate()
 				d = _usable_design(who, ev.design, it.tag if it.tag is Dictionary else {})
@@ -614,7 +683,7 @@ func _apply(ev: Dictionary) -> bool:
 			wallets[who] += int(ev.n)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
-			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not (_free(s) or replay):
+			if s == null or not is_instance_valid(s) or not foldable(s.kind) or free_slot(who) < 0 or not (_free(s) or replay):
 				return false
 			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag}   # 名札はソリごと（外したソリは -1 のまま）
 			ev["at"] = s.global_position
@@ -622,9 +691,7 @@ func _apply(ev: Dictionary) -> bool:
 			sleds.erase(int(ev.id))
 			_origami(ev, false, s.global_transform)
 			s.queue_free()
-			bags[who].append(ev.item)
-			hands[who] = bags[who].size() - 1
-			ev["slot"] = hands[who]
+			ev["slot"] = _put(who, ev.item)
 		"unfold":
 			if not _take(who, int(ev.slot), ev.item):
 				return false
@@ -656,10 +723,9 @@ func _usable_design(who: int, want: Dictionary, old: Dictionary) -> Dictionary:
 ## 持ち物の slot 番目が item なら取り出す。手は素手に戻す
 func _take(who: int, slot: int, item: Dictionary) -> bool:
 	var b: Array = bags[who]
-	if slot < 0 or slot >= b.size() or b[slot] != item:
+	if slot < 0 or slot >= b.size() or b[slot].is_empty() or b[slot] != item:
 		return false
-	b.remove_at(slot)
-	hands[who] = -1
+	_clear(who, slot)
 	return true
 
 

@@ -183,7 +183,7 @@ class View extends Control:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
 		var have: int = ui.balls()
-		var full: bool = craft.bag(who).size() >= Craft.SLOTS
+		var full: bool = craft.free_slot(who) < 0
 		var w := 1040.0 * u
 		var h := 600.0 * u
 		var r := Rect2(size.x / 2.0 - w / 2.0, size.y * 0.44 - h / 2.0, w, h)
