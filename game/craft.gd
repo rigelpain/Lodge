@@ -78,6 +78,7 @@ const FOLD_FRAMES := 30        # 畳む動きの長さ（コマ。12 コマで 1
 const UNFOLD_FRAMES := 30      # 広げる動きの長さ
 
 var world: Node                # main.gd（ソリを置く所）
+var replay := false            # つなぐ側で、ホストが確かめた出来事をなぞっている（この画面の間合いで断らない）
 var wallets := {}              # 人の番号 → ボタンの数
 var bags := {}                 # 人の番号 → 持ち物（item の配列）
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
@@ -275,10 +276,73 @@ static func price(item: Dictionary) -> int:
 	return 99
 
 
-## 出来事を出す。持ち主が呼ぶ（いまはすぐ配る。通信ではホストへ）。断られたら false
+## 出来事を出す。持ち主が呼ぶ（一人ならすぐ配る。通信ではホストへ送り、ホストが確かめてから全員に配る）。断られたら false。
+## つなぐ側では断られたかがすぐには分からないので true を返し、結果は配られた出来事で知る（断られたら何も起きない）。
+## ミシンが縫い上げる・ボタンが入る・調理の装置が仕上げる・米袋がひとりでに帯に戻るは、ホストの画面が決める
+## （つなぐ側の画面では送らない。見た目は続けてよいので true を返し、本物はホストから届く）
+const HOST_ONLY := ["sewn", "earn", "cooked"]
+
 func send(ev: Dictionary) -> bool:
 	ev["frame"] = Doll.frame_index() + 1
+	var net := _net()
+	if net and net.online and not net.is_host():
+		if ev.kind in HOST_ONLY:
+			return true
+		if ev.get("auto", false):
+			return false
+		net.up("craft", ev)
+		return true
 	return _apply(ev)
+
+
+func _net() -> Node:
+	return world.get_node_or_null("Net") if world else null
+
+
+## いまの工房の持ち物と置いてあるソリ（あとから来た人へ、ホストが渡す）
+func snapshot() -> Dictionary:
+	var placed := []
+	for id in sleds:
+		var s: Node3D = sleds[id]
+		if is_instance_valid(s):
+			placed.append({"id": id, "kind": s.kind, "fabric": s.fabric, "at": s.global_transform, "tag": s.tag, "owner": s.owner_id})
+	var out := {}
+	for who in sack_out:
+		var gs := sack_sled(who)
+		if gs:
+			out[who] = {"fabric": gs.fabric, "at": gs.global_transform}
+	return {"wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "sacks": sacks,
+		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
+		"lantern_sel": lantern_sel, "lamps": lamps, "next_sled": _next_sled, "sleds": placed, "sack_out": out}
+
+
+## ホストから渡された持ち物と置いてあるソリで、この画面の工房を置き換える（つないだとき）。自分の人の番号の分もホストの値になる
+func load_snapshot(d: Dictionary) -> void:
+	for key in ["wallets", "bags", "hands", "tag_designs", "tag_owned", "sacks", "loose_tags", "names", "colors", "dolls",
+			"sack_sel", "lanterns", "lantern_sel", "lamps"]:
+		var mine: Dictionary = get(key)
+		mine.merge(d.get(key, {}), true)
+	for s in sleds.values():
+		if is_instance_valid(s):
+			s.queue_free()
+	sleds.clear()
+	for p in d.get("sleds", []):
+		_next_sled = int(p.id)
+		_place(p.kind, p.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, p.tag, false, int(p.owner))
+		var s: Node3D = sleds[int(p.id)]
+		s.global_transform = p.at
+	_next_sled = int(d.get("next_sled", _next_sled))
+	for who in d.get("sack_out", {}):
+		var spec: Dictionary = d.sack_out[who]
+		var gid := _place("sack", spec.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, -1, false, int(who))
+		var gs: RigidBody3D = sleds[gid]
+		sleds.erase(gid)
+		_next_sled -= 1   # 装備の米袋はソリの番号を使わない（ホストでは出したときに使ったが、その番号は上の next_sled に入っている）
+		gs.crafted = false
+		gs.name = "Sack%d" % int(who)
+		gs.set_meta("gear_of", int(who))
+		gs.global_transform = spec.at
+		sack_out[int(who)] = gs
 
 
 ## ホストの判定
@@ -302,10 +366,11 @@ func _apply(ev: Dictionary) -> bool:
 			var dish: String = ev.item.get("dish", "")
 			if not Food.MENU.has(dish) or bags[who].size() >= SLOTS or world == null or world.get("emotes") == null:
 				return false
-			var pay := {"kind": "spend", "who": who, "n": Food.price(dish)}
-			world.emotes.send(pay)
-			if not pay.get("ok", false):
-				return false
+			if not replay:   # つなぐ側がなぞるときは、ホストがもう雪玉で払っている（数はホストから届く）
+				var pay := {"kind": "spend", "who": who, "n": Food.price(dish)}
+				world.emotes.send(pay)
+				if not pay.get("ok", false):
+					return false
 			bags[who].append(Food.item(dish))
 			hands[who] = bags[who].size() - 1   # 買ったペレットを手に持つ
 			ev["slot"] = hands[who]
@@ -342,7 +407,7 @@ func _apply(ev: Dictionary) -> bool:
 			if ps == fs or ps < 0 or fs < 0 or ps >= b.size() or fs >= b.size() or b[ps] != ev.pattern or b[fs] != ev.fabric \
 					or ev.pattern.get("kind") != "pattern" or ev.fabric.get("kind") != "fabric":
 				return false
-			if world and world.get("sewing") and not world.sewing.can_sew():
+			if world and world.get("sewing") and not world.sewing.can_sew() and not replay:
 				return false
 			b.remove_at(maxi(ps, fs))
 			b.remove_at(mini(ps, fs))
@@ -549,7 +614,7 @@ func _apply(ev: Dictionary) -> bool:
 			wallets[who] += int(ev.n)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
-			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not _free(s):
+			if s == null or not is_instance_valid(s) or not foldable(s.kind) or bags[who].size() >= SLOTS or not (_free(s) or replay):
 				return false
 			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag}   # 名札はソリごと（外したソリは -1 のまま）
 			ev["at"] = s.global_position
@@ -570,6 +635,9 @@ func _apply(ev: Dictionary) -> bool:
 			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, t, true, who if Tags.has_tag(t) else -1)
 			_origami(ev, true, Transform3D(_basis(ev.yaw, up), ev.at))
 	happened.emit(ev)
+	var net := _net()
+	if net and net.is_host():
+		net.down("craft", ev)   # ホストが確かめた出来事を、つなぐ側へ（つなぐ側も同じ順に _apply する）
 	return true
 
 
@@ -684,6 +752,9 @@ func _pop(s: RigidBody3D) -> void:
 func _physics_process(dt: float) -> void:
 	if sack_out.is_empty():
 		return
+	var net := _net()
+	if net and net.online and not net.is_host():
+		return   # ひとりでに帯に戻すのは、ホストが決める
 	var hub: Node = world.get_node_or_null("Emotes") if world else null
 	for who in sack_out.keys():
 		var gs := sack_sled(who)

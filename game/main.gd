@@ -291,6 +291,16 @@ func _ready() -> void:
 	damp.badges = badges
 	add_child(damp)
 
+	# 通信は人より先に始める（人の番号を通信の番号にするため。emotes.gd の join）
+	net = Net.new()
+	net.name = "Net"
+	net.main = self
+	add_child(net)
+	net.start(args)
+	if net.online:   # 湿り気の値はホストが決めて配る（damp.gd）
+		damp.authority = net.is_host()
+		damp.sent.connect(func(ev: Dictionary): net.down("damp", ev))
+
 	if not args.has("no-player"):
 		player = Player.new()
 		player.point_level = not args.has("point-tilt")   # 確かめ用: 指さしの手形を、前の腕に沿った向きに
@@ -328,11 +338,7 @@ func _ready() -> void:
 			add_child(b)
 			_add_pals(b)
 
-	net = Net.new()
-	net.name = "Net"
-	net.main = self
-	add_child(net)
-	if net.start(args) and player and net.spawn_slot() > 0:
+	if player and net.spawn_slot() > 0:
 		# つなぐ側は、ホストの横に並んで始める（同じ所に重ならないように）
 		var slot := net.spawn_slot()
 		var at := START + Vector3(2.5 * ceili(slot / 2.0) * (1 if slot % 2 == 1 else -1), 0, 1.5)

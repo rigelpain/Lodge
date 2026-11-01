@@ -38,10 +38,17 @@ func _ready() -> void:
 	add_child(doll)
 	hub = get_parent().get_node_or_null("Emotes")
 	if hub:
-		id = hub.join(self)
+		id = hub.join(self)   # 通信の番号がそのまま人の番号（emotes.gd）
+		hub.happened.connect(_on_emote)
 	craft = get_parent().get_node_or_null("Craft")
 	if craft and id >= 0:
 		craft.join(id)
+
+
+## 帰った: 配り役の名簿から外す（ほかの仕組みが、消えた体を読まないように）
+func _exit_tree() -> void:
+	if hub and hub.people.get(id) == self:
+		hub.people.erase(id)
 
 
 ## 届いた姿を入れる（net.gd）。ソリとのかかわり（つかむ・紐・乗る）が変わったら、この画面のソリにも同じことをする
@@ -88,8 +95,12 @@ func _set_doll(kind: String) -> void:
 	doll.kind = kind
 	add_child(doll)
 	doll.global_transform = at
-	if craft and id >= 0:
-		craft.send({"kind": "doll", "who": id, "doll": kind})   # 名札の札や HUD が読む人形
+
+
+## この人の身ぶり・声・雪玉の当たりを、人形に（判定はホストが済ませて配っている）
+func _on_emote(ev: Dictionary) -> void:
+	if ev.get("who", -1) == id:
+		doll.play(ev)
 
 
 func _leave() -> void:
@@ -158,7 +169,7 @@ func _physics_process(dt: float) -> void:
 			global_position = sled.to_global(handle)
 			var dir: Vector3 = _s.get("pd", Vector3.ZERO)
 			if fresh and dir != Vector3.ZERO:
-				sled.push(dir, global_position + Vector3.UP * 0.5, self)
+				sled.push(dir, global_position + Vector3.UP * 0.5, self, _push_k())
 				pushing = true
 		_:
 			var want := _at + _vel * minf(_age, STALE)
@@ -167,9 +178,15 @@ func _physics_process(dt: float) -> void:
 			else:
 				global_position = global_position.lerp(want, 1.0 - exp(-PULL * dt))
 			if mode == Mode.ROPE and fresh:
-				pulling = sled.pull_rope(rope_hand()) > 0.0
+				pulling = sled.pull_rope(rope_hand(), _push_k()) > 0.0
 	rotation.y = lerp_angle(rotation.y, _yaw, 1.0 - exp(-PULL * dt))
 	_pose_doll()
+
+
+## 湿り気で変わる押す力（damp.gd。値はホストが決めているので、ホストの画面でそのまま効く）
+func _push_k() -> float:
+	var dm := get_parent().get_node_or_null("Damp")
+	return dm.push_k(id) if dm and id >= 0 else 1.0
 
 
 ## 人形に、その人の画面の人形と同じ姿勢を伝える（姿勢は人形が 12 コマで刻む）
@@ -189,3 +206,15 @@ func _pose_doll() -> void:
 	doll.point_sides = _s.get("ps", [])
 	doll.sit_stage = int(_s.get("ss", 0))
 	doll.seat_drop = float(_s.get("sd", 0.45))
+	# 雪玉・帯の米袋・ランタンは、配り役（ホストが決めて配った値）から。player.gd の _pose_doll と同じ
+	if hub:
+		var n: int = hub.balls_of(id)
+		doll.holding_ball = n > 0 and (craft == null or craft.held(id).is_empty())
+		doll.sleeve_balls = n - (1 if doll.holding_ball else 0)
+	if craft:
+		var spec: Dictionary = craft.sack(id)
+		doll.belt_sack = not spec.is_empty() and craft.sack_sled(id) == null
+		if not spec.is_empty():
+			doll.belt_color = preload("res://fabrics.gd").color(spec.fabric) if spec.fabric != "" else preload("res://sled.gd").KINDS["sack"].color
+		doll.lantern = craft.lantern(id).get("look", "")
+		doll.lantern_lit = craft.lamp_on(id)

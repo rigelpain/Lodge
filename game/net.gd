@@ -1,6 +1,8 @@
 extends Node
 
 const RemotePerson := preload("res://remote_person.gd")
+const Doll := preload("res://doll.gd")
+const Pipe := preload("res://net_pipe.gd")
 ## 通信（オンラインで一緒に遊ぶ）。Godot の高レベルの multiplayer（ENet）で、一人がホストになり、ほかの人がつなぐ。
 ## 起動の引数: --host でホスト、--join=IP でつなぐ（--port= で番号を替えられる。既定 PORT）。どちらもなければ一人で遊ぶ。
 ##
@@ -25,6 +27,62 @@ var lag := 0.0                # 届いたものを遅らせる (s)
 var _send_t := 0.0
 var _port := PORT
 var _sled_t := {}             # ソリ → 送るまでの残り (s)
+
+
+var _fast: Node              # 人の姿（届かなくてよい。流れ 1）
+var _sleds: Node             # ソリの姿（届かなくてよい。流れ 2）
+var _sure: Node              # 出来事（確かに届く。流れ 0）
+
+
+func _ready() -> void:
+	_fast = _pipe("Fast", MultiplayerPeer.TRANSFER_MODE_UNRELIABLE_ORDERED, 1)
+	_sleds = _pipe("Sleds", MultiplayerPeer.TRANSFER_MODE_UNRELIABLE_ORDERED, 2)
+	_sure = _pipe("Sure", MultiplayerPeer.TRANSFER_MODE_RELIABLE, 0)
+
+
+## 通信の口（net_pipe.gd）を置く。口は 1 つのノードに 1 つだけ（番号がずれないように）
+func _pipe(n: String, mode: MultiplayerPeer.TransferMode, channel: int) -> Node:
+	var p := Pipe.new()
+	p.name = n
+	p.net = self
+	p.rpc_config("_in", {"rpc_mode": MultiplayerAPI.RPC_MODE_ANY_PEER, "transfer_mode": mode, "call_local": false, "channel": channel})
+	add_child(p)
+	return p
+
+
+## 届いた。中身は [何か, …]。ホストからしか来ないはずのものは、ホスト（1）から来たときだけ受ける
+func receive(pid: int, m: Array) -> void:
+	if m.is_empty():
+		return
+	if lag > 0.0:
+		await get_tree().create_timer(lag, true, true).timeout
+	var from_host := pid == 1
+	match String(m[0]):
+		"state":
+			_state(pid, m[1])
+		"sled":
+			if from_host:
+				_sled(m[1], m[2], m[3], m[4])
+		"up":
+			_up(pid, m[1], m[2], m[3])
+		"down":
+			if from_host:
+				_down(m[1], m[2], m[3])
+		"balls":
+			if from_host:
+				main.emotes.balls[int(m[1])] = int(m[2])
+		"snap":
+			if from_host:
+				main.craft.load_snapshot(m[1])
+				main.emotes.load_snapshot(m[2])
+				if main.get("damp"):
+					main.damp.values.merge(m[3], true)
+		"told":
+			if from_host:
+				_told(m[1])
+		"reset":
+			if is_host():
+				main.reset_sled()
 
 
 ## 起動の引数から、ホストになるか、つなぐ。どちらでもなければ false（一人で遊ぶ）
@@ -102,6 +160,8 @@ func _on_peer(pid: int) -> void:
 	main.add_child(r)
 	remotes[pid] = r
 	print("来た: 番号 ", pid)
+	if is_host():
+		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot(), main.damp.values if main.get("damp") else {}])
 
 
 func _on_gone(pid: int) -> void:
@@ -115,6 +175,10 @@ func _on_gone(pid: int) -> void:
 
 func _on_connected() -> void:
 	print("つながった: 番号 ", multiplayer.get_unique_id())
+	for p in _pending:
+		p[1]["frame"] = Doll.frame_index() + 1
+		_sure.rpc_id(1, "_in", ["up", p[0], p[1], Doll.frame_index()])
+	_pending.clear()
 
 
 func _on_failed() -> void:
@@ -189,7 +253,7 @@ func _physics_process(dt: float) -> void:
 	_send_t -= dt
 	if _send_t <= 0.0 and main.player:
 		_send_t = 1.0 / SEND_HZ
-		_state.rpc(_my_state())
+		_fast.rpc("_in", ["state", _my_state()])
 	if is_host():
 		for s in get_tree().get_nodes_in_group("sleds"):
 			var t: float = _sled_t.get(s, 0.0) - dt
@@ -197,7 +261,7 @@ func _physics_process(dt: float) -> void:
 				var rb := s as RigidBody3D
 				var still := rb.linear_velocity.length() < 0.05 and rb.angular_velocity.length() < 0.05
 				t = 1.0 / (STILL_HZ if still else SLED_HZ)
-				_sled.rpc(main.get_path_to(rb), rb.global_transform, rb.linear_velocity, rb.angular_velocity)
+				_sleds.rpc("_in", ["sled", main.get_path_to(rb), rb.global_transform, rb.linear_velocity, rb.angular_velocity])
 			_sled_t[s] = t
 
 
@@ -222,22 +286,78 @@ func _my_state() -> Dictionary:
 	return s
 
 
+# ---- 出来事（身ぶり・クラフト）: つなぐ側 → ホスト → 全員 -------------------------------------
+# 出来事のコマ（frame・until）は、送る画面の姿勢の時計で書いてある。受けた画面は、送った画面の「いま」との差で
+# 自分の時計に直す（届いたらすぐ、次のコマから動く）
+
+var _pending := []            # つながる前に出した出来事 [種類, 出来事]（つながったら送る）
+
+
+## つなぐ側: 出来事をホストへ
+func up(what: String, ev: Dictionary) -> void:
+	if joined():
+		_sure.rpc_id(1, "_in", ["up", what, ev, Doll.frame_index()])
+	else:
+		_pending.append([what, ev])
+
+
+func _up(pid: int, what: String, ev: Dictionary, at: int) -> void:
+	if not is_host():
+		return
+	ev = _rebase(ev, at)
+	ev["who"] = pid   # 人の番号は通信の番号（ほかの人の名で出させない）
+	match what:
+		"emote":
+			main.emotes._apply(ev)
+		"craft":
+			if not main.craft.wallets.has(pid):
+				main.craft.join(pid)
+			main.craft._apply(ev)
+
+
+## ホスト: 確かめた出来事を、つなぐ側の全員へ
+func down(what: String, ev: Dictionary) -> void:
+	if is_host() and not remotes.is_empty():
+		_sure.rpc("_in", ["down", what, ev, Doll.frame_index()])
+
+
+func _down(what: String, ev: Dictionary, at: int) -> void:
+	ev = _rebase(ev, at)
+	match what:
+		"emote":
+			main.emotes.from_host(ev)
+		"damp":
+			main.damp.apply_net(ev)
+		"craft":
+			main.craft.replay = true
+			if not main.craft._apply(ev):
+				push_warning("ホストの出来事をなぞれなかった: %s" % ev)
+			main.craft.replay = false
+
+
+## ホスト: 雪玉の数（出来事にはしない。配り役の数を合わせるだけ）
+func down_balls(id: int, n: int) -> void:
+	if is_host() and not remotes.is_empty():
+		_sure.rpc("_in", ["balls", id, n])
+
+
+func _rebase(ev: Dictionary, at: int) -> Dictionary:
+	var d := Doll.frame_index() - at
+	for k in ["frame", "until"]:
+		if ev.has(k):
+			ev[k] = int(ev[k]) + d
+	return ev
+
+
 ## ほかの人の姿が届いた
-@rpc("any_peer", "call_remote", "unreliable_ordered", 1)
-func _state(s: Dictionary) -> void:
-	var pid := multiplayer.get_remote_sender_id()
-	if lag > 0.0:
-		await get_tree().create_timer(lag, true, true).timeout
+func _state(pid: int, s: Dictionary) -> void:
 	if not remotes.has(pid):
 		_on_peer(pid)
 	remotes[pid].put(s)
 
 
 ## ホストのソリの姿が届いた
-@rpc("authority", "call_remote", "unreliable_ordered", 2)
 func _sled(path: NodePath, at: Transform3D, lv: Vector3, av: Vector3) -> void:
-	if lag > 0.0:
-		await get_tree().create_timer(lag, true, true).timeout
 	var s := sled_at(path)
 	if s and "net_follow" in s:
 		s.net_put(at, lv, av)
@@ -246,13 +366,10 @@ func _sled(path: NodePath, at: Transform3D, lv: Vector3, av: Vector3) -> void:
 ## その人の画面に、ソリから手を離す・降りることを伝える（ホストの画面でソリが決めたとき）
 func tell(pid: int, what: String) -> void:
 	if is_host():
-		_told.rpc_id(pid, what)
+		_sure.rpc_id(pid, "_in", ["told", what])
 
 
-@rpc("authority", "call_remote", "reliable")
 func _told(what: String) -> void:
-	if lag > 0.0:
-		await get_tree().create_timer(lag, true, true).timeout
 	var p = main.player
 	if p == null:
 		return
@@ -266,12 +383,6 @@ func _told(what: String) -> void:
 ## ソリを戻す（Backspace）。つなぐ側はホストに頼む
 func reset_sled() -> void:
 	if online and not is_host():
-		_ask_reset.rpc_id(1)
+		_sure.rpc_id(1, "_in", ["reset"])
 	else:
-		main.reset_sled()
-
-
-@rpc("any_peer", "call_remote", "reliable")
-func _ask_reset() -> void:
-	if is_host():
 		main.reset_sled()

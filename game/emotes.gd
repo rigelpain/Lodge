@@ -61,12 +61,38 @@ var hands := {}              # 番号 → いま掲げている手（HANDS の�
 var _next_id := 1
 
 
-## 人を登録して番号をもらう
+## 人を登録して番号をもらう。通信で遊んでいるときは、通信の番号をそのまま人の番号にする（全員の画面で同じ番号になる。
+## ホストは 1）。仲間（CPU）など、それ以外は空いた番号を順に
 func join(who: Node3D) -> int:
-	var id := _next_id
-	_next_id += 1
+	var id := _net_id(who)
+	if id < 0:
+		while people.has(_next_id):
+			_next_id += 1
+		id = _next_id
+		_next_id += 1
 	people[id] = who
 	return id
+
+
+func _net_id(who: Node3D) -> int:
+	var net := _net()
+	if net == null or not net.online:
+		return -1
+	if who.get("peer") != null:        # つないでいるほかの人（remote_person.gd）
+		return int(who.peer)
+	if who == get_parent().get("player"):
+		return multiplayer.get_unique_id()
+	return -1
+
+
+func _net() -> Node:
+	return get_parent().get_node_or_null("Net")
+
+
+## 通信でつなぐ側か（判定はホストがして、結果だけが届く）
+func _client() -> bool:
+	var net := _net()
+	return net != null and net.online and not net.is_host()
 
 
 ## その人がいま指している所（世界）。頭から、配られた向きと長さの先。指していなければ INF
@@ -88,10 +114,49 @@ func who_of(id: int) -> Node3D:
 	return n if is_instance_valid(n) else null
 
 
-## 出来事を出す。持ち主が呼ぶ（いまはすぐ配る。通信ではホストへ）
+## 出来事を出す。持ち主が呼ぶ（一人ならすぐ配る。通信ではホストへ送り、ホストが確かめて全員に配る。自分の人形も、配られてから動く）
 func send(ev: Dictionary) -> void:
 	ev["frame"] = Doll.frame_index() + 1
+	if _client():
+		_net().up("emote", ev)
+		return
 	_apply(ev)
+
+
+## ホストが配った出来事が届いた（つなぐ側。net.gd）。判定はもう済んでいるので、持ち物と見た目だけ合わせる
+func from_host(ev: Dictionary) -> void:
+	if ev.kind == "point":
+		if ev.get("dir", Vector3.ZERO) == Vector3.ZERO:
+			aims.erase(ev.who)
+		else:
+			aims[ev.who] = {"dir": ev.dir, "dist": ev.dist}
+	if ev.kind == "hands":
+		if ev.hands == "":
+			hands.erase(ev.who)
+		else:
+			hands[ev.who] = ev.hands
+	_emit(ev)
+	if ev.kind == "throw":
+		_spawn_ball(ev)   # 見た目の雪玉（当たりはホストの雪玉が決める）
+
+
+## 持っている雪玉の数を決める（ホスト）。通信では全員に知らせる
+func _set_balls(id: int, n: int) -> void:
+	balls[id] = n
+	var net := _net()
+	if net and net.is_host():
+		net.down_balls(id, n)
+
+
+## いまの身ぶりの持ち物（あとから来た人へ、ホストが渡す）
+func snapshot() -> Dictionary:
+	return {"balls": balls, "aims": aims, "hands": hands}
+
+
+func load_snapshot(d: Dictionary) -> void:
+	balls = d.get("balls", {})
+	aims = d.get("aims", {})
+	hands = d.get("hands", {})
 
 
 ## ホストの判定
@@ -104,12 +169,12 @@ func _apply(ev: Dictionary) -> void:
 		"throw":
 			if balls_of(ev.who) <= 0:
 				return   # 投げる雪玉がない
-			balls[ev.who] = balls_of(ev.who) - 1
-		"spend":   # 雪だるまの店で、雪玉で払う（craft.gd の food_buy が呼ぶ。足りなければ払わない）
+			_set_balls(ev.who, balls_of(ev.who) - 1)
+		"spend":   # 雪だるまの店で、雪玉で払う（craft.gd の food_buy が呼ぶ。足りなければ払わない。通信ではホストの craft が呼ぶ）
 			if balls_of(ev.who) < int(ev.n):
 				ev["ok"] = false
 				return
-			balls[ev.who] = balls_of(ev.who) - int(ev.n)
+			_set_balls(ev.who, balls_of(ev.who) - int(ev.n))
 			ev["ok"] = true
 	if ev.kind == "point":   # 指さしの向き（持ち主の画面で、向きが変わったときだけ間引いて送られる）
 		if ev.get("dir", Vector3.ZERO) == Vector3.ZERO:
@@ -138,6 +203,9 @@ func _emit(ev: Dictionary) -> void:
 			at += g[1] as Vector3
 		_burst_at(at / ev.grips.size(), int(ev.frame) + FIVE_HIT)
 	happened.emit(ev)
+	var net := _net()
+	if net and net.is_host():
+		net.down("emote", ev)   # ホストの判定の結果を、つなぐ側へ
 
 
 ## 掲げている手のうち、その高さの側（1 右、-1 左）
@@ -153,12 +221,14 @@ func _sides(id: int, height: String) -> Array:
 
 ## 手を掲げた人どうしが出会ったら、合わせる。高い手のひら同士はハイタッチ、低い手のひら同士は握手。合ったら二人とも手を下ろす
 func _physics_process(_dt: float) -> void:
+	if _client():
+		return   # 雪玉ができる・手が合う・空振りは、ホストが決めて配る
 	var now := Doll.frame_index()
 	# 丸めていた雪玉ができた（出来事にはしない。数は持ち主が毎フレーム見る。通信では数を配る）
 	for id in _making.keys():
 		if now >= int(_making[id]):
 			_making.erase(id)
-			balls[id] = mini(balls_of(id) + 1, BALL_MAX)
+			_set_balls(id, mini(balls_of(id) + 1, BALL_MAX))
 	var ids := hands.keys()
 	for i in ids.size():
 		for j in range(i + 1, ids.size()):
@@ -336,12 +406,16 @@ func _spawn_ball(ev: Dictionary) -> void:
 
 ## 雪玉が人に当たった（雪玉が呼ぶ）。のけぞりは出来事として配る
 func ball_hit_person(ball: Node3D, id: int, point: Vector3, dir: Vector3) -> void:
+	if _client():
+		return   # つなぐ側の雪玉は見た目だけ。当たりはホストから届く
 	_emit({"kind": "hit", "who": id, "by": ball.thrower, "frame": Doll.frame_index() + 1, "point": point, "dir": dir})
 	_emit({"kind": "splat", "frame": Doll.frame_index(), "point": point, "normal": -dir, "on_person": id})
 
 
 ## 雪玉が物（ソリ・地面・ロッジ）に当たって崩れた。残る雪を付ける物は、通信に乗るよう節点の道すじで渡す
 func ball_splat(point: Vector3, normal: Vector3, body: Node) -> void:
+	if _client():
+		return
 	var on := ""
 	if body is Node3D and get_parent().is_ancestor_of(body):
 		on = str(get_parent().get_path_to(body))
