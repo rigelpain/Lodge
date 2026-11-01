@@ -57,6 +57,20 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			Icons.patch(ci, PackedVector2Array([Vector2(-22, 0), Vector2(22, 0), Vector2(16, 18), Vector2(-16, 18)]), Color(0.82, 0.30, 0.22), a, true)
 			for x in [-8.0, 2.0, 12.0]:
 				Icons.thread(ci, PackedVector2Array([Vector2(x, -4), Vector2(x - 4, -12), Vector2(x + 2, -20), Vector2(x - 2, -28)]), Color(0.98, 0.98, 0.96), 3.0, a)
+		"eat":   # 食べる: ひと口かじったおにぎり（白い三角に海苔の帯、右上が欠けている）
+			var rice := PackedVector2Array([Vector2(-2, -24), Vector2(4, -22), Vector2(22, 12), Vector2(20, 20), Vector2(-20, 20), Vector2(-22, 12)])
+			Icons.patch(ci, rice, Color(0.98, 0.97, 0.94), a, true, Color(0.80, 0.76, 0.68))
+			Icons.patch(ci, Icons.rr(-9, 6, 18, 15, 2), Color(0.16, 0.22, 0.18), a, false)
+			for k in 3:   # かじった跡: 歯の形の小さな丸を 3 つ、地の色で抜く
+				Icons.patch(ci, Icons.circ(Vector2(9 + k * 4.5, -8 + k * 5.5), 5.0, 12), Icons.CAP, a, false)
+		"trash":   # 捨てる: 編みかご（紙ひもの屑かご）
+			var basket := PackedVector2Array([Vector2(-18, -12), Vector2(18, -12), Vector2(13, 22), Vector2(-13, 22)])
+			Icons.patch(ci, basket, Color(0.72, 0.56, 0.36), a, true, Color(0.50, 0.36, 0.22))
+			for k in 4:   # 編み目の横の段
+				var y := -5.0 + k * 7.0
+				var hw := 17.0 - (y + 12.0) * 0.15
+				Icons.thread(ci, PackedVector2Array([Vector2(-hw, y), Vector2(hw, y)]), Color(0.50, 0.36, 0.22), 1.6, a)
+			Icons.patch(ci, Icons.rr(-21, -17, 42, 7, 3), Color(0.60, 0.44, 0.27), a, false)   # 縁
 		"shopkeeper":   # 売り子のおじさんの顔: 紺のとんがり帽、紙の顔、丸眼鏡、綿のひげ
 			var indigo := Color(0.20, 0.25, 0.46)
 			Icons.patch(ci, PackedVector2Array([Vector2(-20, -6), Vector2(4, -30), Vector2(14, -24), Vector2(20, -6)]), indigo, a, false)
@@ -67,6 +81,8 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 				ci.draw_arc(Icons._o + Vector2(6 * s, 2) * Icons._s, 5.0 * Icons._s, 0, TAU, 14, Color(0.16, 0.14, 0.13, a), maxf(1.2 * Icons._s, 1.0), true)
 
 
+static var _tex := {}   # 料理の絵（パス → Texture2D）
+
 ## 持ち物・品物の絵を center に size px で
 static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a := 1.0) -> void:
 	_at(center, size)
@@ -74,7 +90,9 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 		"food":   # 雪だるまの店のペレットか、できあがった料理（Blender で描いた絵。food.gd）
 			var Food := preload("res://food.gd")
 			var path: String = Food.dish_icon(it.dish) if Food.done(it) else Food.pellet_icon(it.dish)
-			var t: Texture2D = load(path) if ResourceLoader.exists(path) else null
+			if not _tex.has(path):   # 取っておく（描く命令は絵を持たないので、手放すと描くまでに消えて白い四角になる）
+				_tex[path] = load(path) if ResourceLoader.exists(path) else null
+			var t: Texture2D = _tex[path]
 			if t:
 				var s := size * (1.15 if Food.done(it) else 1.5)
 				ci.draw_texture_rect(t, Rect2(center - Vector2(s, s) / 2.0, Vector2(s, s)), false, Color(1, 1, 1, a))
@@ -90,6 +108,33 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 					Tags.turntable(it.get("sled", "mid"), it.get("fabric", "")), a)
 		_:
 			Icons.mitten(ci, Vector2(0, 2), 0.0, Icons.RED, a, true, 1.5)
+
+
+## 持ち物の名前（日本語。持ち物の列の上に出す）
+const SLED_NAMES := {"sack": "米袋", "small": "2人のソリ", "mid": "3人のソリ", "large": "8人のソリ"}
+const FABRIC_NAMES := {"red": "赤", "navy": "紺", "mustard": "からし", "holly": "深緑", "cream": "生成り", "plum": "紫"}
+const DISH_NAMES := {"onigiri": "おにぎり", "taiyaki": "たい焼き", "nikuman": "肉まん", "korokke": "コロッケ", "hashbrown": "ハッシュドポテト",
+		"fries": "フライドポテト", "hotsand": "ホットサンド", "yakiimo": "焼き芋", "hotcake": "ホットケーキ", "sanma": "焼きサンマ",
+		"kaki": "焼き牡蠣", "yakisoba": "焼きそば", "ramen": "ラーメン", "udon": "うどん", "soba": "そば", "cocoa": "ココア",
+		"oshiruko": "おしるこ", "corn": "コーンスープ", "clam": "クラムチャウダー", "greentea": "緑茶", "milk": "ホットミルク", "milktea": "ミルクティー"}
+
+
+static func item_name(it: Dictionary) -> String:
+	var sled: String = SLED_NAMES.get(it.get("sled", "mid"), "ソリ")
+	var fab: String = FABRIC_NAMES.get(it.get("fabric", ""), "")
+	match it.get("kind", ""):
+		"pattern":
+			return "%sの型紙" % sled
+		"fabric":
+			return "%sの布" % fab
+		"folded":
+			if it.get("sled") == "sack":
+				return "畳んだ米袋" + ("（%s）" % fab if fab != "" else "")
+			return "畳んだ%s（%s）" % [sled, fab] if fab != "" else "畳んだ" + sled
+		"food":
+			var dish: String = DISH_NAMES.get(it.get("dish", ""), "料理")
+			return dish if preload("res://food.gd").done(it) else "%sのもと" % dish
+	return ""
 
 
 ## 米袋の袋の色（標準はクラフト紙、色違いは布の色）と、帯の色（標準は印刷の赤、色違いは地の上で読める色）
