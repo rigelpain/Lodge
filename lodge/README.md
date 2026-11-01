@@ -71,3 +71,5 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 | `05-day-in1.png` `05-dusk-in1.png` | カット 3: 1 階の食堂（昼・夕方） |
 | `05-day-kotatsu.png` | カット 4: 2 階の掘りごたつ |
 | `05-day-terrace.png` | カット 5: テラスから丘 |
+| `06-kotatsu-swap-*.jpg` | 2 階のこたつの差し替え（ゲームの画面。左が前、右が後。上が昼、下が夜）。`-sit-side` は 7 体を座布団に座らせた横から（`06-kotatsu-before-sit-side` が前） |
+| `06-kotatsu-option-*.jpg` | 代表に聞く案: 行灯を置く（夜）、柄をパッチワークにそろえる |
