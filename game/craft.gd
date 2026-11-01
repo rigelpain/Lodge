@@ -459,23 +459,8 @@ func _apply(ev: Dictionary) -> bool:
 			var i := int(ev.slot)
 			if i < 0 or i >= b.size() or b[i].is_empty():
 				return false
-			var st := _station(String(ev.station))
-			if st and st.riding() and not replay:
-				return false   # 乾燥機の中に人がいる
 			ev["item"] = b[i].duplicate()
 			_clear(who, i)
-			if st and int(ev.get("frame", -1)) >= 0:
-				st.note_cook(int(ev.frame))   # 仕上がるまで、ほかの人は乾燥機に入れない（どの画面でも）
-		"dry_in":
-			var st := _station("dryer")
-			if st == null or (not replay and (st.riding() or st.busy() or Doll.frame_index() < st._cook_until)):
-				return false
-			st.begin_ride(who, int(ev.get("frame", Doll.frame_index())))
-		"dry_out":
-			var st := _station("dryer")
-			if st == null or st.rider != who:
-				return false
-			st.end_ride(who, int(ev.get("frame", Doll.frame_index())))
 		"food_buy":
 			var dish: String = ev.item.get("dish", "")
 			if not Food.MENU.has(dish) or free_slot(who) < 0 or world == null or world.get("emotes") == null:
