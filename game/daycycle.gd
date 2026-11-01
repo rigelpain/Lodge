@@ -57,7 +57,7 @@ func _process(dt: float) -> void:
 	hour = fposmod(hour + dt * 24.0 / day_seconds, 24.0)
 	_sky_t += dt
 	_apply(_sky_t >= SKY_EVERY)
-	if _dial:
+	if _dial and is_instance_valid(_dial) and _dial.is_inside_tree():   # 場面を読み直すあいだ（スタート画面から始める）は外れている
 		_dial.offset_right = -dial_right
 		_dial.offset_left = -(Dial.R * 2 + 10 + dial_right)
 		_dial.pivot_offset = _dial.size   # 右下の角を動かさずに、HUD とそろえた大きさにする

@@ -7,6 +7,7 @@ extends CanvasLayer
 const Icons := preload("res://hud_icons.gd")
 
 signal changed(key: String, value)
+signal to_start                # 「スタート画面へ」を押した（main.gd が net.leave で読み直す）
 
 const PATH := "user://settings.cfg"
 const VERSION := 3   # 既定値を変えたら上げる。古い保存は、その項目だけ既定に戻す
@@ -46,6 +47,7 @@ var _scroll: ScrollContainer
 var _box: VBoxContainer
 var _controls := {}
 var _dragging := ""          # いま動かしているスライダー（メニューの大きさは離してから当てる）
+var net_note: Label          # 通信の様子（ホストの番号・つないでいる人数）。main.gd が入れる。一人なら空
 
 
 func _ready() -> void:
@@ -138,10 +140,18 @@ func _build() -> void:
 	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(hint)
+	var back := Button.new()
+	back.text = "スタート画面へ"
+	back.pressed.connect(func(): to_start.emit())
+	foot.add_child(back)
 	var close := Button.new()
 	close.text = "閉じる"
 	close.pressed.connect(func(): set_open(false))
 	foot.add_child(close)
+	net_note = Label.new()
+	net_note.add_theme_font_size_override("font_size", 14)
+	net_note.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
+	box.add_child(net_note)
 	box.add_child(foot)
 
 
