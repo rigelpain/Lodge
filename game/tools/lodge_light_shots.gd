@@ -154,39 +154,40 @@ func _fps() -> void:
 	var lights := main.find_child("LodgeLights", true, false) as Node3D
 	var vp := root.get_viewport_rid()
 	RenderingServer.viewport_set_measure_render_time(vp, true)
-	var tot := {false: [[], [], []], true: [[], [], []]}
+	var tot := {0: [[], [], []], 1: [[], [], []], 2: [[], [], []]}
+	var names := ["なし", "炎だけ", "炎と灯り"]
 	var views: PackedStringArray = String(args.get("fps-views", ",".join(FPS_VIEWS))).split(",")
 	for round_i in int(args.get("rounds", "2")):
 		for v in VIEWS:
 			if not views.has(v[0]):
 				continue
 			_look(v)
-			for on in [false, true]:
+			for on in [0, 1, 2]:   # 0 置かない / 1 炎と形だけ（灯りを消す）/ 2 ぜんぶ
 				if lights:
-					lights.visible = on
+					lights.visible = on > 0
+					for l in lights.find_children("*", "OmniLight3D", true, false):
+						(l as OmniLight3D).visible = on == 2
 				await create_timer(1.0).timeout
 				var f := 0.0
-				var gpu := 0.0
 				var cpu := 0.0
 				var k := 0
 				var t0 := Time.get_ticks_msec()
 				while Time.get_ticks_msec() - t0 < 3000:
 					await process_frame
 					f += Engine.get_frames_per_second()
-					gpu += RenderingServer.viewport_get_measured_render_time_gpu(vp)
 					cpu += RenderingServer.viewport_get_measured_render_time_cpu(vp) + RenderingServer.get_frame_setup_time_cpu()
 					k += 1
 				tot[on][0].append(f / k)
-				tot[on][1].append(gpu / k)
+				tot[on][1].append(0.0)
 				tot[on][2].append(cpu / k)
-				print("%s 灯り%s fps=%.1f GPU=%.2fms CPU=%.2fms" % [v[0], "あり" if on else "なし", f / k, gpu / k, cpu / k])
-	for on in [false, true]:
+				print("%s %s fps=%.1f CPU=%.2fms" % [v[0], names[on], f / k, cpu / k])
+	for on in [0, 1, 2]:
 		var out := []
 		for a in tot[on]:
 			var s := 0.0
 			for x in a:
 				s += x
 			out.append(s / maxf(1, a.size()))
-		print("平均 灯り%s fps=%.1f GPU=%.2fms CPU=%.2fms" % ["あり" if on else "なし", out[0], out[1], out[2]])
+		print("平均 %s fps=%.1f CPU=%.2fms" % [names[on], out[0], out[2]])
 	if lights == null:
 		print("（火の灯りの道具はない）")
