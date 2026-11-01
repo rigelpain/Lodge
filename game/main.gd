@@ -68,6 +68,7 @@ const CraftUi := preload("res://craft_ui.gd")
 const FoodUi := preload("res://food_ui.gd")
 const SnowmanShop := preload("res://snowman_shop.gd")
 const CookStation := preload("res://cook_station.gd")
+const Warmth := preload("res://warmth.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const Wardrobe := preload("res://wardrobe.gd")
@@ -140,6 +141,7 @@ var kitchen := {}             # 厨房の装置（KITCHEN の名前 → 置い�
 var stations: Array = []      # 厨房の装置の調理の動き（cook_station.gd）
 var snowman_shop: Node        # ご飯係の雪だるま（snowman_shop.gd）
 var food_ui: CanvasLayer      # 雪だるまの食べ物屋の売り場（food_ui.gd）
+var warmth: Node              # 体のぬくもり（warmth.gd。暖炉と、食べた物）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
@@ -383,6 +385,10 @@ func _ready() -> void:
 		craft_ui.craft = craft
 		craft_ui.player = player
 		add_child(craft_ui)
+		warmth = Warmth.new()
+		warmth.name = "Warmth"
+		warmth.main = self
+		add_child(warmth)
 		food_ui = FoodUi.new()
 		food_ui.main = self
 		food_ui.craft = craft

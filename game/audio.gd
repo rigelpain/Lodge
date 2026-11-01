@@ -589,6 +589,22 @@ func kitchen(parent: Node3D, name_: String, db := -10.0, count := 1, pitch := 1.
 	return p
 
 
+## 食べる音（sound/gen/eat.py）を、食べている人の口もとで。me なら自分の耳もと（Self）、ほかの人ならその場所（Inside。外でも近ければ聞こえる）
+func eat(who: Node3D, name_: String, count := 1, me := false) -> void:
+	if who == null or not is_instance_valid(who):
+		return
+	if me:
+		var p := AudioStreamPlayer.new()
+		p.bus = "Self"
+		add_child(p)
+		_shot2(p, _pick(name_, count) if count > 1 else _wav(name_ + "_01"), -10.0, rng.randf_range(0.95, 1.05))
+		p.finished.connect(p.queue_free)
+	else:
+		var p3 := _p3(who, "Inside", -14.0, 2.0, 15.0)
+		_shot(p3, _pick(name_, count) if count > 1 else _wav(name_ + "_01"), -14.0, rng.randf_range(0.95, 1.05))
+		p3.finished.connect(p3.queue_free)
+
+
 func coin_off() -> void:
 	var s := _pick("button_snap", 3)
 	if s == null:

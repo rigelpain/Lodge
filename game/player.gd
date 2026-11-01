@@ -112,6 +112,9 @@ const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
+var push_boost := 1.0         # ソリを押す力の倍率（食べたぬくもりで少し増える。warmth.gd が入れる）
+var _eating := false         # 左ボタンを押しているあいだ、手の料理を 1 口ずつ食べ続ける
+var _bit_frame := -1         # ひと口を数えた身ぶりの始まりのコマ（同じひと口を 2 度数えない）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
 var ring: EmoteRing
 var _em := {}                # いまの自分の身ぶり（出来事）
@@ -352,6 +355,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			_left_click()
 		elif Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu_open:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT and _eating:
+		_eating = false   # 食べているひと口は最後まで
 	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT and _winding:
 		throw_ball()
 	elif e is InputEventKey and not e.pressed and e.physical_keycode == KEY_B:
@@ -665,6 +670,7 @@ func _key(k: Key) -> float:
 
 
 func _physics_process(dt: float) -> void:
+	_eat_step()
 	_t += dt
 	pushing = false
 	pulling = false
@@ -1251,6 +1257,10 @@ func set_hands(name_: String) -> void:
 
 ## 左クリック: 雪玉があれば振りかぶる（離すと投げる。持ち物を手に持っていれば、しまって雪玉を出す）。高い両手のひらなら拍手
 func _left_click() -> void:
+	if craft and FoodMenu.done(held()):   # できあがった料理を持っていれば、押しているあいだ食べる（雪玉より先）
+		_eating = true
+		_bite()
+		return
 	if ball_count() > 0:
 		if not held().is_empty() and craft:
 			craft.send({"kind": "hand", "who": id, "slot": -1})
@@ -1258,6 +1268,49 @@ func _left_click() -> void:
 		wind_up()
 	elif hands_name == "high_both":
 		emote("clap")
+
+
+## 手の料理をひと口: 右手を口へ運んでもぐもぐ（emotes.gd の eat）。噛むコマで持ち物のひと口を数える（_eat_step）
+func _bite() -> void:
+	var it := held()
+	if hub == null or menu_open or not FoodMenu.done(it) or (not _em.is_empty() and _em.kind == "eat" and _em_k() < 16):
+		return
+	hub.send({"kind": "eat", "who": id, "dish": it.dish, "last": int(it.get("bites", 0)) >= FoodMenu.BITES - 1})
+
+
+## 食べているひと口の進み（毎フレーム）: 5 コマ目で音、10 コマ目でひと口を数える。押し続けていれば次のひと口
+func _eat_step() -> void:
+	if _em.is_empty() or _em.kind != "eat":
+		if _eating:
+			_bite()
+		return
+	var k := _em_k()
+	var audio = get_parent().get_node_or_null("Audio")
+	if k == 5 and _bit_frame != int(_em.frame) * 10 + 5:
+		_bit_frame = int(_em.frame) * 10 + 5
+		var snd: Array = FoodMenu.bite_sound(_em.dish)
+		if audio:
+			audio.eat(self, snd[0], snd[1], true)
+	if k == 10 and _bit_frame != int(_em.frame) * 10 + 9 and craft:
+		_bit_frame = int(_em.frame) * 10 + 9
+		var ev := {"kind": "bite", "who": id, "slot": craft.hands.get(id, -1)}
+		if craft.send(ev) and ev.has("ate"):
+			_eating = false
+			var w = get_parent().get("warmth")
+			if w:
+				w.ate(id, ev.ate)
+			if audio:
+				audio.eat(self, "eat_ah", 2, true)
+	# 一人称: 手の料理を口もと（画面の下のまんなか）へ運び、噛むあいだ小さく揺らす。人形の腕と同じ割合で寄せる
+	if _held_fp and is_instance_valid(_held_fp) and not third:
+		var f: float = [0.0, 0.45, 0.85, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.7, 0.35, 0.1, 0.0][clampi(k, 0, 15)] if k >= 0 and k < 16 else 0.0
+		_held_fp.position = Vector3(-0.02, 0.05, -0.08)
+		var vc := _held_fp.get_viewport().get_camera_3d()   # 一人称の手は、手だけを描く視点にいる。その視点の口もと
+		if f > 0.0 and vc:
+			var mouth := vc.to_global(Vector3(0.02, -0.075 + (0.01 if (k / 2) % 2 == 0 else 0.0), -0.3))   # 画面の下寄りのまんなか
+			_held_fp.global_position = _held_fp.global_position.lerp(mouth, f)
+	if k >= 16 and _eating and FoodMenu.done(held()):
+		_bite()
 
 
 ## 身ぶりを出す（配り役へ送る。自分の人形も、配られた出来事で動く）
@@ -1707,7 +1760,8 @@ static func held_shape(it: Dictionary) -> Node3D:
 		var f := PropsLib.make(FoodMenu.dish_glb(it.dish) if done else FoodMenu.pellet_glb(it.dish))
 		var holder := Node3D.new()
 		holder.add_child(f)
-		f.scale = Vector3.ONE * (0.75 if done else 1.0) * (Vector3(1.3, 0.6, 1.3) if int(it.get("step", 0)) > 0 and not done else Vector3.ONE)
+		var left: float = [1.0, 0.72, 0.45][clampi(int(it.get("bites", 0)), 0, 2)]   # ひと口ごとに小さく
+		f.scale = Vector3.ONE * (0.75 * left if done else 1.0) * (Vector3(1.3, 0.6, 1.3) if int(it.get("step", 0)) > 0 and not done else Vector3.ONE)
 		return holder
 	var root := Node3D.new()
 	var mi := MeshInstance3D.new()

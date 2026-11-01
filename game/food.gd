@@ -35,6 +35,12 @@ const ORDER := ["onigiri", "taiyaki", "nikuman", "korokke", "hashbrown", "fries"
 ## 乾燥機で揚げる料理（ほかは茹でる）。音とコマの見せ方が変わる
 const FRIED := ["taiyaki", "nikuman", "korokke", "hashbrown", "fries"]
 const DRINKS := ["cocoa", "oshiruko", "corn", "clam", "greentea", "milk", "milktea"]
+const NOODLES := ["ramen", "udon", "soba", "yakisoba"]
+const CRISP := ["taiyaki", "korokke", "hashbrown", "fries", "hotsand"]   # 皮がぱりっとした物（さくっ）
+const BITES := 3             # 3 口で食べ終わる
+## 食べたときのぬくもり（0〜1。暖炉のそばはおよそ 1）。汁物・麺は多め
+const WARM := {"ramen": 0.4, "udon": 0.38, "soba": 0.36, "oshiruko": 0.38, "corn": 0.34, "clam": 0.36}
+const WARM_BASE := 0.3
 
 
 static func dish_glb(dish: String) -> String:
@@ -76,3 +82,18 @@ static func done(it: Dictionary) -> bool:
 
 static func item(dish: String) -> Dictionary:
 	return {"kind": "food", "dish": dish, "step": 0}
+
+
+## ひと口の音（sound/gen/eat.py）: [名前, 数]
+static func bite_sound(dish: String) -> Array:
+	if dish in DRINKS:
+		return ["eat_sip", 2]
+	if dish in NOODLES:
+		return ["eat_slurp", 2]
+	if dish in CRISP:
+		return ["eat_crunch", 4]
+	return ["eat_chew", 4]
+
+
+static func warmth(dish: String) -> float:
+	return WARM.get(dish, WARM_BASE)

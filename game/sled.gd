@@ -290,6 +290,8 @@ func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> voi
 		_pushed_now[who] = true
 		helped[who] = _trail_now
 	var f: Vector3 = dir.normalized() * PUSH_FORCE * strength * min(1.0, dir.length())
+	if who and who.get("push_boost") != null:
+		f *= float(who.get("push_boost"))   # 食べたぬくもりで、押す力が少し増す（warmth.gd）
 	f *= 1.0 - smoothstep(PUSH_FADE.x, PUSH_FADE.y, linear_velocity.dot(dir.normalized()))
 	# 力は手が触れている所にそのままかける。どう動くかは滑り木と重力が決める
 	var p := to_local(at)
