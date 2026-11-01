@@ -238,16 +238,19 @@ func _pose_doll() -> void:
 	doll.seat_drop = float(_s.get("sd", 0.45))
 	doll.seat_edge = float(_s.get("se", 0.2))
 	doll.spin_axis = Vector3.ZERO
+	doll.drum_fit = 1.0
 	if _drum:   # 乾燥機の中: 届いた姿でなく、この画面の乾燥機のコマで（player.gd の _pose_doll と同じ）
 		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
 		doll.act = Doll.Act.SIT
 		doll.facing = pl.face
 		doll.sit_stage = pl.stage
 		doll.seat_drop = preload("res://player.gd").DRUM_DROP
-		if pl.spin != 0.0:
+		doll.drum_fit = pl.get("fit", 1.0)   # 胴に収まらない大きな人形は縮める
+		if pl.stage == 2:   # 胴の中: 体ごと回され、手足と頭はぶらぶら（dryer_flop.gd）
 			doll.spin_axis = _drum.front()
 			doll.spin = pl.spin
 			doll.spin_at = _drum.drum_center()
+			doll.flop = pl.get("flop", {})
 	# 雪玉・帯の米袋・ランタンは、配り役（ホストが決めて配った値）から。player.gd の _pose_doll と同じ
 	if hub:
 		var n: int = hub.balls_of(id)

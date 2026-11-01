@@ -109,6 +109,9 @@ var seat_edge := 0.2         # 腰を下ろした所から、座面の前の縁�
 var spin_axis := Vector3.ZERO   # 乾燥機の胴といっしょに回る軸（世界。ZERO なら回らない。持ち主が毎フレーム入れる。cook_station.gd）
 var spin := 0.0              # その軸まわりに回った角 (rad)
 var spin_at := Vector3.ZERO  # 回る中心（世界。胴の真ん中）
+var drum_fit := 1.0          # 乾燥機の胴の中で、人形を小さくする倍（胴に収まらない大きな人形。dryer_flop.gd。持ち主が毎フレーム入れる）
+var flop := {}               # 胴の中で、手足と頭が戸の向きのまわりにぶらぶら振れる角 (rad。dryer_flop.gd の arm.L・leg.R・head など)
+var _foot_shade: Decal       # 足もとの影（胴の中では隠す）
 var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標）
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
 var lean := Vector2.ZERO     # 乗っているときの体重移動（x 右、y 前）
@@ -295,6 +298,36 @@ func play(ev: Dictionary) -> void:
 			emote["until"] = int(ev.frame)   # 吐くのをやめる（少しで胸が戻る）
 		return
 	emote = ev
+
+
+## 乾燥機の胴の中の大きさ（m、人形の座標。dryer_flop.gd が胴の壁に当てる）: 胴の中の姿勢（_drum_sprawl）で
+## x はいちばん低い骨（足）、y は頭のてっぺん、z は頭の高さでの体の軸からの広さ（笠のつば・頭巾。_measure_body の上 3 割の段の太さ）。
+## 腕や裾の広さは入れない（腕は胴の中でぶらぶら振れる）。
+## 人形の種類と大きさだけで決まる（どの画面でも同じ）
+func drum_extent() -> Vector3:
+	var c: Array = _body_cache.get(kind, [])
+	var hold := _hold
+	_reset()
+	_drum_sprawl()
+	var lo := INF
+	var head := 0.0
+	var to_doll := _body.transform * (_body.global_transform.affine_inverse() * skel.global_transform)   # 骨の座標 → 人形の座標
+	for i in _order:
+		var y := (to_doll * (_g[i] as Transform3D).origin).y
+		lo = minf(lo, y)
+		if i == _id("head"):
+			head = y
+	var r := 0.2
+	var top := head + 0.25 * _scale
+	if not c.is_empty():
+		r = 0.0
+		var radii: PackedFloat32Array = c[0]
+		for bi in range(int(radii.size() * 0.7), radii.size()):
+			r = maxf(r, radii[bi])
+		top = head + (float(c[1]) - float(c[2]))   # 頭の骨から頭のてっぺん（笠）まで
+	_reset()
+	_hold = hold
+	return Vector3(lo, top, r)
 
 
 ## 頭のてっぺんの高さ (m)
@@ -775,6 +808,43 @@ func _in_seat_body(p: Vector3, r: float) -> bool:
 	return false
 
 
+## 乾燥機の胴の中（spin_axis がある）: 腰を半ば落とし、膝をゆるく曲げて脚を少し開き、腕は横へ垂らす。手は何もつかまない。
+## 手足と頭は、このあと _flop_limbs が胴の中の物理（dryer_flop.gd）のとおりに振る。返り値は胸を前へ曲げる量
+func _drum_sprawl() -> float:
+	var X := Vector3.RIGHT
+	var Z := Vector3.BACK
+	_hips_drop = _sit_drop() * 0.5
+	_squash = 0.5
+	_update_all()
+	for s in ["L", "R"]:
+		var out := 1.0 if s == "R" else -1.0
+		_turn_axis("thigh." + s, X, 0.9)
+		_turn_axis("shin." + s, X, -1.2)
+		_turn_axis("thigh." + s, Z, 0.3 * out)
+		_turn_axis("upper_arm." + s, Z, 0.5 * out)
+	_hold = [null, null]
+	return 0.1
+
+
+## 胴の中で、手足と頭を戸の向き（spin_axis）のまわりに flop の角だけ振る（前腕とすねは少し遅れて半ばほど）
+func _flop_limbs() -> void:
+	if _foot_shade:
+		_foot_shade.visible = spin_axis == Vector3.ZERO
+	if spin_axis == Vector3.ZERO or flop.is_empty():
+		return
+	var f := (skel.global_transform.basis.inverse() * spin_axis).normalized()
+	for s in ["L", "R"]:
+		var a: float = flop.get("arm." + s, 0.0)
+		var l: float = flop.get("leg." + s, 0.0)
+		_turn(_id("upper_arm." + s), Quaternion(f, a))
+		_turn(_id("forearm." + s), Quaternion(f, a * 0.5))
+		_turn(_id("thigh." + s), Quaternion(f, l))
+		_turn(_id("shin." + s), Quaternion(f, l * 0.4))
+	var h: float = flop.get("head", 0.0)
+	_turn(_id("chest"), Quaternion(f, h * 0.3))
+	_turn(_id("neck"), Quaternion(f, h))
+
+
 ## 目の所（人形の座標、m）。座っているときは腰を落とした分だけ低い（姿勢のコマや揺れには付き合わない）
 func eye_point(sitting: bool) -> Vector3:
 	var e: Vector3 = EYE.get(kind, EYE["kasa"])
@@ -888,6 +958,8 @@ func _physics_process(dt: float) -> void:
 		var r := Basis(spin_axis.normalized(), spin)
 		b = r * b
 		pos = spin_at + r * (pos - spin_at)
+	if drum_fit != 1.0:
+		b = b.scaled(Vector3.ONE * drum_fit)
 	global_transform = Transform3D(b, pos)
 
 	# 歩みは進んだ道のりで刻む（足と地面のずれを小さく）
@@ -993,7 +1065,7 @@ func _pose() -> void:
 					_turn_axis("shin." + s, X, -1.55)
 				bend = 0.25
 			elif sit_stage == 2:
-				bend = _sit_chair()
+				bend = _drum_sprawl() if spin_axis != Vector3.ZERO else _sit_chair()
 		_:
 			if airborne:
 				for s in ["L", "R"]:
@@ -1071,6 +1143,7 @@ func _pose() -> void:
 	if em[0] != "breath" and em[0] != "oi":
 		_long.emitting = false
 	_turn_axis("chest", X, -bend - _damp_bend())
+	_flop_limbs()
 
 	if point != Vector3.INF:
 		# 指さし: 選んだ手の腕をまっすぐ伸ばして指す（両手なら両腕で「あっち！」）。手の先には指さしの手形。
@@ -1107,6 +1180,8 @@ func _pose() -> void:
 		var hp := skel.global_transform * _head_of(hi)
 		# 見ている所が決まっていなければ、指している所を見る（あなたは顔と指さしを別々に向けられる）
 		var look := gaze if gaze != Vector3.INF else (point if point != Vector3.INF else hp + global_basis * Vector3(0, -0.05, -1))
+		if spin_axis != Vector3.ZERO:
+			look = hp + spin_axis * 6.0   # 乾燥機の胴の中: 顔を丸い戸の窓へ（外から顔が見える）
 		# 顔の向きは相互行為の手がかり。首と頭で大きく回し、届かない分は胸も少し回す
 		var ld := (skel.global_transform.basis.inverse() * (look - hp)).normalized()
 		var yaw_all := atan2(-ld.x, -ld.z)
@@ -1240,6 +1315,7 @@ func _make_foot_shadow() -> void:
 	d.position = Vector3(0, 0.02, 0)
 	d.layers = layers   # 自分の影は、自分の体と同じ層（一人称では、しゃがんで足もとを見ても映らない）
 	add_child(d)
+	_foot_shade = d
 
 
 # ---------------------------------------------------------------- 白い息

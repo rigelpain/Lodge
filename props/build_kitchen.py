@@ -179,15 +179,31 @@ def press_board(name, cover="patch_warm", body="felt_red"):
 
 
 # ---------------------------------------------------------------- プレス機
-def heat_press_body(P, body):
-    """服のプレス機の本体: 木の台に下の熱板、後ろの柱の蝶番で上の板を開ける。上の板の前に取っ手、柱に目盛り"""
+PRESS_HP = K.round_rect(0.16, 0.18, 0.02, n=4)   # プレス機の熱板の形
+PRESS_HINGE = (0, -0.1, 0.2)                     # 上の板の蝶番（卓上の大きさ）
+
+
+def press_lid(P, body):
+    """プレス機の上の板（閉じた形。原点は後ろの蝶番）: 腕・ふっくらした板・下の熱板・前の取っ手・てっぺんのボタン"""
+    hp = PRESS_HP
+    K.box(P, "wood_dark", (0, 0.06, 0.0), (0.04, 0.14, 0.03))                              # 腕
+    K.pbox(P, body, (0, 0.12, -0.03), (0.095, 0.105, 0.028), n=6.0, seam_role="thread", c=K.cuts(7, 5))
+    K.extrude(P, "felt_heat", [(x, y + 0.12) for x, y in hp], -0.063, -0.058)
+    K.tube(P, "wood", [(-0.05, 0.225, -0.02), (-0.05, 0.27, -0.01), (0.05, 0.27, -0.01), (0.05, 0.225, -0.02)],
+           0.008, sides=8)
+    K.disc(P, "button", (0, 0.12, 0.002), 0.018, 0.012, segs=12)
+
+
+def heat_press_body(P, body, lid=True):
+    """服のプレス機の本体: 木の台に下の熱板、後ろの柱の蝶番で上の板を開ける。上の板の前に取っ手、柱に目盛り。
+    lid=False なら上の板を付けない（巨大なプレス機は上の板を別の glb にして、Godot が目印 hinge で開け閉めする）"""
     K.box(P, "wood", (0, 0, 0.02), (0.22, 0.27, 0.04))
     K.box(P, "felt_charcoal", (0, 0.02, 0.05), (0.18, 0.2, 0.02))
-    hp = K.round_rect(0.16, 0.18, 0.02, n=4)
+    hp = PRESS_HP
     K.extrude(P, "felt_heat", [(x, y + 0.02) for x, y in hp], 0.06, 0.065)
     K.stitch_line(P, "thread", [(x * 0.85, y * 0.85 + 0.02, 0.0655) for x, y in hp + hp[:1]], r=0.0015, dash=0.008)
     K.box(P, "wood_dark", (0, -0.115, 0.13), (0.06, 0.04, 0.18))                                # 柱
-    hz = 0.2
+    hz = PRESS_HINGE[2]
     K.dowel(P, "felt_tin", (-0.045, -0.1, hz), (0.045, -0.1, hz), 0.012, 12)                   # 蝶番
     # 目盛り: 柱の前の丸い盤に糸の目と針
     K.disc(P, "felt_ivory", (0, -0.093, 0.12), 0.022, 0.006, axis="Y", segs=20)
@@ -197,14 +213,8 @@ def heat_press_body(P, body):
         K.tube(P, "thread_dark", [p, p + Vector((0.005 * math.cos(a), 0, 0.005 * math.sin(a)))], 0.0012, sides=4)
     K.tube(P, "felt_red_dark", [(0, -0.088, 0.12), (0.01, -0.088, 0.132)], 0.0015, sides=4)
 
-    def lid():
-        K.box(P, "wood_dark", (0, 0.06, 0.0), (0.04, 0.14, 0.03))                              # 腕
-        K.pbox(P, body, (0, 0.12, -0.03), (0.095, 0.105, 0.028), n=6.0, seam_role="thread", c=K.cuts(7, 5))
-        K.extrude(P, "felt_heat", [(x, y + 0.12) for x, y in hp], -0.063, -0.058)
-        K.tube(P, "wood", [(-0.05, 0.225, -0.02), (-0.05, 0.27, -0.01), (0.05, 0.27, -0.01), (0.05, 0.225, -0.02)],
-               0.008, sides=8)
-        K.disc(P, "button", (0, 0.12, 0.002), 0.018, 0.012, segs=12)
-    moved(P, Matrix.Translation((0, -0.1, hz)) @ Matrix.Rotation(math.radians(38), 4, "X"), lid)
+    if lid:
+        moved(P, Matrix.Translation((0, -0.1, hz)) @ Matrix.Rotation(math.radians(38), 4, "X"), lambda: press_lid(P, body))
     # 押されて平らになった粒が、熱板にひとつ
     K.pbox(P, "felt_tan", (0.02, 0.04, 0.071), (0.035, 0.03, 0.006), n=3.0, c=4)
 
@@ -220,7 +230,21 @@ def heat_press(name, body="felt_red"):
 
 
 # ---------------------------------------------------------------- 卓上の乾燥機
-def dryer_body(P, body, band, knob):
+def dryer_drum(P, pellets):
+    """乾燥機の胴（卓上の大きさ。原点は戸の面の真ん中＝回る軸の上、奥は -Y）: 編み地の筒と底、内側の羽根 3 枚、底に粒"""
+    R = DRYER["R"]
+    K.lathe(P, "knit_drum", [(R - 0.01, 0.0), (R - 0.01, -0.18), (0.0, -0.18)], center=(0, 0, 0), segs=24, closed=False,
+            rot=(-math.pi / 2, "X"))
+    for k in range(3):
+        a = 2 * math.pi * k / 3 + 0.4
+        K.box(P, "felt_charcoal", ((R - 0.022) * math.cos(a), -0.09, (R - 0.022) * math.sin(a)), (0.02, 0.16, 0.012),
+              rot=(-a, "Y"))
+    if pellets:
+        for k, (dx, dz) in enumerate(((-0.02, -0.045), (0.018, -0.05), (0.0, -0.034))):
+            pellet(P, PELLET["mix"][k], (dx, -0.07, dz), 0.012)
+
+
+def dryer_body(P, body, band, knob, drum=True):
     """乾燥機の本体: 背の高いふっくらした箱（幅 0.24、高さ 0.34）。上に操作盤（大きなつまみ・ボタン・灯り）、
     真ん中に丸い戸（透明なフィルムを白い糸で留め、中に羽根のある編み地の胴、奥に熱）、下に蹴込みの帯と通気の溝"""
     D = DRYER
@@ -255,16 +279,11 @@ def dryer_body(P, body, band, knob):
         K.box(P, "felt_tin", (-R - 0.012, fy + 0.006, cz + sz * 0.035), (0.016, 0.01, 0.014))
     K.tube(P, "wood", [(R + 0.004, fy + 0.012, cz - 0.03), (R + 0.02, fy + 0.026, cz - 0.03),
                        (R + 0.02, fy + 0.026, cz + 0.03), (R + 0.004, fy + 0.012, cz + 0.03)], 0.006, sides=8)
-    # 中: 編み地の胴に羽根 3 枚、奥に熱
-    K.lathe(P, "knit_drum", [(R - 0.01, 0.0), (R - 0.01, -0.18), (0.0, -0.18)], center=(0, fy, cz), segs=24, closed=False,
-            rot=(-math.pi / 2, "X"))
-    for k in range(3):
-        a = 2 * math.pi * k / 3 + 0.4
-        K.box(P, "felt_charcoal", ((R - 0.022) * math.cos(a), fy - 0.09, cz + (R - 0.022) * math.sin(a)), (0.02, 0.16, 0.012),
-              rot=(-a, "Y"))
-    K.disc(P, "felt_heat", (0, fy - 0.175, cz), R - 0.02, 0.006, axis="Y", segs=24)
-    for k, (dx, dz) in enumerate(((-0.02, -0.045), (0.018, -0.05), (0.0, -0.034))):
-        pellet(P, PELLET["mix"][k], (dx, fy - 0.07, cz + dz), 0.012)
+    # 中: 編み地の胴に羽根 3 枚、奥に熱（drum=False なら付けない。巨大な乾燥機は胴を giant_dryer_drum にして Godot が回す。
+    # 奥の熱は、窓ごしに中で踊る料理と人を白く飛ばすので付けない）
+    if drum:
+        moved(P, Matrix.Translation((0, fy, cz)), lambda: dryer_drum(P, True))
+        K.disc(P, "felt_heat", (0, fy - 0.175, cz), R - 0.02, 0.006, axis="Y", segs=24)
 
 
 DRYER = dict(fy=0.121, cz=0.17, R=0.075)   # 乾燥機の戸の前の面・中心の高さ・半径（卓上の大きさ）
@@ -279,7 +298,10 @@ def table_dryer(name, body="felt_cream", band="felt_navy2", knob="felt_red"):
 
 
 # ---------------------------------------------------------------- 巨大な装置（厨房の顔。人が前に立って使う）
-def giant_press_board(name, cover="patch_warm", body="felt_red"):
+GIANT_IRON = 1.2   # 巨大なアイロン台のアイロンの大きさ（卓上の何倍か）
+
+
+def giant_press_board(name, cover="patch_warm", body="felt_red", iron_on=True):
     """巨大なアイロン台: 長さ 1.7（ゲームで 3.4 m）、面の高さ 0.5（1 m）。X の脚で立ち、後ろの四角い所に
     灰色の鍋敷きと、寝かせた大きなアイロン。前の熱い楕円から湯気、押された粒がひとつ"""
     P = K.Parts(name, kind="cook", tool="press", giant=True, tris=5000)
@@ -306,10 +328,13 @@ def giant_press_board(name, cover="patch_warm", body="felt_red"):
     K.dowel(P, "wood_dark", (-0.24, 0.42, 0.025), (0.24, 0.42, 0.025), 0.028, 12)
     K.dowel(P, "wood_dark", (-0.24, -0.65, 0.025), (0.24, -0.65, 0.025), 0.028, 12)
     K.dowel(P, "felt_tin", (-0.23, -0.04, 0.27), (0.23, -0.04, 0.27), 0.02, 12)               # 脚の交わる所の軸
-    # 後ろの鍋敷きに大きなアイロン
-    s = 1.2
+    # 後ろの鍋敷きに大きなアイロン（iron_on=False なら目印 iron だけ。アイロンは giant_iron で、Godot が動かす）
+    s = GIANT_IRON
     K.pbox(P, "felt_charcoal", (0, -0.58, H + 0.042), (0.17, 0.26, 0.012), n=6.0, nz=3.0)
-    moved(P, Matrix.Translation((0, -0.58, H + 0.054 + 0.065 * s)), lambda: iron(P, body, s))
+    if iron_on:
+        moved(P, Matrix.Translation((0, -0.58, H + 0.054 + 0.065 * s)), lambda: iron(P, body, s))
+    else:
+        P.mark("iron", (0, -0.58, H + 0.054))
     K.tube(P, "yarn_cream", [(0, -0.58 - 0.2 * s, H + 0.1), (0.02, -0.92, H + 0.05), (0.06, -0.97, 0.25),
                              (0.1, -0.95, 0.012), (0.3, -0.9, 0.012), (0.5, -0.98, 0.012)], 0.012, sides=8)
     K.steam(P, (0.0, 0.18, H + 0.04), 0.45, 0.05, seed=4)
@@ -317,31 +342,55 @@ def giant_press_board(name, cover="patch_warm", body="felt_red"):
     P.finish(fuzz=0.003)
 
 
-def giant_heat_press(name, body="felt_red"):
-    """巨大なプレス機: 引き出しの付いた木の台に、卓上のプレス機を 3.5 倍にして載せる（熱板の高さはゲームで 1 m）"""
+def giant_iron(name="giant_iron", body="felt_red"):
+    """巨大なアイロン台のアイロン。原点は熱い底の真ん中（前は +Y）。Godot が目印 iron に置き、調理で布の上を行き来させる"""
+    P = K.Parts(name, kind="cook_part", tris=1200)
+    P.hard["wood"] = 0.01
+    moved(P, Matrix.Translation((0, 0, 0.065 * GIANT_IRON)), lambda: iron(P, body, GIANT_IRON))
+    P.finish(fuzz=0.003)
+
+
+GIANT_PRESS = (3.5, 0.25)   # 巨大なプレス機: 卓上の何倍か・木の台の高さ
+
+
+def giant_heat_press(name, body="felt_red", lid=True):
+    """巨大なプレス機: 引き出しの付いた木の台に、卓上のプレス機を 3.5 倍にして載せる（熱板の高さはゲームで 1 m）。
+    lid=False なら上の板を付けず、蝶番に目印 hinge を置く（上の板は giant_heat_press_lid。Godot が開いた角 38° に置き、調理で閉じて押す）"""
     P = K.Parts(name, kind="cook", tool="press", giant=True, tris=5000)
     for r in ("wood", "wood_dark", "felt_charcoal"):
         P.hard[r] = 0.01
-    k, B = 3.5, 0.25
+    k, B = GIANT_PRESS
     K.box(P, "wood", (0, 0, B / 2), (0.8, 0.98, B))
     for x in (-0.2, 0.2):   # 引き出しとつまみ
         K.box(P, "wood_dark", (x, 0.492, B / 2), (0.34, 0.012, 0.16))
         K.disc(P, "button", (x, 0.505, B / 2), 0.03, 0.025, axis="Y", segs=16)
-    moved(P, Matrix.Translation((0, 0, B)) @ Matrix.Scale(k, 4), lambda: heat_press_body(P, body))
+    moved(P, Matrix.Translation((0, 0, B)) @ Matrix.Scale(k, 4), lambda: heat_press_body(P, body, lid))
     K.steam(P, (0.05, 0.15, B + 0.07 * k), 0.35, 0.05, seed=5)
     P.mark("cook", (0, 0.02 * k, B + 0.07 * k))
+    if not lid:
+        P.mark("hinge", (PRESS_HINGE[0] * k, PRESS_HINGE[1] * k, B + PRESS_HINGE[2] * k))
     P.finish(fuzz=0.003)
 
 
-def giant_dryer(name, body="felt_cream", band="felt_navy2", knob="felt_red"):
-    """巨大な乾燥機: 卓上の乾燥機を 5 倍に（ゲームで幅 2.4 m、高さ 3.4 m、戸の径 1.5 m）。胴の底に大きな粒が転がる"""
+def giant_heat_press_lid(name="giant_heat_press_lid", body="felt_red"):
+    """巨大なプレス機の上の板（閉じた形）。原点は後ろの蝶番。Godot が目印 hinge に置いて、X で回して開け閉めする"""
+    P = K.Parts(name, kind="cook_part", tris=1500)
+    P.hard["wood"] = 0.01
+    P.hard["wood_dark"] = 0.01
+    moved(P, Matrix.Scale(GIANT_PRESS[0], 4), lambda: press_lid(P, body))
+    P.finish(fuzz=0.003)
+
+
+def giant_dryer(name, body="felt_cream", band="felt_navy2", knob="felt_red", drum=True):
+    """巨大な乾燥機: 卓上の乾燥機を 5 倍に（ゲームで幅 2.4 m、高さ 3.4 m、戸の径 1.5 m）。胴の底に大きな粒が転がる。
+    drum=False なら胴と粒を付けず、戸の面の真ん中に目印 drum を置く（胴は giant_dryer_drum。Godot が軸のまわりに回し、中身も Godot が転がす）"""
     P = K.Parts(name, kind="cook", tool="warm", giant=True, tris=5000)
     P.hard["wood"] = 0.01
     k = 5.0
-    moved(P, Matrix.Scale(k, 4), lambda: dryer_body(P, body, band, knob))
+    moved(P, Matrix.Scale(k, 4), lambda: dryer_body(P, body, band, knob, drum))
     fy, cz, R = DRYER["fy"] * k, DRYER["cz"] * k, (DRYER["R"] - 0.01) * k
     rnd = random.Random(8)
-    for i in range(22):
+    for i in range(22 if drum else 0):
         y = fy - rnd.uniform(0.12, 0.55)
         x = rnd.uniform(-0.6, 0.6) * R
         z = cz - math.sqrt(max(0.0, R * R - x * x)) + 0.05 + rnd.uniform(0.0, 0.06)
@@ -360,6 +409,15 @@ def giant_dryer(name, body="felt_cream", band="felt_navy2", knob="felt_red"):
     K.steam(P, (0.76, -0.3, 1.92), 0.4, 0.06, seed=6)
     P.mark("hopper", (hx, hy, top + 0.3))
     P.mark("cook", (0, fy - 0.3, cz))
+    if not drum:
+        P.mark("drum", (0, fy, cz))
+    P.finish(fuzz=0.004)
+
+
+def giant_dryer_drum(name="giant_dryer_drum"):
+    """巨大な乾燥機の胴（5 倍。粒は入れない）。原点は戸の面の真ん中（回る軸の上、奥は -Y）。Godot が目印 drum に置いて回す"""
+    P = K.Parts(name, kind="cook_part", tris=1500)
+    moved(P, Matrix.Scale(5.0, 4), lambda: dryer_drum(P, False))
     P.finish(fuzz=0.004)
 
 
@@ -577,11 +635,14 @@ heat_press("heat_press", "felt_red")
 heat_press("heat_press_mustard", "felt_mustard")
 table_dryer("table_dryer", "felt_cream", "felt_navy2", "felt_red")
 table_dryer("table_dryer_red", "felt_red", "felt_ivory", "felt_mustard")
-giant_press_board("giant_press_board", "patch_warm", "felt_red")
+giant_press_board("giant_press_board", "patch_warm", "felt_red", iron_on=False)
+giant_iron("giant_iron", "felt_red")
 giant_press_board("giant_press_board_cool", "patch_cool", "felt_sky")
-giant_heat_press("giant_heat_press", "felt_red")
+giant_heat_press("giant_heat_press", "felt_red", lid=False)
+giant_heat_press_lid("giant_heat_press_lid", "felt_red")
 giant_heat_press("giant_heat_press_mustard", "felt_mustard")
-giant_dryer("giant_dryer", "felt_cream", "felt_navy2", "felt_red")
+giant_dryer("giant_dryer", "felt_cream", "felt_navy2", "felt_red", drum=False)
+giant_dryer_drum("giant_dryer_drum")
 giant_dryer("giant_dryer_red", "felt_red", "felt_ivory", "felt_mustard")
 giant_vapor()
 giant_vapor_lid()
@@ -613,6 +674,13 @@ else:
     place.update({"giant_press_board": (4.2, 0.55, 0), "giant_heat_press": (6.3, 0.45, 0), "giant_dryer": (8.4, 0.5, 0),
                   "giant_vapor": (10.3, 0.5, 0)})
     R["giant_vapor_lid"].location = (10.3 + STEAM["tx"], 0.5 + STEAM["ty"] - STEAM["tr"], STEAM["tz1"] + 0.01)
+    # 動く部品を、目印の所に置く（ゲームで休んでいる形: アイロンは鍋敷きの上、プレス機の上の板は 38° 開け、胴は戸の奥）
+    gp, gh, gd = (6.3, 0.45, 0), (8.4, 0.5, 0), GIANT_PRESS
+    R["giant_heat_press_lid"].location = (gp[0], gp[1] + PRESS_HINGE[1] * gd[0], gd[1] + PRESS_HINGE[2] * gd[0])
+    R["giant_heat_press_lid"].rotation_euler = (math.radians(38), 0, 0)
+    R["giant_dryer_drum"].location = (gh[0], gh[1] + DRYER["fy"] * 5.0, DRYER["cz"] * 5.0)
+    R["giant_iron"].location = (4.2 + 0.58, 0.55, 0.554)   # アイロン台は 90° 回してある（後ろの -Y が +X へ）
+    R["giant_iron"].rotation_euler = (0, 0, math.radians(90))
     for n, (x, y, z) in place.items():
         R[n].location = (x, y, z)
     R["giant_press_board"].rotation_euler = (0, 0, math.radians(90))

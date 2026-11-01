@@ -3,7 +3,7 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 -s res://tools/dryer_ride_shots.gd -- --bots=0 --no-sound --hud-idle=0 --dir=/path/shots
 ## 1 回目は三人称（01 前で F の案内 → 02 とび込む → 03・04 回る → 05 とび出す → 06 出たあと）、
 ## 2 回目は一人称（11 前で F → 12 胴の中から丸い戸の窓ごしに外を見る）、
-## 3 回目は乾燥機の前に置いたカメラで、回る 16 コマを 1 コマずつ（21_00 〜 21_15。動く絵にする）。
+## 3 回目は乾燥機の前に置いたカメラで、回されて落ちる 36 コマ（3 秒）を 1 コマずつ（21_00 〜 21_35。動く絵にする）。
 ## どの回も水 100（びしょびしょ）から入る
 
 const Doll := preload("res://doll.gd")
@@ -99,13 +99,14 @@ func _run() -> void:
 	var dev: Node3D = st.get_parent()
 	var cam := Camera3D.new()
 	cam.fov = 45.0
+	cam.cull_mask = p.cam.cull_mask   # プレイヤーのカメラと同じ層だけ（一人称の手のミトンを映さない）
 	root.add_child(cam)
 	cam.look_at_from_position(st.drum_center() + st.front() * 4.2 + Vector3.UP * 0.4, st.drum_center())
 	cam.current = true
 	for c in root.find_children("*", "CanvasLayer", true, false):
 		(c as CanvasLayer).visible = false
 	st.ride(p)
-	for k in 16:
+	for k in 36:
 		await _until(st.RIDE_IN + 2 + k)
 		await _shot("21_%02d" % k)
 	quit()
