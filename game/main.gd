@@ -889,10 +889,15 @@ func _furnish_lodge() -> void:
 		slot.add_child(n)
 		return n
 	# 機械は 2 倍（ミシンは貸出に収まるよう 1.5 倍）の大きさで書き出してある
-	# 自販機には見た目の大きさの当たりの箱（人がすり抜けず、三人称のカメラも中に埋まらない）
-	_solid(put.call("slot_vending_1", "res://props/misc/vending_red.glb", Vector3.ZERO))
-	_solid(put.call("slot_vending_2", "res://props/misc/vending_blue.glb", Vector3.ZERO))
-	_solid(put.call("slot_vending_3", "res://props/misc/vending_red.glb", Vector3.ZERO))
+	# 自販機は半分にして、前の箱の大きさ（高さ 1.83 m。代表「全部 前の箱の大きさに」）。食堂（1〜3）、
+	# 風除室の自動ドアの左右（4・5）、外階段のミニテラス（6・7）。前は 4〜7 はロッジに箱を組んでいた。
+	# 見た目の大きさの当たりの箱つき（人がすり抜けず、三人称のカメラも中に埋まらない）
+	var vend_colors := ["red", "blue", "red", "red", "blue", "red", "blue"]   # 風除室は西が赤、東が青
+	for k in range(1, 8):
+		var v: Node3D = put.call("slot_vending_%d" % k, "res://props/misc/vending_%s.glb" % vend_colors[k - 1], Vector3.ZERO)
+		if v:
+			v.scale = Vector3.ONE * 0.5
+			_solid(v)
 	var machine: Node3D = put.call("slot_craft_rental", "res://props/craft_machine.glb", Vector3.ZERO)
 	if machine:   # ミシンの動き（そばで T で縫う。Y でコマ撮り、H で仲間を足踏みに）
 		sewing = SewingMachine.new()

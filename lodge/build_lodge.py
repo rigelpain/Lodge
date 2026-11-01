@@ -754,28 +754,14 @@ def build_vestibule():
     vs = M("vest_snow", "snow", "crown")
     vs.box(V["x0"] - o + 0.05, y0 - o + 0.05, zr + 0.17, V["x1"] + o - 0.05, Y0 - 0.05, zr + 0.36)
     vs.done(bevel=0.07, seg=4, smooth=True)
-    # 中: 靴の雪を落とすマット（溝の刻まれたゴム）、自販機 2 台、吊り灯り
+    # 中: 靴の雪を落とすマット（溝の刻まれたゴム）、吊り灯り
     mt = M("vest_mat", "dark", "interior")
     mt.box(mx0, yb + 0.25, FL1, mx1, Y0 - 0.15, FL1 + 0.015)
     mt.done(bevel=0.004)
     rb = M("vest_mat_ribs", "metal", "interior")
     rb.box(mx0 + 0.05, yb + 0.30, FL1 + 0.015, mx0 + 0.09, Y0 - 0.20, FL1 + 0.035)
     rb.done(array=(int((mx1 - mx0 - 0.1) / 0.08), (0.08, 0, 0)))
-    VM = VENDING
-    for k, (body, face) in enumerate((("felt_red", "paper"), ("felt_blue", "paper"))):
-        x0 = V["x0"] + V["t"] + 0.10 + k * (VM["w"] + VM["gap"])
-        x1 = x0 + VM["w"]
-        ya = Y0 - 0.05 - VM["d"]
-        vb = M("vending_%d" % k, body, "interior")
-        vb.box(x0, ya, FL1, x1, Y0 - 0.05, FL1 + VM["h"])
-        vb.done(bevel=0.02)
-        vf = M("vending_face_%d" % k, face, "interior")   # 飲み物の並ぶ明るい窓
-        vf.box(x0 + 0.08, ya - 0.01, FL1 + 0.95, x1 - 0.08, ya + 0.02, FL1 + VM["h"] - 0.12)
-        vf.done(bevel=0.005)
-        vd = M("vending_slot_%d" % k, "dark", "interior")  # 取り出し口とお金の口
-        vd.box(x0 + 0.12, ya - 0.01, FL1 + 0.15, x1 - 0.12, ya + 0.02, FL1 + 0.40)
-        vd.box(x1 - 0.22, ya - 0.01, FL1 + 0.65, x1 - 0.12, ya + 0.02, FL1 + 0.85)
-        vd.done(bevel=0.004)
+    # 自販機は組まない。ゲームが目印 slot_vending_4・5（自動ドアの左右）に props/ の自販機を置く
     lp = M("vest_lamp", "paper", "interior")
     lp.cyl((cx, (yb + Y0) / 2, V["h"] - 0.95), (cx, (yb + Y0) / 2, V["h"] - 0.45), 0.32, seg=24)
     lp.done(smooth=True)
@@ -850,7 +836,7 @@ def build_rails_and_stair():
         S.box(x - 0.08, (yl1 + E["y_top"]) / 2 - 0.08, 0, x + 0.08, (yl1 + E["y_top"]) / 2 + 0.08,
               (E["z_land"] + FL2) / 2 - 0.3)                                  # 2 本目の中ほどの柱
     rail_run(Rm, (xb - 0.05, yl0, E["z_land"]), (xb - 0.05, yl1, E["z_land"]), h=1.0, name="bal_landing_e")
-    # 踊り場の西のミニテラス（踊り場と一続きの床）。手すりで囲み、自販機 2 台を西の手すりを背に置く
+    # 踊り場の西のミニテラス（踊り場と一続きの床）。手すりで囲む（自販機 2 台はゲームが西の手すりを背に置く）
     Mi = MINI
     zt_ = Mi["z"]
     T.box(Mi["x0"], Mi["y0"], zt_ - 0.12, Mi["x1"], Mi["y1"], zt_)
@@ -865,22 +851,7 @@ def build_rails_and_stair():
     rail_run(Rm, (Mi["x0"] + 0.05, Mi["y0"] + 0.05, zt_), (Mi["x0"] + 0.05, Mi["y1"] - 0.05, zt_), h=1.0, name="bal_mini_w")
     rail_run(Rm, (xa - 0.05, Mi["y0"] + 0.05, zt_), (xa - 0.05, yl0, zt_), h=1.0, name="bal_mini_es")   # 階段との境
     rail_run(Rm, (xa - 0.05, yl1, zt_), (xa - 0.05, Mi["y1"] - 0.05, zt_), h=1.0, name="bal_mini_en")
-    VM = VENDING
-    ym = (Mi["y0"] + Mi["y1"]) / 2
-    for k, body in enumerate(("felt_red", "felt_blue")):
-        xa_, xb_ = Mi["x0"] + 0.20, Mi["x0"] + 0.20 + VM["d"]          # 背を西に、正面は東（階段の側）
-        y0_ = ym - VM["w"] - VM["gap"] / 2 + k * (VM["w"] + VM["gap"])
-        y1_ = y0_ + VM["w"]
-        vb = M("mini_vending_%d" % k, body, "crown")
-        vb.box(xa_, y0_, zt_, xb_, y1_, zt_ + VM["h"])
-        vb.done(bevel=0.02)
-        vf = M("mini_vending_face_%d" % k, "paper", "crown")
-        vf.box(xb_ - 0.02, y0_ + 0.08, zt_ + 0.95, xb_ + 0.01, y1_ - 0.08, zt_ + VM["h"] - 0.12)
-        vf.done(bevel=0.005)
-        vd = M("mini_vending_slot_%d" % k, "dark", "crown")
-        vd.box(xb_ - 0.02, y0_ + 0.12, zt_ + 0.15, xb_ + 0.01, y1_ - 0.12, zt_ + 0.40)
-        vd.box(xb_ - 0.02, y1_ - 0.22, zt_ + 0.65, xb_ + 0.01, y1_ - 0.12, zt_ + 0.85)
-        vd.done(bevel=0.004)
+    # 自販機は組まない。ゲームが目印 slot_vending_6・7（西の手すりを背に）に props/ の自販機を置く
     T.done(bevel=0.012)
     S.done(bevel=0.012)
     Rm.done(bevel=0.012)
@@ -1373,9 +1344,6 @@ def build_collision():
         h0 = cx + sgn * A_["r"]
         Wl.box(min(h0, h0 + sgn * A_["r"]), y0v - 0.14, FL1, max(h0, h0 + sgn * A_["r"]), y0v, A_["spring"])
     Rf.box(V["x0"] - V["roof_out"], y0v - V["roof_out"], V["h"], V["x1"] + V["roof_out"], Y0, V["h"] + 0.36)
-    VM = VENDING
-    Fu.box(V["x0"] + V["t"] + 0.10, Y0 - 0.05 - VM["d"], FL1, V["x0"] + V["t"] + 0.10 + 2 * VM["w"] + VM["gap"], Y0,
-           FL1 + VM["h"])
     # 2 階の壁（テラスへの戸を抜く）。妻は屋根の勾配まで
     c2 = [c for c, k in OPENINGS["2F_S"] if k == "door2"][0]
     wall(Wl, "x", Y2_0, X0, X1, FL2, EAVE_S, [(c2 - DOOR2["w"] / 2, c2 + DOOR2["w"] / 2, FL2 + DOOR2["h"])])
@@ -1417,16 +1385,12 @@ def build_collision():
     St.box(E["x0"], E["y_top"] - E["tread"], FL2 - 0.25, E["x1"], Y0 + 0.3, FL2)
     St.box(E["x0"], E["y_land0"], E["z_land"] - 0.15, E["x1"], E["y_land1"], E["z_land"])
     St.box(E["x1"] - 0.08, E["y_land0"], E["z_land"], E["x1"], E["y_land1"], E["z_land"] + 1.0)   # 踊り場の東の手すり
-    Mi = MINI                                                                  # ミニテラスの床・手すり・自販機
+    Mi = MINI                                                                  # ミニテラスの床・手すり
     St.box(Mi["x0"], Mi["y0"], Mi["z"] - 0.15, Mi["x1"], Mi["y1"], Mi["z"])
     for b in ((Mi["x0"], Mi["y0"], Mi["x1"], Mi["y0"] + 0.08), (Mi["x0"], Mi["y1"] - 0.08, Mi["x1"], Mi["y1"]),
               (Mi["x0"], Mi["y0"], Mi["x0"] + 0.08, Mi["y1"]),
               (Mi["x1"] - 0.08, Mi["y0"], Mi["x1"], E["y_land0"]), (Mi["x1"] - 0.08, E["y_land1"], Mi["x1"], Mi["y1"])):
         St.box(b[0], b[1], Mi["z"], b[2], b[3], Mi["z"] + 1.0)
-    VM = VENDING
-    ym_ = (Mi["y0"] + Mi["y1"]) / 2
-    Fu.box(Mi["x0"] + 0.20, ym_ - VM["w"] - VM["gap"] / 2, Mi["z"], Mi["x0"] + 0.20 + VM["d"],
-           ym_ + VM["w"] + VM["gap"] / 2, Mi["z"] + VM["h"])
     ramp_y(St, I["xm"], I["x1"], I["y_bottom"] - I["tread"], FL1, I["y_land"], I["z_land"])
     St.box(I["x0"], I["y_land"], I["z_land"] - 0.15, I["x1"], I["y_top"], I["z_land"])
     ramp_y(St, I["x0"], I["xm"], I["y_land"], I["z_land"], I["hole_y0"], FL2)
@@ -1476,7 +1440,7 @@ def lighten(objs):
     # 中の家具と小物（卓・椅子・腰掛け・灯り・自販機・マット…）は別の 1 つ（lodge_props_interior）に。
     # ゲームの 360° 映像は名前に prop を含む物を映さない
     inner = set(o.name for o in bpy.data.collections["interior"].objects) if bpy.data.collections.get("interior") else set()
-    props = [o for o in meshes if o not in moving and (o.name in inner or o.name.startswith("mini_vending"))]
+    props = [o for o in meshes if o not in moving and o.name in inner]
     rest = [o for o in meshes if o not in moving and o not in props]
     out = []
     for group, name in ((rest, "lodge_body"), (props, "lodge_props_interior")):
