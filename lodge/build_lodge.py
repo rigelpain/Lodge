@@ -287,8 +287,8 @@ def log_wall(m, axis, fixed, a0, a1, z0, z1, offset, holes=(), top=None):
 
 
 # ---------------------------------------------------------------- 窓と戸
-def opening(F, G, D, axis, fixed, sgn, c, w, cb, ct, kind):
-    """窓・戸の枠。F 枠、G ガラス、D 戸板。cb..ct が丸太を抜いた範囲"""
+def opening(F, G, D, axis, fixed, sgn, c, w, cb, ct, kind, tag=""):
+    """窓・戸の枠。F 枠、G ガラス、D 戸板。cb..ct が丸太を抜いた範囲。tag は戸の名前（動く戸の部品の名前に使う）"""
     t = R
     u0, u1 = c - w / 2, c + w / 2
     L = 0.045                                  # 見込みの板（壁の厚みいっぱい）
@@ -339,8 +339,27 @@ def opening(F, G, D, axis, fixed, sgn, c, w, cb, ct, kind):
         leaves = 2 if w > 1.2 else 1
         lw = (w - 2 * L) / leaves
         for k in range(leaves):
-            door_leaf(D, G, axis, fixed, sgn, u0 + L + k * lw + 0.005, u0 + L + (k + 1) * lw - 0.005,
-                      cb + 0.03, ct - L, -0.06, -0.01)
+            a, b = u0 + L + k * lw + 0.005, u0 + L + (k + 1) * lw - 0.005
+            swing_leaf("%s_%d" % (tag, k), axis, fixed, sgn, a, b, cb + 0.03, ct - L, -0.06, -0.01,
+                       hinge_at_u0=(k == 0))
+
+
+def swing_leaf(name, axis, fixed, sgn, u0, u1, z0, z1, v0, v1, hinge_at_u0=True, glass=0.55):
+    """開き戸の板 1 枚を、別の部品 swingdoor_<name>（板）と swingdoor_<name>_glass（ガラス）にし、蝶番の軸の下の端に
+    目印 hinge_swingdoor_<name> を置く。ゲームの lodge.gd が、近づいた人から見て押す向きにこの軸で回す（2026-11-02 代表
+    「しまってる状態なら自分側から押して開く方に開いて、もし誰か開けてたりして引き戸の方に開いてたらそのまま開けて」）"""
+    lm = M("swingdoor_" + name, "door", "walls")
+    lg = M("swingdoor_%s_glass" % name, "glass", "walls")
+    door_leaf(lm, lg, axis, fixed, sgn, u0, u1, z0, z1, v0, v1, glass=glass)
+    lm.done(bevel=0.006)
+    lg.done()
+    hu = u0 if hinge_at_u0 else u1
+    hv = fixed + sgn * (v0 + v1) / 2
+    e = bpy.data.objects.new("hinge_swingdoor_" + name, None)
+    e.empty_display_type = "SINGLE_ARROW"
+    e.empty_display_size = 0.3
+    e.location = (hu, hv, z0) if axis == "x" else (hv, hu, z0)
+    coll("markers").objects.link(e)
 
 
 def door_leaf(D, G, axis, fixed, sgn, u0, u1, z0, z1, v0, v1, glass=0.55):
@@ -368,9 +387,9 @@ def glass_wall(P, F, G, D, axis, fixed, sgn, posts, z0, z1, door_bay=None):
         wbox(F, axis, fixed, sgn, a - 0.02, b + 0.02, 0.09, 0.14, z0 - 0.02, z0 + 0.04)   # 外の水切り
         mid = (a + b) / 2
         if k == door_bay:
-            for u0, u1 in ((a, mid), (mid, b)):
-                door_leaf(D, G, axis, fixed, sgn, u0 + 0.01, u1 - 0.01, z0 + 0.10, TRANSOM - 0.045,
-                          -0.04, 0.04, glass=0.8)
+            for j, (u0, u1) in enumerate(((a, mid), (mid, b))):
+                swing_leaf("glass_%s_%d" % (axis, j), axis, fixed, sgn, u0 + 0.01, u1 - 0.01, z0 + 0.10, TRANSOM - 0.045,
+                           -0.04, 0.04, hinge_at_u0=(j == 0), glass=0.8)
             wbox(G, axis, fixed, sgn, a, b, -0.005, 0.005, TRANSOM, z1 - 0.14)
             continue
         wbox(F, axis, fixed, sgn, mid - 0.03, mid + 0.03, -0.05, 0.05, z0, z1)
@@ -586,7 +605,7 @@ def build_walls():
         holes = [(cc - w / 2, cc + w / 2, cb, ct) for cc, w, cb, ct, _ in ops] + list(extra)
         last = log_wall(Lg, axis, fixed, a0, a1, z0, z1, off, holes, top)
         for cc, w, cb, ct, kind in ops:
-            opening(F, G, D, axis, fixed, sgn, cc, w, cb, ct, kind)
+            opening(F, G, D, axis, fixed, sgn, cc, w, cb, ct, kind, tag=("%s_%d" % (key, round(cc * 10))).replace("-", "m"))
         if top is None and z1 - last > 0.01:   # 桁（最後の段から屋根まで）
             segs = [(a0 if a0 < X0 else a0, a1)]
             for h0, h1, hb, ht in extra:
@@ -1430,7 +1449,7 @@ def lighten(objs):
         o.select_set(True)
     bpy.context.view_layer.objects.active = meshes[0]
     bpy.ops.object.convert(target="MESH")      # 面取り・配列・切り抜きを形にする
-    moving = [o for o in meshes if o.name.startswith("autodoor")]
+    moving = [o for o in meshes if o.name.startswith(("autodoor", "swingdoor"))]   # 動く戸は 1 つにまとめない
     # 中の家具と小物（卓・椅子・腰掛け・灯り・自販機・マット…）は別の 1 つ（lodge_props_interior）に。
     # ゲームの 360° 映像は名前に prop を含む物を映さない
     inner = set(o.name for o in bpy.data.collections["interior"].objects) if bpy.data.collections.get("interior") else set()
