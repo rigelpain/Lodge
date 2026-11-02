@@ -159,6 +159,9 @@ func _on_peer(pid: int) -> void:
 	r.position = main.START
 	main.add_child(r)
 	remotes[pid] = r
+	var au := main.get_node_or_null("Audio")
+	if au and au.has_method("add_walker"):   # 足音も、自分や仲間と同じ決まりで（audio.gd）
+		au.add_walker(r, true)
 	print("来た: 番号 ", pid)
 	if is_host():
 		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot(), main.damp.snapshot() if main.get("damp") else {}])
