@@ -28,6 +28,7 @@
 | [build_lantern.py](build_lantern.py) | 持ち歩くランタン（装備）: 木の手提げ（標準）と和紙の提灯 |
 | [build_snow_button.py](build_snow_button.py) | お金のボタン 4 段（木・真鍮・白蝶貝・螺鈿。斜面の雪に縫い留める。× の糸はゲームで描く）と、糸を切る裁ちばさみ。光る素材（brass・pearl・lacquer・shell・steel）は焼かずに書き出し、Godot の `look.gd` の `shine` が光らせる |
 | [build_snowman.py](build_snowman.py) | ご飯係の雪だるま（段ごとに動かせる節点）と、雪だるまが入る扉の開いた昔の冷蔵庫 |
+| [build_nook.py](build_nook.py) | ロッジ 1 階の大きな暖炉（小石・指ぬき・セーターの 3 種）と、まわりの大きなソファ・揺り椅子・ビーズクッション・薪のかご。案の絵（`--plan 1〜3`）と書き出し（`game/props/nook/`、人の大きさ）。説明は [design/hearth-nook/](../design/hearth-nook/README.md) |
 | [build_scenes.py](build_scenes.py) | 書き出した glb を組み合わせた場面（暖炉の前・こたつ・食堂・厨房）。Godot の場面も書き出す |
 | [stitches.md](stitches.md) | 滑りあとの縫い目の見本帳（作ったものと、これから作る候補） |
 | `renders/` | 描いた画像 |

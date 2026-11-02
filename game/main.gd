@@ -177,7 +177,7 @@ var damp: Damp                # 紙の人形の「よれ」（湿り気）の配
 var badges: Badges            # 体の調子のバッジ（badges.gd）。湿り気・ご飯の効き目などが入れ、hud.gd が描く
 var net: Net                  # 通信（net.gd）。--host でホスト、--join=IP でつなぐ
 var start: Start              # スタート画面（start.gd）。引数なしで起動したときだけ
-var seats: Seats              # ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団）の配り役。人より先に置く
+var seats: Seats              # ロッジの席（椅子・丸椅子・暖炉のまわりのソファ・揺り椅子・ビーズクッション・こたつの座布団）の配り役。人より先に置く
 
 
 static func hill(x: float, z: float) -> float:
@@ -1039,6 +1039,10 @@ func _furnish_lodge() -> void:
 		kitchen_slot.add_child(set_node)
 		_put_kitchen(kitchen_slot)
 		_put_snowman(kitchen_slot)
+	# 1 階の暖炉と、まわりの居場所（ラグ・揺り椅子・ビーズクッション・大きなソファ。席の目印 nook_seat_* は seats.gd が拾う）
+	var hs := lodge.find_child("slot_hearth", true, false) as Node3D
+	if hs:
+		hs.add_child(preload("res://hearth_nook.gd").new())
 	# 2 階の掘りごたつ: 穴の目印に、こたつと座布団 8 枚の組（座布団の座る所の目印 sit_* は seats.gd が拾う）。
 	# 屋根の下で日は届かないので、太陽の影は落とさない（影の地図に 8 組を描き直さない）
 	for i in KOTATSU_SETS.size():

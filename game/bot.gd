@@ -67,6 +67,8 @@ var _stuck := 0.0            # 歩いても進まない時間 (s)
 var _near_was := false       # あなたが近くの席に座っていた
 const REST := Vector2(25.0, 60.0)   # 一つの席に座っている長さ (s)
 const NEAR_SEAT := 4.0       # あなたの席からこの中の席なら「そば」(m)
+const HEARTH_SEATS := ["sofa", "rocker", "beanbag"]   # 暖炉のまわりの席（hearth_nook.gd）
+const HEARTH_LIKE := 0.7     # 次の席を選ぶとき、暖炉のまわりから選ぶ割合
 
 
 func _ready() -> void:
@@ -557,6 +559,16 @@ func _lounge(dt: float) -> void:
 			_pose_lounge()
 			return
 		_goal = _pick_seat(mine)
+		_near_d = INF
+		_near_t = 0.0
+		_via = []
+		if _goal >= 0 and seats.seat(_goal).kind in HEARTH_SEATS:
+			var st: Dictionary = seats.seat(_goal)
+			var d: Vector3 = st.stand - global_position
+			d.y = 0
+			var nook = seats.lodge.find_child("HearthNook", true, false) if seats.lodge else null
+			if nook and test_move(global_transform, d):   # まっすぐ行けなければ、入り口を通る
+				_via = nook.route(global_position, st.stand)
 		_stuck = 0.0
 		if _goal < 0:
 			_rest = 2.0
@@ -573,7 +585,15 @@ func _lounge(dt: float) -> void:
 		return
 	var to: Vector3 = goal.stand - global_position
 	to.y = 0
-	if to.length() < 0.3:
+	if not _via.is_empty():   # 暖炉の居場所の入り口を通って回り込む途中（hearth_nook.gd の route）
+		var w: Vector3 = _via[0] - global_position
+		w.y = 0
+		if w.length() < 0.5:
+			_via.pop_front()
+			_near_d = INF
+		else:
+			to = w
+	if to.length() < 0.3 and _via.is_empty():
 		if not seats.send({"kind": "sit", "who": id, "seat": _goal}):
 			_goal = -1
 		_pose_lounge()
@@ -588,13 +608,25 @@ func _lounge(dt: float) -> void:
 	# 机などに当たって進めなければ、別の席にする
 	var moved := Vector2(global_position.x - before.x, global_position.z - before.z).length()
 	_stuck = _stuck + dt if moved < SPEED * 0.2 * dt else maxf(0.0, _stuck - dt)
+	# 家具のあいだで左右に振れて近づけないときも（動いてはいる）、4 秒で 0.5 m 近づけなければ別の席にする
+	_near_t += dt
+	if to.length() < _near_d - 0.5:
+		_near_d = to.length()
+		_near_t = 0.0
+	if _near_t > 4.0:
+		_stuck = 2.0
 	if _stuck > 1.5:
+		_near_d = INF
+		_near_t = 0.0
 		_left = _goal
 		_goal = -1
 	_pose_lounge()
 
 
 var _started := false
+var _via := []               # 席へ行く前に通る所（世界）
+var _near_d := INF           # 行き先の席の立つ所に、いちばん近づいた距離
+var _near_t := 0.0           # そこから近づけないでいる秒
 var _turn_sign := 1.0        # 机をよけて回り込む向き（ふさがれているあいだは同じ向きへ回り続ける）
 
 
@@ -617,6 +649,8 @@ func _pick_seat(mine: Dictionary) -> int:
 	var list: Array = []
 	if not mine.is_empty():
 		list = seats.free_near(mine.stand, 4, NEAR_SEAT).filter(func(i): return i != _left)
+	if list.is_empty() and randf() < HEARTH_LIKE:   # 暖炉のまわりの家具（ソファ・揺り椅子・ビーズクッション）が好き
+		list = seats.free_near(global_position, 8, 40.0, HEARTH_SEATS).filter(func(i): return i != _left)
 	if list.is_empty():
 		list = seats.free_near(global_position, 8, 14.0).filter(func(i): return i != _left and seats.seat(i).kind != "zabuton")
 	return list[randi() % list.size()] if not list.is_empty() else -1
@@ -626,6 +660,7 @@ func _pose_lounge() -> void:
 	_pose_doll()
 	doll.airborne = false
 	doll.facing = Vector3.ZERO
+	doll.rock_axis = Vector3.ZERO
 	if seat_i >= 0:
 		var st: Dictionary = seats.seat(seat_i)
 		doll.act = Doll.Act.SIT
@@ -633,3 +668,7 @@ func _pose_lounge() -> void:
 		doll.sit_stage = _sit_stage
 		doll.seat_drop = st.pos.y - st.floor
 		doll.seat_edge = st.edge
+		if st.has("rock_axis"):   # 揺り椅子・ビーズクッション: 体ごと傾く
+			doll.rock_axis = st.rock_axis
+			doll.rock_at = st.rock_at
+			doll.rock = Seats.rock_of(st, Doll.frame_index(), _sit_frame, _stand_frame)

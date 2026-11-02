@@ -17,7 +17,8 @@ const LAPSE := 0.25          # 高さ 1 m で下がる気温 (°C)。本物（0.
 const INDOOR := 18.0         # ロッジの中
 const VESTIBULE := 6.0       # 風除室
 const FIRE_WARM := 8.0       # 暖炉のすぐそばで、これだけ暖かい
-const FIRE_R := 5.0          # 暖炉の暖かさが届く (m)
+const FIRE_R := 5.0          # 焚き火の暖かさが届く (m)
+const HEARTH_R := 9.0        # 暖炉の暖かさが届く (m)。暖炉のまわりの居場所（hearth_nook.gd）のいちばん遠い席まで少し届く
 const FIRE_FALLBACK := Vector3(10.9, 1.0, -10.8)   # 暖炉の目印が見つからないときの所（ロッジの座標。audio.gd と同じ）
 const BREATH_WARM := 8.0     # これより暖かいと、白い息は見えない
 const BREATH_SPAN := 12.0    # そこから 12 °C 寒くなると、ふつうの白い息（1）
@@ -40,7 +41,7 @@ func at(pos: Vector3) -> float:
 	if zone == 2:
 		var warm := INDOOR
 		if _fire != Vector3.INF:
-			warm += FIRE_WARM * clampf(1.0 - pos.distance_to(_fire) / FIRE_R, 0.0, 1.0)
+			warm += FIRE_WARM * clampf(1.0 - pos.distance_to(_fire) / HEARTH_R, 0.0, 1.0)
 		return warm
 	var outside := _outdoor(pos) + _campfires(pos)
 	return lerpf(outside, VESTIBULE, 0.6) if zone == 1 else outside

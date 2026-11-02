@@ -434,7 +434,8 @@ def build_chimney():
     c = CH
     m = M("chimney", "stone", "walls")
     sh = FL2 - 0.40
-    m.box(c["x0"], c["y0"], 0, c["x1"], c["y1"], sh)
+    # 1 階の部屋の側へは出さない（壁の内の面まで）。大きな暖炉（props/build_nook.py）の炉の奥に入り込まないように
+    m.box(c["x0"], Y1 - LOG_D / 2 - 0.02, 0, c["x1"], c["y1"], sh)
     if PH >= 3:
         m.hull([(x, y, sh) for x in (c["x0"], c["x1"]) for y in (c["y0"], c["y1"])] +
                [(x, y, FL2 + 0.35) for x in (c["ux0"], c["ux1"]) for y in (c["uy0"], c["uy1"])])
@@ -447,24 +448,9 @@ def build_chimney():
         m.box(c["ux0"] - o, c["uy0"] - o, c["top"] + 0.40, c["ux1"] + o, c["uy1"] + o, c["top"] + 0.40 + c["cap_t"])
     else:
         m.box(c["ux0"], c["uy0"], sh, c["ux1"], c["uy1"], c["top"])
-    ch = m.done(bevel=0.03 if PH >= 3 else 0)
-    if PH >= 2:   # 炉の口（1 階の中へ）
-        cx = (c["x0"] + c["x1"]) / 2
-        fw_, fh_ = c["fire_w"], c["fire_h"]
-        cut(ch, cutter("cut_firebox", cx - fw_ / 2, c["y0"] - 0.1, FL1 + 0.18, cx + fw_ / 2, c["y0"] + 0.8, FL1 + fh_))
-        h = M("hearth", "stone", "walls")
-        h.box(c["x0"] - 0.25, c["y0"] - 0.65, FL1, c["x1"] + 0.25, c["y0"], FL1 + 0.12)
-        h.done(bevel=0.02)
-        mt = M("mantel", "board", "walls")
-        mt.box(c["x0"] - 0.10, c["y0"] - 0.26, FL1 + fh_ + 0.15, c["x1"] + 0.10, c["y0"] + 0.02, FL1 + fh_ + 0.27)
-        mt.done(bevel=0.012)
-        fr = M("fire", "fire", "walls")   # 炉の火（光る板と、くべた薪）
-        fr.box(cx - fw_ / 2 + 0.12, c["y0"] + 0.65, FL1 + 0.20, cx + fw_ / 2 - 0.12, c["y0"] + 0.70, FL1 + fh_ - 0.25)
-        fr.done()
-        fw = M("firewood", "log", "walls")
-        for k, dz in ((-0.2, 0.0), (0.2, 0.0), (0.0, 0.1)):
-            fw.cyl((cx - fw_ / 2 + 0.2, c["y0"] + 0.35 + k * 0.4, FL1 + 0.28 + dz), (cx + fw_ / 2 - 0.2, c["y0"] + 0.35 - k * 0.4, FL1 + 0.28 + dz), 0.10)
-        fw.done(smooth=True, cap_uv=True)
+    m.done(bevel=0.03 if PH >= 3 else 0)
+    # 炉の口・炉床・飾り棚・火は作らない。1 階の大きな暖炉は props/build_nook.py の品物を、ゲームが目印 slot_hearth に置き、
+    # この煙突の塊（1 階の部屋へ出た所）をすっぽり覆う（2026-11-02）
 
 
 def roof_cutters():
@@ -953,14 +939,6 @@ def build_interior():
         coll("interior").objects.unlink(src)
         coll("sources").objects.link(src)
         src.hide_render = True
-    # 炉を囲む長椅子（コの字）
-    B = M("hearth_bench", "board", "interior")
-    Cu = M("hearth_cushion", "cushion", "interior")
-    for x0, y0, x1, y1 in HEARTH_BENCH:
-        B.box(x0, y0, FL1, x1, y1, FL1 + 0.40)
-        Cu.box(x0 + 0.02, y0 + 0.02, FL1 + 0.40, x1 - 0.02, y1 - 0.02, FL1 + 0.47)
-    B.done(bevel=0.015)
-    Cu.done(bevel=0.025, seg=3)
     # スキー置場（中から外の下屋へ出した。2026-10-31 代表の並び）。下屋の雪の上に立てる
     S = SKI_RACK
     sk = M("ski_rack", "board", "setsue")
@@ -1103,7 +1081,7 @@ def build_interior():
     ky = (KOTATSU[0][1] + KOTATSU[-1][1] + KOTATSU_D) / 2
     lights += [("light_lantern_%d" % i, ((KOTATSU[a][0] + KOTATSU[a + 1][0] + KOTATSU_W) / 2, ky, FL2 + TATAMI["h"] + KOTATSU_LAMP - 0.3))
                for i, a in enumerate((0, 2))]
-    lights.append(("light_fire", ((CH["x0"] + CH["x1"]) / 2, CH["y0"] - 0.35, FL1 + 0.6)))
+    lights.append(("light_fire", (HEARTH_CX, HEARTH["front"] + 0.3, FL1 + 0.95)))   # 大きな暖炉の炉の口の前（props/build_nook.py）
     lights.append(("light_vestibule", (VEST["cx"], Y0 - VEST["d"] / 2, VEST["h"] - 1.1)))
     for name, loc in lights:
         e = bpy.data.objects.new(name, None)
@@ -1348,7 +1326,7 @@ def build_collision():
         Wl.box(x - COL_D / 2, y - COL_D / 2, FL1, x + COL_D / 2, y + COL_D / 2, roof_z(y))
     # 煙突と炉
     c = CH
-    Wl.box(c["x0"], c["y0"], 0, c["x1"], c["y1"], FL2)
+    Wl.box(c["x0"], Y1 - LOG_D / 2 - 0.02, 0, c["x1"], c["y1"], FL2)   # 部屋の側の暖炉の当たりは game/hearth_nook.gd
     Wl.box(c["ux0"], c["uy0"], FL2, c["ux1"], c["uy1"], c["top"] + 0.56)
     # 屋根（雪まで含めた厚み）と下屋の屋根
     ys, yn = Y2_0 - EAVE_OUT_S, Y2_1 + EAVE_OUT_N
@@ -1397,9 +1375,7 @@ def build_collision():
     Fu.box(WINDOW_BAR["x0"], WINDOW_BAR["y0"], FL1, WINDOW_BAR["x1"], WINDOW_BAR["y0"] + WINDOW_BAR["d"],
            FL1 + WINDOW_BAR["h"])
     Fu.box(RENTAL["x0"], RENTAL["y0"], FL1, RENTAL["x1"], RENTAL["y1"], FL1 + RENTAL["h"])   # 貸出の棚（間仕切りはない）
-    for x0, y0, x1, y1 in HEARTH_BENCH:
-        Fu.box(x0, y0, FL1, x1, y1, FL1 + 0.45)
-    Fu.box(c["x0"] - 0.25, c["y0"] - 0.65, FL1, c["x1"] + 0.25, c["y0"], FL1 + 0.12)
+    # 暖炉とまわりの家具の当たりは、ゲーム（game/hearth_nook.gd）が品物に合わせて置く
     S_ = SKI_RACK
     Fu.box(S_["x0"], S_["y0"], 0, S_["x1"], S_["y1"], 1.75)   # 外の下屋
     zt = FL2 + TATAMI["h"]

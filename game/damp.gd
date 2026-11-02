@@ -51,7 +51,8 @@ const CRISP_FADE := 0.22       # 火から離れると（ロッジの中でも�
 # 乾く
 const DRY_ROOM := 0.55         # ロッジの中で 0 まで乾く速さ（100 から 0 まで 3 分）
 const DRY_FIRE := 4.7          # 火のすぐそばで足す速さ（すぐそばなら 100 から −40 まで 27 秒ほど）
-const FIRE_R := 5.0            # 火の暖かさが届く (m。temperature.gd の FIRE_R と同じ)
+const FIRE_R := 5.0            # 焚き火の暖かさが届く (m。temperature.gd の FIRE_R と同じ)
+const HEARTH_R := 9.0          # 暖炉の暖かさが届く (m。temperature.gd の HEARTH_R と同じ。暖炉のまわりの席まで)
 const CRISP_FROM := 0.15       # 暖かさ（0 〜 1。火からの近さ）がこれを超えると、0 より下（パリッと）へ行く
 const CRISP_FULL := 0.6        # ここで −40 まで行く（火から 2 m）
 const DRYER_DRY := 35.0        # 乾燥機の中で乾く速さ（1 秒に。100 から −40 まで 4 秒）
@@ -219,17 +220,14 @@ func _rate(id: int, who: Node3D, dt: float) -> float:
 	return dw
 
 
-## その所の火の暖かさ（0 〜 1）: 暖炉・焚き火（仲間分け "fires"）から FIRE_R の内で近いほど強い
+## その所の火の暖かさ（0 〜 1）: 暖炉から HEARTH_R、焚き火（仲間分け "fires"）から FIRE_R の内で近いほど強い
 func _warm_at(pos: Vector3, temp: Node) -> float:
 	var warm := 0.0
-	var spots: Array[Vector3] = []
 	if temp and temp._find_lodge() and temp._fire != Vector3.INF and Audio.zone_at(temp._lodge, pos + Vector3.UP) == 2:
-		spots.append(temp._fire)   # 暖炉はロッジの中からだけ（壁の外では効かない）
+		warm = clampf(1.0 - pos.distance_to(temp._fire) / HEARTH_R, 0.0, 1.0)   # 暖炉はロッジの中からだけ（壁の外では効かない）
 	for f in get_tree().get_nodes_in_group("fires"):
 		if f is Node3D and is_instance_valid(f):
-			spots.append((f as Node3D).global_position)
-	for s in spots:
-		warm = maxf(warm, clampf(1.0 - pos.distance_to(s) / FIRE_R, 0.0, 1.0))
+			warm = maxf(warm, clampf(1.0 - pos.distance_to((f as Node3D).global_position) / FIRE_R, 0.0, 1.0))
 	return warm
 
 

@@ -108,8 +108,7 @@ def game_items():
     def add(id_, name, shape, x, y, w, d, kind, rot=0):
         out.append(dict(id=id_, name=name, shape=shape, x=round(x, 2), y=round(y, 2), w=round(w, 2), d=round(d, 2),
                         rot=rot, kind=kind))
-    add("hearth", "暖炉", "hearth", (CH["x0"] + CH["x1"]) / 2, (CH["y0"] + Y1 + 1.5) / 2, CH["x1"] - CH["x0"],
-        Y1 + 1.5 - CH["y0"], "fire")
+    add("hearth", "暖炉", "hearth", HEARTH_CX, HEARTH["front"] + HEARTH["back"] / 2, HEARTH["w"], HEARTH["back"], "fire")
     mx, my, _, mr = SLOTS["slot_craft_rental"]
     add("machine", "大きなミシン", "box", mx, my, 4.2, 1.8, "sled", mr)
     sx, _, sz = _gd_vec("SHOP_AT")                 # 目印の中の座標（Godot: -z が北）
@@ -171,10 +170,7 @@ def main():
         "pr68": dict(label="前の並び（#68）", note="暖炉が東寄り、厨房が西寄りだったころ", items=_saved("layout-pr68.json")["items"]),
     }
     data = dict(static=static(), presets=presets, start="game",
-                bounds=[-31.0, -19.5, 24.5, 17.0], hearth=dict(
-                    benches=[[x0 - HEARTH_CX, y0 - (CH["y0"] + Y1 + 1.5) / 2, x1 - HEARTH_CX, y1 - (CH["y0"] + Y1 + 1.5) / 2]
-                             for x0, y0, x1, y1 in HEARTH_BENCH],
-                    fire_w=CH["fire_w"]),
+                bounds=[-31.0, -19.5, 24.5, 17.0], hearth=dict(benches=[], fire_w=2.7),   # 長椅子はやめた（家具は game/hearth_nook.gd）
                 table=dict(chair=[0.5, 0.45], gap=0.35, step=1.15),
                 bar=dict(step=STOOL["step"], r=STOOL["r"]))
     tpl = open(os.path.join(HERE, "editor-template.html"), encoding="utf-8").read()

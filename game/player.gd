@@ -33,7 +33,7 @@ const Campfire := preload("res://campfire.gd")
 ## どの米袋を装備するかは、I で開く装備の画面（craft_ui.gd）で選ぶ。
 ## ランタンも装備（craft.gd の lanterns）: 帯の左に提げ、R で点ける・消す（2026-10-29 代表。ソリをふもとへ戻すのは Backspace に移した）。
 ## 左クリックの順: 雪玉を持っていれば投げる → 高い両手のひらなら拍手。
-## ロッジの席（椅子・丸椅子・炉の長椅子・こたつの座布団。seats.gd）: 空いた席のそばで、席の方を向いて F で座る。
+## ロッジの席（椅子・丸椅子・暖炉のまわりのソファ・揺り椅子・ビーズクッション・こたつの座布団。seats.gd）: 空いた席のそばで、席の方を向いて F で座る。
 ## 椅子の後ろへ歩み寄って向きを変え、腰を下ろす（12 コマ）。目線は座った人形の目の高さへ。もう一度 F か、移動キーで立つ。
 ## 座っているあいだも、身ぶり・声・手に持った物は使える。
 ## 厨房の乾燥機（cook_station.gd）: 手にペレットを持たずに前で F で中へとび込み、胴の中で丸まって回って乾く（Mode.DRUM）。
@@ -806,12 +806,17 @@ func _pose_doll() -> void:
 	doll.dragged = mode == Mode.GRIP and sled.is_dragged(self)
 	doll.airborne = mode == Mode.WALK and not is_on_floor()
 	doll.facing = (sled.global_basis * push_dir) if mode == Mode.GRIP else Vector3.ZERO
+	doll.rock_axis = Vector3.ZERO
 	if mode == Mode.SIT:
 		var st := seats.seat(seat_i)
 		doll.facing = st.face
 		doll.sit_stage = _sit_stage
 		doll.seat_drop = st.pos.y - st.floor
 		doll.seat_edge = st.edge
+		if st.has("rock_axis"):   # 揺り椅子・ビーズクッション: 体ごと傾く（seats.gd の rock_of）
+			doll.rock_axis = st.rock_axis
+			doll.rock_at = st.rock_at
+			doll.rock = Seats.rock_of(st, Doll.frame_index(), _sit_frame, _stand_frame)
 	if mode == Mode.DRUM:
 		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
 		doll.facing = pl.face

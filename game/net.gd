@@ -274,6 +274,10 @@ func _my_state() -> Dictionary:
 		"c": d.crouch, "pt": d.point, "ps": d.point_sides, "ss": d.sit_stage, "sd": d.seat_drop, "se": d.seat_edge}
 	if p.sled and is_instance_valid(p.sled):
 		s["sl"] = main.get_path_to(p.sled)
+	if d.rock_axis != Vector3.ZERO:   # 揺り椅子・ビーズクッションで体ごと傾く（hearth_nook.gd）
+		s["ra"] = d.rock_axis
+		s["rk"] = d.rock
+		s["rp"] = d.rock_at
 	# 体の調子: 紙の水（damp.gd、整数）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
 	if main.damp:
 		s["dw"] = int(roundf(main.damp.water_of(p.id)))

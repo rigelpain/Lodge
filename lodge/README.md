@@ -53,9 +53,10 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 - 2 階の小上がりは 0.4 m の段。プレイヤーが上がれる高さかは、ゲームの側で確かめる
 - 原点は 1 階の外形の中心の真下、雪の地面の高さ。正面（南）が -Y（Blender）＝ +Z（Godot）を向く
 - 機械の置き場の目印（空の節点）: `slot_food_kitchen`、`slot_craft_rental`、`slot_vending_1`〜`7`（4・5 は風除室、6・7 はミニテラス）。場所と向きは `dims.py` の `SLOTS`（並びは [design/lodge-layout/](../design/lodge-layout/)）。機械は `game/main.gd` が置く
+- 1 階の暖炉の置き場の目印（空の節点）: `slot_hearth`（暖炉の前の面のまんなか、床の高さ。`dims.py` の `HEARTH`）。ロッジは煙突の塊だけを作り、炉の口・炉床・飾り棚・火と、前の長椅子は作らない。暖炉と、まわりのラグ・揺り椅子・ビーズクッション・大きなソファは `props/build_nook.py` の品物を `game/hearth_nook.gd` が置き、当たり判定も付ける（2026-11-02、代表「暖炉がちゃっちい。暖炉前のベンチもなんか味気ない」）
 - 2 階の掘りごたつの目印（空の節点）: `slot_kotatsu_0`〜`7`（穴のまんなか、畳の面。0〜3 が南の列、4〜7 が北の列、西から）。ロッジは穴だけを作り、こたつと座布団は `game/main.gd` が `props/sets/kotatsu_lodge_<柄>.tscn` を置く（2026-11-01、箱のこたつから差し替え）。大きさは `dims.py` の `KOTATSU_W`・`KOTATSU_D`・`KOTATSU_TOP`・`PIT_OUT`・`PIT_DEPTH`、当たり判定は `KOTATSU_FLARE` まで
 - 2 階のこたつの上の吊り灯りの目印: `slot_pendant_0`〜`7`（卓のまんなかの上、天井の野地板の下面。番号は `slot_kotatsu_*` と同じ）。`game/main.gd` が `props/furniture/pendant_drum.glb`（プリーツの筒）を、傘の上端が畳から `KOTATSU_LAMP`（3.2 m）になるよう吊り、コードを天井まで伸ばす（2026-11-02、畳の上 1.75 m に浮いていた紙の筒から替えた）。座敷の灯り `light_lantern_*` も同じ高さへ上げた
-- 灯りの場所の目印（空の節点）: `light_lamp_0`〜`2`（食堂の天井）、`light_lantern_0`〜`1`（座敷）、`light_fire`（炉）、`light_vestibule`（風除室）。食堂は炉を入れて 4 つまで。ゲームはここに暖色の OmniLight3D を影なしで灯し、炉の火だけ揺らす
+- 灯りの場所の目印（空の節点）: `light_lamp_0`〜`2`（食堂の天井）、`light_lantern_0`〜`1`（座敷）、`light_fire`（大きな暖炉の炉の口の前）、`light_vestibule`（風除室）。食堂は炉を入れて 4 つまで。ゲームはここに暖色の OmniLight3D を影なしで灯し、炉の火だけ揺らす
 - 書き出しでは面取りを外し、形を 2 つの物体にまとめる。建物は `lodge_body`、中の家具と小物（卓・椅子・灯り・マットなど）は `lodge_props_interior`（名前の prop で 360° 映像から外せる）。動かす自動ドアだけ別。三角形はロッジ全体で 10 万以下が目安（いま約 6.7 万）
 - 自動ドアの戸は `autodoor_l` / `autodoor_r`（ガラスは `autodoor_glass_l` / `_r`）。`lodge.gd` が、人（CharacterBody3D）が戸の前後 3 m に入ると左右へ 1.4 m 引き分ける
 
