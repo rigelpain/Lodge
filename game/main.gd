@@ -77,18 +77,15 @@ const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
-const LanternRack := preload("res://lantern_rack.gd")
-const LanternUi := preload("res://lantern_ui.gd")
-## ランタン掛け（lantern_rack.gd）を、おじいさんの番台（BANDAI の counter_patch）からどれだけ横に置くか（番台の座標, m。+X は番台の右の端の側）
-const LANTERN_RACK_AT := Vector3(-2.0, 0.0, 0.1)
+const PaperLady := preload("res://paper_lady.gd")
+const PaperShopUi := preload("res://paper_shop_ui.gd")
 const Damp := preload("res://damp.gd")
 const Badges := preload("res://badges.gd")
 const Companions := preload("res://companions.gd")
 const Pals := preload("res://pals.gd")
-const PalStall := preload("res://pal_stall.gd")
-const PalsUi := preload("res://pals_ui.gd")
-## 頭・肩の小物とミニオンの売り台（pal_stall.gd）を、衣装掛けの竿の端からどれだけ横に置くか（衣装掛けの座標, m。+X は竿の右）
-const PAL_STALL_X := 2.85
+## 紙細工屋さん（paper_lady.gd。黒い折り紙の婦人と大きなスタンド）の立つ所（衣装掛けの座標, m。+X は竿の右＝南、+Z は正面＝西）。
+## 婦人の左（+X）にスタンド（paper_lady.gd の STAND_AT）。南の壁と東の壁に当たらない所
+const PAPER_LADY_AT := Vector3(2.55, 0.0, 0.75)
 const DyeVat := preload("res://dye_vat.gd")
 const DyeUi := preload("res://dye_ui.gd")
 const Net := preload("res://net.gd")
@@ -97,8 +94,8 @@ const Start := preload("res://start.gd")
 ## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
 const WARDROBE_AT := Vector2(21.25, 2.2)
 const WARDROBE_FLOOR := 6.1   # 2 階の床（dims.FL2）
-## 染め桶（dye_vat.gd）の所（衣装掛けの座標。+X が竿の右の端のほう、+Z が正面）。竿の右の端の横には小物とミニオンの
-## 売り台（PAL_STALL_X）があるので、桶は竿の左の端の横
+## 染め桶（dye_vat.gd）の所（衣装掛けの座標。+X が竿の右の端のほう、+Z が正面）。竿の右の端の横には紙細工屋さん
+## （PAPER_LADY_AT）がいるので、桶は竿の左の端の横
 const DYE_VAT_AT := Vector3(-2.45, 0.0, 0.35)
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
@@ -170,10 +167,8 @@ var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
-var lantern_rack: Node3D      # 番台の横のランタン掛け（lantern_rack.gd）
-var lantern_ui: CanvasLayer   # ランタンを買って提げ替える画面（lantern_ui.gd）
-var pal_stall: Node3D         # 衣装掛けの横の、頭・肩の小物とミニオンの売り台（pal_stall.gd）
-var pals_ui: CanvasLayer      # 小物とミニオンを買って付け替える画面（pals_ui.gd）
+var paper_lady: Node3D        # 衣装掛けの横の紙細工屋さん（paper_lady.gd。婦人と大きなスタンド）
+var paper_shop_ui: CanvasLayer   # 提灯と頭・肩の小物を買って付け替える画面（paper_shop_ui.gd）
 var dye_vat: Node3D           # 衣装掛けのとなりの染め桶（dye_vat.gd）
 var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
@@ -463,29 +458,18 @@ func _ready() -> void:
 		wardrobe_ui.craft = craft
 		wardrobe_ui.player = player
 		add_child(wardrobe_ui)
-		if lantern_rack:
-			lantern_rack.player = player
-		lantern_ui = LanternUi.new()
-		lantern_ui.main = self
-		lantern_ui.craft = craft
-		lantern_ui.player = player
-		add_child(lantern_ui)
-		if args.get("spawn", "") == "lanterns" and lantern_rack:   # --spawn=lanterns: 番台の横のランタン掛けの前から始める
-			var at := lantern_rack.to_global(Vector3(0, 0.1, 1.7))
+		paper_shop_ui = PaperShopUi.new()
+		paper_shop_ui.main = self
+		paper_shop_ui.craft = craft
+		paper_shop_ui.player = player
+		add_child(paper_shop_ui)
+		if paper_lady:
+			paper_lady.player = player
+			paper_lady.ui = paper_shop_ui
+		if args.get("spawn", "") in ["paper_shop", "pals", "lanterns"] and paper_lady:   # --spawn=paper_shop: 紙細工屋さんの前から始める
+			var at := paper_lady.to_global(Vector3(0.6, 0.1, 2.2))
 			player.global_position = at
-			var to := lantern_rack.global_position
-			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
-		if pal_stall:
-			pal_stall.player = player
-		pals_ui = PalsUi.new()
-		pals_ui.main = self
-		pals_ui.craft = craft
-		pals_ui.player = player
-		add_child(pals_ui)
-		if args.get("spawn", "") == "pals" and pal_stall:   # --spawn=pals: 売り台の前から始める
-			var at := pal_stall.to_global(Vector3(0, 0.1, 1.5))
-			player.global_position = at
-			var to := pal_stall.global_position
+			var to := paper_lady.to_global(Vector3(0.6, 0.0, 0.0))
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if dye_vat:
 			dye_vat.player = player
@@ -1049,14 +1033,6 @@ func _furnish_lodge() -> void:
 				(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for b in BANDAI:
 		_put_bandai(lodge, b)
-	# おじいさんの番台の横に、ランタン掛け（正面は番台と同じく客の側）
-	var bp := lodge.get_node_or_null("Bandai_counter_patch") as Node3D
-	if bp:
-		lantern_rack = LanternRack.new()
-		lantern_rack.name = "LanternRack"
-		lantern_rack.player = player
-		lantern_rack.transform = bp.transform * Transform3D(Basis(Vector3.UP, PI), LANTERN_RACK_AT)
-		lodge.add_child(lantern_rack)
 	# 2 階の衣装掛け: 前で F を押すと人形を選び直す
 	wardrobe = Wardrobe.new()
 	wardrobe.name = "Wardrobe"
@@ -1064,12 +1040,13 @@ func _furnish_lodge() -> void:
 	wardrobe.position = Vector3(WARDROBE_AT.x, WARDROBE_FLOOR, -WARDROBE_AT.y)
 	wardrobe.rotation.y = -PI / 2.0   # 竿の正面（+Z）を西へ
 	lodge.add_child(wardrobe)
-	# その横に、頭・肩の小物とミニオンの売り台（同じ壁ぎわ、正面は同じく西）
-	pal_stall = PalStall.new()
-	pal_stall.name = "PalStall"
-	pal_stall.player = player
-	pal_stall.transform = wardrobe.transform * Transform3D(Basis(), Vector3(PAL_STALL_X, 0, 0.2))
-	lodge.add_child(pal_stall)
+	# その横に、紙細工屋さん: 黒い折り紙の婦人と、提灯と頭・肩の小物を並べた大きなスタンド（同じ壁ぎわ、正面は同じく西）
+	paper_lady = PaperLady.new()
+	paper_lady.name = "PaperLady"
+	paper_lady.player = player
+	paper_lady.craft = craft
+	paper_lady.transform = wardrobe.transform * Transform3D(Basis(), PAPER_LADY_AT)
+	lodge.add_child(paper_lady)
 	# そのとなりの染め桶: 前で F を押すと服を染める（竿の左の端の少し前。正面は竿と同じ西）
 	dye_vat = DyeVat.new()
 	dye_vat.name = "DyeVat"

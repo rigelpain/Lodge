@@ -72,7 +72,7 @@
 | `game/pals/` | `perch_<名前>.glb`・`pet_<名前>.glb`・素材の表 `mats.json` |
 | `game/pals.gd` | 品書き（値段・載せる所・動き）、人形ごとの載せる所、素材の置き換え |
 | `game/companions.gd` | 持ち主ごとの、頭・肩の小物とミニオンの動き |
-| `game/pal_stall.gd`・`game/pals_ui.gd` | 衣装掛けの横の売り台と、買って付け替える画面 |
+| `game/pal_stall.gd`・`game/pals_ui.gd` | 衣装掛けの横の売り台と、買って付け替える画面（2026-11-02 から、頭・肩の小物は紙細工屋さん `game/paper_lady.gd`・`game/paper_shop_ui.gd` で売る） |
 | `game/craft.gd` | 出来事 `pal_buy`・`pal_own`・`pal_wear`、持っている物 `pals_owned`・付けている物 `pals_wear` |
 | `game/tools/pals_shots.gd` | 確かめの撮影（`--part=stall|dolls|pets|ride|hearth`） |
 

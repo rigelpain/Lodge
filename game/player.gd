@@ -396,9 +396,6 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.WALK and machine_near() and (not shop_near() or _facing(get_parent().sewing.machine.global_position) > _facing(get_parent().shopkeeper.global_position)):
 					get_parent().craft_ui.open_machine()   # ミシンの画面（おじさんも近ければ、向いている方）
 					return
-				if mode == Mode.WALK and lantern_rack_near() and (not shop_near() or _facing(get_parent().lantern_rack.global_position) > _facing(get_parent().shopkeeper.global_position)):
-					get_parent().lantern_ui.open()   # 番台の横のランタン掛け: ランタンを買って提げ替える（おじさんも近ければ、向いている方）
-					return
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
 					return
@@ -408,8 +405,8 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.WALK and dye_near():
 					get_parent().dye_ui.open()   # 衣装掛けのとなりの染め桶: 服を染める（衣装掛けより近くで向いていれば、こちら）
 					return
-				if mode == Mode.WALK and pal_stall_near() and (not wardrobe_near() or _facing(get_parent().pal_stall.global_position) > _facing(get_parent().wardrobe.global_position)):
-					get_parent().pals_ui.open()   # 衣装掛けの横の売り台: 頭・肩の小物とミニオンを買って付け替える
+				if mode == Mode.WALK and paper_shop_near() and (not wardrobe_near() or _facing(get_parent().paper_lady.global_position) > _facing(get_parent().wardrobe.global_position)):
+					get_parent().paper_shop_ui.open()   # 衣装掛けの横の紙細工屋さん: 提灯と頭・肩の小物を買って付け替える
 					return
 				var dr := dryer_near()
 				if mode == Mode.WALK and dr and dr.ride(self):   # 厨房の乾燥機: 手にペレットを持っていなければ、中に入って乾く
@@ -1971,14 +1968,10 @@ func wardrobe_near() -> bool:
 	return w != null and get_parent().get("wardrobe_ui") != null and not menu_open and w.can_use(self)
 
 
-## 番台の横のランタン掛け（lantern_rack.gd）の前で、掛けの方を向いているか
-func lantern_rack_near() -> bool:
-	var rk = get_parent().get("lantern_rack")
-	return rk != null and get_parent().get("lantern_ui") != null and not menu_open and rk.can_use(self)
-## 衣装掛けの横の売り台（pal_stall.gd）の前で、台の方を向いているか
-func pal_stall_near() -> bool:
-	var st = get_parent().get("pal_stall")
-	return st != null and get_parent().get("pals_ui") != null and not menu_open and st.can_use(self)
+## 衣装掛けの横の紙細工屋さん（paper_lady.gd）の前で、婦人かスタンドの方を向いているか
+func paper_shop_near() -> bool:
+	var pl = get_parent().get("paper_lady")
+	return pl != null and get_parent().get("paper_shop_ui") != null and not menu_open and pl.can_use(self)
 ## 2 階の染め桶の前で、桶の方を向いているか（衣装掛けにも届くときは、向いている方）
 func dye_near() -> bool:
 	var v = get_parent().get("dye_vat")

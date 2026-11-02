@@ -2,7 +2,7 @@ extends SceneTree
 ## 頭・肩の小物とミニオン（pals.gd・companions.gd・pals_ui.gd・pal_stall.gd）を撮る（確かめ用）。
 ##   Godot --path game --resolution 1280x720 -s res://tools/pals_shots.gd -- --part=<名前> --dir=/path/shots [main.gd の引数]
 ## --part:
-##   stall   衣装掛けの横の売り台の前（一人称・三人称）と、買って付け替える画面の 3 段（--spawn=pals を付ける）
+##   stall   衣装掛けの横の紙細工屋さんの前（一人称・三人称）と、買って付け替える画面の頭・肩の段（--spawn=pals を付ける）
 ##   dolls   7 体の人形に頭と肩の小物を載せて、前から撮る（三人称・HUD の自分の顔・360° の映像も入る）。--spawn=pals を付ける
 ##   pets    外で、ミニオン 7 匹の 歩く・座る・寝る を横から撮る
 ##   ride    ソリに乗って滑ると、ミニオンが横を走ってついてくる
@@ -111,7 +111,7 @@ func _run() -> void:
 
 
 func _part_stall(p: CharacterBody3D) -> void:
-	print("売り台: ", main.pal_stall.global_position, " 開ける: ", p.pal_stall_near())
+	print("紙細工屋さん: ", main.paper_lady.global_position, " 開ける: ", p.paper_shop_near())
 	p.set_third(false)
 	await _wait(1.5)
 	await _shot("stall_fp")
@@ -120,19 +120,20 @@ func _part_stall(p: CharacterBody3D) -> void:
 	await _shot("stall_tp")
 	p.set_third(false)
 	main.craft.wallets[p.id] = 260
-	for i in 3:
-		main.pals_ui.open(Pals.SLOTS[i])
+	var ui = main.paper_shop_ui
+	for i in 2:
+		ui.open(Pals.SLOTS[i])
 		await _wait(1.0)
 		await _shot("ui_" + Pals.SLOTS[i])
 		if i == 0:   # 買う: どんぐり（40）を押すと、すぐ頭に付く。足りないモモンガ（200 → 財布 220）は買える、月と兎は震える
-			var ks: Array = main.pals_ui.keys()
-			print("どんぐり: ", main.pals_ui.choose(ks.find("acorn")), " 財布: ", main.craft.wallet(p.id))
+			var ks: Array = ui.keys()
+			print("どんぐり: ", ui.choose(ks.find("acorn")), " 財布: ", main.craft.wallet(p.id))
 			await _wait(0.15)
 			await _shot("ui_head_bought")
-			print("月と兎: ", main.pals_ui.choose(ks.find("moon_rabbit")))
+			print("月と兎: ", ui.choose(ks.find("moon_rabbit")))
 			await _wait(0.1)
 			await _shot("ui_head_short")
-		main.pals_ui.close()
+		ui.close()
 	print("付けている: ", main.craft.pals_wear[p.id])
 
 

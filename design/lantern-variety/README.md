@@ -31,6 +31,7 @@
 - 形: `props/build_lantern.py`（`--sheet` で案の絵、`--look flat --export game/props/lantern` で glb）。光る所はどれも役割 `paper` で書き出し、
   色は Godot の `game/lantern.gd` の `LOOK` で染める
 - 揺らぎ: `lantern.gd` の `flicker(style, t, seed)`。帯のランタン・ランタン掛け・売り台の札で同じものを使う
+- （2026-11-02 に、売り場は 2 階の紙細工屋さん `game/paper_lady.gd`・`game/paper_shop_ui.gd` の提灯の段へ移した。下の 2 行は前の作り）
 - ランタン掛け: `game/lantern_rack.gd`（2 本の柱に竿を上下 2 本、5 つずつ灯して提げる。下に赤いフェルトの台と木の料金箱）。
   置き場は `main.gd` の `LANTERN_RACK_AT`（番台の座標）
 - 買う画面: `game/lantern_ui.gd`（前で F。札を押すと、持っていれば提げ替え、持っていなければ買ってすぐ提げる。提げている札をもう一度押すと外す）

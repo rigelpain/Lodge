@@ -496,14 +496,11 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if si >= 0 and not p.rooted():
 		_hint("sit", ["F"], "sit", p.seats.seat(si).pos + Vector3.UP * 0.85)
 	# 売り子のおじさん: F で売り台
-	if p.shop_near() and not p.shopping and not (p.has_method("lantern_rack_near") and p.lantern_rack_near()):
+	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
-	# 番台の横のランタン掛け: F でランタンを買って提げ替える（ランタンの絵）
-	if p.has_method("lantern_rack_near") and p.lantern_rack_near() and not p.shopping:
-		_hint("lanterns", ["F"], "lamp", main.lantern_rack.global_position + Vector3.UP * 2.25)
-	# 衣装掛けの横の売り台: F で頭・肩の小物とミニオンを買って付け替える（頭に小鳥、足もとに子狐の人の形）
-	if p.has_method("pal_stall_near") and p.pal_stall_near() and not p.shopping:
-		_hint("pals", ["F"], "pals", main.pal_stall.global_position + Vector3.UP * 1.6)
+	# 衣装掛けの横の紙細工屋さん: F で提灯と頭・肩の小物を買って付け替える（帯のランタンの絵。婦人の頭の上に）
+	if p.has_method("paper_shop_near") and p.paper_shop_near() and not p.shopping:
+		_hint("paper_shop", ["F"], "lamp", main.paper_lady.global_position + Vector3.UP * 2.0)
 	# 玄関の外の山男: F で山の道具を買う（焚き火の絵とボタン）
 	if p.has_method("mountain_near") and p.mountain_near() and not p.shopping:
 		_hint("mountain", ["F"], "mountain", main.mountain_man.global_position + Vector3.UP * 2.3)
