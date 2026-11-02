@@ -110,6 +110,8 @@ var _roll: Node3D            # 丸めた米袋（帯か右手）
 var _roll_hip: Node3D
 var _roll_hand: Node3D
 var airborne := false
+var _air_n := 0               # 宙にいるコマの数
+var _land := 0                # 着地の膝の曲げの残りコマ（2 → 1 → 0）
 var waving := false
 var point := Vector3.INF     # 腕を伸ばして指す所（世界）。gaze が決まっていなければ、そこを見る
 var sled: Node3D = null
@@ -1138,6 +1140,13 @@ func _pose() -> void:
 	var bend := 0.0
 	var X := Vector3.RIGHT
 	var Z := Vector3.BACK
+	# 着地: 宙に 2 コマ以上いたあと床に着いたら、2 コマのあいだ膝を曲げる
+	if airborne:
+		_air_n += 1
+		_land = 0
+	else:
+		_land = 2 if _air_n >= 2 else maxi(_land - 1, 0)
+		_air_n = 0
 
 	match act:
 		Act.RIDE:
@@ -1200,6 +1209,15 @@ func _pose() -> void:
 				for s in ["L", "R"]:
 					_turn_axis("thigh." + s, X, 0.5 if s == "L" else 0.15)
 					_turn_axis("shin." + s, X, -0.9)
+			elif _land > 0:
+				# 着地: 膝を曲げて受け止める（2 コマ。深く → 半ば）
+				var k := 1.0 if _land == 2 else 0.5
+				for s in ["L", "R"]:
+					_turn_axis("thigh." + s, X, 0.75 * k)
+					_turn_axis("shin." + s, X, -1.3 * k)
+				_hips_drop = leg * 0.5 * ((1.0 - cos(0.75 * k)) + (1.0 - cos(0.55 * k)))
+				_update_all()
+				bend = 0.25 * k
 			elif amp > 0.0:
 				for k in 2:
 					var s: String = ["L", "R"][k]

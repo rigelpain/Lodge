@@ -22,7 +22,7 @@ enum State { PUSH, WAIT, RIDE }
 const SPEED := 2.4
 const REGRAB_WAIT := 1.5     # 雪玉が当たって手を離してから、つかみ直すまで (s)
 const LEAN_DELAY := 0.3      # 一緒に乗っているとき、あなたの体重移動に合わせるまでの遅れ (s)
-const GRAVITY := 9.8
+const GRAVITY := 24.0         # 落ちるときの重力（player.gd の FALL_GRAVITY と同じ。仲間は跳ばないので、下りだけ）
 
 var sled: RigidBody3D
 var player: Node3D          # いないとき（確かめ用）は仲間だけで滑る

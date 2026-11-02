@@ -447,6 +447,16 @@ func _update_walkers(dt: float) -> void:
 				_play_step(who, w, _push_name(who), db_step - 4.0 + 4.0 * clampf(sv / 6.0, 0.0, 1.0),
 						rng.randf_range(1.1, 1.25) + 0.02 * sv)
 			pushing = true
+		# 着地: 宙にいたあと雪（板）に着いた。下向きの速さが速いほど大きく、低めの「ざくっ」（通信の相手も、届いた姿から）
+		if not grounded:
+			w.air = w.get("air", 0.0) + dt
+			w.fall = maxf(-vel.y, 0.0)
+		elif w.get("air", 0.0) > 0.0:
+			if free and w.air > 0.15:
+				var k := clampf((w.fall - 2.0) / 4.0, 0.0, 1.0)
+				_play_step(who, w, _push_name(who), db_step + 1.0 + 4.0 * k, rng.randf_range(0.8, 0.88))
+				w.acc = 0.0   # 着いた足から歩みを数えなおす
+			w.air = 0.0
 		if free and speed > 0.5 and grounded:
 			w.acc += speed * dt
 			var stride := STRIDE + 0.3 * clampf((speed - 4.0) / 3.0, 0.0, 1.0)

@@ -44,8 +44,15 @@ const DASH := 3.4            # Shift で走る速さ
 const SPEED_TAUT := 1.5      # 紐が張っているときの歩く速さ
 const SPEED_CROUCH := 0.8    # しゃがんで歩く速さ
 const CROUCH_EYE := 0.5      # しゃがむと目がこれだけ下がる (m)
-const JUMP := 4.5
-const GRAVITY := 9.8
+# ジャンプは雪の上でのその場跳びくらい: 高さ約 42 cm、宙にいるのは約 0.43 秒（2026-11-02 代表「ジャンプがふわっとしててリアルじゃない。
+# もっと飛び上がりと着地までの時間は短いほうが良い」。前は 4.5 m/s・9.8 で、高さ 1.07 m・0.95 秒）。
+# 下りは上がりより重力を強くして、てっぺんでふわっと浮かない。段から落ちるときも FALL_GRAVITY（仲間の bot.gd も同じ）
+const JUMP := 3.5            # 踏み切りの上向きの速さ (m/s)
+const GRAVITY := 14.6        # 上がるあいだの重力 (m/s²)
+const FALL_GRAVITY := 24.0   # 下りるあいだの重力 (m/s²)
+const LAND_DIP := 0.012      # 着いたとき、一人称の目が沈む深さ（下向きの速さ 1 m/s あたり, m。ふつうのジャンプで約 5 cm）
+const LAND_DIP_MAX := 0.08
+const LAND_DIP_T := 0.22     # 沈んで戻るまで (s)
 const STEP_UP := 0.40        # ジャンプしなくても乗り上げる段差の高さ (m)
 const GRAB_REACH := 2.2      # F でつかめる、立つ位置までの距離 (m)
 const FALL_NET := 2.0        # 安全網: 雪面よりこれだけ下へ落ちたら、雪の上へ戻す (m)
@@ -138,6 +145,10 @@ var _exhaling := false      # B を押しているあいだ、息を吐いてい
 var _exhale_t := 0.0
 var _cam_roll := 0.0         # 首をかしげると視点も少し傾く
 var _cam_em := Vector3.ZERO  # 身ぶりで視点に足す（x 上下の向き、y 左右の向き、z 高さ）。なめらかに追う
+var _land_t := 1.0           # 着いてからの時間 (s)。LAND_DIP_T までのあいだ一人称の目が沈む
+var _land_amp := 0.0         # そのときの沈む深さ (m)
+var _dip_shown := 0.0        # いまカメラに入れている着地の沈み (m)
+var _fall_v := 0.0           # 宙にいるあいだの下向きの速さ（着いたときの手応えの強さ）
 var _drag_k := 0.0           # 引きずられている度合い（0→1 になめらかに）。視点が前へ傾き、低く揺れる
 var craft: Node              # 工房の配り役（main.gd の Craft）。財布と持ち物
 var shopping := false        # 売り台が開いている（craft_ui.gd）。歩かない
@@ -972,8 +983,14 @@ func _walk(dt: float, with_rope: bool) -> void:
 			velocity.y = 0.0   # 床の上で縦の速さを残すと、床に食い込んでは押し戻されて細かく揺れる
 			_step_up(dir)
 	else:
-		velocity.y -= GRAVITY * dt
+		velocity.y -= (GRAVITY if velocity.y > 0.0 else FALL_GRAVITY) * dt
+	var was_air := not is_on_floor()
 	move_and_slide()
+	if was_air and is_on_floor() and _fall_v > 1.5:
+		# 着いた: 下向きの速さに応じて、一人称の目が少し沈んで戻る（膝で受け止める。人形の膝は doll.gd、音は audio.gd）
+		_land_t = 0.0
+		_land_amp = minf(_fall_v * LAND_DIP, LAND_DIP_MAX)
+	_fall_v = maxf(-velocity.y, 0.0) if not is_on_floor() else 0.0
 
 	if with_rope:
 		if sled.linear_velocity.length() > LET_GO_SPEED:
@@ -1030,6 +1047,17 @@ func rope_hand() -> Vector3:
 	return _hand_world()
 
 
+## 着地の沈み (m): 0.05 秒で沈みきり、残りでなめらかに戻る。視点の揺れを切ると弱く
+func _land_dip(dt: float) -> float:
+	if _land_t >= LAND_DIP_T:
+		return 0.0
+	_land_t += dt
+	var k := clampf(_land_t / LAND_DIP_T, 0.0, 1.0)
+	var down := 0.05 / LAND_DIP_T
+	var w := k / down if k < down else 0.5 + 0.5 * cos(PI * (k - down) / (1.0 - down))
+	return _land_amp * w * (1.0 if bob_enabled else 0.3)
+
+
 func _place_camera(dt: float, bob: float, working: bool) -> void:
 	var eye_y := 1.55 + (bob * 0.02 if working else 0.0)
 	_drag_k = move_toward(_drag_k, 1.0 if mode == Mode.GRIP and sled.is_dragged(self) else 0.0, dt * 4.0)
@@ -1062,7 +1090,11 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			var e := doll.eye_point(true) if _sit_stage == 2 else doll.eye_point(false).lerp(doll.eye_point(true), 0.55)
 			eye = to_local(Transform3D(doll.global_basis, global_position) * e)
 		eye.y += _cam_em.z
+		# 着地の沈みは目の高さの追いかけ（lerp）の外で足す（なまらず、すとんと沈んですっと戻る）
+		cam.position.y += _dip_shown
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
+		_dip_shown = _land_dip(dt)
+		cam.position.y -= _dip_shown
 		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0)
 		return
 	# 三人称: 頭の少し上を中心に、後ろからカメラの距離と高さで見る。マウスの上下で回り込む。
@@ -1070,6 +1102,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	# 当たって縮むときはすぐ、離れて戻るときはゆっくり（壁の向こうが一瞬見えないように）
 	# カメラは頭のまわりをマウスの上下で回り、頭を見る向き（basis）を決める。そのあと、人形の目の高さの線が画面の cam_frame の
 	# 高さに来るよう、カメラを自分の上下の向きに平行にずらす（見下ろす角度は変えない。Camera3D の v_offset と同じ）
+	_dip_shown = 0.0   # 着地の沈みは一人称だけ（三人称は人形の膝で見せる）
 	var pivot := Vector3(0, 1.6, 0)
 	if mode == Mode.DRUM:
 		pivot = to_local(_drum.drum_center())   # 乾燥機の中: 胴の真ん中を見る（カメラは戸の前へ出る）
