@@ -14,6 +14,10 @@ var _auto_sign: Array[float] = []
 var _auto_area: Area3D
 var _auto_open := 0.0
 const AUTO_SLIDE := 1.40               # 引き分ける幅 (m)。開くと丸太の壁の中へ隠れる
+## 開き戸（勝手口・西の戸・テラスへの戸）。戸ごとに {leaves: [{pivot, sign}], center, normal, area, side, a}（_make_swing_doors）
+var _swing: Array = []
+const SWING_OPEN := deg_to_rad(95.0)   # 開ききった角
+const SWING_REACH := 2.4               # 戸の前後どこまで近づいたら開くか (m)
 
 
 func _ready() -> void:
@@ -84,6 +88,7 @@ func _ready() -> void:
 	add_child(preload("res://lodge_lights.gd").new())   # 暗い所に、火の灯りの道具（松明・ガス灯・キャンドル）
 	add_child(preload("res://hearth_fire.gd").new())    # 暖炉の火を、焚き火と同じフェルトの薪と薄葉紙の炎に（前の光る板は隠す）
 	_make_auto_door()
+	_make_swing_doors()
 
 
 const DOOR_BROWN := Color(0.27, 0.17, 0.10)   # 外扉の茶（こげ茶）
@@ -266,6 +271,62 @@ static func _metal() -> StandardMaterial3D:
 	return m
 
 
+## 開き戸の板（glb の swingdoor_<名前>・swingdoor_<名前>_glass）を、蝶番の目印（hinge_swingdoor_<名前>）の軸のまわりに回せるよう、
+## 軸に置いた回し台の下へ移す。名前の最後の _<番号> を除いたものが 1 つの戸（両開きなら 2 枚）
+func _make_swing_doors() -> void:
+	var groups := {}
+	for h in find_children("hinge_swingdoor_*", "Node3D", true, false):
+		var leaf_name := String(h.name).trim_prefix("hinge_")
+		var door_id := leaf_name.substr(0, leaf_name.rfind("_"))
+		var parts: Array[Node3D] = []
+		for nm in [leaf_name, leaf_name + "_glass"]:
+			var n := find_child(nm, true, false) as Node3D
+			if n:
+				parts.append(n)
+		if parts.is_empty():
+			continue
+		var hinge: Vector3 = to_local((h as Node3D).global_position)
+		var box := AABB()
+		for i in parts.size():
+			var mi := parts[i] as MeshInstance3D
+			if mi:
+				var bb := (global_transform.affine_inverse() * mi.global_transform) * mi.get_aabb()
+				box = bb if i == 0 else box.merge(bb)
+		if Engine.is_editor_hint():
+			continue
+		var pivot := Node3D.new()
+		pivot.name = "Swing_" + leaf_name
+		add_child(pivot)
+		pivot.position = hinge
+		for n in parts:
+			n.reparent(pivot, true)
+		var along := box.get_center() - hinge   # 蝶番から板の真ん中へ（壁に沿う）
+		along.y = 0.0
+		var g: Dictionary = groups.get(door_id, {"leaves": [], "box": box})
+		g.leaves.append({"pivot": pivot, "along": along.normalized()})
+		g.box = g.box.merge(box)
+		groups[door_id] = g
+	for door_id in groups:
+		var g: Dictionary = groups[door_id]
+		var along: Vector3 = g.leaves[0].along
+		var normal := Vector3.UP.cross(along).normalized()   # 戸の面に垂直（どちらの側か決める向き）
+		for lf in g.leaves:
+			# 角が正なら、板は UP×along の向きへ動く。戸の向き normal へ動くなら +1
+			lf["sign"] = 1.0 if Vector3.UP.cross(lf.along).dot(normal) > 0.0 else -1.0
+		var center: Vector3 = (g.box as AABB).get_center()
+		var area := Area3D.new()
+		area.name = "SwingSensor_" + door_id
+		var cs := CollisionShape3D.new()
+		var sh := BoxShape3D.new()
+		sh.size = Vector3((g.box as AABB).size.x, 3.0, (g.box as AABB).size.z)
+		sh.size += (along.abs() * 0.8 + normal.abs() * SWING_REACH * 2.0)
+		cs.shape = sh
+		area.add_child(cs)
+		area.position = center
+		add_child(area)
+		_swing.append({"leaves": g.leaves, "center": center, "normal": normal, "area": area, "side": 0, "a": 0.0})
+
+
 ## 自動ドア: 人（CharacterBody3D）が戸の前後 3 m に入ると左右へ開き、いなくなると閉まる
 func _make_auto_door() -> void:
 	var box := AABB()
@@ -310,3 +371,28 @@ func _process(dt: float) -> void:
 		var e := _auto_open * _auto_open * (3.0 - 2.0 * _auto_open)   # なめらかに
 		for i in _auto_doors.size():
 			_auto_doors[i].position.x = _auto_home[i] + _auto_sign[i] * AUTO_SLIDE * e
+	for d in _swing:
+		_swing_step(d, dt)
+
+
+## 開き戸: 閉まっていれば、いちばん近い人から見て押す向き（人の向こう側）へ開く。開いているあいだは、その向きのまま
+## （だれかが開けた向きなら、反対から来た人にもそのまま開けておく）。だれもいなくなると閉まり、閉じきったら向きを忘れる。
+## 2026-11-02 代表「しまってる状態なら自分側から押して開く方に開いて、もし誰か開けてたりして引き戸の方に開いてたらそのまま開けて」。
+## どの画面も、見えている人の位置で開く（通信は使わない。風除室の自動ドアと同じ）
+func _swing_step(d: Dictionary, dt: float) -> void:
+	var near: Node3D = null
+	var best := INF
+	for b in (d.area as Area3D).get_overlapping_bodies():
+		if b is CharacterBody3D:
+			var dist: float = (to_local(b.global_position) - d.center).length()
+			if dist < best:
+				best = dist
+				near = b
+	if near and d.side == 0:   # 閉まっている戸を開ける: 人の向こう側へ
+		d.side = -1 if (to_local(near.global_position) - d.center).dot(d.normal) > 0.0 else 1
+	d.a = move_toward(d.a, 1.0 if near else 0.0, dt / (0.45 if near else 1.2))
+	if d.a <= 0.0:
+		d.side = 0
+	var e: float = d.a * d.a * (3.0 - 2.0 * d.a)   # なめらかに
+	for lf in d.leaves:
+		(lf.pivot as Node3D).rotation.y = d.side * lf.sign * SWING_OPEN * e
