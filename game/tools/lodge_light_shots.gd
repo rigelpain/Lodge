@@ -3,6 +3,8 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 -s res://tools/lodge_light_shots.gd -- --dir=/path/shots [--hours=13,22] [--tag=before] [--views=v01,v14]
 ##   --no-fire-lights  火の灯りの道具を置かない（置く前の絵）
 ##   --old-hearth      暖炉の火を前のまま（光る板と丸太。hearth_fire.gd を置かない）
+##   --cams=/path.json 決まった見渡しの代わりに、ファイルの見渡しを撮る: [{"name", "eye": [x, y, 高さ], "at": [x, y, 高さ]}, …]。
+##                     "plan": 幅 (m) があれば真上からの間取り（"cut" の高さより上を切る）。"marks": [[x, y, 高さ, "red"|"green"], …] で目印の玉を置く
 ##   --fps             撮らずに、いくつかの見渡しで灯りを消した・点けたを交互にして fps の平均を出す（--fps-views=v05_kitchen_w,… --rounds=2）
 ## 1 枚ごとに、明るさの平均と、暗い画素（明るさ 0.06 未満）の割合を出す。
 ## 見渡しの場所はロッジの座標（lodge/dims.py の x 東, y 北, 高さ。Godot ではロッジの (x, 高さ, -y)）
@@ -82,9 +84,12 @@ func _look(v: Array) -> void:
 	var at: Vector3 = v[2]
 	cam.projection = Camera3D.PROJECTION_PERSPECTIVE
 	cam.near = 0.05
-	if String(v[0]).begins_with("p"):   # 間取り: 高さ 40 m から見下ろし、eye.z より上を near で切る
+	if String(v[0]).begins_with("p") or v.size() > 3:   # 間取り: 高さ 40 m から見下ろし、eye.z より上を near で切る
 		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
 		cam.size = 14.0
+		if v.size() > 3:   # 幅 v[3] m が画面の幅に入る
+			var vs := root.get_visible_rect().size
+			cam.size = float(v[3]) * (1.0 if cam.keep_aspect == Camera3D.KEEP_WIDTH else vs.y / vs.x)
 		cam.near = 40.0 - eye.z
 		cam.far = 60.0
 		cam.global_transform = lodge.global_transform * Transform3D(Basis.from_euler(Vector3(-PI / 2.0, 0, 0)), Vector3(eye.x, 40.0, -eye.y))
@@ -125,6 +130,9 @@ func _run() -> void:
 		quit()
 		return
 	var only: PackedStringArray = String(args.get("views", "")).split(",", false)
+	var views: Array = VIEWS
+	if args.has("cams"):
+		views = _cams(String(args["cams"]))
 	var tag := String(args.get("tag", ""))
 	var cycle := root.get_node_or_null("DayCycle")
 	for hr in String(args.get("hours", "13,22")).split(",", false):   # 昼と夜を 1 回の起動で
@@ -133,13 +141,43 @@ func _run() -> void:
 			cycle.day_seconds = 100000.0   # 撮るあいだに時刻が進まないように
 		await create_timer(0.8).timeout
 		var when := "day" if float(hr) >= 6.0 and float(hr) < 18.0 else "night"
-		for v in VIEWS:
-			if not _want(String(v[0]), only):
+		for v in views:
+			if not args.has("cams") and not _want(String(v[0]), only):
 				continue
+			for b in get_nodes_in_group("marks"):   # 目印の玉は、その見渡しのときだけ
+				(b as Node3D).visible = b.is_in_group("mark_" + String(v[0]))
 			_look(v)
 			await create_timer(0.4).timeout
 			await _shot(("%s_" % tag if tag != "" else "") + String(v[0]) + "_" + when)
 	quit()
+
+
+## --cams のファイルを VIEWS と同じ形の見渡しにし、目印の玉を置く
+func _cams(path: String) -> Array:
+	var lodge := main.get_node("Lodge") as Node3D
+	var out := []
+	for c: Dictionary in JSON.parse_string(FileAccess.get_file_as_string(path)):
+		var e: Array = c["eye"]
+		var a: Array = c.get("at", [0, 0, 0])
+		var v := [c["name"], Vector3(e[0], e[1], c.get("cut", e[2])), Vector3(a[0], a[1], a[2])]
+		if c.has("plan"):
+			v.append(c["plan"])
+		out.append(v)
+		for m: Array in c.get("marks", []):
+			var ball := MeshInstance3D.new()
+			var sm := SphereMesh.new()
+			sm.radius = 0.35
+			sm.height = 0.7
+			ball.mesh = sm
+			var mat := StandardMaterial3D.new()
+			mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			mat.albedo_color = Color.RED if m[3] == "red" else Color(0.1, 0.85, 0.2)
+			ball.material_override = mat
+			ball.position = Vector3(m[0], m[2], -m[1])
+			ball.add_to_group("mark_" + String(c["name"]))
+			ball.add_to_group("marks")
+			lodge.add_child(ball)
+	return out
 
 
 ## --views の選び: 何もなければ見渡し（v）だけ。v・c・p で組ごと、v01 のような番号や名前で 1 枚ずつ

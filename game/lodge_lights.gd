@@ -36,32 +36,68 @@ const LIGHT := {
 	"wheel": [2.6, 8.5, 0.5],
 }
 
-## 置き場: [種類, ロッジの座標 (x 東, y 北, 高さ), 向き（度。0 = 南、90 = 東、180 = 北、-90 = 西。壁の物は壁から離れる向き）, 吊り縄の長さ（wheel だけ）]。
-## 壁の物は壁の内の面（丸太の芯から 0.18）に付ける。1 階の壁は北 y = 12.52、南 y = -12.52、東 x = 21.62（西はガラス）。
-## 2 階は南 y = -2.55、北 y = 6.18。窓（lodge/dims.py の OPENINGS）と柱をよける
+## ロッジの目印（lodge/dims.py と同じ数。建物の形を変えたら、ここも dims.py に合わせる）。
+## 壁の灯りの場所は、この壁の芯の線と丸太の段から決める（2026-11-02 代表「二回の松明が柱のないところ、壁でないとこに浮いてる。
+## 壁につけてほしい」。前は 2 階の壁を、間取りを 2 倍にする前の位置で数で書いていて、2 階の松明 7 本が部屋の中に浮いていた）
+const K := 1.818                           # 1 間
+const G := K * 2.0                         # 間取りの格子
+const X0 := -6.0 * G                       # 西の壁の芯（1 階・2 階）
+const X1 := 6.0 * G                        # 東の壁の芯
+const Y0 := -3.5 * G                       # 1 階の南の壁の芯
+const Y1 := 3.5 * G                        # 北の壁の芯（1 階・2 階）
+const Y2_0 := Y1 - 5.0 * G                 # 2 階の南の壁の芯（gy(5)）
+const LOG_D := 0.36                        # 丸太の径＝壁の厚み。部屋の側の面は芯から LOG_D / 2
+const LOG_H := 0.35                        # 丸太 1 段の高さ
+const CEIL1 := FL1 + 3.5 * 1.5             # 1 階の天井
+const EAVE_N := FL2 + 2.45 * 1.5           # 2 階の北の壁の上端
+const EAVE_S := FL2 + 4.30 * 1.5           # 2 階の南の壁の上端
+const RAFTER_H := 0.32                     # 垂木の高さ。2 階の天井（野地板の下面）は屋根の下端の線から RAFTER_H - 0.025 上
+const VEST_X1 := X0 + 3.5 * G - 0.30       # 風除室の東の外の面（壁は外の面から内へ LOG_D）
+const VEST_X0 := VEST_X1 - 8.0
+const BACKING := 0.10                      # 座金の裏の木の台の奥行き。丸太と丸太のあいだのくぼみ（0.08）を埋める
+
+## 壁: 名前 → [壁の芯の線が通る軸（"y" は y = 一定の東西の壁、"x" は x = 一定の南北の壁）, 芯の位置, 向き（度。部屋の側）,
+## 丸太の段の始まりの高さ, 下の半分の丸太（dims.py・build_lodge.py の offset）]
+const WALLS := {
+	"1F_N": ["y", Y1, 0.0, FL1, 0.0],
+	"1F_S": ["y", Y0, 180.0, FL1, 0.0],                    # 西の 3.5 格子の丸太の壁（風除室の奥）
+	"1F_E": ["x", X1, -90.0, FL1, LOG_H / 2.0],
+	"VEST_E": ["x", VEST_X1 - LOG_D / 2.0, -90.0, FL1, LOG_H / 2.0],   # 風除室の東の壁
+	"VEST_W": ["x", VEST_X0 + LOG_D / 2.0, 90.0, FL1, LOG_H / 2.0],    # 風除室の西の壁
+	"2F_N": ["y", Y1, 0.0, FL2, 0.0],
+	"2F_S": ["y", Y2_0, 180.0, FL2, 0.0],
+	"2F_W": ["x", X0, 90.0, FL2, LOG_H / 2.0],
+	"2F_E": ["x", X1, -90.0, FL2, LOG_H / 2.0],
+}
+
+## 置き場: [種類, 場所, 向き（度。0 = 南、90 = 東、180 = 北、-90 = 西）]。場所はロッジの座標 (x 東, y 北, 高さ)。
+## 壁の物（torch・gas）は [種類, 壁の名前（WALLS）, 壁に沿った位置（東西の壁は x、南北の壁は y）, 床からの高さ] と書き、
+## 場所と向きは places() が壁の面から決める（高さは近い丸太の段の真ん中にそろえ、座金が丸太 1 本に載るように）。
+## 吊りの車輪（wheel）の縄は、places() が天井（1 階は CEIL1、2 階は野地板の下面）まで伸ばす。
+## 窓（lodge/dims.py の OPENINGS）・戸・柱（COLS）・煙突をよける
 const PLACES := [
 	# ---- 1 階の松明（丸太の壁）----
-	["torch", Vector3(-16.6, 12.52, FL1 + 2.5), 0.0],     # 北西: 炉の左
-	["torch", Vector3(14.0, 12.52, FL1 + 2.5), 0.0],      # 北: 厨房の東、勝手口と窓のあいだ
-	["torch", Vector3(21.62, 5.8, FL1 + 2.5), -90.0],     # 東: 自販機の北、内階段の手前
-	["torch", Vector3(21.62, -4.4, FL1 + 2.5), -90.0],    # 東: 窓 2 つのあいだ
-	["torch", Vector3(21.62, -10.8, FL1 + 2.5), -90.0],   # 南東の隅
-	["torch", Vector3(-19.6, -12.52, FL1 + 2.5), 180.0],  # 南西の隅（貸出の棚の上）
-	["torch", Vector3(-10.2, -12.52, FL1 + 2.5), 180.0],  # 南: 内の自動ドアの東
+	["torch", "1F_N", -16.6, 2.5],      # 北西: 炉の左
+	["torch", "1F_N", 14.0, 2.5],       # 北: 厨房の東、勝手口と窓のあいだ
+	["torch", "1F_E", 5.8, 2.5],        # 東: 自販機の北、内階段の手前
+	["torch", "1F_E", -4.4, 2.5],       # 東: 窓 2 つのあいだ
+	["torch", "1F_E", -10.8, 2.5],      # 南東の隅
+	["torch", "1F_S", -19.6, 2.5],      # 南西の隅（貸出の棚の上）
+	["torch", "1F_S", -10.2, 2.5],      # 南: 内の自動ドアの東
 	# ---- 1 階のガス灯 ----
-	["gas", Vector3(1.7, 12.52, FL1 + 3.8), 0.0],         # 厨房の奥の壁（巨大な装置より上）
-	["gas", Vector3(8.2, 12.52, FL1 + 3.8), 0.0],
-	["gas", Vector3(19.2, 12.52, FL1 + 4.4), 0.0],        # 内階段の踊り場の上
-	["gas", Vector3(-9.55, -15.2, FL1 + 2.5), -90.0],     # 風除室の東の壁
-	["gas", Vector3(-17.19, -15.2, FL1 + 2.5), 90.0],     # 風除室の西の壁
+	["gas", "1F_N", 1.7, 3.8],          # 厨房の奥の壁（巨大な装置より上）
+	["gas", "1F_N", 8.2, 3.8],
+	["gas", "1F_N", 19.2, 4.4],         # 内階段の踊り場の上
+	["gas", "VEST_E", -15.2, 2.5],      # 風除室の東の壁
+	["gas", "VEST_W", -15.2, 2.5],      # 風除室の西の壁
 	# ---- 厨房の奥の台のガスコンロ ----
 	["stove", Vector3(10.2, 12.05, FL1 + 0.90), 0.0],
 	# ---- 天井から吊る車輪のシャンデリア（1 階の天井は 5.7。床の真ん中を照らす）----
-	["wheel", Vector3(-15.0, -6.5, FL1 + 3.6), 0.0, 1.65],   # 入口とミシン・番台のあいだ
-	["wheel", Vector3(-16.5, 5.0, FL1 + 3.6), 15.0, 1.65],   # 北西（炉の左の前）
-	["wheel", Vector3(-4.5, 3.5, FL1 + 3.6), 0.0, 1.65],     # 炉と厨房と食堂のあいだ
-	["wheel", Vector3(6.5, 5.5, FL1 + 3.6), 20.0, 1.65],     # 厨房の前
-	["wheel", Vector3(16.0, 4.5, FL1 + 3.6), 0.0, 1.65],     # 北東（内階段と自販機の前）
+	["wheel", Vector3(-15.0, -6.5, FL1 + 3.6), 0.0],   # 入口とミシン・番台のあいだ
+	["wheel", Vector3(-16.5, 5.0, FL1 + 3.6), 15.0],   # 北西（炉の左の前）
+	["wheel", Vector3(-4.5, 3.5, FL1 + 3.6), 0.0],     # 炉と厨房と食堂のあいだ
+	["wheel", Vector3(6.5, 5.5, FL1 + 3.6), 20.0],     # 厨房の前
+	["wheel", Vector3(16.0, 4.5, FL1 + 3.6), 0.0],     # 北東（内階段と自販機の前）
 	# ---- 西のガラスの壁ぎわの燭台（床置き）----
 	["stand", Vector3(-20.7, 9.6, FL1), 90.0],
 	# ---- 食堂の卓 8 のキャンドル（卓の真ん中。lodge/dims.py の TABLE_CX・TABLE_CY、卓の高さ 0.72）----
@@ -78,19 +114,49 @@ const PLACES := [
 	["candle", Vector3(2.0, -12.17, FL1 + 1.05), 0.0],
 	["candle", Vector3(9.0, -12.17, FL1 + 1.05), 0.0],
 	["candle", Vector3(16.0, -12.17, FL1 + 1.05), 0.0],
-	# ---- 2 階の松明 ----
-	["torch", Vector3(-21.62, 3.6, FL2 + 2.4), 90.0],     # 西の端
-	["torch", Vector3(-13.2, 6.18, FL2 + 2.4), 0.0],      # 北: 煙突の西
-	["torch", Vector3(0.9, 6.18, FL2 + 2.4), 0.0],
-	["torch", Vector3(9.6, 6.18, FL2 + 2.4), 0.0],
-	["torch", Vector3(-15.2, -2.55, FL2 + 2.4), 180.0],   # 南: 西の窓とテラスの戸のあいだ
-	["torch", Vector3(-9.4, -2.55, FL2 + 2.4), 180.0],    # 南: テラスの戸の東
-	["torch", Vector3(2.7, -2.55, FL2 + 2.4), 180.0],
-	["torch", Vector3(13.0, -2.55, FL2 + 2.4), 180.0],
-	["torch", Vector3(21.62, 5.2, FL2 + 2.4), -90.0],     # 東の端: 衣装掛けの上
-	["wheel", Vector3(-16.0, 1.8, FL2 + 3.2), 0.0, 1.9],    # 2 階の西の端（板の床）
-	["wheel", Vector3(19.0, 1.0, FL2 + 3.2), 0.0, 1.9],     # 2 階の東の端（衣装掛けの前）
+	# ---- 2 階の松明（2 階は南の壁 y = -5.45、北の壁 y = 12.73 の芯。南の窓・テラスの戸と北の窓・煙突のあいだ）----
+	["torch", "2F_W", 3.6, 2.4],        # 西の端: 窓 2 つのあいだ
+	["torch", "2F_N", -13.2, 2.4],      # 北: 煙突の西
+	["torch", "2F_N", 0.9, 2.4],
+	["torch", "2F_N", 9.6, 2.4],
+	["torch", "2F_S", -15.2, 2.4],      # 南: 西の窓とテラスの戸のあいだ（長椅子の上）
+	["torch", "2F_S", -9.4, 2.4],       # 南: テラスの戸の東
+	["torch", "2F_S", 2.7, 2.4],
+	["torch", "2F_S", 13.0, 2.4],
+	["torch", "2F_E", 5.2, 2.4],        # 東の端: 衣装掛けの北（染め桶の上）
+	["wheel", Vector3(-16.0, 1.8, FL2 + 3.2), 0.0],    # 2 階の西の端（板の床）
+	["wheel", Vector3(19.0, 1.0, FL2 + 3.2), 0.0],     # 2 階の東の端（衣装掛けの前）
 ]
+
+
+## 置き場を [種類, ロッジの座標 (x, y, 高さ), 向き（度）, 吊り縄の長さ（wheel だけ）] にそろえる。
+## 壁の物は WALLS の壁の部屋の側の面に、吊りの車輪は天井に付ける（確かめ: game/tools/lodge_light_walls.gd）
+static func places() -> Array:
+	var out := []
+	for p in PLACES:
+		var kind: String = p[0]
+		if p[1] is String:
+			var w: Array = WALLS[p[1]]
+			var deg: float = w[2]
+			var face: float = w[1] + (LOG_D / 2.0) * (cos(deg_to_rad(deg)) * -1.0 if w[0] == "y" else sin(deg_to_rad(deg)))
+			var z0: float = w[3] + w[4] + LOG_H / 2.0                       # いちばん下の丸太の芯の高さ
+			var z: float = z0 + roundf((w[3] + p[3] - z0) / LOG_H) * LOG_H   # 近い丸太の段の真ん中
+			var at := Vector3(p[2], face, z) if w[0] == "y" else Vector3(face, p[2], z)
+			out.append([kind, at, deg])
+		elif kind == "wheel":
+			var at: Vector3 = p[1]
+			out.append([kind, at, p[2], _ceiling(at) - at.z])
+		else:
+			out.append(p)
+	return out
+
+
+## (x, y) の天井の高さ。1 階は CEIL1、2 階は片流れの屋根の下（垂木のあいだの野地板の下面。build_lodge.py の build_roof）
+static func _ceiling(at: Vector3) -> float:
+	if at.z < CEIL1:
+		return CEIL1
+	return EAVE_N + (Y1 - at.y) * (EAVE_S - EAVE_N) / (Y1 - Y2_0) + RAFTER_H - 0.025
+
 
 var _flames: Array[MeshInstance3D] = []   # 炎（コマごとに形を差し替える）
 var _lights: Array[OmniLight3D] = []
@@ -113,7 +179,7 @@ func _ready() -> void:
 		set_process(false)
 		return
 	var part: GDScript = load(FLAME_PART) if ResourceLoader.exists(FLAME_PART) else null
-	for p in PLACES:
+	for p in places():
 		var kind: String = p[0]
 		var rope: float = p[3] if p.size() > 3 else 0.0
 		var key := "%s%.2f" % [kind, rope]
@@ -242,6 +308,7 @@ static func _rel(n: Node3D, top: Node3D) -> Transform3D:
 func _torch(root: Node3D) -> Vector3:
 	var iron := _mat("iron")
 	_box(root, Vector3(0.18, 0.34, 0.04), Vector3(0, 0, 0.02), iron)            # 壁の座金
+	_box(root, Vector3(0.16, 0.32, BACKING), Vector3(0, 0, -BACKING / 2.0), _mat("frame"))   # 座金の裏の木の台（丸太のくぼみを埋める）
 	_box(root, Vector3(0.05, 0.05, 0.24), Vector3(0, -0.06, 0.14), iron)        # 腕
 	_ring(root, 0.065, 0.016, Vector3(0, -0.06, 0.26), iron)                    # 柄を受ける輪
 	var stick := Node3D.new()
@@ -260,6 +327,7 @@ func _torch(root: Node3D) -> Vector3:
 func _gas(root: Node3D) -> Vector3:
 	var brass := _mat("brass")
 	_box(root, Vector3(0.14, 0.26, 0.04), Vector3(0, -0.05, 0.02), brass)       # 壁の座金
+	_box(root, Vector3(0.12, 0.24, BACKING), Vector3(0, -0.05, -BACKING / 2.0), _mat("frame"))   # 座金の裏の木の台
 	_box(root, Vector3(0.04, 0.04, 0.34), Vector3(0, 0.0, 0.19), brass)         # 腕
 	_ring(root, 0.07, 0.012, Vector3(0, -0.13, 0.20), brass)                    # 腕の下の渦（飾り）
 	var box := Node3D.new()
