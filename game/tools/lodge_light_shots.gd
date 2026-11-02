@@ -2,6 +2,7 @@ extends SceneTree
 ## ロッジの中の明るさを見て回る絵と fps（確かめ用。火の灯りの道具 lodge_lights.gd の前と後を比べる）。
 ##   Godot --path game --resolution 1280x720 -s res://tools/lodge_light_shots.gd -- --dir=/path/shots [--hours=13,22] [--tag=before] [--views=v01,v14]
 ##   --no-fire-lights  火の灯りの道具を置かない（置く前の絵）
+##   --old-hearth      暖炉の火を前のまま（光る板と丸太。hearth_fire.gd を置かない）
 ##   --fps             撮らずに、いくつかの見渡しで灯りを消した・点けたを交互にして fps の平均を出す（--fps-views=v05_kitchen_w,… --rounds=2）
 ## 1 枚ごとに、明るさの平均と、暗い画素（明るさ 0.06 未満）の割合を出す。
 ## 見渡しの場所はロッジの座標（lodge/dims.py の x 東, y 北, 高さ。Godot ではロッジの (x, 高さ, -y)）
@@ -35,6 +36,7 @@ const VIEWS := [
 	["c5_stand", Vector3(-18.9, 8.6, 2.1), Vector3(-20.7, 9.6, 1.6)],
 	["c6_kitchen_gas", Vector3(3.5, 7.0, 3.0), Vector3(1.7, 12.4, 4.1)],
 	["c7_wheel", Vector3(-12.5, -9.5, 2.0), Vector3(-15.0, -6.5, 4.0)],
+	["c8_hearth", Vector3(-9.6, 8.4, 1.35), Vector3(-10.4, 11.6, 0.9)],          # 暖炉の火（hearth_fire.gd。--old-hearth で前の火）
 	# 真上からの間取り（--views=p。この高さより上を切って、正射影で見下ろす）
 	["p1_plan_1f_w", Vector3(-11.0, -6.0, 4.5), Vector3.ZERO],
 	["p2_plan_1f_e", Vector3(11.0, -6.0, 4.5), Vector3.ZERO],
