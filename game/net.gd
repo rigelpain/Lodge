@@ -316,6 +316,9 @@ func _up(pid: int, what: String, ev: Dictionary, at: int) -> void:
 			if not main.craft.wallets.has(pid):
 				main.craft.join(pid)
 			main.craft._apply(ev)
+		"duel":
+			if main.get("duel"):
+				main.duel._apply(ev)
 
 
 ## ホスト: 確かめた出来事を、つなぐ側の全員へ
@@ -331,6 +334,9 @@ func _down(what: String, ev: Dictionary, at: int) -> void:
 			main.emotes.from_host(ev)
 		"damp":
 			main.damp.apply_net(ev)
+		"duel":
+			if main.get("duel"):
+				main.duel.from_host(ev)
 		"craft":
 			main.craft.replay = true
 			if not main.craft._apply(ev):

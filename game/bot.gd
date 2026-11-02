@@ -173,6 +173,8 @@ func _physics_process(dt: float) -> void:
 	if post != null:
 		_stand_at_post(dt)
 		return
+	if duelist and _duel_step(dt):
+		return
 	var s := sled.global_position
 	var to_top := Vector2(s.x, s.z).length()
 	if state != State.RIDE and (_five_with > 0 or _rooted()):
@@ -485,6 +487,105 @@ func _go_five(dt: float) -> void:
 		if not _five_sent and to.length() < 0.6 and Emotes._forward(self).dot(face.normalized()) > 0.6:
 			hub.send({"kind": "hands", "who": id, "hands": _five_shape})
 			_five_sent = true
+	velocity.x = dir.x * SPEED * damp_k(false)
+	velocity.z = dir.z * SPEED * damp_k(false)
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
+	move_and_slide()
+	_pose_doll()
+
+
+# ---------------------------------------------------------------- 雪合戦の対決（duel.gd。確かめ用の仲間 --duel-bot）
+
+var duelist := false         # 雪合戦の対決の相手をする仲間（main.gd の --duel-bot）。掛金を受け、円の中を回りながら投げ、なくなれば作る
+var _duel_t := 0.0           # 次に投げる・受けるまで (s)
+var _duel_stake := -1        # 見ていた掛金（変わったら、少し待ってから受ける）
+var _orbit := 0.0            # 円のまんなかのまわりを回る角
+var _orbit_dir := 1.0
+
+
+## 対決にかかわっているあいだの動き。動かしたら true（ふだんの動きはしない）
+func _duel_step(dt: float) -> bool:
+	var duel := get_parent().get_node_or_null("Duel")
+	if duel == null:
+		return false
+	var d: Dictionary = duel.of(id)
+	if d.is_empty():
+		_duel_stake = -1
+		return false
+	var them: Node3D = hub.who_of(duel.opponent(d, id))
+	_duel_t -= dt
+	match String(d.phase):
+		"bet":
+			# 掛金が 2.5 秒変わらなければ受ける（あなたが額を選び終えるのを待つ）
+			if int(d.stake) != _duel_stake:
+				_duel_stake = int(d.stake)
+				_duel_t = 2.5
+			var ok: bool = d.ok_a if id == int(d.a) else d.ok_b
+			if not ok and _duel_t <= 0.0:
+				_duel_t = 2.5
+				duel.send({"kind": "ok", "who": id})
+			_duel_move(Vector3.ZERO, them, dt)
+			return true
+		"fight":
+			let_go()
+			_duel_fight(d, them, dt, duel)
+			return true
+		"over":
+			# 払いの握手をしにいく（相手の前で低い手のひら）
+			if them and _five_with < 0 and _shape == "":
+				_five_with = duel.opponent(d, id)
+				_five_shape = "low_R"
+				_five_until = Doll.frame_index() + 12 * 25
+				_five_sent = false
+	return false
+
+
+func _duel_fight(d: Dictionary, them: Node3D, dt: float, duel: Node) -> void:
+	if them == null:
+		_duel_move(Vector3.ZERO, null, dt)
+		return
+	var at: Vector3 = d.at
+	if randf() < dt * 0.25:
+		_orbit_dir = -_orbit_dir   # ときどき向きを変える
+	_orbit += dt * 0.32 * _orbit_dir
+	var goal := at + Vector3(cos(_orbit), 0, sin(_orbit)) * 3.2
+	var to := goal - global_position
+	to.y = 0
+	var dir := to.normalized() if to.length() > 0.3 else Vector3.ZERO
+	if _rooted():
+		dir = Vector3.ZERO
+	elif hub.balls_of(id) <= 0:
+		hub.send({"kind": "make_ball", "who": id})   # なくなったら、しゃがんで作る
+		dir = Vector3.ZERO
+	elif _duel_t <= 0.0:
+		_duel_t = randf_range(1.6, 3.0)
+		_duel_throw(them)
+	_duel_move(dir, them, dt)
+	duel.keep_in(self, id)
+
+
+## 相手の胸へ、山なりに投げる（少しずらす。半分ほど当たる）
+func _duel_throw(them: Node3D) -> void:
+	var fwd := Emotes._forward(self)
+	var origin := global_position + Vector3.UP * doll.height() * 0.85 + fwd * 0.4
+	var h: float = them.doll.height() if them.get("doll") else 1.6
+	var target: Vector3 = them.global_position + Vector3.UP * h * 0.6
+	var flat: Vector3 = target - origin
+	flat.y = 0
+	var vh := 10.0
+	var t := maxf(flat.length() / vh, 0.1)
+	var vy: float = (target.y - origin.y + 0.5 * 9.8 * t * t) / t
+	var vel: Vector3 = flat.normalized() * vh + Vector3.UP * vy
+	vel += Vector3(randf_range(-1, 1), randf_range(-0.5, 0.5), randf_range(-1, 1)) * 0.8
+	hub.send({"kind": "throw", "who": id, "origin": origin, "velocity": vel})
+
+
+func _duel_move(dir: Vector3, them: Node3D, dt: float) -> void:
+	if them:
+		var face: Vector3 = them.global_position - global_position
+		face.y = 0
+		if face.length() > 0.1:
+			look_at(global_position + face, Vector3.UP)
 	velocity.x = dir.x * SPEED * damp_k(false)
 	velocity.z = dir.z * SPEED * damp_k(false)
 	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt

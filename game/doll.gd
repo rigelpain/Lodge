@@ -1672,10 +1672,10 @@ func _damp_now() -> float:
 ## emotes.gd の KINDS と同じ長さ（コマ）。0 は終わりを持ち主が決める
 const EMOTE_FRAMES := {
 	"high_five": 12, "shake": 24, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
-	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18, "eat": 16,
+	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18, "eat": 16, "catch": 10,
 }
 ## 腕を使う身ぶり。このあいだは手の形を出さない
-const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit", "eat"]
+const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit", "eat", "catch"]
 
 
 ## いまの身ぶりと、始まってからのコマ数（このコマ）。終わっていたら消す
@@ -1768,6 +1768,12 @@ func _emote_body(kind_: String, k: int) -> float:
 			if kind_ == "whiff" and k >= 8:
 				_em_head.x = [0.25, -0.25, 0.15, 0.0][k - 8]   # 首をかしげる
 			return 0.1 if swing else -0.05
+		"catch":
+			# 雪玉を取る: 両手を前へ出し、取った勢いで胸が少しうしろへ、片足が半歩さがる
+			var f: float = [0.0, 0.3, 1.0, 0.8, 0.55, 0.35, 0.2, 0.1, 0.0, 0.0][k]
+			_turn_axis("thigh.R", X, -0.25 * f)
+			_em_head.y = 0.12 * f
+			return 0.15 - 0.3 * f
 		"windup":
 			_turn_axis("chest", Vector3.UP, -0.4)
 			_turn_axis("thigh.R", X, -0.2)
@@ -1893,6 +1899,15 @@ func _emote_arms(kind_: String, k: int) -> void:
 				_hand_to("L", base + Vector3(-0.07, 0.06 - up, 0) * reach * 2.5)
 			elif k >= 16:
 				_arm("R", Vector3(0.25, -0.6, -0.6), Vector3(0.1, 0.1, -1.0))   # できた玉を胸の前に持つ
+		"catch":
+			# 両手を前へ突き出して（2 コマ）、包んで胸へ引き寄せ、取った玉を持つ
+			for side in ["L", "R"]:
+				if k < 2:
+					_arm(side, Vector3(0.1, -0.1, -1.0), Vector3(0.05, 0.1, -1.0))
+				elif k < 7:
+					_arm(side, Vector3(0.2, -0.75, -0.55), Vector3(-0.25, 0.25, -0.9))
+				else:
+					_arm(side, Vector3(0.25, -0.9, -0.3), Vector3(0.0, -0.4, -0.9))
 		"windup":
 			_arm("R", Vector3(0.55, 0.55, 0.75), Vector3(0.2, 1.0, 0.45))
 			_arm("L", Vector3(0.2, 0.25, -1.0), Vector3(0.1, 0.3, -1.0))   # 左手で狙う先を指す

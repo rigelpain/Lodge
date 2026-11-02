@@ -58,7 +58,8 @@ extends Node
 ##                             ソリはそこに留まる（sled.gd の peg_to）。束の本数が 0 になれば持ち物から消える。ev.color に玉の色
 ##   unpeg     {sled}            ソリのペグを抜く（誰でも。抜いたペグは使い切りで消える）。ソリはまた滑れる
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
-##                             at は取った所（画面でそこから財布へ飛ぶ）
+##                             at は取った所（画面でそこから財布へ飛ぶ）。雪合戦の対決の払い（duel.gd）も、これで勝った人へ
+##   stake     {n}             雪合戦の対決の掛金 n 個を、財布から預ける（duel.gd がホストとして出す。払いは earn）
 ## 装備は種類ごとに「持っている物の配列」と「装備している番号」を持つ（GEARS）。いまは米袋とランタン。服や名札の柄を足すときは、
 ## GEARS に種類を足し、_gear_lists に持ち物の配列の入れ物を足す
 ## 米袋は全員が最初から 1 つ（標準）持つ。米袋の型紙と布で縫った米袋は、持ち物でなく装備の枠に入り、選ばれる
@@ -364,7 +365,7 @@ static func price(item: Dictionary) -> int:
 ## つなぐ側では断られたかがすぐには分からないので true を返し、結果は配られた出来事で知る（断られたら何も起きない）。
 ## ミシンが縫い上げる・ボタンが入るは、ホストの画面が決める（つなぐ側の画面では送らない。見た目は続けてよいので true を返し、
 ## 本物はホストから届く）。調理の装置が仕上げる・米袋がひとりでに帯に戻るは auto（つなぐ側では送らず false。ホストの画面が出す）
-const HOST_ONLY := ["sewn", "earn"]
+const HOST_ONLY := ["sewn", "earn", "stake"]
 
 func send(ev: Dictionary) -> bool:
 	ev["frame"] = Doll.frame_index() + 1
@@ -825,6 +826,10 @@ func _apply(ev: Dictionary) -> bool:
 			if int(ev.get("n", 0)) <= 0:
 				return false
 			wallets[who] += int(ev.n)
+		"stake":
+			if int(ev.get("n", 0)) <= 0 or wallets[who] < int(ev.n):
+				return false
+			wallets[who] -= int(ev.n)
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or free_slot(who) < 0 or not (_free(s) or replay):
