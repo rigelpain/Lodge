@@ -1,7 +1,7 @@
 extends SceneTree
 ## 焚き火（campfire.gd・craft.gd の fire_lay / fire_out）を確かめて撮る。
 ##   Godot --path game --resolution 1280x720 -s res://tools/campfire_shots.gd -- --bots=0 --lodge-bots=0 --no-pip --dir=/path/shots
-## 売り子のおじさんの売り台で焚き火セットを買う → 手に持って外の雪の上で F → 組む・火がつく（夕方・夜、一人称・三人称）→
+## 山男の棚で焚き火セットを買う → 手に持って外の雪の上で F → 組む・火がつく（夕方・夜、一人称・三人称）→
 ## そばで乾く（水 100 から、1 秒ごとの値。暖炉のそばの速さと比べる）→ F で雪をかけて消す → 片づく →
 ## 燃え尽きる（時間を進める）→ ロッジの中では組めない。数は log.txt に書く
 
@@ -46,6 +46,9 @@ func _wait(t: float) -> void:
 
 
 func _shot(name: String) -> void:
+	if main.settings and main.settings.is_open:
+		main.settings.set_open(false)
+		p.menu_open = false
 	await process_frame
 	await process_frame
 	root.get_texture().get_image().save_png(_dir().path_join(name + ".png"))
@@ -74,6 +77,24 @@ func _hour(h: float) -> void:
 	await _wait(1.2)
 
 
+## 決まった所に置いたカメラで撮る（人の視点の傾きに左右されない、焚き火の寄りの絵）
+func _cam_shot(name: String, from: Vector3, to: Vector3, fov := 50.0) -> void:
+	from.y = main.height(from.x, from.z) + from.y   # from.y は雪からの高さ
+	var was: Vector3 = p.global_position
+	var away := to + Vector3(-6, 0, 6)   # 自分の人形がカメラの前に入らないよう、撮るあいだはどける
+	p.global_position = Vector3(away.x, main.height(away.x, away.z) + 0.15, away.z)
+	var cam := Camera3D.new()
+	cam.fov = fov
+	main.add_child(cam)
+	cam.look_at_from_position(from, to)
+	cam.make_current()
+	await _wait(0.2)
+	await _shot(name)
+	cam.queue_free()
+	p.cam.make_current()
+	p.global_position = was
+
+
 func _ground(x: float, z: float) -> Vector3:
 	return Vector3(x, main.height(x, z) + 0.15, z)
 
@@ -94,28 +115,28 @@ func _run() -> void:
 	var who: int = p.id
 	var start: Vector3 = p.global_position
 
-	# 1. 売り子のおじさんの売り台で買う
-	var sk: Node3D = main.shopkeeper
-	_put(sk.to_global(Vector3(0, 0.1, -3.6)), sk.global_position, 0.25)
+	# 1. 山男の棚で買う（山の道具の売り場。mountain_ui.gd・mountain_goods.gd）
+	var mm: Node3D = main.mountain_man
+	_put(mm.to_global(Vector3(0, 0.1, 2.0)), mm.global_position + Vector3.UP * 0.9, -0.1)
 	await _wait(0.6)
-	await _shot("00_sign")   # 頭の上の品書きの看板（型紙 4 つと焚き火セット、布 6 つ）
-	_put(sk.to_global(Vector3(0, 0.1, -2.2)), sk.global_position, -0.2)
-	await _wait(0.4)
-	main.craft_ui.open_shop()
-	var gi := -1
-	for i in main.craft_ui._goods.size():
-		if main.craft_ui._goods[i].kind == "campfire":
-			gi = i
-	main.craft_ui.select(gi)
+	var ui = main.mountain_ui
+	ui.open()
+	var shelf: Array = preload("res://mountain_goods.gd").SHELF
+	for i in shelf.size():
+		if shelf[i].item.kind == "campfire":
+			ui.select(i)
 	await _wait(0.4)
 	await _shot("01_shop")
 	var before: int = c.wallet(who)
-	_check(main.craft_ui.buy(), "焚き火セットを買えた")
+	_check(ui.buy(), "焚き火セットを買えた")
 	_check(c.wallet(who) == before - Campfire.PRICE, "ボタンが %d 減った（%d → %d）" % [Campfire.PRICE, before, c.wallet(who)])
 	_check(c.held(who).get("kind", "") == "campfire", "買った焚き火セットを手に持っている")
 	await _wait(0.4)
-	main.craft_ui.close_shop()
+	ui.close()
 	await _wait(0.3)
+	var sk: Node3D = main.shopkeeper
+	_put(sk.to_global(Vector3(0, 0.1, -2.2)), sk.global_position, -0.2)   # ロッジの中（売り子のおじさんの前）
+	await _wait(0.4)
 	# ロッジの中では組めない
 	_check(p.fire_spot().is_empty(), "ロッジの中では組めない")
 	await _key(KEY_F)
@@ -129,6 +150,16 @@ func _run() -> void:
 	await _wait(0.6)
 	_check(not p.fire_spot().is_empty(), "外の雪の上なら組める所がある")
 	await _shot("02_held_1st")
+	var kit: Node3D = Campfire.kit_shape()   # 手に持った形（player.gd の held_shape と同じ）を雪の上に置いて寄りで撮る
+	main.add_child(kit)
+	var kat: Vector3 = at + Vector3(2.5, 0.25, 2.5)
+	kat.y = main.height(kat.x, kat.z) + 0.25
+	kit.global_position = kat
+	await _cam_shot("02b_kit", kat * Vector3(1, 0, 1) + Vector3(0.0, 0.5, -0.45), kat, 40.0)
+	await _hour(12.0)
+	await _cam_shot("02c_kit_day", kat * Vector3(1, 0, 1) + Vector3(0.0, 0.5, -0.45), kat, 40.0)
+	await _hour(17.8)
+	kit.queue_free()
 	damp.put(who, 100.0)
 	await _key(KEY_F)
 	var f := _fire()
@@ -179,6 +210,10 @@ func _run() -> void:
 	p.set("_pitch", -0.42)
 	await _wait(0.3)
 	await _shot("09b_night_close")
+	await _cam_shot("09c_night_cam", f.global_position * Vector3(1, 0, 1) + Vector3(1.3, 0.9, -1.5), f.global_position + Vector3(0, 0.5, 0))
+	await _hour(17.8)
+	await _cam_shot("09d_dusk_cam", f.global_position * Vector3(1, 0, 1) + Vector3(1.3, 0.9, -1.5), f.global_position + Vector3(0, 0.5, 0))
+	await _hour(21.5)
 	p.set_third(true)
 	for i in 3:   # 炎のコマ（2 コマごとに切り方が替わる）
 		await _wait(1.0 / 6.0)

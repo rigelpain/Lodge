@@ -4,8 +4,9 @@ extends Node3D
 ## 前の雪に組んで火がつく（craft.gd の fire_lay。player.gd の fire_spot が組める所を決める）。1 つのセットで 1 回。
 ## 形は手芸の世界のもの:
 ##   フェルトの石の輪（灰・茶・青みの羊毛玉をつぶした形）、灰色のフェルトの敷物、
-##   毛糸を巻いた木の薪を櫓に組んだもの（下に横たえた薪 2 本）、
-##   炎と灯りは火の手本の部品（flame.gd。布と紙を切って重ね、十字に差し込んだ炎）。熾火は小さな羊毛玉
+##   巻いたフェルトのロールの薪を櫓に組んだもの（下に横たえた 2 本）。木口に渦の糸（暖炉の薪と同じ。2026-11-02 代表が案の左から 1 つ目を選んだ）、
+##   炎と灯りは火の手本の部品（flame.gd。薄葉紙をくしゃっと重ねた炎）。熾火は小さな羊毛玉。
+##   煙は灰色のチュールの帯（tulle_smoke.gd）
 ## 動きは人形と同じ 12 コマ／秒（コマの間は止める）:
 ##   組む   石が 1 コマに 1 つずつ置かれ、薪が上から落ちてくる（LAY_FRAMES）
 ##   火がつく 炎が 2 コマごとに大きくなる（LIGHT_FRAMES）
@@ -19,6 +20,7 @@ extends Node3D
 const Look := preload("res://look.gd")
 const Audio := preload("res://audio.gd")
 const Flame := preload("res://flame.gd")
+const TulleSmoke := preload("res://tulle_smoke.gd")
 
 ## 品目: 持ち物としての焚き火セット（名前・値段・絵）。売り場はここを読む。
 ## 2026-11-01 代表「そういう道具類を売ってくれる山男？山師？みたいなキャラが欲しい」: 本当の売り場は山の道具を売る山男。
@@ -38,7 +40,11 @@ const RING_R := 0.36         # 石の輪の半径 (m)
 const STONES := 9
 const LIGHT_RANGE := 7.5
 const STONE_COLORS := [Color(0.40, 0.38, 0.37), Color(0.34, 0.29, 0.26), Color(0.46, 0.44, 0.41), Color(0.30, 0.33, 0.37)]
-const YARN_COLORS := [Color(0.80, 0.24, 0.20), Color(0.88, 0.66, 0.20), Color(0.24, 0.32, 0.55), Color(0.92, 0.88, 0.78), Color(0.25, 0.52, 0.34)]
+## 薪のフェルトの色（props の felt_tan・felt_brown）。巻いた色と、木口の渦の糸の色を入れ替えて交互に
+const FELT_TAN := Color(0.66, 0.46, 0.28)
+const FELT_BROWN := Color(0.42, 0.27, 0.17)
+const HEMP := Color(0.80, 0.68, 0.48)   # 束ねる麻ひも
+const PUFF := 2.0            # 消えた直後、チュールの煙が大きく上る秒
 var fire_id := -1            # craft.gd の番号
 var owner_id := -1           # 組んだ人の番号（その人だけが F で消せる）
 var age := 0.0               # 組んでからの秒
@@ -49,6 +55,7 @@ var _parts: Array = []       # [節, 出るコマ, 落ちてくるか]
 var _logs: Array[StandardMaterial3D] = []
 var _log_base: Array[Color] = []
 var _flame: Node3D          # 炎と灯り（flame.gd）
+var _smoke: Node3D          # チュールの煙（tulle_smoke.gd）
 var _embers: Array[MeshInstance3D] = []
 var _ember_mat: StandardMaterial3D
 var _bed: AudioStreamPlayer3D
@@ -173,32 +180,65 @@ func _build() -> void:
 	_flame.light_range = LIGHT_RANGE
 	_flame.level = 0.0
 	add_child(_flame)
+	_smoke = TulleSmoke.new()
+	_smoke.position = Vector3(0, 0.38, 0)
+	_smoke.level = 0.0
+	add_child(_smoke)
 
 
-## 毛糸を 2 か所に巻いた木の薪（長さは y 向き）
+## 巻いたフェルトのロールの薪（長さは y 向き）。焦げる色を変えられるよう、素材は薪ごと
 func _log(r: float, length: float, i: int) -> Node3D:
-	var lg := Node3D.new()
-	add_child(lg)
-	var m := Look.wood(Color(0.52, 0.34, 0.20).lerp(Color(0.62, 0.44, 0.28), _rng.randf()))
+	var m := Look.felt(FELT_TAN if i % 2 else FELT_BROWN, 2.0)
 	_logs.append(m)
 	_log_base.append(m.albedo_color)
-	var body := MeshInstance3D.new()
-	body.mesh = _cyl(r, r * 1.08, length)
-	body.material_override = m
-	lg.add_child(body)
-	var cut := MeshInstance3D.new()   # 切り口の明るい木
-	cut.mesh = _cyl(r * 0.9, r * 0.9, 0.004)
-	cut.material_override = Look.wood(Color(0.80, 0.66, 0.46))
-	cut.position.y = length / 2.0
-	lg.add_child(cut)
-	var yarn := Look.knit(YARN_COLORS[i % YARN_COLORS.size()], 14.0)
-	for y in [-0.22, 0.18]:
-		var band := MeshInstance3D.new()
-		band.mesh = _cyl(r * 1.25, r * 1.25, 0.035)
-		band.material_override = yarn
-		band.position.y = length * y
-		lg.add_child(band)
+	var lg := felt_log(r, length, m, Look.felt(FELT_BROWN if i % 2 else FELT_TAN, 4.0))
+	add_child(lg)
 	return lg
+
+
+## 巻いたフェルトのロール 1 本（長さは y 向き）: 筒と、両端の木口に渦の糸（暖炉の薪と同じ。props/build_hearth.py の log）
+static func felt_log(r: float, length: float, body_mat: Material, swirl_mat: Material) -> Node3D:
+	var lg := Node3D.new()
+	var body := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = r
+	cm.bottom_radius = r
+	cm.height = length
+	cm.radial_segments = 14
+	cm.rings = 1
+	body.mesh = cm
+	body.material_override = body_mat
+	lg.add_child(body)
+	for sg in [1.0, -1.0]:
+		var sw := MeshInstance3D.new()
+		sw.mesh = _swirl(r)
+		sw.material_override = swirl_mat
+		sw.position.y = sg * (length / 2.0 + 0.0015)
+		if sg < 0.0:
+			sw.rotation.x = PI
+		lg.add_child(sw)
+	return lg
+
+
+static var _swirls := {}
+
+## 木口の渦: 平たい糸を 3 巻き（真ん中から外へ）。上（+Y）向きの面
+static func _swirl(r: float) -> ArrayMesh:
+	var key := snappedf(r, 0.001)
+	if _swirls.has(key):
+		return _swirls[key]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	st.set_normal(Vector3.UP)
+	var w := r * 0.07
+	for k in 73:
+		var t := k / 72.0 * 3.0
+		var rr := r * (0.1 + 0.78 * t / 3.0)
+		var d := Vector3(cos(t * TAU), 0, sin(t * TAU))
+		st.add_vertex(d * (rr - w))
+		st.add_vertex(d * (rr + w))
+	_swirls[key] = st.commit()
+	return _swirls[key]
 
 
 func _cyl(top: float, bottom: float, h: float) -> CylinderMesh:
@@ -249,6 +289,9 @@ func _step(k: int) -> void:
 	for i in _logs.size():
 		_logs[i].albedo_color = _log_base[i].lerp(Color(0.12, 0.10, 0.09), char_k)
 	_flame.level = lv if gone > 0.0 else 0.0
+	# 煙: 燃えているあいだは強さのぶん。消えた直後の PUFF 秒は大きく（雪をかけた湯気）、そのあと消える
+	var puff := _out_age >= 0.0 and age - _out_age < PUFF
+	_smoke.level = (lv if lv > 0.0 else (1.35 * (1.0 - (age - _out_age) / PUFF) if puff else 0.0)) * gone
 	# 熾火: コマごとにいくつかが明るく、いくつかが暗く。消えたら灰色
 	for i in _embers.size():
 		_embers[i].visible = k >= LAY_FRAMES and gone > 0.0
@@ -277,59 +320,61 @@ func _sound(dt: float) -> void:
 
 # ---------------------------------------------------------------- 持ち物の形と絵
 
-## 品目の絵（売り台の札・持ち物の列・看板。64 × 64 の箱、中心が原点）: 毛糸で縛った薪 3 本（切り口を見せて積む）と、丸めたクラフト紙の焚きつけ。
-## 描く前に hud_icons.gd の _o・_s が入っていること（craft_icons.gd の item が入れる）
+## 品目の絵（山男の棚・持ち物の列。64 × 64 の箱、中心が原点）: 麻ひもで縛った巻いたフェルトの薪 3 本（木口の渦を見せて積む）と、
+## くしゃっとした薄葉紙の焚きつけ。描く前に hud_icons.gd の _o・_s が入っていること（craft_icons.gd の item が入れる）
 static func icon(ci: CanvasItem, c: Vector2, sc: float, a: float) -> void:
 	var Icons := preload("res://hud_icons.gd")
-	var bark := Color(0.52, 0.34, 0.20)
-	var ring := Color(0.86, 0.72, 0.52)
-	var kraft := Color(0.84, 0.72, 0.52)
-	Icons.patch(ci, Icons.xf(Icons.rr(-26, -10, 52, 32, 6), 0.0, c + Vector2(0, 4) * sc, sc), bark.darkened(0.25), a, false)
-	for p in [Vector2(-12, 10), Vector2(12, 10), Vector2(0, -8)]:
-		Icons.patch(ci, Icons.circ(c + p * sc, 11.0 * sc, 18), bark, a, true, bark.lightened(0.35))
-		Icons.patch(ci, Icons.circ(c + p * sc, 7.5 * sc, 16), ring, a, false)
-		ci.draw_arc(Icons._o + (c + p * sc) * Icons._s, 3.5 * sc * Icons._s, 0, TAU, 12, Color(bark.r, bark.g, bark.b, a), maxf(1.0 * Icons._s, 1.0), true)
-	Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(-26, 2), Vector2(-8, -2), Vector2(8, -2), Vector2(26, 2)]), 0.0, c, sc), Icons.RED, 3.2, a)
-	Icons.patch(ci, Icons.xf(Icons.ell(Vector2(18, -18), 9, 7, 12), 0.0, c, sc), kraft, a, true, kraft.darkened(0.35))
+	Icons.patch(ci, Icons.xf(Icons.rr(-26, -10, 52, 32, 6), 0.0, c + Vector2(0, 4) * sc, sc), FELT_BROWN.darkened(0.2), a, false)
+	var ends := [[Vector2(-12, 10), FELT_TAN, FELT_BROWN], [Vector2(12, 10), FELT_BROWN, FELT_TAN], [Vector2(0, -8), FELT_TAN, FELT_BROWN]]
+	for e in ends:
+		var at: Vector2 = c + (e[0] as Vector2) * sc
+		Icons.patch(ci, Icons.circ(at, 11.0 * sc, 18), e[1], a, true, (e[1] as Color).lightened(0.35))
+		var sp := PackedVector2Array()   # 木口の渦の糸
+		for k in 25:
+			var t := k / 24.0 * 2.5
+			sp.append(at + Vector2(cos(t * TAU), sin(t * TAU)) * (1.0 + 8.0 * t / 2.5) * sc)
+		Icons.thread(ci, sp, e[2], 1.6, a)
+	Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(-26, 2), Vector2(-8, -2), Vector2(8, -2), Vector2(26, 2)]), 0.0, c, sc), HEMP.lightened(0.15), 3.2, a)
+	# 薄葉紙の焚きつけ: 赤と橙の紙をくしゃっと
+	Icons.patch(ci, Icons.xf(PackedVector2Array([Vector2(10, -14), Vector2(14, -26), Vector2(19, -18), Vector2(24, -28), Vector2(27, -14), Vector2(22, -8), Vector2(13, -8)]), 0.0, c, sc),
+			Color(0.86, 0.24, 0.13), a, false)
+	Icons.patch(ci, Icons.xf(PackedVector2Array([Vector2(14, -10), Vector2(17, -20), Vector2(20, -14), Vector2(23, -20), Vector2(24, -10)]), 0.0, c, sc),
+			Color(0.96, 0.52, 0.15), a, false)
 
 
-## 手に持った焚き火セット: 毛糸で縛った薪 3 本の束に、丸めたクラフト紙の焚きつけを挟んだもの（player.gd の held_shape）
+## 手に持った焚き火セット: 巻いたフェルトの薪 3 本を麻ひもで縛った束に、くしゃっとした薄葉紙の焚きつけを挟んだもの（player.gd の held_shape）
 static func kit_shape() -> Node3D:
 	var root := Node3D.new()
-	var wood := Look.wood(Color(0.56, 0.37, 0.22))
 	for i in 3:
-		var lg := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.022
-		cm.bottom_radius = 0.024
-		cm.height = 0.2
-		cm.radial_segments = 10
-		lg.mesh = cm
-		lg.material_override = wood
+		var lg := felt_log(0.024, 0.2, Look.felt(FELT_TAN if i != 1 else FELT_BROWN, 4.0), Look.felt(FELT_BROWN if i != 1 else FELT_TAN, 6.0))
 		lg.rotation.z = PI / 2.0
-		lg.position = [Vector3(0, 0, -0.024), Vector3(0, 0, 0.024), Vector3(0, 0.04, 0)][i]
+		lg.position = [Vector3(0, 0, -0.025), Vector3(0, 0, 0.025), Vector3(0, 0.042, 0)][i]
 		root.add_child(lg)
-	var yarn := Look.knit(Color(0.80, 0.24, 0.20), 14.0)
+	var yarn := Look.knit(HEMP, 14.0)   # 麻ひもで縛る（赤い輪だと、赤い薪の束がダイナマイトに見える）
 	for x in [-0.06, 0.06]:
 		var band := MeshInstance3D.new()
 		var tm := TorusMesh.new()
-		tm.inner_radius = 0.052
-		tm.outer_radius = 0.062
+		tm.inner_radius = 0.054
+		tm.outer_radius = 0.06
 		band.mesh = tm
 		band.material_override = yarn
 		band.rotation.z = PI / 2.0
 		band.position = Vector3(x, 0.014, 0)
 		band.scale = Vector3(1.0, 1.0, 0.95)
 		root.add_child(band)
-	var tinder := MeshInstance3D.new()   # 丸めたクラフト紙
-	var sm := SphereMesh.new()
-	sm.radius = 0.028
-	sm.height = 0.05
-	tinder.mesh = sm
-	tinder.material_override = Look.paper(Color(0.84, 0.72, 0.52))
-	tinder.position = Vector3(0.0, 0.07, 0.0)
-	tinder.scale = Vector3(1.3, 0.8, 1.0)
-	root.add_child(tinder)
+	for k in 2:   # くしゃっとした薄葉紙（赤と橙）
+		var tinder := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.026
+		sm.height = 0.05
+		sm.radial_segments = 6
+		sm.rings = 3
+		tinder.mesh = sm
+		tinder.material_override = Look.paper([Color(0.86, 0.24, 0.13), Color(0.96, 0.52, 0.15)][k])
+		tinder.position = Vector3(-0.015 + k * 0.03, 0.075 - k * 0.006, 0.004 * k)
+		tinder.rotation = Vector3(0.6 * k, 0.9, 0.3)
+		tinder.scale = Vector3(1.2, 0.85, 1.0)
+		root.add_child(tinder)
 	root.rotation = Vector3(0.3, 0.5, 0)
 	return root
 
