@@ -43,8 +43,9 @@ const SET_BOXES := [
 	[Vector3(1.6, 0.62, 0.08), Vector3(-6.5, 0.31, -0.5)],  # 柵の前（入口の北）
 	[Vector3(1.6, 0.62, 0.08), Vector3(-4.1, 0.31, -0.5)],  # 柵の前（入口の南）
 ]
-## 柵の中のミニオン: [名前, 所（組んだ寸法の、山師の座標）, 向き, 姿]。売り物から。子狐はかごの寝床で寝ている
-const PEN_PETS := [["kit", Vector3(-6.7, 0.16, 0.15), 0.4, "sleep"], ["chiyo_fox", Vector3(-6.2, 0.14, -0.05), -0.6, "sleep"],
+## 柵の中のミニオン: [名前, はじめの所（組んだ寸法の、山師の座標。y は高さ）, 向き, はじめの姿]。売り物から。
+## 置いたあとは pen_pets.gd が、歩き回る・寝床で寝る・食べる・遊ぶを、その子らしく続ける
+const PEN_PETS := [["kit", Vector3(-6.7, 0.34, 0.15), 0.4, "sleep"], ["chiyo_fox", Vector3(-6.2, 0.32, -0.05), -0.6, "sleep"],
 	["frog", Vector3(-6.5, 0.34, 2.1), 0.3, "sit"], ["rabbit", Vector3(-5.0, 0.0, 0.7), 0.6, "walk"],
 	["yarn", Vector3(-4.6, 0.0, 1.0), -0.5, "walk"], ["pony", Vector3(-5.7, 0.0, 1.4), 0.2, "sit"], ["peacock", Vector3(-4.3, 0.0, 2.0), -0.3, "walk"]]
 const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、柵のミニオンを置く
@@ -70,7 +71,6 @@ var _buyer_until := -1
 var _rng := RandomNumberGenerator.new()
 var _set: Node3D             # ヤク・出店・柵（rack_side が右手なら左右を映す）
 var _pen_loaded := false
-var _pen_heads: Array = []   # 柵のミニオンの首（12 コマでときどき振る）
 var _check_t := 0.0
 
 
@@ -148,21 +148,16 @@ func _make_set() -> void:
 	_set.add_child(body)
 
 
-## 柵のミニオンを置く（あなたが近づいてから一度だけ。ミニオンの形を読むのは重いので）
+## 柵のミニオンを置く（あなたが近づいてから一度だけ。ミニオンの形を読むのは重いので）。柵の中で過ごす動きは pen_pets.gd
 func _load_pen() -> void:
 	_pen_loaded = true
+	var pp: Node3D = preload("res://pen_pets.gd").new()
+	pp.name = "PenPets"
+	pp.main = main
+	pp.scale_xz = Vector3(-rack_side, 1.0, 1.0) * Vector3(SET_SCALE, 1.0, SET_SCALE)
+	add_child(pp)
 	for e in PEN_PETS:
-		var n: Node3D = Pals.scene(e[0]).instantiate()
-		Pals.paint(n)
-		for c in n.get_children():
-			(c as Node3D).visible = Pals.part_name(c) == e[3]
-			if Pals.part_name(c) == e[3]:
-				var h := c.find_child("head*", false, false)
-				if h:
-					_pen_heads.append(h)
-		n.position = (e[1] as Vector3) * Vector3(-rack_side, 1.0, 1.0) * SET_SCALE
-		n.rotation.y = PI + float(e[2])   # 正面（+Z）を客の側（-Z）へ
-		add_child(n)
+		pp.add(e[0], e[1], float(e[2]), e[3])
 
 
 # ---- 動き（12 コマ／秒）----------------------------------------------------------------
@@ -198,9 +193,6 @@ func _process(dt: float) -> void:
 		return
 	_frame = fi
 	_k += 1
-	for i in _pen_heads.size():   # 柵のミニオンが、ときどき首を振る（品物ごとに違う間合い。2 階の売り台と同じ）
-		var k := (fi + i * 13) % 50
-		(_pen_heads[i] as Node3D).rotation = Vector3(0.0, 0.5 * sin(float((fi + i * 13) / 50) * 2.1) if k < 30 else 0.0, 0.25 if k > 44 else 0.0)
 	var you := _buyer if _buyer and is_instance_valid(_buyer) and _k < _buyer_until else _nearest()
 	var near := you != null
 	if near and not _noticed:
