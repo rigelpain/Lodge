@@ -38,9 +38,10 @@ func _ready() -> void:
 		"board": _planks(Color(0.50, 0.35, 0.22)),          # 2 階の天井の羽目板、卓・棚
 		"ceiling": _planks(Color(0.50, 0.35, 0.22)),        # 1 階の天井の羽目板
 		"floor": _planks(Color(0.38, 0.26, 0.16)),          # 1 階の床も、幅の広い荒い板
-		# 外の木の床と段板: 中の床と同じ荒い板。継ぎ目に雪（2026-11-02 代表「デッキやテラス、外階段もちゃんと木でできたものに」）
-		"deck": _deck(DECK_BROWN),
-		"tread": _deck(DECK_BROWN, true),
+		# 外の木の床と段板: 中の床と同じ荒い板（2026-11-02 代表「デッキやテラス、外階段もちゃんと木でできたものに」。
+		# 雪は載せない。「吹雪とか天気実装したときは雪あってもいいけど今のところ雪なくていい」）
+		"deck": _planks(DECK_BROWN),
+		"tread": _planks(DECK_BROWN, true),
 		"rail": Look.wood(Color(0.36, 0.24, 0.14)),
 		"frame": Look.paper(Color(0.93, 0.88, 0.79)),
 		"tatami": Look.paper(Color(0.85, 0.82, 0.66)),
@@ -173,16 +174,16 @@ static func _log_wood() -> ShaderMaterial:
 	return _log_mat
 
 
-static var _plank_maps := {}   # 板の絵の種類 → [色の絵, 凹凸の絵]
+static var _plank_maps := {}   # 板の向き → [色の絵, 凹凸の絵]
 const PLANK_SPAN := 2.4         # 板の絵がひと巡りする長さ (m)
 const PLANK_BOARDS := 6         # その中の板の数（幅 40 cm。2026-10-31 代表「木の板が全部細い。もっと大きくして荒っぽく」）
-const DECK_SNOW := Color(0.90, 0.93, 0.97)   # デッキの板の継ぎ目に詰まった雪
 
 
 ## 床と天井の板: 幅 40 cm の手で切った荒い板。板ごとに濃さとわずかな色合いが違い、継ぎ目に溝、板ごとに高さが少し違う（段差）、
-## 角は丸く落ち、長さの途中に突き合わせの継ぎ目、木目の筋と節。向きは物の座標で投影するので、UV の向きにかかわらず同じ大きさで出る
-static func _planks(color: Color) -> StandardMaterial3D:
-	var maps := _plank_images("floor", Color.WHITE, false, false)
+## 角は丸く落ち、長さの途中に突き合わせの継ぎ目、木目の筋と節。向きは物の座標で投影するので、UV の向きにかかわらず同じ大きさで出る。
+## across なら板が東西に通る（外階段の段板・踊り場。上から見た板の向きが 90° 回る）
+static func _planks(color: Color, across := false) -> StandardMaterial3D:
+	var maps := _plank_images(across)
 	var m := StandardMaterial3D.new()
 	m.albedo_color = color
 	m.albedo_texture = maps[0]
@@ -195,26 +196,10 @@ static func _planks(color: Color) -> StandardMaterial3D:
 	return m
 
 
-## 外の木の床（玄関前の広場・前のデッキ・ミニテラス・2 階のテラス）: 中の床と同じ幅 40 cm の荒い板で、継ぎ目に雪が詰まり、
-## 板の上にところどころ薄く雪の粉が残る（歩く所は木に見える程度）。雪は白のまま出したいので、板の色は絵に焼く。
-## across なら板が東西に通る（外階段の段板・踊り場。上から見た板の向きが 90° 回る）
-static func _deck(color: Color, across := false) -> StandardMaterial3D:
-	var maps := _plank_images("deck_x" if across else "deck", color, true, across)
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = maps[0]
-	m.normal_enabled = true
-	m.normal_texture = maps[1]
-	m.normal_scale = 1.2
-	m.roughness = 0.9
-	m.uv1_triplanar = true
-	m.uv1_scale = Vector3.ONE / PLANK_SPAN
-	return m
-
-
-## 板の絵を焼く（key ごとに一度だけ）。tint は板の色（床は白にして、素材の色で掛ける）、snow は継ぎ目の雪と粉雪、across は縦横を入れ替える
-static func _plank_images(key: String, tint: Color, snow: bool, across: bool) -> Array:
-	if _plank_maps.has(key):
-		return _plank_maps[key]
+## 板の絵を焼く（向きごとに一度だけ）。across は縦横を入れ替える
+static func _plank_images(across: bool) -> Array:
+	if _plank_maps.has(across):
+		return _plank_maps[across]
 	var n := 384
 	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
 	var bump := Image.create(n, n, false, Image.FORMAT_RGB8)
@@ -241,10 +226,6 @@ static func _plank_images(key: String, tint: Color, snow: bool, across: bool) ->
 	var rough := FastNoiseLite.new()
 	rough.frequency = 0.08
 	rough.seed = 9
-	var dust := FastNoiseLite.new()   # 粉雪の吹きだまりのむら
-	dust.frequency = 0.012
-	dust.seed = 21
-	dust.fractal_octaves = 3
 	for y in n:
 		for x in n:
 			var u := float(x) / n * boards
@@ -265,25 +246,16 @@ static func _plank_images(key: String, tint: Color, snow: bool, across: bool) ->
 					kn = maxf(kn, (1.0 - dd) * (0.55 + 0.45 * sin(dd * 14.0)))
 			var round := clampf(edge, 0.0, 1.0)
 			var val := 0.40 if groove else (shade[b] + g) * (0.82 + 0.18 * round) * (1.0 - 0.45 * kn)
-			var c := Color(val * (1.0 + warm[b]) * tint.r, val * tint.g, val * (1.0 - warm[b]) * tint.b)
+			var c := Color(val * (1.0 + warm[b]), val, val * (1.0 - warm[b]))
 			var hh := 0.0 if groove else lift[b] * (0.35 + 0.65 * sqrt(round)) + g * 0.6 - kn * 0.2
-			if snow:
-				# 継ぎ目には雪が詰まり、板の縁に沿って薄く粉が寄る。板の上は、ところどころ細かな粒だけ（歩く所は木に見える）
-				var drift := clampf((dust.get_noise_2d(x, y) - 0.1) * 3.0, 0.0, 1.0)   # 粉の寄る所と寄らない所のむら
-				var fr := (1.0 - round) * 0.55 * drift
-				fr += clampf((rough.get_noise_2d(x * 4.0, y * 4.0) - 0.42) * 3.0, 0.0, 1.0) * 0.5 * (0.3 + 0.7 * drift)   # 細かな粒
-				if groove:
-					fr = 0.9
-					hh = 0.25
-				c = c.lerp(DECK_SNOW, clampf(fr, 0.0, 0.9))
 			var px := Vector2i(y, x) if across else Vector2i(x, y)
 			img.set_pixelv(px, c)
 			bump.set_pixelv(px, Color(hh, hh, hh))
 	bump.bump_map_to_normal_map(9.0)
 	img.generate_mipmaps()
 	bump.generate_mipmaps()
-	_plank_maps[key] = [ImageTexture.create_from_image(img), ImageTexture.create_from_image(bump)]
-	return _plank_maps[key]
+	_plank_maps[across] = [ImageTexture.create_from_image(img), ImageTexture.create_from_image(bump)]
+	return _plank_maps[across]
 
 
 static func _metal() -> StandardMaterial3D:
