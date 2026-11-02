@@ -166,6 +166,7 @@ var _stock: Node3D          # 左の袖の雪玉のストック（雪玉がな�
 var _shapes := {}            # 手の形のアップリケ: 形 → {1: 右手, -1: 左手}
 var _palm_goal := {}         # 側 → [形, 手形の置き所（人形の座標）]。コマで決め、腕はその手首へ伸ばす
 var _hands_frame := 0        # 手の形を変えたコマ（ぽんと出る大きさに）
+const HAND_TUCK := 0.01      # 手形を出している手の、元の手の骨の大きさ（手首へ縮めて隠す）
 var _em_head := Vector2.ZERO # 身ぶりが頭に足す向き（x 左右、y 上下）
 var _em_roll := 0.0          # 身ぶりが頭に足す傾き（首をかしげる。正で右へ）
 
@@ -485,6 +486,13 @@ func _apply() -> void:
 	var sk := _id("skirt")
 	if sk >= 0:
 		skel.set_bone_pose_scale(sk, Vector3(1, _squash, 1))
+	# 手形のワッペンを出している手は、元の手を隠す（2026-11-02 代表「エモートで手のワッペン出すとき、元のキャラの手は一時的に
+	# 消してほしい。どっちもあると意味わからない」）。手の骨を手首へ縮める。手に付けた物（雪玉・小窓の持ち物）も一緒に隠れる。
+	# 手形の置き所と同じく姿勢のコマで決まるので、手形が出るコマに消え、手形が消えるコマに戻る（どの画面でも同じコマ）
+	for side in [1, -1]:
+		var hd := _id("hand.R" if side > 0 else "hand.L")
+		if hd >= 0:
+			skel.set_bone_pose_scale(hd, Vector3.ONE * (HAND_TUCK if _palm_goal.has(side) else 1.0))
 
 
 ## 座るときに腰を落とす量（骨の座標の空間）。腰の骨の付け根を座面から SIT_HIPS の所へ

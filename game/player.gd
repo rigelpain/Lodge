@@ -1247,11 +1247,17 @@ func _place_shapes_fp(em: Array) -> void:
 				mode[int(gr[0])] = kind
 	elif (k >= 0 and kind in Doll.ARM_EMOTES) or _winding:
 		want = {1: "", -1: ""}
-	# 指さしの手形を出している手は、袖口の紙のミトンを隠す（奥へ伸ばした手形のこぶしを、手前のミトンがふさぐので）
+	# 手形を出している手は、袖口の紙のミトンを隠す（人形と同じ決まり。2026-11-02 代表「エモートで手のワッペン出すとき、
+	# 元のキャラの手は一時的に消してほしい」。指さしでは、奥へ伸ばした手形のこぶしを手前のミトンがふさぐのでもあった）
 	for hh in hands:
-		var mitt: bool = want[int(hh.get_meta("side"))] != "point"
+		var mitt: bool = want[int(hh.get_meta("side"))] == ""
 		hh.get_node("Mitten").visible = mitt
 		hh.get_node("MittenThumb").visible = mitt
+	# 右手に持った物（雪玉・持ち物）も、手と一緒に隠す。残すと、手のない所に物だけ浮いて手形に重なる（人形も手ごと隠れる）
+	if want[1] != "":
+		_ball_fp.visible = false
+	if _held_fp:
+		_held_fp.visible = want[1] == ""
 	for sh in _shapes_fp:
 		for side in [1, -1]:
 			var node: Node3D = _shapes_fp[sh][side]
