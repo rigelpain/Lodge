@@ -7,7 +7,7 @@ extends SceneTree
 ##   A（1 秒〜）  山男の位置を出す（どの画面も同じ所のはず）。つなぐ側が売り場で焚き火セットを買う。
 ##                ホストは、相手の持ち物と財布、山男が見ている人（相手の体のはず）を出す
 ##   B（5 秒〜）  ホストがペグを買う。つなぐ側が同じことを出す
-##   C（9 秒〜）  両方で「まだ売っていない」に戻し、つなぐ側が焚き火セットを買おうとする。ホストが断り、持ち物が増えないか
+##   C（9 秒〜）  つなぐ側が、財布が足りなくなるまで買ってから、もう 1 つ買おうとする。ホストが断り、持ち物が増えないか
 
 const Goods := preload("res://mountain_goods.gd")
 
@@ -102,15 +102,19 @@ func _run() -> void:
 		await _wait(1.5)
 		_report_other()
 	await _wait(2.5)
-	# C: まだ売っていない品目は断られる
-	Goods.all_on = false
+	# C: 財布が足りないと、ホストが断る（つなぐ側は財布の残りより高くなるまで買い、もう 1 つ買おうとする）
 	if not host:
+		var item: Dictionary = Goods.SHELF[0].item
+		while main.craft.wallet(p.id) >= Goods.price(item.kind):
+			main.craft.send({"kind": "buy", "who": p.id, "item": item.duplicate()})
+			await _wait(0.6)
 		var before := _items(p.id).size()
-		_say("売っていない焚き火セットを買う: %s（つなぐ側は送るだけなので true）" % main.craft.send({"kind": "buy", "who": p.id, "item": {"kind": "campfire"}}))
+		_say("財布 %d で %s（%d）を買う: %s（つなぐ側は送るだけなので true）" % [main.craft.wallet(p.id), item.kind, Goods.price(item.kind),
+				main.craft.send({"kind": "buy", "who": p.id, "item": item.duplicate()})])
 		await _wait(1.0)
 		_say("持ち物の数 %d → %d（増えないはず）" % [before, _items(p.id).size()])
 	else:
-		await _wait(1.5)
+		await _wait(2.5)
 		_report_other()
 	await _wait(1.0)
 	quit()

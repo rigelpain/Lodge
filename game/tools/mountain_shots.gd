@@ -3,7 +3,7 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 -s res://tools/mountain_shots.gd -- --spawn=mountain --dir=/path/shots [--shelf-all]
 ## 撮るもの:
 ##   man_front.png・man_quarter.png・man_side.png・man_back.png  山男を 4 つの向きから（棚も入る）
-##   place.png       玄関（風除室）を出た所から見た、山男と棚と山への道
+##   place.png       玄関を入った所から見た、ミシンの奥の山男と棚
 ##   hint.png        山男の前（F の案内）
 ##   menu.png        F で開いた売り場（何も選んでいない）
 ##   menu_pick.png   1 つ目の品物を選んだ（--shelf-all のときだけ。売っていない品目は選べない）
@@ -60,6 +60,7 @@ func _shot(name: String) -> void:
 func _look_shot(name: String, from: Vector3, to: Vector3, fov := 45.0) -> void:
 	var cam := Camera3D.new()
 	cam.fov = fov
+	cam.cull_mask &= ~(1 << 2)   # あなたの一人称の手（層 3）は写さない
 	main.add_child(cam)
 	cam.look_at_from_position(from, to)
 	cam.make_current()
@@ -85,18 +86,17 @@ func _run() -> void:
 	var c := mm.global_position + Vector3.UP * 1.1
 	# 4 つの向き（山男の前は -Z）。棚が左手（+X）の側に入るよう、少し引く
 	for v in [["man_front", Vector3(0.35, 0.25, -4.2)], ["man_quarter", Vector3(2.6, 0.35, -3.4)], ["man_side", Vector3(-4.0, 0.25, -0.3)],
-			["man_back", Vector3(-0.8, 0.35, 4.0)]]:
+			["man_back", Vector3(-0.6, 0.35, 2.6)]]:
 		await _look_shot(v[0], mm.to_global(v[1]) + Vector3.UP * 1.1, c + mm.global_basis.x * 0.4, 42.0)
-	# 玄関を出た所（ロッジの座標 (PATH_X, 18)、目の高さ）から
+	# 玄関（風除室の内の自動ドア）を入った所の、目の高さから（ロッジの座標 (x, y)。y が北）
 	var lodge: Node3D = main.get_node("Lodge")
-	var door := lodge.to_global(Vector3(main.PATH_X, 0, 18.0))
-	door.y = main.height(door.x, door.z) + 1.6
+	var door := lodge.to_global(Vector3(main.PATH_X, main.LODGE_FLOOR + 1.6, 11.0))
 	await _look_shot("place", door, mm.global_position + Vector3.UP * 0.9, 60.0)
 	# 山男の前で F の案内
 	_stand_front()
 	await _wait(1.0)
 	await _shot("hint")
-	print("話しかけられる: ", main.player.mountain_near())
+	print("話しかけられる: ", main.player.mountain_near(), "  ミシン・おじいさんも近いか: ", main.player.machine_near(), " ", main.player.shop_near())
 	var who: int = main.player.id
 	var ui = main.mountain_ui
 	ui.open()
