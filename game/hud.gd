@@ -1292,7 +1292,9 @@ class View extends Control:
 
 	## 右下の小窓の刺繍枠: Blender で本物らしく作って正面から撮った絵（props/build_hud.py の --hoop-png）を、画面の解像度のまま重ねる
 	## （2026-10-29 代表「刺繍小窓の刺繍枠をリアルな木枠にしてほしい。いまなんかぼやぼやしてモチーフが伝わらない」）。
-	## 絵の内の輪の半径は 228.6 px（640 px を 2.8 単位で撮った 1 単位）。窓の縁に少しかぶせる。風では小窓と同じだけ揺れる
+	## 見えるのは外枠 1 本と、てっぺんの金具だけ（内枠は布の下。2026-11-02 代表「二重の木枠の内側の方は布に隠れて見えない」）。
+	## 影は絵に焼いてある、布の上の段差の細い影（輪をまるごとずらした落ち影は描かない。代表「前後って感じでなく段差があるような感じ」）。
+	## 絵の外枠の内の半径は 228.6 px（640 px を 2.8 単位で撮った 1 単位）。窓の布の縁に少しかぶせる。風では小窓と同じだけ揺れる
 	func _draw_hoop(u: float) -> void:
 		var sc = hud.main.get("self_cam")
 		if sc == null or not is_instance_valid(sc) or sc.get("hidden") or sc.get("_frame") == null:
@@ -1303,10 +1305,9 @@ class View extends Control:
 		var tex: Texture2D = hud.hoop_texture()
 		if tex == null:
 			return
-		var s := (fr.size.x / 2.0 + 3.0 * u) / 228.6
+		var s := (fr.size.x / 2.0 - 1.5 * u) / 228.6
 		var sz := Vector2(tex.get_width(), tex.get_height()) * s
 		draw_set_transform_matrix(Icons.wind_xform(c, 5.0, 0.0, 0.03, 2.5 * u))
-		draw_texture_rect(tex, Rect2(c - sz / 2.0 + Vector2(3.0, 5.0) * u, sz), false, Color(Icons.SHADOW, 0.32))   # 落ち影
 		draw_texture_rect(tex, Rect2(c - sz / 2.0, sz), false)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
 

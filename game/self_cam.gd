@@ -333,6 +333,12 @@ void fragment() {
 		col = th * mix(1.0, 0.7, clamp(soak, 0.0, 1.0));   // 濡れた所の糸も水を吸って沈む
 	}
 	col = mix(col, ground, smoothstep(0.9, 1.0, r) * 0.25);
+	// 縁の沈み: 布は内枠の上を張り、外枠の内の縁で枠の中へ引き込まれて少し沈む。光（左上）へ傾く左上の斜面は少し明るく、
+	// 右下の斜面は暗い。外枠が布に落とす細い影は、刺繍枠の絵（hoop.png）の側にある
+	// （2026-11-02 代表「影のつき方も前後って感じでなく段差があるような感じ」）
+	float sink = smoothstep(0.90, 0.985, r);
+	float lit = dot(normalize(UV - 0.5 + 1e-5), SHEEN_DIR);
+	col *= 1.0 - sink * sink * (0.08 + 0.10 * max(-lit, 0.0)) + sink * (1.0 - sink) * 0.12 * max(lit, 0.0);
 	COLOR = vec4(col, 1.0 - smoothstep(0.985, 1.0, r));
 }
 """
