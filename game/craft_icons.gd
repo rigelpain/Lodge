@@ -40,6 +40,13 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			Icons.arrow(ci, Vector2(0, 12), Vector2(0, 28), Icons.THREAD, a, 2.0)
 		"hand":
 			Icons.mitten(ci, Vector2(0, 2), 0.0, tint, a, true, 1.5)
+		"campfire":   # 焚き火を組む: 雪の上の、薪の櫓と切り紙の炎
+			campfire(ci, Vector2(0, 4), 1.0, a, true)
+		"fire_out":   # 焚き火を消す: 炎の上から雪（綿の玉）がかかる
+			campfire(ci, Vector2(0, 8), 0.85, a, false)
+			for k in 3:
+				Icons.patch(ci, Icons.circ(Vector2(-12 + k * 12, -18 - (k % 2) * 6), 7.0, 12), Icons.SNOW, a, true, Color(0.75, 0.78, 0.86))
+			Icons.arrow(ci, Vector2(0, -28), Vector2(0, -10), Icons.THREAD, a, 2.0)
 		"shears":   # 雪に縫い留めたボタンと、その糸を切る裁ちばさみ
 			coin(ci, Vector2(-8, 12), 13.0, a)
 			_shears(ci, Vector2(8, -6), a)
@@ -102,6 +109,8 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 			_pattern(ci, Vector2.ZERO, 1.0, it.get("sled", "mid"), a)
 		"fabric":
 			_fabric(ci, Vector2.ZERO, 1.0, Fabrics.color(it.get("fabric", "red")), a)
+		"campfire":
+			preload("res://campfire.gd").icon(ci, Vector2.ZERO, 1.0, a)
 		"folded":
 			_folded(ci, Vector2.ZERO, it.get("sled", "mid"), Fabrics.color(it.get("fabric", "red")), a)
 			# 包みの面に貼った名札（手に持った包みと同じ並び）。窓に、広げた姿がくるくる回る
@@ -133,6 +142,8 @@ static func item_name(it: Dictionary) -> String:
 			if it.get("sled") == "sack":
 				return "畳んだ米袋" + ("（%s）" % fab if fab != "" else "")
 			return "畳んだ%s（%s）" % [sled, fab] if fab != "" else "畳んだ" + sled
+		"campfire":
+			return preload("res://campfire.gd").NAME
 		"food":
 			var dish: String = DISH_NAMES.get(it.get("dish", ""), "料理")
 			return dish if preload("res://food.gd").done(it) else "%sのもと" % dish
@@ -524,6 +535,23 @@ static func _fabric(ci: CanvasItem, c: Vector2, sc: float, col: Color, a: float)
 	Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(-22, -2), Vector2(22, -2)]), 0.0, c, sc), col.darkened(0.3), 0.8, 0.6 * a)
 
 
+## 燃えている焚き火: 灰色の石の輪、薪の櫓、赤・橙・黄の切り紙の炎（lit が false なら炎は小さく）
+static func campfire(ci: CanvasItem, c: Vector2, sc: float, a: float, lit: bool) -> void:
+	Icons.patch(ci, Icons.xf(Icons.ell(Vector2(0, 18), 28, 7, 20), 0.0, c, sc), Icons.SNOW, a, false)
+	for k in 5:
+		Icons.patch(ci, Icons.xf(Icons.ell(Vector2(-22 + k * 11, 18), 6, 4, 10), 0.0, c, sc), Color(0.55, 0.53, 0.52), a, false)
+	var bark := Color(0.52, 0.34, 0.20)
+	for s in [-1.0, 1.0]:
+		Icons.thread(ci, Icons.xf(PackedVector2Array([Vector2(16 * s, 16), Vector2(2 * s, -10)]), 0.0, c, sc), bark, 5.0, a)
+	var fl := 1.0 if lit else 0.5
+	var layers := [[Color(0.86, 0.26, 0.13), 1.0], [Color(0.96, 0.55, 0.16), 0.7], [Color(1.0, 0.86, 0.42), 0.42]]
+	for l in layers:
+		var k: float = l[1] * fl
+		var flame := PackedVector2Array([Vector2(-12, 14), Vector2(-14, 2), Vector2(-7, -10), Vector2(-4, -2), Vector2(0, -24),
+			Vector2(5, -6), Vector2(9, -14), Vector2(14, 2), Vector2(12, 14)])
+		Icons.patch(ci, Icons.xf(flame, 0.0, c + Vector2(0, 14 - 14 * k) * sc, sc * k), l[0], a, false)
+
+
 ## 畳んだソリ: 布の色の折り紙の包み（四角を対角に折った形）。大きいソリほど包みが大きい
 static func _folded(ci: CanvasItem, c: Vector2, kind: String, col: Color, a: float) -> void:
 	var k: float = 0.65 + 0.35 * SIZE_K.get(kind, 0.85)
@@ -562,14 +590,14 @@ static func menu(ci: CanvasItem, r: Rect2) -> void:
 			Icons.CAP, 2.4, 9.0, 6.0, 0.8, true)
 	var w := r.size.x
 	var h := r.size.y
-	var big := h * 0.40
+	var big := h * 0.34
 	var coin_r := h * 0.032
-	for i in 4:
-		var kind: String = ["sack", "small", "mid", "large"][i]
-		var cx := r.position.x + w * (0.14 + 0.24 * i)
+	for i in 5:   # 型紙 4 つと、右の端に焚き火セット
+		var it := {"kind": "pattern", "sled": ["sack", "small", "mid", "large"][i]} if i < 4 else {"kind": "campfire"}
+		var cx := r.position.x + w * (0.115 + 0.192 * i)
 		var cy := r.position.y + h * 0.26
-		item(ci, {"kind": "pattern", "sled": kind}, Vector2(cx - big * 0.22, cy), big)
-		price(ci, Vector2(cx + big * 0.36, cy), preload("res://craft.gd").PATTERN_PRICE[kind], coin_r)
+		item(ci, it, Vector2(cx - big * 0.22, cy), big * (0.8 if i == 4 else 1.0))
+		price(ci, Vector2(cx + big * 0.36, cy), preload("res://craft.gd").price(it), coin_r)
 	var small := h * 0.30
 	for i in Fabrics.ORDER.size():
 		var cx := r.position.x + w * (0.1 + 0.16 * i)

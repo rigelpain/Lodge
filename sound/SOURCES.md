@@ -15,6 +15,8 @@
 | `dish_01..04.wav` | Tableware - Handle plates | https://freesound.org/people/Vrymaa/sounds/797581/ | Vrymaa | 皿が触れる音を 4 つ。150 Hz 以下を落とす |
 | `dish_05..06.wav` | Ceramic Plate Set Down | https://freesound.org/people/bbrocer/sounds/382643/ | bbrocer | 皿を卓に置く音を 2 つ |
 
+外の焚き火（`game/campfire.gd`、2026-11-01）は、新しい録音を足さずに、上の `fire_bed_loop.wav` と `fire_crack_01..08.wav` を使い回す。外の音（Outdoor の通り道）として焚き火の所で鳴らし、ぱちぱちの大きさは火の強さに合わせる（`audio.gd` の `campfire`・`fire_crack`）。
+
 落としたが、使っていないもの: eZZin「Walking in cold snow」(683920。聞き比べで不採用)、cabled_mess「Footstep in the snow_01 [RAW]」(384423)、florianreichelt「footsteps in fresh snow」(453168)、Davor「Fire crackling in fireplace」(382616)、Sirnak「Sound of Ceramic Dishes」(813608)。
 
 ## 売り台・ミシン・厨房（2026-11-01）

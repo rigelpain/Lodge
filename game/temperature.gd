@@ -42,8 +42,17 @@ func at(pos: Vector3) -> float:
 		if _fire != Vector3.INF:
 			warm += FIRE_WARM * clampf(1.0 - pos.distance_to(_fire) / FIRE_R, 0.0, 1.0)
 		return warm
-	var outside := _outdoor(pos)
+	var outside := _outdoor(pos) + _campfires(pos)
 	return lerpf(outside, VESTIBULE, 0.6) if zone == 1 else outside
+
+
+## 外の焚き火（campfire.gd。仲間分け "fires"）のそばの暖かさ (°C)。いちばん近い焚き火の分だけ
+func _campfires(pos: Vector3) -> float:
+	var warm := 0.0
+	for f in get_tree().get_nodes_in_group("fires"):
+		if f is Node3D and is_instance_valid(f) and f.has_method("lit"):
+			warm = maxf(warm, preload("res://campfire.gd").WARM * clampf(1.0 - pos.distance_to((f as Node3D).global_position) / FIRE_R, 0.0, 1.0))
+	return warm
 
 
 ## 外の気温: 時刻と高さと天気

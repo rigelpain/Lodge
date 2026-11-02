@@ -10,6 +10,7 @@ const SackLook := preload("res://sack_look.gd")
 const Seats := preload("res://seats.gd")
 const FoodMenu := preload("res://food.gd")
 const PropsLib := preload("res://props.gd")
+const Campfire := preload("res://campfire.gd")
 ## あなた。一人称で、見えるのは自分の人形と同じ柄の袖口と、紙の手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
@@ -421,6 +422,10 @@ func _unhandled_input(e: InputEvent) -> void:
 					var hud = get_parent().get("hud")
 					if hud:
 						hud.learn("shears")
+					return
+				if mode == Mode.WALK and lay_fire():   # 手の焚き火セットを、前の雪の上に組んで火をつける
+					return
+				if mode == Mode.WALK and put_out_fire():   # 自分の焚き火に雪をかけて消す
 					return
 				if mode == Mode.WALK and sit_down():
 					return
@@ -1675,6 +1680,69 @@ func _snow_ahead() -> bool:
 	return false
 
 
+# ---------------------------------------------------------------- 焚き火（campfire.gd）
+
+const FIRE_AHEAD := 1.3      # 焚き火を組む所: 体の前 (m)
+const FIRE_GAP := 1.6        # ほかの焚き火とのあいだ (m)
+const FIRE_REACH := 2.0      # F で自分の焚き火を消せる距離 (m)
+
+## 手の焚き火セットを組める所 {at, yaw, up}（組めなければ {}）: 外の、前の雪の上（雪の地面。ソリや家の上でなく、急すぎない）
+func fire_spot() -> Dictionary:
+	if craft == null or mode != Mode.WALK or held().get("kind", "") != "campfire":
+		return {}
+	var fwd := -global_basis.z
+	fwd.y = 0.0
+	var at := global_position + fwd.normalized() * FIRE_AHEAD
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 1.5, at + Vector3.DOWN * 3.0)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	if hit.is_empty() or hit.normal.y < 0.85 or not Campfire.outside(get_tree(), hit.position):
+		return {}
+	var snow := false
+	for c in (hit.collider as Node).get_children():
+		snow = snow or (c is CollisionShape3D and (c as CollisionShape3D).shape is HeightMapShape3D)
+	if not snow:
+		return {}
+	for f in craft.fires.values():
+		if is_instance_valid(f) and f.lit() and (f as Node3D).global_position.distance_to(hit.position) < FIRE_GAP:
+			return {}
+	return {"at": hit.position, "yaw": rotation.y, "up": hit.normal}
+
+
+func lay_fire() -> bool:
+	var spot := fire_spot()
+	if spot.is_empty():
+		return false
+	var ev := {"kind": "fire_lay", "who": id, "slot": craft.hands.get(id, -1), "at": spot.at, "yaw": spot.yaw, "up": spot.up}
+	if not craft.send(ev):
+		return false
+	busy_until = Doll.frame_index() + 1 + Campfire.LAY_FRAMES   # 組むあいだは、その場で
+	var hud = get_parent().get("hud")
+	if hud:
+		hud.learn("campfire")
+	return true
+
+
+## 近くの、自分の燃えている焚き火（なければ null）
+func own_fire_near() -> Node3D:
+	if craft == null or mode != Mode.WALK:
+		return null
+	var best: Node3D = null
+	for f in craft.fires.values():
+		if is_instance_valid(f) and f.owner_id == id and f.lit() and f.level() > 0.0:
+			var d := global_position.distance_to((f as Node3D).global_position)
+			if d < FIRE_REACH and _facing((f as Node3D).global_position) > 0.3 and (best == null or d < global_position.distance_to(best.global_position)):
+				best = f
+	return best
+
+
+func put_out_fire() -> bool:
+	var f := own_fire_near()
+	if f == null or held().get("kind", "") == "campfire":
+		return false
+	return craft.send({"kind": "fire_out", "who": id, "id": f.fire_id})
+
+
 # ---------------------------------------------------------------- 持ち物と工房（craft.gd）
 
 ## 手に持っている物（素手なら {}）
@@ -1871,6 +1939,8 @@ func _face_held_fp() -> void:
 
 ## 手に持った物の小さな形（一人称の右手と、確かめ用）
 static func held_shape(it: Dictionary) -> Node3D:
+	if it.get("kind") == "campfire":   # 焚き火セット: 毛糸で縛った薪の束（campfire.gd）
+		return Campfire.kit_shape()
 	if it.get("kind") == "food":   # 雪だるまの店のペレット（途中は押されたペレット）か、できあがった料理（food.gd）
 		var done := FoodMenu.done(it)
 		var f := PropsLib.make(FoodMenu.dish_glb(it.dish) if done else FoodMenu.pellet_glb(it.dish))

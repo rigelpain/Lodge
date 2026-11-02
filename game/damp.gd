@@ -183,10 +183,10 @@ func _rate(id: int, who: Node3D, dt: float) -> float:
 	if _in_dryer(id):
 		dw = -minf(DRYER_DRY * dt, w - CRISP)   # 乾燥機の中: 一瞬でいちばんパリッと
 	elif warm > 0.0:
-		# 火のそば（中でも外でも）: 速く乾き、近ければ 0 より下（パリッと）まで
+		# 火のそば（中でも外でも）: 速く乾き、近ければ 0 より下（パリッと）まで。焚き火は暖炉より速い（campfire.gd の dry_k）
 		var floor_w := lerpf(0.0, CRISP, smoothstep(CRISP_FROM, CRISP_FULL, warm))
 		if w > floor_w:
-			dw = -minf((DRY_ROOM + DRY_FIRE * warm) * dt, w - floor_w)
+			dw = -minf((DRY_ROOM + DRY_FIRE * warm) * _fire_k(who.global_position) * dt, w - floor_w)
 		elif w < 0.0:
 			dw = minf(CRISP_FADE * dt, floor_w - w)   # 火から少し離れたら、その近さのパリッとまで戻る
 	elif w < 0.0:
@@ -231,6 +231,15 @@ func _warm_at(pos: Vector3, temp: Node) -> float:
 	for s in spots:
 		warm = maxf(warm, clampf(1.0 - pos.distance_to(s) / FIRE_R, 0.0, 1.0))
 	return warm
+
+
+## 乾く速さの倍率: 暖かさの届いている焚き火（"fires" の dry_k）のうち、いちばん速いもの。暖炉だけなら 1
+func _fire_k(pos: Vector3) -> float:
+	var k := 1.0
+	for f in get_tree().get_nodes_in_group("fires"):
+		if f is Node3D and is_instance_valid(f) and pos.distance_to((f as Node3D).global_position) < FIRE_R:
+			k = maxf(k, float(f.get("dry_k") if f.get("dry_k") != null else 1.0))
+	return k
 
 
 ## 乾燥機の中で回っているか（cook_station.gd）
