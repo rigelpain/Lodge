@@ -18,7 +18,7 @@ const CAP := Color(0.98, 0.96, 0.92)        # キーのワッペン
 const SHADOW := Color(0.10, 0.08, 0.16)
 const LEG := Color(0.28, 0.27, 0.32)
 
-const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "sit", "standup", "lean_l", "lean_r", "brake",
+const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "sit", "standup", "lean_l", "lean_r", "brake", "handsup",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
 	"cam_dist", "cam_frame", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "mouse_pinch", "mouse_pan", "back", "untag", "tag_on"]
 
@@ -280,6 +280,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"lean_l": _lean(ci, a, tint, -1)
 		"lean_r": _lean(ci, a, tint, 1)
 		"brake": _brake(ci, a, tint)
+		"handsup": _handsup(ci, a, tint)
 		"wave": _wave(ci, a, tint)
 		"point": _point(ci, a, tint)
 		"voice": _voice(ci, a)
@@ -531,6 +532,7 @@ static func doll(ci: CanvasItem, feet: Vector2, col: Color, pose: String, a := 1
 		"sit", "sit_back": hands = [Vector2(8, -6), Vector2(9, -7)]
 		"sit_fwd": hands = [Vector2(12, -2), Vector2(13, 0)]
 		"back", "lean_l", "lean_r": hands = [Vector2(-9, -5), Vector2(9, -5)]
+		"sit_up": hands = [Vector2(-11, -26), Vector2(11, -26)]   # 座って万歳
 	for i in 2:
 		var sh: Vector2 = [sh_l, sh_r][i]
 		thread(ci, X.call(PackedVector2Array([sh, hands[i]])), col.darkened(0.1), 3.2 * sc, a)
@@ -701,6 +703,15 @@ static func _brake(ci: CanvasItem, a: float, col: Color) -> void:
 		ci.draw_arc(_o + p * _s, (2.6 - i * 0.4) * _s, 0, TAU, 10, Color(THREAD, 0.35 * a), 0.8, true)
 	thread(ci, PackedVector2Array([Vector2(-26, -14), Vector2(-14, -14)]), THREAD, 2.2, a)   # 止まる: 前で止める線
 	thread(ci, PackedVector2Array([Vector2(-26, -20), Vector2(-26, -8)]), THREAD, 2.2, a)
+
+
+## 滑りながら万歳（座った人形が両手を上げる。後ろに風の線）
+static func _handsup(ci: CanvasItem, a: float, col: Color) -> void:
+	sled_side(ci, Vector2(2, 18), 1.1, a)
+	doll(ci, Vector2(-2, 13), col, "sit_up", a, 1.0)
+	for i in 3:   # 後ろへ流れる風
+		var y := -6.0 + i * 8.0
+		thread(ci, PackedVector2Array([Vector2(-30 + i * 2.0, y), Vector2(-20 + i * 2.0, y)]), THREAD, 1.8, (0.85 - i * 0.2) * a)
 
 
 static func _wave(ci: CanvasItem, a: float, col: Color) -> void:

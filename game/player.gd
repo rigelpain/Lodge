@@ -449,12 +449,17 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_SPACE:
 				if mode == Mode.RIDE and sled.kick(self):
 					_kicked()   # 乗っているあいだの Space は足で漕ぐ（ジャンプしない）
+				elif space_hands_up():
+					toggle_hands_up()   # 漕げないソリで滑っているあいだの Space は万歳（A・D で曲がりながら押せる）
 			KEY_TAB:
 				if ring and not menu_open:
 					ring.open(hand, _height(), point_at != Vector3.INF)
 			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7:
 				# 輪と同じ 6 つ: 1 高い手のひら、2 低い手のひら、3 指さし、4 ウン、5 ンーン、6 首をかしげてウン？
-				_choose(["high", "low", "point", "un", "nn", "huh", "oi"][e.physical_keycode - KEY_1])
+				if e.physical_keycode == KEY_1 and gliding():
+					toggle_hands_up()   # 滑っているあいだの 1 は、片手・両手の切り替えによらず両手で万歳（Space と同じ）
+				else:
+					_choose(["high", "low", "point", "un", "nn", "huh", "oi"][e.physical_keycode - KEY_1])
 			KEY_Q:
 				# 片手 ⇄ 両手
 				_set_hand("both" if hand != "both" else _one_hand)
@@ -1368,6 +1373,26 @@ func _set_hand(h: String) -> void:
 		ring.set_hand(h)
 	if _height() != "":
 		set_hands(Palm.hands_name(_height(), hand))
+
+
+## 乗って滑っているあいだ（止まりかけ・ペグで留めたソリは入れない。hud.gd が A・D と S の案内を出すのと同じ）
+func gliding() -> bool:
+	return mode == Mode.RIDE and is_instance_valid(sled) and sled.peg == null and sled.linear_velocity.length() >= 1.0
+
+
+## 滑っているあいだに Space で万歳できる（米袋のように Space で漕ぐソリは、漕ぐほう）
+func space_hands_up() -> bool:
+	return gliding() and float(sled.KINDS[sled.kind].get("kick", 0.0)) <= 0.0
+
+
+## 両手を高く上げる（万歳）・下ろす。滑っているあいだの 1 と Space
+func toggle_hands_up() -> void:
+	if hands_name == "high_both":
+		set_hands("")
+		return
+	if pointing:
+		_stop_point()
+	set_hands("high_both")
 
 
 ## 手を変える（配り役へ送る。"" は下ろす）

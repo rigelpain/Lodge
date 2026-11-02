@@ -106,6 +106,7 @@ var _meet_t := 0.0
 var _meet_n := 0
 var _meeting := false
 var _still_t := 0.0
+var _hands_were_up := false   # 前に滑っていたコマで、万歳していたか（上げた瞬間を 1 回と数える）
 var _seen_back := false
 const TAG_K := 1.365          # 名札の大きさ（2026-10-29 代表「名札もっと大きくていい」。2026-10-31 回るソリと人を載せるので 1.3 倍に。
                               # 2026-11-01 代表「タグ表示でかすぎるかも」で 75% に（design/tag-card-smaller）。HUD の大きさの設定にも合わせて変わる）
@@ -437,6 +438,13 @@ func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 				_count_work("brake", dt, key.call(KEY_S), 1.0)
 				_hint("lean", ["A", "D"], "lean_r")
 				_hint("brake", ["S"], "brake")
+				# 滑っているのに手を下ろしている: 1 か Space で万歳（覚えるまで。Space で漕ぐ米袋は 1 だけ）
+				if p.hands_name == "high_both":
+					if not _hands_were_up:
+						learn("handsup")
+				else:
+					_hint("handsup", ["1", "Space"] if p.space_hands_up() else ["1"], "handsup")
+				_hands_were_up = p.hands_name == "high_both"
 		Player.Mode.WALK:
 			_walk_hints(dt, sled, p)
 		Player.Mode.SIT:
@@ -1400,7 +1408,7 @@ class View extends Control:
 		# ピンチ: 三人称のカメラの距離（一人称で閉じ続けると三人称へ）。視野角と人形の画面の高さは設定からだけ
 		rows.append([["mouse_pinch"], "cam_dist" if hud.main.player and hud.main.player.third else "view"])
 		if hud.main.get("emotes") != null:
-			rows += [[["Tab"], "ring"], [["1", "2", "3"], "ring"], [["4", "5", "6", "7"], "voice"], [["B"], "breath"]]
+			rows += [[["Tab"], "ring"], [["1", "2", "3"], "ring"], [["4", "5", "6", "7"], "voice"], [["B"], "breath"], [["1", "Space"], "handsup"]]   # 滑りながら万歳
 		else:
 			rows += [[["Q"], "wave"], [["G"], "voice"]]
 		if hud.main.get("sewing") != null:

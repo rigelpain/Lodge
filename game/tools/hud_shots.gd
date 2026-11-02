@@ -12,6 +12,7 @@ extends SceneTree
 ##   menu    Esc を押したとき（操作の札）
 ##   ring    Tab で身ぶりの輪を出したとき（仲間のそば）
 ## --tp で三人称（--cam-dist=m・--cam-frame=-0.75〜0.5 でカメラの距離と人形の画面の高さ。保存しない）。
+## ride で --space-at=秒（または --one-at=秒）: その時に Space（1）を押す（滑りながら万歳。押す前は 1・Space の案内）。
 ## --hud-scale=0.7〜1.6 と --menu-scale=0.7〜1.6 で、設定の「HUD の大きさ」「メニューの大きさ」を、保存せずに当てて撮る。
 ## main.gd の引数（--bots など）もそのまま効く。
 
@@ -23,6 +24,7 @@ var _mash_n := -1
 var _frame_k := -1
 var _flips := 0
 var _balls_set := false
+var _pressed := {}
 
 
 func _initialize() -> void:
@@ -190,6 +192,13 @@ func _process(dt: float) -> bool:
 				_mash_n = n
 				_key(KEY_SPACE, true)
 				_key(KEY_SPACE, false)
+		for a: String in ["space-at", "one-at"]:   # 一度だけ押す
+			if args.has(a) and not _pressed.has(a) and t > float(args[a]):
+				_pressed[a] = true
+				var k := KEY_SPACE if a == "space-at" else KEY_1
+				_key(k, true)
+				_key(k, false)
+				print("t=%.1f %s を押した  速さ=%.1f" % [t, "Space" if a == "space-at" else "1", sled.linear_velocity.length()])
 		if args.has("log-speed") and int(t * 2.0) != int((t - dt) * 2.0):
 			print("t=%.1f 速さ=%.1f 表示=%.2f いちばん=%.1f" % [t, sled.linear_velocity.length(), main.hud._spd_a, main.hud.spd_best])
 	# --frames=N: --at から --every 秒ごとに N 枚、out の .png の前に _00 の番号を付けて保存する（動きを見る用）
@@ -216,6 +225,6 @@ func _process(dt: float) -> bool:
 			var to: Vector3 = p.doll.gaze - head
 			var fwd: Vector3 = -p.cam.global_basis.z
 			print("見る先: 頭から %.2f m、カメラの前の向きとの角度 %.0f°" % [to.length(), rad_to_deg(to.angle_to(fwd))])
-		print("保存: ", out, "  案内: ", main.hud.uses, "  押している人: ", sled.pushers, "  速さ: %.1f" % sled.linear_velocity.length())
+		print("保存: ", out, "  手: ", p.hands_name, "  案内: ", main.hud.uses, "  押している人: ", sled.pushers, "  速さ: %.1f" % sled.linear_velocity.length())
 		return true
 	return false
