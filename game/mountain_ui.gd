@@ -5,6 +5,8 @@ extends CanvasLayer
 ##       まだ売っていない品目は、薄い絵を麻ひもで十字に縛ったカード（選べない。値段も出さない）
 ##   右の上: 財布のボタン。品物を選ぶと、その値段を上に赤い糸（足りないとき）で
 ##   右の下: 買うボタン（ボタン → 矢印 → 手袋）。買えないときは震える
+##   左の端: 段の札 2 枚。上が「道具」（この画面）、下が「連れ」（山師が育てているミニオン。押すと、ミニオンの画面
+##       main.gd の minion_ui＝pals_ui.gd の連れの段だけ を開く。2026-11-02 代表「ミニオンは山師が育てているのを買う感じにしてほしい」）
 ## 閉じるのは ×、F、Esc。買うのは craft.gd の buy（ほかの人の画面にも配られ、山男がその人を向いてうなずく）
 
 const Icons := preload("res://hud_icons.gd")
@@ -24,6 +26,7 @@ var _hover_btn := ""
 var _rects: Array = []
 var _buy_rect := Rect2()
 var _close_rect := Rect2()
+var _tab_rects: Array = []   # 左の段の札（0 道具、1 連れ）
 var _shake := 0.0
 var _pop := 0.0              # 買えたときの、カードと財布のぽん
 var _view: Control
@@ -78,6 +81,18 @@ func select(i: int) -> void:
 	_view.queue_redraw()
 
 
+## 「連れ」の札: この画面を閉じて、山師が育てているミニオンの画面（main.gd の minion_ui）を開く
+func open_pets() -> void:
+	var mui = main.get("minion_ui") if main else null
+	if mui == null:
+		return
+	close()
+	mui.open("pet")
+	if shop:
+		shop.shop_open = true
+		shop.greet()
+
+
 ## 選んでいる品物を買う
 func buy() -> bool:
 	if _sel < 0:
@@ -114,9 +129,13 @@ func _input(e: InputEvent) -> void:
 	elif e is InputEventMouseMotion:
 		_hover = _hit(e.position)
 		_hover_btn = "buy" if _buy_rect.has_point(e.position) else ("close" if _close_rect.has_point(e.position) else "")
+		if _tab_rects.size() > 1 and (_tab_rects[1] as Rect2).has_point(e.position):
+			_hover_btn = "pets"
 	elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 		get_viewport().set_input_as_handled()
-		if _close_rect.has_point(e.position):
+		if _tab_rects.size() > 1 and (_tab_rects[1] as Rect2).has_point(e.position):
+			open_pets()
+		elif _close_rect.has_point(e.position):
 			close()
 		elif _buy_rect.has_point(e.position):
 			buy()
@@ -146,11 +165,27 @@ class View extends Control:
 		Icons.patch(self, Icons.rr(r.position.x, r.position.y, w, h, 22.0 * u), FELT, 0.98, false)
 		Icons.dashes(self, Icons.rr(r.position.x + 10 * u, r.position.y + 10 * u, w - 20 * u, h - 20 * u, 16.0 * u), Icons.CAP, 2.0 * u, 8.0 * u, 5.0 * u, 0.8, true)
 		# 左: 棚の品物のカード（大きく、横に並べる。4 つまでは 1 段）
+		# 左の端: 段の札（道具＝この画面、連れ＝ミニオンの画面へ）
+		var ts := 84.0 * u
+		var tabs: Array = []
+		for i in 2:
+			var tr := Rect2(r.position + Vector2(24.0 * u, 50.0 * u + i * (ts + 16.0 * u)), Vector2(ts, ts))
+			tabs.append(tr)
+			var on := i == 0
+			Icons.screen()
+			Icons.patch(self, Icons.rr(tr.position.x, tr.position.y, ts, ts, 12.0 * u), Icons.PAPER if on else Icons.PAPER.darkened(0.12),
+					1.0 if on or ui._hover_btn == "pets" else 0.75, true, Icons.PAPER_EDGE)
+			Icons.icon(self, "mountain" if i == 0 else "pal_pet", tr.get_center(), ts * 0.8, 1.0 if on else 0.6)
+			if on:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(tr.position.x - 5 * u, tr.position.y - 5 * u, ts + 10 * u, ts + 10 * u, 15.0 * u), Icons.RED, 3.0 * u, 8.0 * u, 5.0 * u, 1.0, true)
+		ui._tab_rects = tabs
+		var left := 120.0 * u
 		var area_w := w * 0.7
 		var n: int = Goods.SHELF.size()
 		var per := mini(maxi(n, 2), 4)
 		var gap := 22.0 * u
-		var cw := (area_w - 40.0 * u - gap * (per - 1)) / per
+		var cw := (area_w - left - 20.0 * u - gap * (per - 1)) / per
 		var ch := minf(cw * 1.3, (h - 80.0 * u) / ceilf(float(n) / per) - gap)
 		var rects: Array = []
 		for i in n:
@@ -158,7 +193,7 @@ class View extends Control:
 			var on := Goods.sold(e.item.kind)
 			var cost: int = Goods.price(e.item.kind)
 			var can := on and cost <= coins and not full
-			var card := Rect2(r.position.x + 30.0 * u + (i % per) * (cw + gap), r.position.y + 50.0 * u + (i / per) * (ch + gap), cw, ch)
+			var card := Rect2(r.position.x + left + (i % per) * (cw + gap), r.position.y + 50.0 * u + (i / per) * (ch + gap), cw, ch)
 			var sel: bool = ui._sel == i
 			if on and (sel or ui._hover == i):
 				card.position.y -= (8.0 if sel else 4.0) * u

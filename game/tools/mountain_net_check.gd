@@ -7,6 +7,7 @@ extends SceneTree
 ##   A（1 秒〜）  山男の位置を出す（どの画面も同じ所のはず）。つなぐ側が売り場で焚き火セットを買う。
 ##                ホストは、相手の持ち物と財布、山男が見ている人（相手の体のはず）を出す
 ##   B（5 秒〜）  ホストがペグを買う。つなぐ側が同じことを出す
+##   D（12 秒〜） ホストがつなぐ側にボタンを渡し、つなぐ側が山師の売り場の「連れ」の札からカエルを買う。ホストの画面で相手がカエルを連れ、山師が相手を向くか
 ##   C（9 秒〜）  つなぐ側が、財布が足りなくなるまで買ってから、もう 1 つ買おうとする。ホストが断り、持ち物が増えないか
 
 const Goods := preload("res://mountain_goods.gd")
@@ -18,7 +19,21 @@ var mm: Node3D
 var _t0 := 0
 
 
+## あなたの保存（player.gd の TAG_FILE。ミニオンを買うと書かれる）を、終わりに元へ戻す（確かめで代表の保存を変えない）
+const TAG_FILE := "user://my_tag.cfg"
+var _saved_tag := ""
+
+
+func _restore_tag() -> void:
+	if _saved_tag != "":
+		var f := FileAccess.open(TAG_FILE, FileAccess.WRITE)
+		if f:
+			f.store_string(_saved_tag)
+
+
 func _initialize() -> void:
+	if FileAccess.file_exists(TAG_FILE):   # 始めの保存を預かる（ホストもつなぐ側も同じファイル）
+		_saved_tag = FileAccess.get_file_as_string(TAG_FILE)
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
@@ -117,4 +132,23 @@ func _run() -> void:
 		await _wait(2.5)
 		_report_other()
 	await _wait(1.0)
+	# D: つなぐ側が、山師の売り場の「連れ」の札からカエルを買う（お金はホストが渡す）。ホストの画面で相手がカエルを連れ、山師が相手を向くか
+	var o := _other()
+	if host:
+		main.craft.send({"kind": "earn", "who": int(o.get("id")), "n": 60, "at": o.global_position})
+		await _wait(3.0)
+		var who: int = int(o.get("id"))
+		_say("相手 %d が持っているミニオン frog %s / 連れている %s / 山師が見ている人: %s" % [who, main.craft.pal_owned(who, "frog"),
+				main.craft.pal_worn(who, "pet"), _looking_at()])
+	else:
+		await _wait(1.0)
+		main.mountain_ui.open()
+		main.mountain_ui.open_pets()
+		var ui = main.minion_ui
+		_say("カエルを買う: %s" % ui.choose(ui.keys().find("frog")))
+		ui.close()
+		await _wait(1.5)
+		_say("自分が連れている %s" % main.craft.pal_worn(p.id, "pet"))
+	await _wait(1.0)
+	_restore_tag()
 	quit()

@@ -666,10 +666,11 @@ func button(what: String, at: Vector3, frame: int, tier := 0) -> void:
 const SHOP_SOUNDS := {
 	"patch": ["pay_button", 6, "till_patch", "wrap_paper"],    # パッチワークのおじいさんの番台（型紙と布）
 	"snow": ["pay_snowball", 3, "till_snow", "wrap_bag"],      # 雪だるまの番台（ペレット。お代は雪玉）
-	"pal": ["pay_button", 6, "till_pal", "wrap_tissue"],       # 2 階の衣装掛けの横の売り台（頭・肩の小物とミニオン）
+	"pal": ["pay_button", 6, "till_pal", "wrap_tissue"],       # 2 階の衣装掛けの横の売り台（頭・肩の小物）
+	"mountain": ["pay_button", 6, "till_patch", "wrap_paper"], # 1 階の山師（山の道具とミニオン）
 }
 ## 店の所（ロッジの中の節の名前）。見つからなければ買った人の所で鳴らす
-const SHOP_NODES := {"patch": "Bandai_counter_patch", "snow": "Bandai_counter_indigo", "pal": "PalStall"}
+const SHOP_NODES := {"patch": "Bandai_counter_patch", "snow": "Bandai_counter_indigo", "pal": "PalStall", "mountain": "MountainMan"}
 const PAY_GAP := 0.075     # 払いの粒の間 (s)。sound/gen/shop.py の PAY_GAP と同じ
 const TILL_AFTER := 0.12   # 最後の払いからレジまで
 const WRAP_AFTER := 0.55   # レジから包むまで
@@ -691,7 +692,9 @@ func _on_craft(ev: Dictionary) -> void:
 		paid = Craft.price(ev.item)
 	var shop := "patch"
 	if kind == "pal_buy":
-		shop = "pal"
+		shop = "mountain" if preload("res://pals.gd").slot_of(String(ev.get("key", ""))) == "pet" else "pal"   # ミニオンは山師から買う
+	elif kind == "buy" and ev.get("item") is Dictionary and preload("res://mountain_goods.gd").has(String(ev.item.get("kind", ""))):
+		shop = "mountain"   # 山師の棚の道具
 	elif "food" in kind or "pellet" in kind:
 		shop = "snow"
 	var hub := world.get_node_or_null("Emotes")
