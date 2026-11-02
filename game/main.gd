@@ -73,6 +73,7 @@ const MountainUi := preload("res://mountain_ui.gd")
 const MountainGoods := preload("res://mountain_goods.gd")
 const SnowmanShop := preload("res://snowman_shop.gd")
 const CookStation := preload("res://cook_station.gd")
+const MenuBoard := preload("res://menu_board.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const KotatsuFuton := preload("res://kotatsu_futon.gd")
@@ -1043,6 +1044,12 @@ func _furnish_lodge() -> void:
 		kitchen_slot.add_child(set_node)
 		_put_kitchen(kitchen_slot)
 		_put_snowman(kitchen_slot)
+		# 装置それぞれの真上に、その装置を通る料理の品書きの板（menu_board.gd）
+		var menu := MenuBoard.new()
+		menu.name = "MenuBoard"
+		menu.stations = KITCHEN
+		menu.lodge = lodge
+		kitchen_slot.add_child(menu)
 	# 2 階の掘りごたつ: 穴の目印に、こたつと座布団 8 枚の組（座布団の座る所の目印 sit_* は seats.gd が拾う）。
 	# 屋根の下で日は届かないので、太陽の影は落とさない（影の地図に 8 組を描き直さない）
 	for i in KOTATSU_SETS.size():
