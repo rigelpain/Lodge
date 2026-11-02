@@ -79,8 +79,9 @@ const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
 const LanternRack := preload("res://lantern_rack.gd")
 const LanternUi := preload("res://lantern_ui.gd")
-## ランタン掛け（lantern_rack.gd）を、おじいさんの番台（BANDAI の counter_patch）からどれだけ横に置くか（番台の座標, m。+X は番台の右の端の側）
-const LANTERN_RACK_AT := Vector3(-2.0, 0.0, 0.1)
+## ランタン掛け（lantern_rack.gd）を、おじいさんの番台（BANDAI の counter_patch）からどれだけ横に置くか（番台の座標, m。+X は番台の右の端の側）。
+## ミシンを番台へ寄せた（2026-11-02）ので、番台の北（ミシンとのあいだ）から南（玄関の側）へ移した
+const LANTERN_RACK_AT := Vector3(2.0, 0.0, 0.1)
 const Damp := preload("res://damp.gd")
 const Badges := preload("res://badges.gd")
 const Companions := preload("res://companions.gd")
@@ -104,7 +105,7 @@ const DYE_VAT_AT := Vector3(-2.45, 0.0, 0.35)
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
 ## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
 ## （2026-10-31 代表の並び: design/lodge-layout/layout-daihyo.json）
-const SHOP_AT := Vector3(-5.3, 0, -0.1)
+const SHOP_AT := Vector3(-3.3, 0, -0.1)   # ミシンを南へ 2 m 寄せた（2026-11-02）ので、番台の後ろの立つ所は変えず、目印から南へ 5.3 → 3.3 m
 const SHOP_YAW := PI          # 真東（番台の向こうの客）を向く
 ## ご飯係の雪だるまの冷蔵庫の立つ所（厨房の目印 slot_food_kitchen の座標。厨房の奥の並びのいちばん西＝炉の右。
 ## 厨房の装置は props/build_scenes.py）と大きさ（ミシンと同じくらいの高さ 3.7 m）。当たり判定の箱は倍率 1 の幅・高さ・奥行き
@@ -536,10 +537,10 @@ func _ready() -> void:
 ## 山の道具の売り子（mountain_man.gd）: ロッジの 1 階の、大きなミシンの奥（北）の空き
 ## （2026-11-02 代表「山師ロッジの中に入れてあげよう。ミシンの奥空いてるし。」）。ミシンと同じ列（x）に、同じ向き（東。
 ## 客は東の通り道の側から話しかける）で立ち、棚は左手（北）に並べる（同日 代表「ミシンと同じ並び、同じ向きが良いです」）。
-## ミシンの北の端（y -1.4 ほど）から 2 m あけ、ミシンを使う人と山男に話しかける人が並ばないようにする。
+## ミシンの北の端から 3 m ほどあけ（ミシンは 2026-11-02 に南へ 2 m 寄せた）、後ろにヤク、左手（北）にソリの屋台とミニオンの柵と遊び場。
 ## [ロッジの座標 (x, y)（lodge/dims.py。y が北）, 正面の向き（度。0 = 南、90 = 東。SLOTS と同じ）, 棚の側（1 右手、-1 左手）]。
 ## 確かめ用に --mountain-at=x,y,度,棚の側 で置き直せる
-const MOUNTAIN_MAN := [Vector2(-18.3, 0.6), 90.0, -1]
+const MOUNTAIN_MAN := [Vector2(-18.3, -0.9), 90.0, -1]   # ミシンを南へ寄せたぶん、山師も 1.5 m 南へ（北に出店と柵の場所をとる）
 
 func _put_mountain_man() -> void:
 	MountainGoods.all_on = args.has("shelf-all")   # 確かめ用: まだ売っていない品目も並べて売る
@@ -1030,6 +1031,8 @@ func _furnish_lodge() -> void:
 	# 見た目の大きさの当たりの箱つき（人がすり抜けず、三人称のカメラも中に埋まらない）
 	var vend_colors := ["red", "blue", "red", "red", "blue", "red", "blue"]   # 風除室は西が赤、東が青
 	for k in range(1, 8):
+		if k == 1:   # 西のガラスの壁ぎわの 1 台は、山師のミニオンの柵と遊び場に場所をゆずってやめた（2026-11-02 代表「自販機は撤去でもいいですよ」）
+			continue
 		var v: Node3D = put.call("slot_vending_%d" % k, "res://props/misc/vending_%s.glb" % vend_colors[k - 1], Vector3.ZERO)
 		if v:
 			v.scale = Vector3.ONE * 0.5

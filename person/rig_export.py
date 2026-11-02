@@ -349,3 +349,45 @@ def export(doll, folder, px=2048):
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_yup=True,
                               export_skins=True, export_animations=False, export_apply=False)
     print("wrote", path)
+
+
+def export_static(name, folder, px=2048):
+    """骨のない置き物（山師の後ろのヤクなど）: 形をまとめて、色と凹凸とくぼみの陰を焼き、glb に書き出す"""
+    sc = bpy.context.scene
+    for ob in list(sc.objects):
+        if ob.type in ("LIGHT", "CAMERA") or ob.name.startswith("Plane"):
+            bpy.data.objects.remove(ob)
+    parts = [realize(ob) for ob in list(sc.objects) if ob.type in ("MESH", "CURVE", "META")]
+    parts = [ob for ob in parts if len(ob.data.vertices) > 0]
+    bpy.ops.object.select_all(action="DESELECT")
+    for ob in parts:
+        ob.select_set(True)
+    bpy.context.view_layer.objects.active = parts[0]
+    bpy.ops.object.join()
+    ob = bpy.context.view_layer.objects.active
+    ob.name = name
+    imgs = bake_textures(ob, name, px)
+    m = bpy.data.materials.new(name + "_baked")
+    m.use_nodes = True
+    t = m.node_tree
+    b = t.nodes["Principled BSDF"]
+    tc = t.nodes.new("ShaderNodeTexImage")
+    tc.image = imgs["color"]
+    t.links.new(tc.outputs["Color"], b.inputs["Base Color"])
+    tn = t.nodes.new("ShaderNodeTexImage")
+    tn.image = imgs["normal"]
+    nm = t.nodes.new("ShaderNodeNormalMap")
+    t.links.new(tn.outputs["Color"], nm.inputs["Color"])
+    t.links.new(nm.outputs["Normal"], b.inputs["Normal"])
+    b.inputs["Roughness"].default_value = 0.9
+    b.inputs["Specular IOR Level"].default_value = 0.2
+    ob.data.materials.clear()
+    ob.data.materials.append(m)
+    for p in ob.data.polygons:
+        p.material_index = 0
+    os.makedirs(folder, exist_ok=True)
+    bpy.ops.object.select_all(action="DESELECT")
+    ob.select_set(True)
+    path = os.path.abspath(os.path.join(folder, name + ".glb"))
+    bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_yup=True, export_animations=False)
+    print("wrote", path)
