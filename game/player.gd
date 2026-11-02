@@ -812,6 +812,7 @@ func _pose_doll() -> void:
 		doll.sit_stage = _sit_stage
 		doll.seat_drop = st.pos.y - st.floor
 		doll.seat_edge = st.edge
+	doll.seat_soft = mode == Mode.SIT and seats.seat(seat_i).kind == "zabuton"
 	if mode == Mode.DRUM:
 		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
 		doll.facing = pl.face

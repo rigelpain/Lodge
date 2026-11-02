@@ -237,6 +237,7 @@ func _pose_doll() -> void:
 	doll.sit_stage = int(_s.get("ss", 0))
 	doll.seat_drop = float(_s.get("sd", 0.45))
 	doll.seat_edge = float(_s.get("se", 0.2))
+	doll.seat_soft = bool(_s.get("so", false))
 	doll.spin_axis = Vector3.ZERO
 	doll.drum_fit = 1.0
 	if _drum:   # 乾燥機の中: 届いた姿でなく、この画面の乾燥機のコマで（player.gd の _pose_doll と同じ）

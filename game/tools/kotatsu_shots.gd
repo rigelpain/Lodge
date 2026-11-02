@@ -2,7 +2,7 @@ extends SceneTree
 ## ロッジの 2 階の掘りごたつを、決まった所から昼と夜に撮り、1 コマに描く三角形の数と描く回数を出す（確かめ用）。
 ##   Godot --path game --resolution 1280x720 -s res://tools/kotatsu_shots.gd -- --no-sound --dir=/path/shots [--tag=after]
 ##     [--sets=patch,indigo,...（8 卓の柄を差し替える）] [--pendant=drum|lantern|cone（吊り灯りの形を差し替える）] [--sit]
-##     [--hours=13,22] [--views=wide,near,row,lamp]
+##     [--hours=13,22] [--views=wide,near,row,lamp] [--kinds=musha,robo,...（--sit で座らせる人形。席の順に）]
 ## --sit: 南の列の西から 2 卓目のこたつの座布団に、7 体の人形を座らせる。
 ## 三角形の数は本体の画面だけ（360 の小窓は止める）。場所はロッジの座標（lodge/dims.py の x 東, y 北, 高さ。Godot ではロッジの (x, 高さ, -y)）。2 階の畳の面は 6.5
 
@@ -15,6 +15,14 @@ const VIEWS := [
 	["near", Vector3(2.3, -2.6, ZT + 1.45), Vector3(-0.36, 1.0, ZT + 0.1), 55.0],      # 南の列の 2 卓目を南東から
 	["row", Vector3(16.6, 3.0, ZT + 1.6), Vector3(-8.0, 2.6, ZT + 0.2), 60.0],        # 東の端から 2 列を見通す
 	["lamp", Vector3(2.6, -1.8, ZT + 1.5), Vector3(-0.36, 1.0, ZT + 2.7), 50.0],      # 南の列の 2 卓目の吊り灯りを見上げる
+	# 天板と布団の重なりを見る（南の列の 2 卓目）
+	["side", Vector3(-0.36, -1.4, ZT + 0.33), Vector3(-0.36, 1.0, ZT + 0.3), 40.0],   # 南から、天板の高さで真横に
+	["corner", Vector3(0.3, -0.9, ZT + 0.36), Vector3(1.0, 0.6, ZT + 0.3), 35.0],   # 南東の角を、南から天板の高さで（行灯をよける）
+	["above", Vector3(1.5, -1.2, ZT + 1.6), Vector3(-0.36, 1.0, ZT + 0.3), 45.0],     # 南東の斜め上から
+	["eye", Vector3(-0.36, -0.75, ZT + 0.75), Vector3(-0.36, 1.0, ZT + 0.3), 60.0],   # 南の座布団に座った目の高さ
+	["lap", Vector3(-2.4, -2.3, ZT + 1.2), Vector3(-0.36, 0.0, ZT + 0.15), 38.0],     # 南の列の座布団（--sit の人形の膝）を西から
+	["lap_e", Vector3(1.7, -2.3, ZT + 1.2), Vector3(-0.36, 0.0, ZT + 0.15), 38.0],    # 同じく東から
+	["lap_sw", Vector3(-2.0, -1.0, ZT + 0.8), Vector3(-1.0, 0.2, ZT + 0.2), 40.0],    # 南の列の西の席の膝を、南西から近くで
 ]
 const SIT_AT := Vector2(-0.363, 1.0)   # 座らせるこたつ（南の列の西から 2 卓目）のまんなか
 
@@ -122,7 +130,9 @@ func _swap_sets(pats: PackedStringArray) -> void:
 		for c in ks.get_children():
 			if String(c.name).begins_with("Kotatsu"):   # 行灯は残す
 				c.queue_free()
-		ks.add_child((load("res://props/sets/kotatsu_lodge_%s.tscn" % pats[i]) as PackedScene).instantiate())
+		var kset := (load("res://props/sets/kotatsu_lodge_%s.tscn" % pats[i]) as PackedScene).instantiate()
+		ks.add_child(kset)
+		preload("res://kotatsu_futon.gd").attach(kset)
 
 
 func _swap_pendants(kind: String) -> void:
@@ -149,14 +159,15 @@ func _sit_dolls() -> void:
 		if st.kind == "zabuton" and st.pos.distance_to(center) < 3.0:
 			mine.append(i)
 	var k := 0
+	var kinds: Array = Array(String(args.kinds).split(",")) if args.has("kinds") else Doll.KINDS
 	for i in mine:
-		if k >= Doll.KINDS.size():
+		if k >= kinds.size():
 			break
 		var st: Dictionary = seats.seat(i)
 		var host := Node3D.new()
 		root.add_child(host)
 		var d := Doll.new()
-		d.kind = Doll.KINDS[k]
+		d.kind = kinds[k]
 		host.add_child(d)
 		d.act = Doll.Act.SIT
 		d.sit_stage = 2
@@ -166,6 +177,8 @@ func _sit_dolls() -> void:
 		d.seat_drop = st.pos.y - st.floor
 		if "seat_edge" in d:
 			d.seat_edge = st.get("edge", 0.2)
+		if "seat_soft" in d:
+			d.seat_soft = true
 		d.set("_next_breath", 100000)
 		k += 1
 	print("座らせた人形: %d 体（席 %d 個）" % [k, mine.size()])

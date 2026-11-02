@@ -75,6 +75,7 @@ const SnowmanShop := preload("res://snowman_shop.gd")
 const CookStation := preload("res://cook_station.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
+const KotatsuFuton := preload("res://kotatsu_futon.gd")
 const Wardrobe := preload("res://wardrobe.gd")
 const WardrobeUi := preload("res://wardrobe_ui.gd")
 const PaperLady := preload("res://paper_lady.gd")
@@ -1049,6 +1050,7 @@ func _furnish_lodge() -> void:
 		if ks:
 			var kset := (load("res://props/sets/kotatsu_lodge_%s.tscn" % KOTATSU_SETS[i]) as PackedScene).instantiate()
 			ks.add_child(kset)
+			KotatsuFuton.attach(kset)   # 座布団に座った人の側の布団をめくって、膝に掛ける
 			var andon := Props.make("res://props/furniture/andon.glb")   # 灯りの目印に暖色の灯り（影なし）
 			andon.scale = Vector3.ONE * 0.5
 			andon.position = KOTATSU_ANDON * Vector3(1.0 if i % 2 else -1.0, 0, 1.0 if i < 4 else -1.0)
