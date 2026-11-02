@@ -304,6 +304,8 @@ def snowman():
 W, D, H, Z0 = 1.1, 0.85, 2.0, 0.07     # 幅・奥行き・高さ・足の高さ
 CW, CY0, CZ0, CZ1 = W / 2 - 0.075, -D / 2 + 0.075, 0.2, H - 0.075   # 中（半幅・奥の壁・床・天井）
 NB = 7.0                                # 外板の角の丸み（超楕円の次数。小さいほど丸い）
+# 扉の開き（度）。前の面より後ろへ回り込み、左の側面に沿うくらい（2026-11-02 代表「220°くらい開いててくれないと圧迫感を感じる」）
+DOOR_OPEN = 220.0
 BC = Vector((0, 0, Z0 + (H - Z0) / 2))
 BH = Vector((W / 2, D / 2, (H - Z0) / 2))
 
@@ -317,7 +319,7 @@ def body_y(x, z, lift=0.0):
 def fridge():
     """昔の大きな冷蔵庫: 角の丸い箱をミントのフェルトでくるみ、口の縁に玉縁。扉は開けっぱなし（蝶番は前から見て左。2026-11-01 代表: 扉は厨房の装置の並びをふさがない側へ開く）。
     中は白い裏地で、上に冷凍の小部屋（ふたが開いて霜）、奥の壁に冷やす管のジグザグの縫い目。床から綿の冷気が少し流れ出る"""
-    P = K.Parts("snowman_fridge", kind="fridge", box=[W, H, D], door_open=100.0)
+    P = K.Parts("snowman_fridge", kind="fridge", box=[W, H, D], door_open=DOOR_OPEN)
     C.superellipsoid(P.m("felt_mint"), BC, BH, n_xy=NB, n_z=NB, cuts=K.cuts(16, 9))
     # 口の玉縁と、縁のなみ縫い
     cz, ch = (CZ0 + CZ1) / 2, (CZ1 - CZ0) / 2
@@ -466,7 +468,7 @@ def fridge():
                 K.ring(Dp, "felt_red", (x, yi - 0.085, zt + 0.163), 0.02, 0.003, n=16)
     Dp.finish(fuzz=0.003)
     shift_part(Dp, (W / 2 - 0.012, D / 2 + 0.04, 0.0), P.root)
-    Dp.root.rotation_euler.z = math.radians(-100)
+    Dp.root.rotation_euler.z = math.radians(-DOOR_OPEN)
     return P.root, [Dp.root]
 
 
@@ -517,7 +519,7 @@ else:
         "front": ((0.0, 4.8, 1.25), (0.0, 0.0, 1.0), 35),
         "quarter": ((2.7, 3.7, 1.65), (-0.1, 0.1, 0.95), 35),
         "side": ((4.4, 0.9, 1.15), (0.0, 0.1, 0.95), 35),
-        "door": ((0.4, 2.4, 1.35), (-0.85, 0.8, 1.0), 35),
+        "door": ((2.3, 2.1, 1.35), (0.95, 0.15, 1.0), 35),
         "face": ((0.45, 1.8, 1.4), (0.0, 0.1, 1.2), 40),
         "s_front": (tuple(s + Vector((0, 3.4, 0.9))), tuple(s + Vector((0, 0, 0.72))), 40),
         "s_quarter": (tuple(s + Vector((2.0, 2.6, 1.2))), tuple(s + Vector((0, 0, 0.72))), 40),
