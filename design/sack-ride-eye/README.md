@@ -27,4 +27,4 @@ N で米袋を出して乗ると、腰を下ろすコマ（N から 0.33〜0.6 �
 - `fp-still-before-after.png` 一人称、止まって N
 - `fp-still-nod-compare.png` 止まって乗るときの、直す前・案 A・案 B
 - `tp-run-before-after.png` 三人称、走りながら N（変わらないことの確かめ）
-- `fp-slope-after.png` 直した後、下り坂（20°）で止まって N。前を見たままなので、袋は画面の下に入らない
+- `fp-slope-after.png` 直した後、下り坂（20°）で止まって N。前を見たままなので、袋は画面の下に入らない（代表の確認: このままでよい）
