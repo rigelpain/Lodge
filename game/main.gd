@@ -453,6 +453,18 @@ func _ready() -> void:
 		mountain_ui.player = player
 		mountain_ui.shop = mountain_man
 		add_child(mountain_ui)
+		# 山師が育てているミニオンの画面: pals_ui.gd を連れの段だけで開く（2 階の売り台の画面とは別のもの。2 階の売り台が
+		# ほかの店に替わっても、ここは pals_ui.gd を直に読むので残る）
+		minion_ui = preload("res://pals_ui.gd").new()
+		minion_ui.name = "MinionUi"
+		minion_ui.main = self
+		minion_ui.craft = craft
+		minion_ui.player = player
+		minion_ui.tabs = ["pet"]
+		minion_ui.board_color = MountainUi.FELT
+		minion_ui.lead_tab = "mountain"   # 段の札の上の、山の道具の売り場へ戻る札
+		minion_ui.lead_pressed.connect(func(): mountain_ui.open())
+		add_child(minion_ui)
 		if args.get("spawn", "") == "mountain" and mountain_man:   # --spawn=mountain: 山男の前から始める
 			var at := mountain_man.to_global(Vector3(0, 0.1, -1.9))
 			player.global_position = at
@@ -485,16 +497,6 @@ func _ready() -> void:
 		pals_ui.player = player
 		pals_ui.tabs = ["head", "shoulder"]   # ミニオンは山師の売り物（2026-11-02 代表「ミニオンは山師が育てているのを買う感じにしてほしい」）
 		add_child(pals_ui)
-		minion_ui = PalsUi.new()
-		minion_ui.name = "MinionUi"
-		minion_ui.main = self
-		minion_ui.craft = craft
-		minion_ui.player = player
-		minion_ui.tabs = ["pet"]
-		minion_ui.board_color = MountainUi.FELT
-		minion_ui.lead_tab = "mountain"   # 段の札の上の、山の道具の売り場へ戻る札
-		minion_ui.lead_pressed.connect(func(): mountain_ui.open())
-		add_child(minion_ui)
 		if args.get("spawn", "") == "pals" and pal_stall:   # --spawn=pals: 売り台の前から始める
 			var at := pal_stall.to_global(Vector3(0, 0.1, 1.5))
 			player.global_position = at
