@@ -20,7 +20,7 @@
 - `game/hearth_nook.gd` が目印に暖炉と家具を置き、外形の箱の当たりを付ける。ラグの毛足はここで作る（同じ楕円を 16 層重ねて毛糸の房を立てる。描くのは 1 回）
 - 席（`game/seats.gd`、F で座る）: ソファは 4 人ずつ並ぶ、揺り椅子は座りきると前後に揺れる（弓の円の中心まわりに椅子と人形をいっしょに回す。±0.085 rad、2.2 秒で 1 往復。全員の画面で同じコマの時計から）、ビーズクッションは袋がつぶれて沈み、うしろへもたれる
 - 人形の傾きは `doll.gd` の `rock_axis`・`rock`・`rock_at`。つないだ人には `net.gd` の `ra`・`rk`・`rp` で送る
-- 暖炉の火は `game/hearth_fire.gd`（炎 5 つと熾火）。炎は切ったフェルト（代表が焚き火の炎の案 `design/campfire/proposal-flames.jpg` の左から 2 つ目を選んだ。`flame.gd` の `style = "felt"`。焚き火・松明・キャンドルは薄葉紙のまま）。部屋の灯り `light_fire` は範囲 11 m・明るさ 2.0
+- 暖炉の火は `game/hearth_fire.gd`（炎 5 つと熾火）。炎は切ったフェルト（代表が焚き火の炎の案 `design/campfire/proposal-flames.jpg` の左から 2 つ目を選んだ。`flame.gd` の既定の形を `"felt"` に。焚き火・松明・ガス灯・キャンドルもそろえた）。部屋の灯り `light_fire` は範囲 11 m・明るさ 2.0
 - 暖かさと乾く範囲: 暖炉は 9 m（`temperature.gd`・`damp.gd` の `HEARTH_R`。焚き火は 5 m のまま）
 - ロッジでくつろぐ仲間（`--lodge-bots`）は 7 割で暖炉のまわりの席を選び、入り口（`hearth_nook.gd` の `ENTRIES`）を通って内側の席へ回り込む。ペットはラグの暖炉の側で寝る
 
@@ -29,6 +29,7 @@
 | 絵 | 中身 |
 |---|---|
 | `compare-*-day.jpg` `compare-*-night.jpg` | 左が前、右が後。entrance 入口から・plan 真上から・seated 暖炉の前に座った目線・side 南東から・close 火の寄り |
+| `flames-all-felt.jpg` | 切ったフェルトにそろえた炎（上: 焚き火の寄り・焚き火・松明、下: ガス灯・卓のキャンドル・暖炉。夜） |
 | `sit-side-7dolls.jpg` | 7 体（上から kasa・origami・news・robo・musha・ningyo・golem）を、左からソファ・揺り椅子・ビーズクッションに座らせた真横（揺り椅子はいちばんうしろへ揺れた所） |
 
 ## 確かめ
