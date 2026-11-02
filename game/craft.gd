@@ -8,7 +8,8 @@ extends Node
 ## 財布と持ち物はホストが持つ（ここの wallets と bags）。断られた出来事は配らない（send が false を返す）。
 ##
 ## 出来事:
-##   buy    {item}             売り子から買う。item は {kind:"pattern", sled} か {kind:"fabric", fabric}
+##   buy    {item}             売り子から買う。item は {kind:"pattern", sled} か {kind:"fabric", fabric}（おじいさん）、
+##                             山男の棚の品物（mountain_goods.gd の SHELF。焚き火セット・ペグ）。ev に slot が入る
 ##   hand   {slot}             手に持つ物を替える（-1 は素手）
 ##   sew    {pattern, fabric, pattern_slot, fabric_slot}  ミシンの画面で選んだ型紙と布を 1 つずつ使って縫い始める（両方いっしょに使う。ミシンが読む）
 ##   sewn   {sled, fabric, at, yaw, id}  ミシンが縫い上げた。広げた実寸のソリが at に出る
@@ -72,6 +73,7 @@ const Fabrics := preload("res://fabrics.gd")
 const Lantern := preload("res://lantern.gd")
 const Pals := preload("res://pals.gd")
 const Food := preload("res://food.gd")
+const MountainGoods := preload("res://mountain_goods.gd")
 
 ## お金はボタン（snow_buttons.gd）。最初に START_BUTTONS 個（木の何個分）持たせる。米袋の型紙と布はすぐ買えるが、小はまだ（少し滑って稼いでから）
 const START_BUTTONS := 30
@@ -353,10 +355,8 @@ static func price(item: Dictionary) -> int:
 		return PATTERN_PRICE.get(item.get("sled", ""), 99)
 	if item.get("kind") == "fabric":
 		return FABRIC_PRICE
-	if item.get("kind") == "campfire":
-		return preload("res://campfire.gd").PRICE
-	if Peg.is_item(item):
-		return Peg.PRICE
+	if MountainGoods.has(item.get("kind", "")):
+		return MountainGoods.price(item.kind)
 	return 99
 
 
@@ -466,6 +466,8 @@ func _apply(ev: Dictionary) -> bool:
 		"buy":
 			var item: Dictionary = ev.item
 			var cost := price(item)
+			if MountainGoods.has(item.get("kind", "")) and not MountainGoods.sold(item.kind):
+				return false   # 山男の棚で、まだ売っていない品目
 			var stack := _peg_stack(who) if Peg.is_item(item) else -1
 			if wallets[who] < cost or free_slot(who) < 0 and stack < 0:
 				return false

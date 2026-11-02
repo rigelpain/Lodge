@@ -95,8 +95,6 @@ func _ready() -> void:
 	layer = 4
 	for k in Craft.PATTERNS:
 		_goods.append({"kind": "pattern", "sled": k})
-	_goods.append(preload("res://campfire.gd").ITEM.duplicate())   # 焚き火セット（型紙の段の右の端）。本当の売り場は山男の店。できるまでの仮
-	_goods.append(preload("res://peg.gd").item())   # ペグの束（仮: 型紙の段の右の端。本当の売り場は、山の道具を売る山男）
 	for f in Fabrics.ORDER:
 		_goods.append({"kind": "fabric", "fabric": f})
 	_view = View.new()
@@ -222,7 +220,7 @@ func _on_craft(ev: Dictionary) -> void:
 		"buy", "fold":
 			_pop[int(ev.slot)] = 1.0
 			_coin_pop = 1.0 if ev.kind == "buy" else _coin_pop
-			if ev.kind == "buy":
+			if ev.kind == "buy" and ev.item.get("kind", "") in ["pattern", "fabric"]:   # 山男の棚の品物は、山男がうなずく（mountain_man.gd）
 				var sk = main.get("shopkeeper")
 				if sk:
 					sk.sold()

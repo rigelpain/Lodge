@@ -68,6 +68,9 @@ const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
 const CraftUi := preload("res://craft_ui.gd")
 const FoodUi := preload("res://food_ui.gd")
+const MountainMan := preload("res://mountain_man.gd")
+const MountainUi := preload("res://mountain_ui.gd")
+const MountainGoods := preload("res://mountain_goods.gd")
 const SnowmanShop := preload("res://snowman_shop.gd")
 const CookStation := preload("res://cook_station.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
@@ -160,6 +163,8 @@ var kitchen := {}             # 厨房の装置（KITCHEN の名前 → 置い�
 var stations: Array = []      # 厨房の装置の調理の動き（cook_station.gd）
 var snowman_shop: Node        # ご飯係の雪だるま（snowman_shop.gd）
 var food_ui: CanvasLayer      # 雪だるまの食べ物屋の売り場（food_ui.gd）
+var mountain_man: Node3D      # 山の道具の売り子（mountain_man.gd）。玄関を出た所の、山への道の脇
+var mountain_ui: CanvasLayer  # 山男の売り場（mountain_ui.gd）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
@@ -279,6 +284,7 @@ func _ready() -> void:
 	if not args.has("no-lodge"):
 		_make_lodge()
 		_furnish_lodge()
+		_put_mountain_man()
 		seats = Seats.new()
 		seats.name = "Seats"
 		seats.lodge = get_node("Lodge")
@@ -439,6 +445,17 @@ func _ready() -> void:
 		food_ui.player = player
 		food_ui.shop = snowman_shop
 		add_child(food_ui)
+		mountain_ui = MountainUi.new()
+		mountain_ui.main = self
+		mountain_ui.craft = craft
+		mountain_ui.player = player
+		mountain_ui.shop = mountain_man
+		add_child(mountain_ui)
+		if args.get("spawn", "") == "mountain" and mountain_man:   # --spawn=mountain: 山男の前から始める
+			var at := mountain_man.to_global(Vector3(0, 0.1, -1.9))
+			player.global_position = at
+			var to := mountain_man.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if wardrobe:
 			wardrobe.player = player
 		wardrobe_ui = WardrobeUi.new()
@@ -500,6 +517,27 @@ func _ready() -> void:
 		start.main = self
 		start.waiting = waiting
 		add_child(start)
+
+
+## 山の道具の売り子（mountain_man.gd）: ロッジの玄関（風除室）を出て、広場の板張り（ロッジの座標で z 24 まで）を降りた
+## 雪の上の、山への道の右脇（丘への案内板の先。ロッジの座標）。登る前に焚き火セットやペグを買って、そのまま山へ出られる。
+## 道は空ける。正面（-Z）は玄関の方を向く（玄関から出てくる人に見え、道を行く人からも横顔が見える）
+const MOUNTAIN_MAN_AT := Vector2(PATH_X + 5.9, 26.0)
+const MOUNTAIN_MAN_TURN := 0.78   # ロッジの正面の向きから回す (rad)
+
+func _put_mountain_man() -> void:
+	MountainGoods.all_on = args.has("shelf-all")   # 確かめ用: まだ売っていない品目も並べて売る
+	var lodge: Node3D = get_node_or_null("Lodge")
+	if lodge == null:
+		return
+	var p := lodge_to_world(MOUNTAIN_MAN_AT)
+	mountain_man = MountainMan.new()
+	mountain_man.name = "MountainMan"
+	mountain_man.main = self
+	mountain_man.craft = craft
+	mountain_man.position = Vector3(p.x, height(p.x, p.y), p.y)
+	mountain_man.rotation.y = LODGE_YAW + MOUNTAIN_MAN_TURN
+	add_child(mountain_man)
 
 
 ## ロッジの中から運び出せない大きさのソリ（craft.gd の OUT_FRONT）を、縫ったときに出す所: 玄関前の広場の先の雪の上。

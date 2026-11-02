@@ -13,6 +13,7 @@ extends RefCounted
 const Icons := preload("res://hud_icons.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Peg := preload("res://peg.gd")
+const MountainGoods := preload("res://mountain_goods.gd")
 
 const KRAFT := Color(0.84, 0.72, 0.52)       # 型紙のクラフト紙
 const COIN := Color(0.70, 0.50, 0.30)        # 木のボタン
@@ -31,6 +32,14 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 			_pattern(ci, Vector2(-8, 2), 0.7, "mid", a, -0.12)
 			coin(ci, Vector2(14, 14), 9.0, a)
 			coin(ci, Vector2(20, 2), 7.0, a)
+		"mountain":   # 山男の売り場: 焚き火セットとボタン
+			var o := Icons._o
+			var s := Icons._s
+			_at(o + Vector2(-6, 0) * s, 64.0 * s * 0.8)
+			MountainGoods.draw(ci, {"kind": "campfire"}, a)
+			Icons._o = o
+			Icons._s = s
+			coin(ci, Vector2(18, 14), 9.0, a)
 		"fold":
 			_folding(ci, a, true)
 		"unfold":
@@ -98,6 +107,9 @@ static var _tex := {}   # 料理の絵（パス → Texture2D）
 ## 持ち物・品物の絵を center に size px で
 static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a := 1.0) -> void:
 	_at(center, size)
+	if MountainGoods.has(it.get("kind", "")):   # 山男の棚の品物（焚き火セット・ペグ）
+		MountainGoods.draw(ci, it, a)
+		return
 	match it.get("kind", ""):
 		"food":   # 雪だるまの店のペレットか、できあがった料理（Blender で描いた絵。food.gd）
 			var Food := preload("res://food.gd")
@@ -110,12 +122,8 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 				ci.draw_texture_rect(t, Rect2(center - Vector2(s, s) / 2.0, Vector2(s, s)), false, Color(1, 1, 1, a))
 		"pattern":
 			_pattern(ci, Vector2.ZERO, 1.0, it.get("sled", "mid"), a)
-		"peg":   # ペグの束（絵は peg.gd）
-			Peg.icon(ci, it, a)
 		"fabric":
 			_fabric(ci, Vector2.ZERO, 1.0, Fabrics.color(it.get("fabric", "red")), a)
-		"campfire":
-			preload("res://campfire.gd").icon(ci, Vector2.ZERO, 1.0, a)
 		"folded":
 			_folded(ci, Vector2.ZERO, it.get("sled", "mid"), Fabrics.color(it.get("fabric", "red")), a)
 			# 包みの面に貼った名札（手に持った包みと同じ並び）。窓に、広げた姿がくるくる回る
@@ -136,6 +144,8 @@ const DISH_NAMES := {"onigiri": "おにぎり", "taiyaki": "たい焼き", "niku
 
 
 static func item_name(it: Dictionary) -> String:
+	if MountainGoods.has(it.get("kind", "")):
+		return MountainGoods.item_name(it)
 	var sled: String = SLED_NAMES.get(it.get("sled", "mid"), "ソリ")
 	var fab: String = FABRIC_NAMES.get(it.get("fabric", ""), "")
 	match it.get("kind", ""):
@@ -147,10 +157,6 @@ static func item_name(it: Dictionary) -> String:
 			if it.get("sled") == "sack":
 				return "畳んだ米袋" + ("（%s）" % fab if fab != "" else "")
 			return "畳んだ%s（%s）" % [sled, fab] if fab != "" else "畳んだ" + sled
-		"campfire":
-			return preload("res://campfire.gd").NAME
-		"peg":
-			return Peg.item_name(it)
 		"food":
 			var dish: String = DISH_NAMES.get(it.get("dish", ""), "料理")
 			return dish if preload("res://food.gd").done(it) else "%sのもと" % dish
@@ -597,14 +603,14 @@ static func menu(ci: CanvasItem, r: Rect2) -> void:
 			Icons.CAP, 2.4, 9.0, 6.0, 0.8, true)
 	var w := r.size.x
 	var h := r.size.y
-	var big := h * 0.34
+	var big := h * 0.40
 	var coin_r := h * 0.032
-	for i in 5:   # 型紙 4 つと、右の端に焚き火セット
-		var it := {"kind": "pattern", "sled": ["sack", "small", "mid", "large"][i]} if i < 4 else {"kind": "campfire"}
-		var cx := r.position.x + w * (0.115 + 0.192 * i)
+	for i in 4:
+		var kind: String = ["sack", "small", "mid", "large"][i]
+		var cx := r.position.x + w * (0.14 + 0.24 * i)
 		var cy := r.position.y + h * 0.26
-		item(ci, it, Vector2(cx - big * 0.22, cy), big * (0.8 if i == 4 else 1.0))
-		price(ci, Vector2(cx + big * 0.36, cy), preload("res://craft.gd").price(it), coin_r)
+		item(ci, {"kind": "pattern", "sled": kind}, Vector2(cx - big * 0.22, cy), big)
+		price(ci, Vector2(cx + big * 0.36, cy), preload("res://craft.gd").PATTERN_PRICE[kind], coin_r)
 	var small := h * 0.30
 	for i in Fabrics.ORDER.size():
 		var cx := r.position.x + w * (0.1 + 0.16 * i)
