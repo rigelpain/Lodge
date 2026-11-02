@@ -12,7 +12,7 @@ import bpy
 HEX = {
     "chink": "EFE6D2",   # 丸太の継ぎ目に詰めた綿
     "log": "7E5535", "log_cap": "A97F4F", "post": "6F4628", "frame": "EDE1C9", "board": "C8A26C",
-    "door": "6E4A30", "deck": "B99465", "rail": "A97F4F", "stone": "CDC5B8", "roof": "283268",
+    "door": "6E4A30", "deck": "B99465", "tread": "B99465", "rail": "A97F4F", "stone": "CDC5B8", "roof": "283268",
     "snow": "F6F7FA", "glass": "B9CBE3", "metal": "3A2A1E", "dark": "1A1410", "tatami": "D9D2A8",
     "cushion": "C98A67", "quilt": "B45A4A", "paper": "F5D6A0", "felt_red": "B45A4A",
     "felt_blue": "4C6FA8", "felt_green": "7C9A5C", "felt_yellow": "D7A24A", "tree": "3E5C48",
@@ -377,6 +377,8 @@ def make(role, look):
         n = wood(role, HEX[role], along="Z", scale=12.0)
     elif role in ("deck", "floor", "ceiling"):
         n = wood(role, HEX[role], along="X", scale=12.0, planks=True)
+    elif role == "tread":   # 外階段の段板・踊り場・ミニテラス: 板が東西に通る
+        n = wood(role, HEX[role], along="Y", scale=12.0, planks=True)
     elif role == "stone":
         n = stone()
     elif role == "snow":

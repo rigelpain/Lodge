@@ -22,6 +22,7 @@ const LODGE_HALF := Vector2(21.8, 12.7)   # ロッジ 1 階の半分の幅と奥
 const VEST := Vector3(-13.4, 0.0, 15.2)   # 風除室の中心（glb の座標。南＝+Z が正面）
 const VEST_HALF := Vector2(4.0, 2.5)
 const STRIDE := 2.0             # 一歩の長さ (m)
+const STEP_FOOT := 0.13         # ロッジの当たりのこの高さ（ロッジの座標）より下は、段の外の雪の上（いちばん下の段の上面は 0.15）
 
 var world: Node3D
 var sled: RigidBody3D
@@ -832,7 +833,7 @@ func _push_name(who: Node3D) -> String:
 
 ## 足もとが木の床か（ロッジの当たり判定 lodge_collision.glb の上: 中の床・風除室・玄関前の広場・外階段・テラス・内階段）。
 ## 足もとから下へ光線を落とし、当たった物がロッジの下にあれば木。雪の丘（高さの地図）や外の物の上なら雪。
-## ソリ・米袋（動く体）は通り抜けて、その下の床を見る（米袋に乗って蹴る・引きずられるときの足は、袋の横の床に着く）。
+## 段の坂の、見た目のいちばん下の段より外の裾（STEP_FOOT より低い所）は雪。ソリ・米袋（動く体）は通り抜けて、その下の床を見る（米袋に乗って蹴る・引きずられるときの足は、袋の横の床に着く）。
 ## 光線が何にも当たらない（跳んでいる・通信の体が少し浮いている）ときは、ロッジの中なら木、外なら雪
 func on_wood(who: Node3D) -> bool:
 	return surface_at(who.global_position, who) == "wood"
@@ -853,7 +854,10 @@ func surface_at(at: Vector3, skip: Node3D = null) -> String:
 		if hit.collider is RigidBody3D or hit.collider is CharacterBody3D:   # ソリ・人は通り抜ける
 			q.exclude = q.exclude + [hit.rid]
 			continue
-		return "wood" if lodge.is_ancestor_of(hit.collider) else "snow"
+		if not lodge.is_ancestor_of(hit.collider):
+			return "snow"
+		# 外まわりの段の当たりは段鼻を通る坂なので、いちばん下の段（高さ FL1 / 3）より外の裾は雪の上（見た目と同じ範囲）
+		return "wood" if lodge.to_local(hit.position).y > STEP_FOOT else "snow"
 	return "wood" if _zone_of(at) == 2 else "snow"
 
 
