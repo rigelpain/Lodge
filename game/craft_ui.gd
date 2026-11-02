@@ -96,6 +96,7 @@ func _ready() -> void:
 	for k in Craft.PATTERNS:
 		_goods.append({"kind": "pattern", "sled": k})
 	_goods.append(preload("res://campfire.gd").ITEM.duplicate())   # 焚き火セット（型紙の段の右の端）。本当の売り場は山男の店。できるまでの仮
+	_goods.append(preload("res://peg.gd").item())   # ペグの束（仮: 型紙の段の右の端。本当の売り場は、山の道具を売る山男）
 	for f in Fabrics.ORDER:
 		_goods.append({"kind": "fabric", "fabric": f})
 	_view = View.new()
@@ -1053,7 +1054,7 @@ class View extends Control:
 			var cy := r.position.y + (40.0 if pattern else 320.0) * u
 			var card := Rect2(cx, cy, cw, ch)
 			var price := Craft.price(it)
-			var can := price <= coins and not full
+			var can: bool = price <= coins and (not full or it.kind == "peg" and craft._peg_stack(who) >= 0)   # ペグは持っている束に足せる
 			var sel: bool = ui._sel == i
 			var hov: bool = ui._hover == i
 			if sel or hov:
@@ -1085,7 +1086,8 @@ class View extends Control:
 		var bs := 150.0 * u
 		var bc := Vector2(rx + rw / 2.0 + shake, r.position.y + 420.0 * u)
 		ui._buy_rect = Rect2(bc - Vector2(bs, bs) / 2.0, Vector2(bs, bs))
-		var ready: bool = ui._sel >= 0 and Craft.price(ui._goods[ui._sel]) <= coins and not full
+		var ready: bool = ui._sel >= 0 and Craft.price(ui._goods[ui._sel]) <= coins \
+				and (not full or ui._goods[ui._sel].kind == "peg" and craft._peg_stack(who) >= 0)
 		var big := 1.06 if ui._hover_btn == "buy" else 1.0
 		Icons.screen()
 		Icons.patch(self, Icons.circ(bc, bs * 0.5 * big, 28), Icons.RED if ready else Icons.RED.lerp(Icons.PAPER_EDGE, 0.6), 1.0, true, Icons.CAP)

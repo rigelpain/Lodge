@@ -423,6 +423,11 @@ func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			_hint("pull", ["W"], "pull")
 			_hint("letgo", ["F"], "release")
 		Player.Mode.RIDE:
+			var pg = p.peg_near() if p.has_method("peg_near") else null
+			if pg:   # ペグで留めたソリに乗って休んでいる: 滑るには F でペグを抜く
+				_hint("unpeg", ["F"], "unpeg", pg.peg.global_position + Vector3.UP * 0.9)
+				_hint("getoff", ["E"], "getoff")
+				return
 			if sled.linear_velocity.length() < 1.0:
 				_count_work("scoop", dt, key.call(KEY_W), 1.0)
 				_hint("scoop", ["W"], "scoop")
@@ -523,6 +528,14 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	elif p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
 		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)
 
+	# ペグ（peg.gd）: 手にペグを持ってソリの前の雪に立てば、左クリックで刺す所に。刺さったペグのそばでは、F で抜く
+	if p.has_method("peg_target") and not p.rooted():
+		var pt: Array = p.peg_target()
+		if not pt.is_empty():
+			_hint("peg", ["mouse_l"], "peg", pt[1] + Vector3.UP * 0.75)
+		var pg = p.peg_near()
+		if pg:
+			_hint("unpeg", ["F"], "unpeg", pg.peg.global_position + Vector3.UP * 0.9)
 	# 名札の結び目のそば: G の長押しで、自分のソリの名札を外す・名札入れの名札を持ち主のいないソリに付ける
 	var tt: Array = p.tag_target() if p.has_method("tag_target") else []
 	if not tt.is_empty():

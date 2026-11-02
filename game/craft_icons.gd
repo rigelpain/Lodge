@@ -12,6 +12,7 @@ extends RefCounted
 
 const Icons := preload("res://hud_icons.gd")
 const Fabrics := preload("res://fabrics.gd")
+const Peg := preload("res://peg.gd")
 
 const KRAFT := Color(0.84, 0.72, 0.52)       # 型紙のクラフト紙
 const COIN := Color(0.70, 0.50, 0.30)        # 木のボタン
@@ -50,6 +51,8 @@ static func draw(ci: CanvasItem, name: String, a: float, tint: Color) -> void:
 		"shears":   # 雪に縫い留めたボタンと、その糸を切る裁ちばさみ
 			coin(ci, Vector2(-8, 12), 13.0, a)
 			_shears(ci, Vector2(8, -6), a)
+		"peg", "unpeg":   # ペグを刺す・抜く（絵は peg.gd）
+			Peg.hint(ci, a, name == "peg")
 		"sack":   # 米袋（口を麻ひもで縛った、クラフト紙の袋に赤い帯）
 			rice_sack(ci, Vector2(0, 2), 1.0, KRAFT, Color("B8402E"), a)
 		"gear":   # 装備の画面: 背負いかばん（2026-10-29 代表「Iのインベントリは別でカードつくってバックか装備のアイコンが良い」）
@@ -107,6 +110,8 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 				ci.draw_texture_rect(t, Rect2(center - Vector2(s, s) / 2.0, Vector2(s, s)), false, Color(1, 1, 1, a))
 		"pattern":
 			_pattern(ci, Vector2.ZERO, 1.0, it.get("sled", "mid"), a)
+		"peg":   # ペグの束（絵は peg.gd）
+			Peg.icon(ci, it, a)
 		"fabric":
 			_fabric(ci, Vector2.ZERO, 1.0, Fabrics.color(it.get("fabric", "red")), a)
 		"campfire":
@@ -144,6 +149,8 @@ static func item_name(it: Dictionary) -> String:
 			return "畳んだ%s（%s）" % [sled, fab] if fab != "" else "畳んだ" + sled
 		"campfire":
 			return preload("res://campfire.gd").NAME
+		"peg":
+			return Peg.item_name(it)
 		"food":
 			var dish: String = DISH_NAMES.get(it.get("dish", ""), "料理")
 			return dish if preload("res://food.gd").done(it) else "%sのもと" % dish

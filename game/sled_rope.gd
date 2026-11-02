@@ -246,8 +246,13 @@ func _physics_process(dt: float) -> void:
 	_last_tie = r
 	var holder: Node3D = sled.rope_holder
 	var hand: Vector3 = holder.rope_hand() if holder and holder.has_method("rope_hand") else Vector3.INF
-	# 持つ人がなく、ソリも紐も止まっていれば休む
-	if hand == Vector3.INF and l.distance_squared_to(_pos[0]) + r.distance_squared_to(_pos[BRIDLE_SEG]) < 1e-6:
+	# ペグに結んであれば、先はペグの巻き（sled.gd の peg_to）
+	var tied: bool = hand == Vector3.INF and sled.peg != null and is_instance_valid(sled.peg)
+	if tied:
+		hand = sled.peg.tie_point()
+	# 持つ人がなく（ペグに結んだ先が動いていなければ同じ）、ソリも紐も止まっていれば休む
+	if (hand == Vector3.INF or tied and hand.distance_squared_to(_pos[_end]) < 1e-6) \
+			and l.distance_squared_to(_pos[0]) + r.distance_squared_to(_pos[BRIDLE_SEG]) < 1e-6:
 		if _calm > 30:
 			return
 	else:
