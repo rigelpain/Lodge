@@ -330,7 +330,7 @@
 - `game/props.gd`: glb を読み、素材を役割の名前で `look.gd` の手芸の素材に差し替える。`light*` の目印に暖色の灯りをともす
 - `game/main.gd`: 丘の木 70 本を `tree_*.glb` に（高さ 4〜8 m に合わせて大きさを変える）。登り道の両脇に旗 8 本、スタートとロッジの前に案内板、右の外れに網、まわりに岩と雪のかたまり（`_make_slope_props()`。当たり判定はまだない）。音の柱（`audio.gd` が立てる）の仮の見た目を隠して、フェルトのスピーカーの柱に着せ替える（`_dress_speakers()`。`audio.gd` は変えていない）
 - `game/sled.gd`: 箱のソリの見た目を `sled_mid.glb` に。物理（当たり判定・つかむ縁・紐の付け根）は変えていない
-- `game/main.gd` の `_furnish_lodge()`: ロッジの glb の機械の置き場の目印に機械を置く。`slot_vending_1`〜`3` に自販機（赤・青・赤）、`slot_craft_rental` にミシンの制作機。正面は目印の向き（`lodge/dims.py` の `SLOTS`。ミシンは東、自販機は部屋の中へ）。`slot_food_kitchen` には厨房の場面（前は床置きの焼き台・スチーマー・乾燥機を置いていた）
+- `game/main.gd` の `_furnish_lodge()`: ロッジの glb の機械の置き場の目印に機械を置く。`slot_vending_1`〜`3` に自販機（赤・青・赤）、風除室の自動ドアの左右の `slot_vending_4`・`5` とミニテラスの `6`・`7` にも赤と青。自販機だけは半分にして前の箱の大きさ（高さ 1.83 m）で置く（代表「全部 前の箱の大きさに」）、`slot_craft_rental` にミシンの制作機。正面は目印の向き（`lodge/dims.py` の `SLOTS`。ミシンは東、自販機は部屋の中へ）。`slot_food_kitchen` には厨房の場面（前は床置きの焼き台・スチーマー・乾燥機を置いていた）
 - ロッジの中の調度品と場面（`game/props/sets/`）は、まだロッジに置いていない。置く場所はロッジのセッションと決める（場面は `load("res://props/sets/hearth_nook.tscn").instantiate()` で置ける）
 
 ## ランタン（2026-10-29）
