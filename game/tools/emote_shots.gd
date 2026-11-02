@@ -1,8 +1,9 @@
 extends SceneTree
 ## 手の形と身ぶり（エモート）を一つずつ出して、いちばん大きく動くコマで撮る（確かめ用）。
-##   Godot --path game --resolution 960x540 -s res://tools/emote_shots.gd -- --dir=/path/to/dir [--view=fp|tp|front] [--only=wa,bow]
+##   Godot --path game --resolution 960x540 -s res://tools/emote_shots.gd -- --dir=/path/to/dir [--view=fp|tp|front] [--only=wa,bow] [--bare]
 ## fp 一人称（あなたの目。手と息が見えるか）、tp 三人称（C の視点）、front 正面から（人形の形）。
 ## あなたと仲間を向かい合わせて立たせ、仲間は動かさない（ハイタッチの相手は、配り役へ直接送る）。
+## 「high_R_ball」「low_R_ball」は右手に雪玉を持ったまま、「high_R_food」はできた料理を持ったまま手のひらを掲げる。
 ## 撮るもの: 名前_視点.png。「hit_bot」はあなたが仲間へ雪玉を投げ、仲間がのけぞる所。「hit_me」は仲間からあなたへ。
 ## 「sled」はソリへ投げて、雪が残る所。「banzai」はソリに乗って、高い両手のひらで見上げる。「ring」は Tab の輪。
 ## 「five_11」「five_12」「five_22」はハイタッチ（片手どうし・あなたの片手と仲間の両手・両手どうし）、「shake_」は握手で同じく。
@@ -14,6 +15,9 @@ const Doll := preload("res://doll.gd")
 const SHOTS := [
 	["ring", "ring", 0],
 	["high_R", "high_R", 4],
+	["high_R_ball", "high_R_ball", 4],
+	["high_R_food", "high_R_food", 4],
+	["low_R_ball", "low_R_ball", 4],
 	["high_L", "high_L", 4],
 	["high_both", "high_both", 4],
 	["high_both_up", "high_both_up", 4],
@@ -94,6 +98,9 @@ func _run() -> void:
 		main.settings.set_open(false)
 	if main.hud:
 		main.hud.visible = false
+	if args.has("bare"):   # 持ち物の列・地図・小窓も隠して、手だけ見る
+		for c in main.find_children("*", "CanvasLayer", true, false):
+			(c as CanvasLayer).visible = false
 	hub.happened.connect(func(ev): _log.append("%d %s who=%s" % [ev.frame, ev.kind, str(ev.get("who", "-"))]))
 	if args.has("check"):
 		await _check()
@@ -135,6 +142,10 @@ func _run() -> void:
 		await _wait_frames(30)
 		p.holding_ball = false
 		p._winding = false
+		hub.balls.erase(p.id)
+		if main.craft:
+			main.craft.bags.erase(p.id)
+			main.craft.hands.erase(p.id)
 	quit()
 
 
@@ -185,6 +196,19 @@ func _act(kind: String) -> int:
 			var parts := kind.split("_")
 			p._set_hand(parts[1])
 			p.set_height(parts[0])
+		"high_R_ball", "low_R_ball", "high_R_food":
+			# 持ち物を右手に持ったまま、右の手のひらを掲げる
+			if kind == "high_R_food":
+				var b: Array = main.craft.empty_bag()
+				b[0] = {"kind": "food", "dish": "onigiri", "step": 9}
+				main.craft.bags[p.id] = b
+				main.craft.hands[p.id] = 0
+			else:
+				hub.balls[p.id] = 3
+			await _wait_frames(8)
+			f = Doll.frame_index() + 1
+			p._set_hand("R")
+			p.set_height(kind.split("_")[0])
 		"high_both_up", "banzai":
 			p._pitch = 0.85 if kind == "high_both_up" else 0.6   # 見上げて、高い両手のひら（万歳）
 			p._set_hand("both")
