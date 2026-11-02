@@ -853,6 +853,14 @@ func eye_point(sitting: bool) -> Vector3:
 	return e * _scale
 
 
+## 胸の所（世界の座標）。雪のボタンが体に飛び込む先（snow_buttons.gd）。一人称で映していなくても骨は動いている
+func chest_point() -> Vector3:
+	var i := _id("chest")
+	if skel == null or i < 0:
+		return global_position + Vector3.UP * 0.9 * _scale
+	return skel.global_transform * skel.get_bone_global_pose(i).origin
+
+
 # ---------------------------------------------------------------- 裾
 
 static var _skirt_cache := {}

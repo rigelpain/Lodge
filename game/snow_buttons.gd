@@ -19,6 +19,10 @@ extends Node3D
 ## 滑った距離と速さでも: 一回の滑り（乗って滑り出してから止まるまで）の長さと、いちばん速い所の高さで木のボタン（倍率が高いほど
 ##   間が詰まる。詰まりすぎたら真鍮でまとめる）、止まらずに 80 m ごとの節目で真鍮のコンボ（1・2・3…。乗り物の倍率つき）。どれも、もらえた瞬間に速さの表示（speedo.gd）の糸の上へぽんと縫い込まれ、
 ##   止まると糸が巻き取られて、糸の上のボタンが財布へ飛ぶ（hud.gd・craft_ui.gd）。
+## 取ったボタンの流れ（2026-11-02 代表「ボタンが体に入って、体からインベントリHUDに入るようにしてほしい」）: 糸が切れて
+##   ぽんと跳ね上がり、取った人の体（胸）へ飛び込む（ソリなら、乗っている人。自分が乗っていれば自分の体）。体に入った次のコマに、
+##   体の画面の位置から HUD の財布へ飛び出す（craft_ui.gd。earn の btn で、このボタンが体に入り終えるコマを聞く）。
+##   同じボタンが 3D と HUD の両方に同時に見えることはない。どちらも 12 fps のコマ
 ## 取得音: 財布に入る瞬間に、素材ごとの音（木「コッ」・真鍮「チン」・白蝶貝「シャラン」・螺鈿）を耳元で鳴らす（craft_ui.gd が
 ##   audio.gd の coin を呼ぶ）。ソリで取っても、はさみで取っても、滑った分でも同じ。その場では、糸が切れる「ぷつん」と「ぽん」だけ
 ##   分け方は雪のボタンと同じ。
@@ -151,7 +155,8 @@ const FALL_FRAMES := 34        # 空から降ってくる
 const FALL_H := 13.0           # 降り始める高さ (m)
 const SEW_FRAMES := 10         # 落ちた所に糸が縫い付く
 const POP_UP := 7              # 跳ね上がる
-const POP_FLY := 7             # ソリへ飛んでいく
+const POP_FLY := 7             # 取った人の体へ飛んでいく
+const POP_NEAR_CAM := 2.0      # 飛ぶボタンが、カメラにこれより近いと小さくする (m)
 const ROLL_FRAMES := [0, 18, 37, 49, 63, 82, 108, 135, 158, 172, 180]   # 転がるとき、1 回分（180°）のめくれ角の並び（度）
 
 const TAIL_LEN := [0.46, 0.34]   # ほどけた糸の端の長さ (m)
@@ -215,7 +220,7 @@ class Btn:
 	var next_roll := 0.0        # 次に転がれるまでの秒
 	var psi := 0.0              # めくれ角（度。風の揺れと転がり）
 	var pop0 := -1
-	var target: Node3D          # 跳ねたあと飛んでいく先（ソリ）
+	var target: Node3D          # 跳ねたあと飛び込む先（取った人。ソリなら乗っている人）
 	var pop_from := Vector3.ZERO
 	var drawn := -99
 	var sd := 0                 # 見た目のばらつきの種
@@ -250,7 +255,8 @@ func _apply(ev: Dictionary) -> void:
 				return
 			var to: Node3D = _person(int(ev.get("by", -1))) if int(ev.get("by", -1)) >= 0 else null
 			if to == null and world:
-				to = world.get_node_or_null(String(ev.sled))
+				var s: Node3D = world.get_node_or_null(String(ev.sled))
+				to = _rider_of(s) if s else null
 			_pop(b, int(ev.frame), to)
 		"shear":
 			var b: Btn = buttons.get(int(ev.id))
@@ -648,16 +654,19 @@ func _share(sled: RigidBody3D, id_: int, n: int, at: Vector3) -> void:
 			gives[int(id)] = whole
 		send({"kind": "ride_carry", "who": int(id), "carry": ride_carry[int(id)]})
 	send({"kind": "share", "id": id_, "gives": gives, "parts": g.parts, "value": v, "at": at})
-	_pay(gives, at)
+	_pay(gives, at, "", [], -1, id_)
 
 
 ## 財布へ（craft.gd の earn）。from: "spool" なら、画面では速さの表示の糸の上から飛ぶ。
-## pieces は飛ぶボタンの並び（滑った分は縫い込んだ順）。全部（full）をもらった人にだけ付ける（手伝った人の分は段ごとに分けて飛ぶ）
-func _pay(gives: Dictionary, at: Vector3, from := "", pieces := [], full := -1) -> void:
+## pieces は飛ぶボタンの並び（滑った分は縫い込んだ順）。全部（full）をもらった人にだけ付ける（手伝った人の分は段ごとに分けて飛ぶ）。
+## btn は切ったボタンの番号（画面では、そのボタンが体に入り終えてから、体から飛ぶ。into_body）
+func _pay(gives: Dictionary, at: Vector3, from := "", pieces := [], full := -1, btn := -1) -> void:
 	var craft: Node = world.get("craft") if world else null
 	if craft:
 		for who in gives:
 			var ev := {"kind": "earn", "who": who, "n": gives[who], "at": at, "from": from}
+			if btn >= 0:
+				ev["btn"] = btn
 			if not pieces.is_empty() and int(gives[who]) == full:
 				ev["pieces"] = pieces.duplicate()
 			craft.send(ev)
@@ -744,7 +753,7 @@ func _do_cuts() -> void:
 		stats.value += n
 		# 歩いて取るのは ×1.0 のまま（2026-10-30 代表）。乗り物の倍率も場所の倍率も掛けない。木 1 個は 1
 		send({"kind": "share", "id": b.id, "gives": {int(c.who): n}, "parts": {}, "value": n, "at": b.at})
-		_pay({int(c.who): n}, b.at)
+		_pay({int(c.who): n}, b.at, "", [], -1, b.id)
 
 
 # ================================================================ ホスト: 滑った距離と速さ
@@ -1092,7 +1101,7 @@ func _flip(b: Btn, wd: Vector3, psi: float, lift: float) -> Transform3D:
 	return tr
 
 
-## 跳ね上がって、ソリへ飛んでいく
+## 跳ね上がって、取った人の体（胸）へ飛び込む
 func _pose_pop(b: Btn, f: int) -> void:
 	var k := f - b.pop0
 	if k < 0:
@@ -1102,7 +1111,7 @@ func _pose_pop(b: Btn, f: int) -> void:
 	if k <= POP_UP:
 		var u := float(k) / POP_UP
 		var y := top.y * (1.0 - pow(1.0 - u, 2.0))   # ぽんと上がって、上で止まりかける
-		b.body.transform = Transform3D(spin, Vector3(0, y, 0))
+		b.body.transform = Transform3D(spin.scaled(Vector3.ONE * _near_cam(b.root.to_global(Vector3(0, y, 0)))), Vector3(0, y, 0))
 		if k == 0:
 			b.pop_from = b.root.to_global(Vector3(0, y, 0))
 		return
@@ -1112,16 +1121,23 @@ func _pose_pop(b: Btn, f: int) -> void:
 		b.root.visible = false
 		return
 	var from := b.root.to_global(top)
-	var to := b.target.global_position + Vector3.UP * 0.7
+	var to := chest_of(b.target)
 	var p := from.lerp(to, u2 * u2) + Vector3.UP * sin(u2 * PI) * 0.8
-	var sc := lerpf(1.0, 0.35, u2 * u2)
+	var sc := lerpf(1.0, 0.35, u2 * u2) * _near_cam(p)
 	b.body.global_transform = Transform3D(b.root.global_basis * spin.scaled(Vector3.ONE * sc), p)
 
 
-func _pop(b: Btn, f: int, sled: Node3D) -> void:
+## カメラのすぐ近くの、跳ねたボタンの縮め方（一人称で、自分の下で切れて跳ね上がるときや、自分の胸へ来るときは、
+## 目の前を通るので小さく。画面いっぱいにならない）
+func _near_cam(p: Vector3) -> float:
+	var cam := get_viewport().get_camera_3d()
+	return clampf(p.distance_to(cam.global_position) / POP_NEAR_CAM, 0.15, 1.0) if cam else 1.0
+
+
+func _pop(b: Btn, f: int, to: Node3D) -> void:
 	b.state = "pop"
 	b.pop0 = f
-	b.target = sled
+	b.target = to
 	b.roll0 = -1
 	b.lid.visible = false
 	b.cut_bits = true
@@ -1132,6 +1148,38 @@ func _pop(b: Btn, f: int, sled: Node3D) -> void:
 	get_tree().create_timer(4.0).timeout.connect(func() -> void:
 		if is_instance_valid(b.thread):
 			b.thread.visible = false)
+
+
+## ソリで切ったボタンが飛び込む人: 自分が乗っていれば自分（この画面で、自分の体に入って自分の財布へ）、ほかは前の席の人。
+## 誰も乗っていなければソリ
+func _rider_of(sled: Node3D) -> Node3D:
+	var rs = sled.get("riders")
+	if rs == null:
+		return sled
+	var me: Node3D = world.get("player") if world else null
+	if me and me in rs:
+		return me
+	for r in rs:
+		if is_instance_valid(r):
+			return r
+	return sled
+
+
+## 体の胸の所（世界）。人形がなければ（ソリなど）、少し上
+static func chest_of(n: Node3D) -> Vector3:
+	var d = n.get("doll")
+	if d is Doll and is_instance_valid(d):
+		return d.chest_point()
+	return n.global_position + Vector3.UP * 0.7
+
+
+## 切ったボタン id が体に入り終えたあとのコマ（この画面で 3D のボタンが消えるコマ）と、その体。craft_ui.gd が、そのコマに体から
+## 財布へ飛ばす。at は取った所（同じボタンか確かめる。通信では、ほかの人の画面のボタンは別もの）。跳ねていなければ空
+func into_body(id: int, at: Vector3) -> Dictionary:
+	var b: Btn = buttons.get(id)
+	if b == null or b.state != "pop" or b.at.distance_to(at) > 0.3 or b.target == null or not is_instance_valid(b.target):
+		return {}
+	return {"frame": b.pop0 + POP_UP + POP_FLY + 1, "body": b.target}
 
 
 # ---------------------------------------------------------------- 糸
