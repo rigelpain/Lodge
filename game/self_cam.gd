@@ -15,7 +15,9 @@ const DampHud := preload("res://damp_hud.gd")
 const PX := 224               # 描く大きさ（正方形の px）。窓とほぼ同じ。刺繍の糸目は窓の側で描く
 const STITCH_PX := 2.6        # 糸 1 本の、画面での幅（1080 のとき, px）
 const EVERY := 2              # 何コマに 1 回描くか
-const DIAM := 236.0           # 画面での丸窓の直径（1080 のとき, px）
+const DIAM := 250.0           # 画面での丸窓の直径（1080 のとき, px）。外枠の外に少し出る外の布まで
+const HOOP_IN := 0.88         # 刺繍枠の外枠の内の縁（窓の半径に対する割合）。この内が張った布、外は外枠と、外枠の下から出る外の布
+const HOOP_T := 0.075         # 外枠の幅（外枠の内の半径に対する割合。props/build_hud.py の HOOP_T）
 const MARGIN := Vector2(92.0, 56.0)   # 画面の右・下の端からの間（1080 のとき, px）。左の縁に縫った濡れゲージと右上のバッジ（damp_hud.gd）が
                                       # 画面の端に寄りすぎないよう、端から離す（2026-11-01 代表「刺繍と濡れゲージが画面はしにくっつきそうだから、
                                       # もう少し画面中央に寄せましょう」）
@@ -216,6 +218,8 @@ uniform float px = 236.0;        // 窓の直径（画面の px）
 uniform float pitch = 2.4;       // 糸 1 本の幅（画面の px）
 uniform float wet = 0.0;         // 地の麻布の濡れ（0 〜 1。damp.gd の水）。まばらなしみが増えて広がる
 uniform float crisp = 0.0;       // 地の麻布のパリッと（0 〜 1。火で乾かしすぎた所。織り目が少しくっきり）
+uniform float hoop_in = 0.88;    // 外枠の内の縁（self_cam.gd の HOOP_IN）
+uniform float hoop_out = 0.946;  // 外枠の外の縁
 const vec2 SHEEN_DIR = vec2(-0.55, -0.83);   // 左上からの光（艶の向き）
 
 float hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -309,7 +313,7 @@ void fragment() {
 	float soak = max(st, smoothstep(0.75, 1.0, wet) * (0.55 + 0.2 * mott));
 	vec3 soaked = ground * vec3(0.40, 0.42, 0.46) * (0.94 + 0.08 * mott) * (0.98 + 0.02 * weave);
 	col = mix(col, soaked, clamp(soak, 0.0, 1.0));
-	if (!is_cloth(c, ground)) {
+	if (!is_cloth(c, ground) && r < hoop_in) {   // 刺繍は外枠の内の布だけ（外枠の外は外の布）
 		// 糸の向き: 色の塊ごとに決め、場所でゆるく曲げる
 		float ang = hash(q.rg * 7.0 + q.b * 3.0) * 3.14159 + 0.35 * sin(p.x * 0.045 + p.y * 0.03 + q.r * 5.0);
 		vec2 dir = vec2(cos(ang), sin(ang));
@@ -333,12 +337,17 @@ void fragment() {
 		col = th * mix(1.0, 0.7, clamp(soak, 0.0, 1.0));   // 濡れた所の糸も水を吸って沈む
 	}
 	col = mix(col, ground, smoothstep(0.9, 1.0, r) * 0.25);
-	// 縁の沈み: 布は内枠の上を張り、外枠の内の縁で枠の中へ引き込まれて少し沈む。光（左上）へ傾く左上の斜面は少し明るく、
-	// 右下の斜面は暗い。外枠が布に落とす細い影は、刺繍枠の絵（hoop.png）の側にある
-	// （2026-11-02 代表「影のつき方も前後って感じでなく段差があるような感じ」）
-	float sink = smoothstep(0.90, 0.985, r);
+	// 食い込みの谷: 布は内枠と外枠のあいだに挟まれて突っ張るので、外枠の縁に沿って布が枠の下へ沈み込む細い谷ができる。
+	// 谷のいちばん深い所（外枠の縁のすぐ際）が暗く、谷へ下る斜面は光（左上）へ向く側が少し明るく、反対が暗い。
+	// 外枠の内の縁（張った布）と、外の縁（外枠の下から出る外の布）の両方。外枠が谷に落とす影は刺繍枠の絵（hoop.png）の側
+	// （2026-11-02 代表「突っ張って挟んでるから、地と外側の木枠とにはちょっと食い込み特有の谷と影ができるんだ」）
 	float lit = dot(normalize(UV - 0.5 + 1e-5), SHEEN_DIR);
-	col *= 1.0 - sink * sink * (0.08 + 0.10 * max(-lit, 0.0)) + sink * (1.0 - sink) * 0.12 * max(lit, 0.0);
+	float vin = 1.0 - clamp((hoop_in - r) / 0.07, 0.0, 1.0);    // 内の谷: 0 〜 外枠の際で 1
+	float vout = 1.0 - clamp((r - hoop_out) / 0.03, 0.0, 1.0);  // 外の谷: 外枠の際で 1 〜 0
+	vin *= 1.0 - step(hoop_out, r);   // 外の布には内の谷をかけない
+	vout *= step(hoop_out, r);
+	col *= 1.0 - 0.5 * pow(vin, 2.5) + 0.4 * vin * (1.0 - vin) * lit;     // 内の斜面は外へ下る（外を向く）
+	col *= 1.0 - 0.4 * pow(vout, 2.5) - 0.3 * vout * (1.0 - vout) * lit;  // 外の斜面は内へ下る（内を向く）
 	COLOR = vec4(col, 1.0 - smoothstep(0.985, 1.0, r));
 }
 """
@@ -414,6 +423,8 @@ func _layout() -> void:
 	_frame.view.position = Vector2.ZERO
 	_frame.view.size = _frame.size
 	_mat.set_shader_parameter("px", d)
+	_mat.set_shader_parameter("hoop_in", HOOP_IN)
+	_mat.set_shader_parameter("hoop_out", HOOP_IN * (1.0 + HOOP_T))
 	_mat.set_shader_parameter("pitch", maxf(STITCH_PX * u, 2.2))   # 小さい画面でも糸が潰れないように
 	_frame.queue_redraw()
 
@@ -531,7 +542,7 @@ class Frame extends Control:
 		var r := size.x / 2.0
 		Icons.screen()
 		if sc.plain_frame:
-			Icons.dashes(self, Icons.circ(c, r - 7.0 * u, 72), Icons.RED, 1.8 * u, 6.0 * u, 4.0 * u, 0.95, true)
+			Icons.dashes(self, Icons.circ(c, r * HOOP_IN - 7.0 * u, 72), Icons.RED, 1.8 * u, 6.0 * u, 4.0 * u, 0.95, true)   # 外枠の内に縫う
 			return
 		# 落ち影（輪の外側だけ。窓の絵の上には重ねない）
 		draw_arc(c + Vector2(1.5, 3.0) * u, r + 5.5 * u, 0.0, TAU, 64, Color(Icons.SHADOW, 0.22), 11.0 * u, true)
