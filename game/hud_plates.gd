@@ -169,8 +169,9 @@ func _wind_xform(pivot: Vector2, wind: Array) -> Transform3D:
 ## rect は板の画面の場所（px）、radius は角の丸み（px）、thick は厚み（px）、kind は素材、pivot は風の支点（画面の px）、
 ## wind は [seed, lean, flutter, jit]（空なら揺らさない）、a は薄さ
 ## tilt は画面の中の傾き（rad）、squash は横の縮み（支点のまわり。めくるとき）、lift はずらし（px）、depth は奥へ下げる量（単位。重ねた札）
+## stamp: 印刷の中身の印。null なら毎コマ描き直し、ほかは変わったときだけ描き直す（傾き・ずれ・薄さは入れ物で動かす）
 func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float, kind: String, pivot: Vector2, wind: Array, a: float,
-		tilt := 0.0, squash := 1.0, lift := Vector2.ZERO, depth := 0.0, order := 0) -> void:
+		tilt := 0.0, squash := 1.0, lift := Vector2.ZERO, depth := 0.0, order := 0, stamp = null) -> void:
 	var v: Dictionary = _plates.get(id, {})
 	if v.is_empty():
 		var painter: Control = paint.call()
@@ -209,7 +210,9 @@ func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float
 	p.z_index = order   # 印刷の重なりの順（重ねた札は、前の札ほど上）
 	p.modulate.a = clampf(a, 0.0, 1.0)
 	(p.material as ShaderMaterial).set_shader_parameter("rect", Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
-	p.queue_redraw()
+	if stamp == null or stamp != v.get("stamp"):
+		v["stamp"] = stamp
+		p.queue_redraw()
 	v.used = a > 0.01
 	v.node.visible = v.used
 	p.visible = v.used

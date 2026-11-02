@@ -382,8 +382,6 @@ func _ready() -> void:
 			cam.position = Vector3(v[0], v[1], v[2])
 			cam.look_at(Vector3(v[3], v[4], v[5]))
 
-	_fit_3d_scale()
-	get_viewport().size_changed.connect(_fit_3d_scale)
 	if player and not args.has("no-pip"):
 		_make_pip()
 	if player and not args.has("no-selfcam"):   # 右下の、自分を前から映す小窓
@@ -732,8 +730,13 @@ func _make_pip() -> void:
 ## HUD・文字・小窓はそのままの細かさ。--scale3d=1 で縮めない（確かめ用）
 const SCALE_3D_HEIGHT := 1080.0
 
+var _fit_h := -1   # 3D の大きさを決めたときの画面の縦 (px)。窓の大きさが変わったら決め直す（起動の直後にも変わる）
+
 func _fit_3d_scale() -> void:
 	var vp := get_viewport()
+	if vp.size.y == _fit_h:
+		return
+	_fit_h = vp.size.y
 	var k := clampf(SCALE_3D_HEIGHT / maxf(vp.size.y, 1.0), 0.5, 1.0)
 	if args.has("scale3d"):
 		k = clampf(float(args["scale3d"]), 0.25, 1.0)
@@ -789,6 +792,7 @@ func _place_pip_cams() -> void:
 var _cloud_t := 0.0
 
 func _process(_dt: float) -> void:
+	_fit_3d_scale()
 	_cloud_t += _dt
 	if _cloud_t >= 0.5:   # 雲は 0.5 秒ごとに焼き直す
 		_cloud_t = 0.0
