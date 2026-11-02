@@ -626,6 +626,7 @@ func _pose_lounge() -> void:
 	_pose_doll()
 	doll.airborne = false
 	doll.facing = Vector3.ZERO
+	doll.seat_soft = seat_i >= 0 and seats.seat(seat_i).kind == "zabuton"
 	if seat_i >= 0:
 		var st: Dictionary = seats.seat(seat_i)
 		doll.act = Doll.Act.SIT

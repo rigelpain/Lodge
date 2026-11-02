@@ -1,12 +1,14 @@
 extends SceneTree
 ## ロッジの席に 7 体の人形を 1 体ずつ座らせ、真横から撮って 1 枚に並べる（確かめ用）。人形を縦、席の種類を横に並べる。
 ##   Godot --path game --resolution 1000x1000 -s res://tools/sit_side_shots.gd -- [--kinds=all|kasa,news] [--seats=chair,stool,bench,zabuton] [--out=DIR]
+##     [--quarter（真横でなく、斜め前の上から撮る）] [--bones（座布団の席で、骨ごとのいちばん低い所も書く）]
+##     [--hard（座布団も椅子と同じ座り方。くらべる用）] [--cell=800（1 枚の大きさ）]
 ## 席は種類ごとに、カメラを置く横が空いている席（並びの端。なければ並びのまんなか）。人形のまわりの奥行きだけを映す（手前と奥は切る）。
 ## 脚（太もも・すね・足）の頂点のうち、座面の真下（座面の幅と奥行きの中で、座面より低く床より高い所＝椅子の中）に入った数を書き出す。
 ## 座布団の席では、こたつ（天板と垂れた布団の外形の箱）の中へ入った体の頂点も数える
 
 const Doll := preload("res://doll.gd")
-const CELL := Vector2i(400, 400)
+var CELL := Vector2i(400, 400)   # 1 枚の大きさ（--cell=800 で大きく）
 ## 2 階のこたつの外形（lodge/dims.py の KOTATSU_W・KOTATSU_D、KOTATSU_FLARE、KOTATSU_TOP、PIT_DEPTH）
 const KOTATSU := Vector2(2.1816, 1.2726)
 const KOTATSU_FLARE := 0.10
@@ -33,6 +35,8 @@ func _initialize() -> void:
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	_out = args.get("out", "/tmp")
+	if args.has("cell"):
+		CELL = Vector2i(int(args.cell), int(args.cell))
 	root.scaling_3d_scale = 1.0
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
@@ -117,6 +121,8 @@ func _place(seats) -> void:
 	d.seat_drop = st.pos.y - st.floor
 	if "seat_edge" in d:
 		d.seat_edge = st.get("edge", 0.2)
+	if "seat_soft" in d:
+		d.seat_soft = st.kind == "zabuton" and not args.has("hard")
 	var side: Vector3 = _side_of[sk]
 	var h: float = d.height()
 	var c: Vector3 = st.pos + Vector3.UP * (h * 0.3 - 0.2) + st.face * (0.1 + h * 0.1)
@@ -124,6 +130,10 @@ func _place(seats) -> void:
 	cam.near = dist - 0.45   # 人形のまわりだけを映す（手前の隣の椅子・机・壁は切る）
 	cam.far = dist + 1.0
 	cam.look_at_from_position(c + side * dist, c)
+	if args.has("quarter"):   # 斜め前の上から（膝に掛けた布団を見る）。手前は切らない
+		cam.near = 0.05
+		cam.far = 60.0
+		cam.look_at_from_position(c + (side * 0.8 + st.face * 0.35 + Vector3.UP * 0.55).normalized() * dist * 0.85, c + st.face * 0.15 - Vector3.UP * 0.05)
 	cam.current = true
 
 
@@ -213,6 +223,28 @@ func _count(seats) -> void:
 						inside += 1
 						kdeep = maxf(kdeep, minf(minf(dx, dz), dy))
 			kot = "、こたつ（布団・天板）へ入った体の頂点 %d（いちばん深く %.3f m）" % [inside, kdeep]
+		# 座布団の上の、体のいちばん低い所（座面の上の面から。正なら浮いている、負なら沈んでいる）
+		var low := INF
+		var seat_low := INF   # 脚と腕を除いた体（お尻）
+		for b in groups:
+			var limb: bool = b.begins_with("thigh") or b.begins_with("shin") or b.begins_with("foot") \
+				or b.begins_with("upper_arm") or b.begins_with("forearm") or b.begins_with("hand")
+			for v in groups[b]:
+				var rel: Vector3 = v - st.pos
+				var along: float = rel.dot(st.face)
+				if along > edge - size.y and along < edge and absf(rel.dot(side)) < size.x * 0.5:
+					low = minf(low, rel.y)
+					if not limb:
+						seat_low = minf(seat_low, rel.y)
+		kot += "、座布団の上の面から体のいちばん低い所 %+.3f m（お尻 %+.3f m）" % [low, seat_low]
+		if args.has("bones"):
+			var per := {}
+			for b in groups:
+				var m := INF
+				for v in groups[b]:
+					m = minf(m, (v - st.pos).y)
+				per[b] = snappedf(m, 0.001)
+			print(d.kind, " ", per)
 	print("%s %s: 座面の真下に入った脚の頂点 %d（いちばん深く %.3f m）、背もたれへ出た体の頂点 %d（%.3f m）%s　座面の奥行き %.2f m（腰から縁まで %.2f m）" % [d.kind, sk, n, deep, back, back_deep, kot, size.y, edge])
 
 

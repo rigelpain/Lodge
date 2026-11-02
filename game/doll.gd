@@ -34,6 +34,16 @@ const EYE := {"kasa": Vector3(0, 1.01, -0.1), "origami": Vector3(0, 1.235, -0.1)
 	"robo": Vector3(0, 0.67, -0.12), "musha": Vector3(0, 0.53, -0.1), "ningyo": Vector3(0, 0.715, -0.11), "golem": Vector3(0, 1.135, -0.18)}
 ## 座ったとき、腰の骨の付け根を座面からどれだけ上に置くか（骨の座標の空間）
 const SIT_HIPS := 0.07
+## 座布団に座ったとき、お尻を座面に沈める深さ（人形の大きさのまま）
+const SOFT_SINK := 0.02
+## ロッジの席に座ったときの裾の縦の長さ（つぶれて座面に広がる）
+const CHAIR_SQUASH := 0.12
+## 座布団の席（2 階のこたつ）で、めくって膝に掛けるこたつ布団（kotatsu_futon.gd）の形を測る所: 座布団の前の縁から、
+## こたつの天板の縁まで (m)。座布団は穴の縁に 0.03 かかり、天板の縁は穴の縁から 0.42 − 0.078 内
+## （lodge/dims.py の PIT_OUT、props/build_room.py の天板）
+const LAP_REACH := 0.31
+## 天板の縁の高さ（座面から m）。天板の下の面（畳から 0.363、座布団の上の面は 0.118）
+const LAP_TOP := 0.245
 ## ロッジの席に座ったときの太ももの角度のいちばん小さい所（rad。下へ垂れた形から前へ。π/2 で水平）。
 ## ふだんは膝の芯が座面から脚の太さぶん上に来る角度で、腰の付け根が低い人形でも、これより下へは垂らさない
 const SIT_THIGH_MIN := 1.20
@@ -106,6 +116,7 @@ var sled: Node3D = null
 var sit_stage := 0           # ロッジの席（seats.gd）: 0 立つ、1 中腰、2 座る（持ち主が毎フレーム入れる。act が SIT のとき）
 var seat_drop := 0.45        # 座面から足を下ろす床までの高さ (m)（持ち主が入れる）
 var seat_edge := 0.2         # 腰を下ろした所から、座面の前の縁までの奥行き (m)（持ち主が入れる）。膝がこれより前なら浮いている
+var seat_soft := false       # 座面が座布団（やわらかい）。お尻を座面まで沈める（持ち主が入れる）
 var spin_axis := Vector3.ZERO   # 乾燥機の胴といっしょに回る軸（世界。ZERO なら回らない。持ち主が毎フレーム入れる。cook_station.gd）
 var spin := 0.0              # その軸まわりに回った角 (rad)
 var spin_at := Vector3.ZERO  # 回る中心（世界。胴の真ん中）
@@ -183,6 +194,7 @@ func _ready() -> void:
 	for m in inst.find_children("*", "MeshInstance3D", true, false):
 		(m as MeshInstance3D).layers = layers
 	_body = inst
+	add_to_group("dolls")
 	if not outfit.is_empty():
 		dress(outfit)
 	for i in skel.get_bone_count():
@@ -386,11 +398,17 @@ func _reset() -> void:
 		_rot[i] = _rest_rot[i]
 	_hips_drop = 0.0
 	_squash = 1.0
+	_leg_lift = 0.0
 	_update_all()
 
 
 var _hips_drop := 0.0
 var _squash := 1.0           # 腰より下の裾の縦の長さ（座ると、つぶれて座面に広がる）
+var _leg_lift := 0.0         # 太ももの付け根を上へずらす量（骨の座標の空間）。座布団で、お尻を座面に着けると付け根が沈む人形
+var _lift_at := {}           # 骨の番号 → 付け根をずらした分（親の骨の座標。_apply が使う）
+## 座布団の席（こたつ）で、めくったこたつ布団が通る線（世界の座標。お腹の前から天板の縁まで、脚の上を脚の太さぶん離して）。
+## 座っていなければ空。こたつの布団（kotatsu_futon.gd）が読んで、この人形の側の布団をめくって膝に掛ける
+var lap_line := PackedVector3Array()
 
 
 func _update_all() -> void:
@@ -400,7 +418,12 @@ func _update_all() -> void:
 
 func _update(i: int) -> void:
 	var p := skel.get_bone_parent(i)
-	var local := Transform3D(Basis(_rot[i]), _rest_pos[i] + (Vector3(0, -_hips_drop, 0) if p < 0 else Vector3.ZERO))
+	var pos: Vector3 = _rest_pos[i] + (Vector3(0, -_hips_drop, 0) if p < 0 else Vector3.ZERO)
+	_lift_at.erase(i)
+	if _leg_lift > 0.0 and p >= 0 and (i == _id("thigh.L") or i == _id("thigh.R")):
+		_lift_at[i] = (_g[p] as Transform3D).basis.inverse() * Vector3(0, _leg_lift, 0)
+		pos += _lift_at[i]
+	var local := Transform3D(Basis(_rot[i]), pos)
 	_g[i] = (_g[p] * local) if p >= 0 else local
 
 
@@ -482,7 +505,8 @@ func _arm_joints(side: String, target: Vector3, to_wrist := false) -> Array:
 func _apply() -> void:
 	for i in _order:
 		skel.set_bone_pose_rotation(i, _rot[i])
-		skel.set_bone_pose_position(i, _rest_pos[i] + (Vector3(0, -_hips_drop, 0) if skel.get_bone_parent(i) < 0 else Vector3.ZERO))
+		skel.set_bone_pose_position(i, _rest_pos[i] + (Vector3(0, -_hips_drop, 0) if skel.get_bone_parent(i) < 0 else Vector3.ZERO)
+			+ _lift_at.get(i, Vector3.ZERO))
 	var sk := _id("skirt")
 	if sk >= 0:
 		skel.set_bone_pose_scale(sk, Vector3(1, _squash, 1))
@@ -507,6 +531,16 @@ func _chair_drop() -> float:
 	var th := _id("thigh.L")
 	if th >= 0:
 		drop = minf(drop, skel.get_bone_global_rest(th).origin.y - _seat_shape()[3])
+	if seat_soft:
+		# 座布団: 脚の付け根で止めると、脚の短い人形はお尻が浮く。お尻（腰・胸・裾のいちばん下）が座面に SOFT_SINK 沈むまで
+		# 下ろす。脚の付け根がそれで座面に沈むなら、_sit_chair が付け根を体の中へ持ち上げる（_leg_lift）
+		# 裾は座るとつぶれる（CHAIR_SQUASH）ので、つぶれた裾の下の端で測る
+		var bottom: float = _seat_shape()[4]
+		var sk := _id("skirt")
+		if sk >= 0 and _seat_shape()[5] < INF:
+			var root := skel.get_bone_global_rest(sk).origin.y
+			bottom = minf(bottom, root + (_seat_shape()[5] - root) * CHAIR_SQUASH)
+		drop = maxf(drop, bottom + SOFT_SINK)
 	return drop
 
 
@@ -519,11 +553,15 @@ func _chair_drop() -> float:
 func _sit_chair() -> float:
 	var X := Vector3.RIGHT
 	_hips_drop = _chair_drop()
-	_squash = 0.12
+	_squash = CHAIR_SQUASH
+	var lr: float = _seat_shape()[3]     # 脚の太さ
+	var th0 := _id("thigh.L")
+	if seat_soft and th0 >= 0:
+		# 座布団: 脚の付け根が座面に沈むなら、付け根を体の中へ上げ、脚が座布団に半分沈む高さに（脚は前へ投げ出す）
+		_leg_lift = maxf(0.0, lr * 0.5 - (skel.get_bone_global_rest(th0).origin.y - _hips_drop))
 	_update_all()
 	var floor_y := -seat_drop / _scale   # 骨の座標の空間。座面が 0、前が -Z
 	var edge := seat_edge / _scale
-	var lr: float = _seat_shape()[3]     # 脚の太さ
 	for s in ["L", "R"]:
 		var th := _id("thigh." + s)
 		var sh := _id("shin." + s)
@@ -557,7 +595,61 @@ func _sit_chair() -> float:
 		var p := _sit_hand(s, _head_of(th), _head_of(sh))
 		if p != Vector3.INF:
 			_hold[0 if s == "L" else 1] = [self, to_local(skel.global_transform * p)]
+	if seat_soft:
+		_lap_futon(lr)
 	return 0.08
+
+
+## 座布団の席（こたつ）: めくったこたつ布団が通る線（lap_line）を測る。お腹（脚を除いた体）の前の面から、脚の上（脚の太さぶん
+## 離して）を通り、こたつの天板の縁まで。両手は布団の上の、膝のあたり
+func _lap_futon(lr: float) -> void:
+	var pts := PackedVector3Array()   # 脚の芯の上の点
+	var hip_z := 0.0
+	for s in ["L", "R"]:
+		var th := _id("thigh." + s)
+		var sh := _id("shin." + s)
+		var ft := _id("foot." + s)
+		if th < 0 or sh < 0 or ft < 0:
+			continue
+		var a := _head_of(th)
+		var k := _head_of(sh)
+		var f := _head_of(ft)
+		var toe := f + (_g[ft] as Transform3D).basis.y.normalized() * _len(ft)
+		for i in 5:
+			pts.append(a.lerp(k, i / 4.0))
+			pts.append(k.lerp(f, i / 4.0))
+			pts.append(f.lerp(toe, i / 4.0))
+		hip_z += a.z * 0.5
+	var clear := lr + 0.012 / _scale
+	var knee_y := 0.0
+	for s2 in ["L", "R"]:
+		knee_y += _head_of(_id("shin." + s2)).y * 0.5 if _id("shin." + s2) >= 0 else 0.0
+	# お腹の前の面を、膝の高さで探す（脚は除く）
+	var z0 := _out_of_body(Vector3(0, knee_y + clear, hip_z), 0.015 / _scale, [Vector3.FORWARD], true).z
+	var far_z := -(seat_edge + LAP_REACH) / _scale
+	if far_z >= z0:
+		return
+	var n := 8
+	var step := (z0 - far_z) / (n - 1)
+	var lap_h := knee_y + clear
+	for i in n:
+		var z := lerpf(z0, far_z, float(i) / (n - 1))
+		var y := knee_y + clear
+		for p in pts:
+			if absf(p.z - z) < step:
+				y = maxf(y, p.y + clear)
+		lap_h = maxf(lap_h, y) if i < n / 2 else lap_h
+		lap_line.append(skel.global_transform * Vector3(0, y, z))
+	lap_line.append(skel.global_transform * Vector3(0, LAP_TOP / _scale, far_z))
+	# 両手は布団の上、膝のあたりに（布団は膝の上で lap_h の高さ。厚みのぶん上）
+	var hr: float = _seat_shape()[2]
+	for k in 2:
+		var sh := _id("shin." + ("L" if k == 0 else "R"))
+		if sh < 0:
+			continue
+		var kn := _head_of(sh)
+		var hand := Vector3(kn.x * 0.8, lap_h + 0.035 / _scale + hr, minf(kn.z, z0 - 0.03 / _scale))
+		_hold[k] = [self, to_local(skel.global_transform * hand)]
 
 
 ## 座ったときの手の所（骨の座標の空間）。膝の上に置き、体（胸・腰・裾・脚）に埋もれるなら、上・前・外のいちばん近い向きへ体の外に出す。
@@ -614,14 +706,14 @@ func _forearm_clear(side: String, target: Vector3, r: float) -> bool:
 
 
 ## 点 p を、向き dirs のうち体の外にいちばん近く出られる向きへ、体の外（r だけ離して）まで動かす
-func _out_of_body(p: Vector3, r: float, dirs: Array) -> Vector3:
-	if not _in_seat_body(p, r):
+func _out_of_body(p: Vector3, r: float, dirs: Array, no_legs := false) -> Vector3:
+	if not _in_seat_body(p, r, no_legs):
 		return p
 	var step := 0.01
 	for k in 80:
 		for d in dirs:
 			var q: Vector3 = p + d * step * (k + 1)
-			if not _in_seat_body(q, r):
+			if not _in_seat_body(q, r, no_legs):
 				return q
 	return p
 
@@ -632,7 +724,7 @@ const SEAT_BODY := ["hips", "chest", "skirt", "thigh.L", "thigh.R", "shin.L", "s
 const SEAT_SLICES := 10
 const SEAT_CELL := 0.025       # 輪切りの升の大きさ（人形の大きさのまま）
 const SEAT_PAD := 7            # 形のまわりに足す升（手の太さぶん離して調べられる）
-static var _seat_cache := {}   # 人形の種類 → [{骨の番号: [下の端, 段の高さ, 升の x と z の始まり, 升の数 x, z, 段ごとの升（体までの升の数）]}, 前腕の太さ, 手の太さ, 脚の太さ]
+static var _seat_cache := {}   # 人形の種類 → [{骨の番号: [下の端, 段の高さ, 升の x と z の始まり, 升の数 x, z, 段ごとの升（体までの升の数）]}, 前腕の太さ, 手の太さ, 脚の太さ, 腰・胸のいちばん下, 裾のいちばん下]
 
 
 ## 体（胸・腰・裾・脚）の形を、骨ごとにその骨の座標で、骨に沿って輪切りにした段の升目で覚える。
@@ -645,6 +737,8 @@ func _seat_shape() -> Array:
 	var arm := []
 	var hand := PackedVector3Array()
 	var leg := []
+	var bottom := INF        # 腰・胸のいちばん下（立った形の人形の座標）
+	var skirt_bottom := INF  # 裾のいちばん下（同じ）
 	for m in _body.find_children("*", "MeshInstance3D", true, false):
 		var mi := m as MeshInstance3D
 		if mi.skin == null:
@@ -676,6 +770,12 @@ func _seat_shape() -> Array:
 				if not is_arm and not is_hand and not (bn in SEAT_BODY):
 					continue
 				var to_bone := mi.skin.get_bind_pose(bind)
+				if not is_arm and not is_hand and not is_leg:
+					var y := (skel.get_bone_global_rest(bone_of[bind]) * (to_bone * vs[idx[t]])).y
+					if bn == "skirt":
+						skirt_bottom = minf(skirt_bottom, y)
+					else:
+						bottom = minf(bottom, y)
 				var a := to_bone * vs[idx[t]]
 				var b := to_bone * vs[idx[t + 1]]
 				var c := to_bone * vs[idx[t + 2]]
@@ -728,7 +828,7 @@ func _seat_shape() -> Array:
 	hr.sort()
 	leg.sort()
 	_seat_cache[kind] = [shape, arm[arm.size() / 2] if not arm.is_empty() else 0.03, hr[hr.size() / 2] if not hr.is_empty() else 0.03,
-		leg[leg.size() / 2] if not leg.is_empty() else 0.04]
+		leg[leg.size() / 2] if not leg.is_empty() else 0.04, bottom if bottom < INF else 0.0, skirt_bottom]
 	return _seat_cache[kind]
 
 
@@ -789,10 +889,12 @@ func _seat_slice(occ: PackedByteArray, nx: int, nz: int) -> PackedByteArray:
 
 
 ## 点 p（骨の座標の空間）が、いまの姿勢の体（胸・腰・裾・脚）の中（r だけふくらませて）に入るか。裾は座ってつぶれた分も
-func _in_seat_body(p: Vector3, r: float) -> bool:
+func _in_seat_body(p: Vector3, r: float, no_legs := false) -> bool:
 	var sk := _id("skirt")
 	var shape: Dictionary = _seat_shape()[0]
 	for bi in shape:
+		if no_legs and (skel.get_bone_name(bi).begins_with("thigh") or skel.get_bone_name(bi).begins_with("shin")):
+			continue
 		var c: Array = shape[bi]
 		var l := (_g[bi] as Transform3D).affine_inverse() * p
 		var sq := maxf(_squash, 0.05) if bi == sk else 1.0
@@ -1016,6 +1118,7 @@ func _pose() -> void:
 	_boil_k += 1.0 / lerpf(1.0, BOIL_SLOW, _calm)
 	_reset()
 	_hold = [null, null]
+	lap_line = PackedVector3Array()
 	var stride := maxf(_speed / CADENCE, 0.5) / _scale
 	var leg := absf(_head_of(_id("thigh.R")).y - _head_of(_id("foot.R")).y) if _id("foot.R") >= 0 else 0.5
 	var amp := asin(clampf(stride / (4.0 * maxf(leg, 0.1)), 0.0, 0.7)) if _speed > 0.25 else 0.0
