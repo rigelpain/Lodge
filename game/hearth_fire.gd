@@ -1,7 +1,7 @@
 extends Node3D
 ## ロッジの大きな暖炉の火（hearth_nook.gd が暖炉の品物の子に置く）。外の焚き火（campfire.gd）と同じ手芸の形:
 ##   薪: 巻いたフェルトのロール（暖炉の glb に入っている。props/build_nook.py の logs_and_fire）
-##   炎: 火の手本（flame.gd。薄葉紙をくしゃっと重ねた炎）を、炉の口の幅に合わせて 5 つ並べる。熾火は小さな羊毛玉
+##   炎: 火の手本（flame.gd）の切ったフェルトの形（2026-11-02 代表が焚き火の炎の案の左から 2 つ目を選んだ）を、炉の口の幅に合わせて 5 つ並べる。熾火は小さな羊毛玉
 ## 座標は暖炉の glb の座標（前の面が z = 0、炉の奥が +z、床が y = 0。build_nook.py の HEARTH_H・OW と同じ）。
 ## 部屋を照らす灯りはロッジ（lodge.gd の light_fire）が持つ。炉の中を照らす小さな灯りだけ、真ん中の炎に持たせる
 
@@ -43,6 +43,7 @@ func _ready() -> void:
 		f.brightness = FLAMES[i][2]
 		f.light_range = 3.5
 		f.seed = 31 + i * 5
+		f.style = "felt"
 		f.position = Vector3(float(FLAMES[i][0]), HEARTH_H + 0.18, DEPTH + float(FLAMES[i][3]))
 		add_child(f)
 
