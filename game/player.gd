@@ -787,7 +787,7 @@ func _physics_process(dt: float) -> void:
 			_drum_step(dt)
 	_update_point(dt)
 	_update_emote(dt)
-	_sack_events(dt)
+	_sack_events()
 	_tag_hold_step(dt)
 	_pose_hands(dt)
 	_pose_doll()
@@ -2092,7 +2092,6 @@ static func held_shape(it: Dictionary) -> Node3D:
 
 # ---------------------------------------------------------------- 米袋を出す・座る・しまう動き（doll.gd の sack_start）
 
-const SACK_LOOK := -0.32     # 米袋に腰を下ろすとき、これより上を見ていれば膝のあたりまで視線を下げる (rad。袋の傾きから)
 const SACK_EYE := Vector3(0, -0.03, 0.2)   # 米袋に座ったときの目の、人形の目からのずれ（後ろへもたれる）
 var _sack_ev := 0            # 米袋を出す動きで、済んだ出来事（1 広げた / 2 腰を下ろした / 3 乗っている形）
 var _sack_hidden: Node3D     # 広げるコマまで隠している米袋の見た目
@@ -2102,7 +2101,7 @@ var _legs_frame := -1
 
 
 ## 米袋を出す動きの出来事を、人形のコマに合わせて起こす: 広げる（ばさっ）→ 腰を下ろす（ぽふっ。袋がへこみ、雪の粉）
-func _sack_events(dt: float) -> void:
+func _sack_events() -> void:
 	var k := doll.sack_k("out")
 	if k < 0 or mode != Mode.RIDE or sled == null or sled.kind != "sack":
 		if k >= 0:
@@ -2130,10 +2129,6 @@ func _sack_events(dt: float) -> void:
 	if k >= 5 and _sack_ev < 3:
 		_sack_ev = 3
 		SackLook.set_stage(sled, seat, 2)
-	if k >= 3 and k <= 6 and not third:
-		# 腰を下ろしながら、膝のあたりへ目を落とす（下り坂では袋が前へ傾いている分も）
-		var slope := asin(clampf((-sled.global_basis.z).y, -1.0, 1.0))
-		_pitch = move_toward(_pitch, minf(_pitch, SACK_LOOK + minf(slope, 0.0)), dt * 3.0)
 
 
 func _sack_sound(what: String) -> void:
