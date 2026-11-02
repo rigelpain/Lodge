@@ -392,18 +392,23 @@ func _pose_pet() -> void:
 	if _want_pose != _pose:
 		_pose = _want_pose
 		_show_pose()
-	var parts: Dictionary = _pet.parts.get(_pose, {})
-	var rest: Dictionary = _pet.rest.get(_pose, {})
-	var gait: String = _pet.spec.gait
+	pose_parts(_pet, _pose, _phase, _frame, 1.4 if _riding else 1.0, _pet_target(), _doll.point == Vector3.INF)
+
+
+## ミニオンの姿 pose の部品を、付け根の姿勢から 12 コマの 1 コマぶん動かす（連れのミニオンと、山師の柵のミニオン pen_pets.gd が使う）。
+## pet は {node, parts, rest, spec}（_make_pet の形）。ph は歩く・跳ねる・転がるの進み、big は脚の振りの大きさ、
+## look は座っているときに首で見る所（世界）、tilt は、ときどき首をかしげるか
+static func pose_parts(pet: Dictionary, pose: String, ph: float, frame: int, big: float, look: Vector3, tilt: bool) -> void:
+	var parts: Dictionary = pet.parts.get(pose, {})
+	var rest: Dictionary = pet.rest.get(pose, {})
+	var gait: String = pet.spec.gait
 	for k in parts:   # 付け根の姿勢に戻してから
 		(parts[k] as Node3D).transform = rest[k]
 	var body: Node3D = parts.get("body")
 	var head: Node3D = parts.get("head")
 	var tail: Node3D = parts.get("tail")
-	var ph := _phase
-	match _pose:
+	match pose:
 		"walk":
-			var big := 1.4 if _riding else 1.0
 			match gait:
 				"trot":   # 対角の脚を一緒に出す。体は歩くたびに少し上下
 					var s := sin(ph) * 0.55 * big
@@ -432,7 +437,7 @@ func _pose_pet() -> void:
 							(parts[leg] as Node3D).rotation.x = 0.5 * u
 				"roll":   # 毛糸玉が転がる（半径 0.11 m）。ほどけた糸はうしろへ流れる
 					if body:
-						body.rotation.x = -fmod(ph * float(_pet.spec.step) / PI / 0.11, TAU)
+						body.rotation.x = -fmod(ph * float(pet.spec.step) / PI / 0.11, TAU)
 					if tail:
 						tail.rotation.y = 0.25 * sin(ph * 0.5)
 				"strut":   # 二本足で、首を前後に振って歩く
@@ -448,18 +453,18 @@ func _pose_pet() -> void:
 		"sit":   # 見る所を首で追う。しっぽをゆっくり振り、息で体が少しふくらむ
 			if head:
 				var hp := head.global_position
-				var ld := (_pet.node as Node3D).global_basis.inverse() * (_pet_target() - hp)
+				var ld := (pet.node as Node3D).global_basis.inverse() * (look - hp)
 				head.rotation = Vector3(clampf(atan2(ld.y, Vector2(ld.x, ld.z).length()), -0.5, 0.7), clampf(atan2(-ld.x, -ld.z), -HEAD_YAW, HEAD_YAW), 0.0)
-				if _doll.point == Vector3.INF and _frame % 23 < 3:
+				if tilt and frame % 23 < 3:
 					head.rotation.z = 0.3   # ときどき首をかしげる
 			if tail:
-				tail.rotation.y = 0.25 * sin(_frame * 0.2)
+				tail.rotation.y = 0.25 * sin(frame * 0.2)
 			if body:
-				body.scale = Vector3(1.0, 1.0 + 0.015 * sin(_frame * 0.5), 1.0)
+				body.scale = Vector3(1.0, 1.0 + 0.015 * sin(frame * 0.5), 1.0)
 		"sleep":   # ゆっくり息をする。ときどきしっぽの先が動く
 			if body:
-				body.scale = Vector3(1.0 + 0.01 * sin(_frame * 0.25), 1.0 + 0.03 * sin(_frame * 0.25), 1.0)
-			if tail and _frame % 60 < 3:
+				body.scale = Vector3(1.0 + 0.01 * sin(frame * 0.25), 1.0 + 0.03 * sin(frame * 0.25), 1.0)
+			if tail and frame % 60 < 3:
 				tail.rotation.y = 0.15
 
 
