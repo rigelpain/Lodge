@@ -1,7 +1,8 @@
 extends SceneTree
 ## ロッジの 2 階の掘りごたつを、決まった所から昼と夜に撮り、1 コマに描く三角形の数と描く回数を出す（確かめ用）。
 ##   Godot --path game --resolution 1280x720 -s res://tools/kotatsu_shots.gd -- --no-sound --dir=/path/shots [--tag=after]
-##     [--sets=patch,indigo,...（8 卓の柄を差し替える）] [--sit] [--hours=13,22] [--views=wide,near,row]
+##     [--sets=patch,indigo,...（8 卓の柄を差し替える）] [--pendant=drum|lantern|cone（吊り灯りの形を差し替える）] [--sit]
+##     [--hours=13,22] [--views=wide,near,row,lamp]
 ## --sit: 南の列の西から 2 卓目のこたつの座布団に、7 体の人形を座らせる。
 ## 三角形の数は本体の画面だけ（360 の小窓は止める）。場所はロッジの座標（lodge/dims.py の x 東, y 北, 高さ。Godot ではロッジの (x, 高さ, -y)）。2 階の畳の面は 6.5
 
@@ -13,6 +14,7 @@ const VIEWS := [
 	["wide", Vector3(-2.5, 8.4, ZT + 1.05), Vector3(-10.9, -20.7, ZT + 1.2), 62.0],   # lodge/ の kotatsu のカメラと同じ所
 	["near", Vector3(2.3, -2.6, ZT + 1.45), Vector3(-0.36, 1.0, ZT + 0.1), 55.0],      # 南の列の 2 卓目を南東から
 	["row", Vector3(16.6, 3.0, ZT + 1.6), Vector3(-8.0, 2.6, ZT + 0.2), 60.0],        # 東の端から 2 列を見通す
+	["lamp", Vector3(2.6, -1.8, ZT + 1.5), Vector3(-0.36, 1.0, ZT + 2.7), 50.0],      # 南の列の 2 卓目の吊り灯りを見上げる
 ]
 const SIT_AT := Vector2(-0.363, 1.0)   # 座らせるこたつ（南の列の西から 2 卓目）のまんなか
 
@@ -56,6 +58,8 @@ func _run() -> void:
 		(vp as SubViewport).render_target_update_mode = SubViewport.UPDATE_DISABLED
 	if args.has("sets"):
 		_swap_sets(String(args.sets).split(","))
+	if args.has("pendant"):
+		_swap_pendants(String(args.pendant))
 	if args.has("sit"):
 		await _sit_dolls()
 	cam = Camera3D.new()
@@ -119,6 +123,17 @@ func _swap_sets(pats: PackedStringArray) -> void:
 			if String(c.name).begins_with("Kotatsu"):   # 行灯は残す
 				c.queue_free()
 		ks.add_child((load("res://props/sets/kotatsu_lodge_%s.tscn" % pats[i]) as PackedScene).instantiate())
+
+
+func _swap_pendants(kind: String) -> void:
+	for i in 8:
+		var hook := lodge.find_child("slot_pendant_%d" % i, true, false) as Node3D
+		var ks := lodge.find_child("slot_kotatsu_%d" % i, true, false) as Node3D
+		if hook == null or ks == null:
+			continue
+		for c in hook.get_children():
+			c.free()
+		main._hang_pendant(hook, hook.position.y - ks.position.y - main.KOTATSU_LAMP_TOP, kind)
 
 
 ## 7 体の人形を、1 卓のこたつの座布団に座らせる

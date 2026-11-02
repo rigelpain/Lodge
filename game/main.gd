@@ -123,6 +123,12 @@ const KOTATSU_SETS := ["patch", "patch", "patch", "patch", "patch", "patch", "pa
 ## こたつの横の行灯（2026-11-02 代表「行灯を置く」）: こたつの組の座標で、壁の側の隅（座布団のあいだ）。
 ## 南の列（0〜3）は南（+Z）、北の列は北の隅。東西は卓ごとに交互。行灯は 2 倍で書き出してあるので半分（高さ 0.74 m）
 const KOTATSU_ANDON := Vector3(1.75, 0, 1.35)
+## こたつの上の吊り灯り（2026-11-02 代表「天井からの明かりが低すぎる」「謎の光るボックスなのはもったいない」）:
+## props/furniture/pendant_<形>.glb（drum プリーツの筒・lantern 提灯・cone 円錐）を、天井の目印 slot_pendant_<番号> から吊る。
+## 傘の上端は畳から KOTATSU_LAMP_TOP（lodge/dims.py の KOTATSU_LAMP）。コードは天井まで伸ばす。灯りは座敷の 2 つ（lodge.gd）で足りるので、吊り灯りそれぞれには灯さない
+const KOTATSU_PENDANT := "lantern"
+const KOTATSU_PENDANT_SCALE := 0.7
+const KOTATSU_LAMP_TOP := 3.2
 ## 番台（店番の商人のカウンターとレジ。2026-10-31 代表「パッチワークおじいさんにも、雪だるまにも、番台的なカウンターとレジを」）。
 ## [カウンター, レジ, お皿に盛る物, ロッジの座標 (x, y), 正面（客の側）の向き（度。0 = 南、90 = 東。lodge/dims.py の SLOTS と同じ）]。
 ## おじいさんは真東を向いて番台の後ろに立ち、雪だるまは冷蔵庫の中から番台ごしに食堂を向く。置き方は design/lodge-layout/
@@ -931,6 +937,9 @@ func _furnish_lodge() -> void:
 			andon.position = KOTATSU_ANDON * Vector3(1.0 if i % 2 else -1.0, 0, 1.0 if i < 4 else -1.0)
 			ks.add_child(andon)
 			_solid(andon)
+			var hook := lodge.find_child("slot_pendant_%d" % i, true, false) as Node3D
+			if hook:
+				_hang_pendant(hook, hook.position.y - ks.position.y - KOTATSU_LAMP_TOP)
 			for g in ks.find_children("*", "GeometryInstance3D", true, false):
 				(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for b in BANDAI:
@@ -964,6 +973,24 @@ func _furnish_lodge() -> void:
 	dye_vat.position = wardrobe.position + wardrobe.basis * DYE_VAT_AT
 	dye_vat.rotation.y = wardrobe.rotation.y
 	lodge.add_child(dye_vat)
+
+
+## 天井の目印 hook から、cord（m）のコードの先に吊り灯り（形は kind）を提げる
+func _hang_pendant(hook: Node3D, cord: float, kind := KOTATSU_PENDANT) -> void:
+	var p: Node3D = (load("res://props/furniture/pendant_%s.glb" % kind) as PackedScene).instantiate()
+	for m in p.find_children("light*", "Node3D", true, false):   # 灯りの目印は外す（灯さない）
+		if not m is MeshInstance3D:
+			m.free()
+	Props.dress(p)
+	var k := KOTATSU_PENDANT_SCALE
+	p.scale = Vector3.ONE * k
+	p.position = Vector3(0, -cord, 0)
+	hook.add_child(p)
+	for c in p.find_children("*", "MeshInstance3D", true, false):   # コード（glb では 2 m）を天井まで
+		var mi := c as MeshInstance3D
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if "felt" in String(mi.name) or "thread" in String(mi.name):
+			mi.scale.y = cord / (mi.get_aabb().size.y * k)
 
 
 ## 持ち主（あなた・仲間）に、頭・肩の小物とミニオン（companions.gd）を付ける。--bot-pals で仲間に付ける物を決める（確かめ用）
