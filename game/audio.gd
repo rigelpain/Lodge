@@ -395,44 +395,65 @@ func _make_walkers() -> void:
 		add_child(_self_breath)
 		_walkers[player] = {"acc": 0.0, "push_t": 0.4, "breath_t": 2.0, "pushing": 0.0, "step": _self_step, "breath": _self_breath}
 	for b in bots:
-		_walkers[b] = {"acc": rng.randf(), "push_t": rng.randf(), "breath_t": rng.randf_range(1.0, 3.0), "pushing": 0.0,
-				"step": _p3(b, "Outdoor", -8, 4.0, 40.0), "breath": _p3(b, "Voice", -16, 3.0, 20.0)}
+		add_walker(b)
+
+
+## 歩く人を足す（仲間、通信でつないでいるほかの人。net.gd が来た人を足す）。
+## 足音はその人の所から、外なら Outdoor、ロッジの中なら Inside（短い残響）で鳴らす。remote は届いた姿を写す体（remote_person.gd）
+func add_walker(who: Node3D, remote := false) -> void:
+	if _walkers.has(who):
+		return
+	_walkers[who] = {"acc": rng.randf(), "push_t": rng.randf(), "breath_t": rng.randf_range(1.0, 3.0), "pushing": 0.0,
+			"step": _p3(who, "Outdoor", -8, 4.0, 40.0), "step_in": _p3(who, "Inside", -8, 4.0, 40.0),
+			"breath": _p3(who, "Voice", -16, 3.0, 20.0), "remote": remote, "last": who.global_position}
 
 
 func _update_walkers(dt: float) -> void:
+	for who in _walkers.keys():
+		if not is_instance_valid(who):   # 帰った人
+			_walkers.erase(who)
 	for who in _walkers:
 		var w: Dictionary = _walkers[who]
 		var is_player: bool = who == player
+		var remote: bool = w.get("remote", false)
 		var vel: Vector3 = who.velocity
+		if remote:   # 届いた姿を写す体は velocity を持たない。動いた分から測る
+			vel = (who.global_position - w.last) / maxf(dt, 0.001)
+			w.last = who.global_position
 		var speed := Vector2(vel.x, vel.z).length()
 		var pushing: bool
 		var free: bool
+		var grounded: bool
 		if is_player:
 			pushing = (player.mode == player.Mode.GRIP and player.pushing) or (player.mode == player.Mode.ROPE and player.pulling)
 			free = player.mode == player.Mode.WALK or player.mode == player.Mode.ROPE
+		elif remote:
+			pushing = who.pushing or who.pulling
+			free = who.mode == who.Mode.WALK or who.mode == who.Mode.ROPE
 		else:
 			pushing = who.handle != Vector3.INF and sled.pushers > 0
 			free = who.handle == Vector3.INF and who.seat == Vector3.INF
+		grounded = not who.doll.airborne if remote else who.is_on_floor()
 		# 引きずられている: かかとが雪をすべる「ざざざ」。踏ん張りの音を速く、速いほど大きく高く。息も上がる
-		var dragged: bool = who.handle != Vector3.INF and sled.is_dragged(who)
-		var inside := _zone_of(who.global_position) == 2
+		var dragged: bool = who.doll.dragged if remote else who.handle != Vector3.INF and sled.is_dragged(who)
 		var db_step := -10.0 if is_player else -8.0
 		if dragged:
-			var sv := sled.linear_velocity.length()
+			var sl: RigidBody3D = who.sled if remote and who.sled else sled
+			var sv := sl.linear_velocity.length()
 			w.drag_t = w.get("drag_t", 0.0) - dt
 			if w.drag_t <= 0.0:
 				w.drag_t = rng.randf_range(0.09, 0.15)
-				_play_step(w, _pick("step_snow_push", 4), db_step - 4.0 + 4.0 * clampf(sv / 6.0, 0.0, 1.0),
-						rng.randf_range(1.1, 1.25) + 0.02 * sv, is_player)
+				_play_step(who, w, _push_name(who), db_step - 4.0 + 4.0 * clampf(sv / 6.0, 0.0, 1.0),
+						rng.randf_range(1.1, 1.25) + 0.02 * sv)
 			pushing = true
-		if free and speed > 0.5 and who.is_on_floor():
+		if free and speed > 0.5 and grounded:
 			w.acc += speed * dt
 			var stride := STRIDE + 0.3 * clampf((speed - 4.0) / 3.0, 0.0, 1.0)
 			if w.acc >= stride:
 				w.acc = 0.0
-				var s := _pick("step_wood", 4) if inside else _pick("step_snow", 6)
+				var s := _pick_name("step_wood", 4) if on_wood(who) else _pick_name("step_snow", 6)
 				var loud := db_step + 4.0 * clampf((speed - 4.0) / 3.0, 0.0, 1.0)
-				_play_step(w, s, loud, rng.randf_range(0.94, 1.06), is_player)
+				_play_step(who, w, s, loud, rng.randf_range(0.94, 1.06))
 		else:
 			w.acc = minf(w.acc, STRIDE * 0.6)
 		if pushing:
@@ -440,7 +461,7 @@ func _update_walkers(dt: float) -> void:
 			w.push_t -= dt
 			if w.push_t <= 0.0:
 				w.push_t = rng.randf_range(0.8, 1.1)
-				_play_step(w, _pick("step_snow_push", 4), db_step - 2.0, rng.randf_range(0.95, 1.05), is_player)
+				_play_step(who, w, _push_name(who), db_step - 2.0, rng.randf_range(0.95, 1.05))
 			w.breath_t -= dt
 			if w.breath_t <= 0.0:
 				w.breath_t = lerpf(4.0, 2.0, clampf(w.pushing / 20.0, 0.0, 1.0)) * rng.randf_range(0.85, 1.15)
@@ -460,7 +481,7 @@ func kick(who: Node3D) -> void:
 	var w: Dictionary = _walkers.get(who, {})
 	if w.is_empty():
 		return
-	_play_step(w, _pick("step_snow_push", 4), -6.0, rng.randf_range(1.15, 1.3), who == player)
+	_play_step(who, w, _push_name(who), -6.0, rng.randf_range(1.15, 1.3))
 
 
 ## 米袋を出す・座る・しまう（player.gd が呼ぶ）。what: "fling" ばさっと広げる / "sit" ぽふっと座る / "roll" くるくる丸める
@@ -791,11 +812,49 @@ func _one_shot(at: Vector3, name_: String, db: float, pitch := 1.0, delay := 0.0
 		go.call()
 
 
-func _play_step(w: Dictionary, s: AudioStreamWAV, db: float, pitch: float, is_player: bool) -> void:
-	if is_player:
+## 足の音を 1 つ鳴らす。自分は耳元（Self）、人はその人の所から（ロッジの中なら Inside、外なら Outdoor）
+func _play_step(who: Node3D, w: Dictionary, name_: String, db: float, pitch: float) -> void:
+	var s := _wav(name_)
+	if who == player:
 		_shot2(w.step, s, db, pitch)
 	else:
-		_shot(w.step, s, db, pitch)
+		_shot(w.step_in if _zone_of(who.global_position) == 2 else w.step, s, db, pitch)
+	if log_on:
+		played.append({"t": Engine.get_physics_frames() / float(Engine.physics_ticks_per_second), "name": name_,
+				"near": who == player, "dist": 0.0 if who == player else _listener().distance_to(who.global_position),
+				"who": String(who.name), "wind": _wind_rush.volume_db if _wind_rush else -80.0})
+
+
+## 踏ん張り・引きずられ・米袋の蹴りの音。雪なら「ギュッ」、木の床なら板を強く踏む音（同じ板の音を少し強く）
+func _push_name(who: Node3D) -> String:
+	return _pick_name("step_wood", 4) if on_wood(who) else _pick_name("step_snow_push", 4)
+
+
+## 足もとが木の床か（ロッジの当たり判定 lodge_collision.glb の上: 中の床・風除室・玄関前の広場・外階段・テラス・内階段）。
+## 足もとから下へ光線を落とし、当たった物がロッジの下にあれば木。雪の丘（高さの地図）や外の物の上なら雪。
+## ソリ・米袋（動く体）は通り抜けて、その下の床を見る（米袋に乗って蹴る・引きずられるときの足は、袋の横の床に着く）。
+## 光線が何にも当たらない（跳んでいる・通信の体が少し浮いている）ときは、ロッジの中なら木、外なら雪
+func on_wood(who: Node3D) -> bool:
+	return surface_at(who.global_position, who) == "wood"
+
+
+## 位置 at の足もとの床の種類（"wood" か "snow"）。skip は光線から外す体（その人自身）
+func surface_at(at: Vector3, skip: Node3D = null) -> String:
+	if lodge == null:
+		return "snow"
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.3, at + Vector3.DOWN * 0.6)
+	if skip is CollisionObject3D:
+		q.exclude = [(skip as CollisionObject3D).get_rid()]
+	var space := lodge.get_world_3d().direct_space_state
+	for i in 4:
+		var hit := space.intersect_ray(q)
+		if hit.is_empty():
+			break
+		if hit.collider is RigidBody3D or hit.collider is CharacterBody3D:   # ソリ・人は通り抜ける
+			q.exclude = q.exclude + [hit.rid]
+			continue
+		return "wood" if lodge.is_ancestor_of(hit.collider) else "snow"
+	return "wood" if _zone_of(at) == 2 else "snow"
 
 
 # ---- ロッジ ------------------------------------------------------------------------
