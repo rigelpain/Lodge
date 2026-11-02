@@ -14,6 +14,8 @@ extends SceneTree
 ##   shears （--no-player なしで）歩いて近づいたときの案内（F と裁ちばさみのワッペン）と、裁ちばさみで切る動き（1 コマごと）
 ##   ride   （--no-player なしで）頂上から乗って滑り、止まったときに速さの表示の糸が巻き取られ、ボタンが財布へ飛ぶまで。
 ##          途中で真鍮の縫い込み（ride_mark）を 1 つ、確かめのために出す画面の下で財布がぽんと増えるまでを並べた 1 枚
+##   take   （--no-player なしで）乗って滑り、斜面のボタンを続けて切る。ボタンが跳ねて自分の体へ飛び込み、体から財布へ飛ぶまでを、
+##          コマ撮りの 1 コマごとに <dir>/take_<view>_<番号>.png へ。--view=fp（一人称）・tp（三人称）
 ## 並べた 1 枚は <dir>/<case>_sheet.png、1 枚ずつは <dir>/<case>_<名前>.png。
 
 const DUMMY_SRC := """extends Node3D
@@ -133,6 +135,8 @@ func _run() -> void:
 			await _case_shears()
 		"ride":
 			await _case_ride()
+		"take":
+			await _case_take()
 	quit()
 
 
@@ -352,3 +356,58 @@ func _case_ride() -> void:
 		imgs.append(await _grab())
 		await _wait_frames(5)
 	_sheet(imgs, 4, 480)
+
+
+func _case_take() -> void:
+	var p = main.player
+	if p == null:
+		return
+	if main.hud:
+		main.hud.visible = true
+	var sled: RigidBody3D = main.sled
+	var at := Vector3(0, main.height(0, 3.0) + 0.6, 3.0)
+	sled.reset_to(at)
+	sled.global_transform = Transform3D(Basis(Vector3.UP, PI), at)
+	await _wait_frames(2)
+	var rx: float = sled.to_global(Vector3(sled.RUNNER_X, 0, 0)).x
+	var zs := [10.0, 15.0, 16.6]   # 一つ、少しあとに続けて二つ
+	for k in zs.size():
+		sb.drop_at(Vector3(rx, 0, zs[k]), k, true, 1 if k == 1 else 0)
+	sled.reset_to(at)
+	sled.global_transform = Transform3D(Basis(Vector3.UP, PI), at)
+	p.global_position = at + Vector3(1.2, 0.3, 0)
+	p.get_on()
+	p.rotation.y = PI + float(args.get("yaw", "0"))   # 一人称で、滑っていく向きを見るように
+	p._pitch = -0.3
+	p.set_third(args.get("view", "fp") == "tp")   # 設定に残った三人称にかかわらず
+	sled.linear_velocity = Vector3(0, 0, 3.0)
+	sb.happened.connect(func(ev: Dictionary) -> void:
+		if ev.kind == "snip":
+			var b = sb.button(int(ev.id))
+			print("コマ %d: 切った %d → %s（体に入り終えるコマ %d）" % [_frame(), int(ev.id), b.target.name, b.pop0 + sb.POP_UP + sb.POP_FLY]))
+	main.craft.happened.connect(func(ev: Dictionary) -> void:
+		if ev.kind == "earn":
+			print("コマ %d: earn %s" % [_frame(), ev]))
+	while sled.global_position.z < 7.0:
+		await process_frame
+		if main.settings and main.settings.is_open:
+			main.settings.set_open(false)
+			p.menu_open = false
+	var view: String = args.get("view", "fp")
+	var quiet := 0
+	for i in 90:
+		await _wait_steps(1)
+		if main.settings and main.settings.is_open:
+			main.settings.set_open(false)
+			p.menu_open = false
+		var img := await _grab()
+		img.resize(800, 450, Image.INTERPOLATE_LANCZOS)
+		img.save_png("%s/take_%s_%03d.png" % [_dir(), view, i])
+		var flies: Array = main.craft_ui._flies
+		var line := ""
+		for f in flies:
+			line += " %.2f" % f.t
+		print("コマ %d [%d]: 3D %s 飛ぶ%s  財布 %d" % [_frame(), i, sb.buttons.values().map(func(b): return b.state), line, main.craft.wallet(p.id) - main.craft_ui._pending])
+		quiet = quiet + 1 if flies.is_empty() and sb.stats.snip >= zs.size() else 0
+		if quiet > 6:
+			break

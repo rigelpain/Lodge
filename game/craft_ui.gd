@@ -22,8 +22,10 @@ extends CanvasLayer
 ##     右の下に、手持ち（上の段）とかばん（下の段, 緑のフェルトの巾着）。引きずって入れ替える（行き先に物があれば入れ替わる）。
 ##     押して離すと上に小窓: できあがった料理なら食べる（おにぎり）、どれでも捨てる（編みかご）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
-##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: 取った所からボタンが画面を飛んで財布へ入り、
-##     財布がぽんと跳ねる。財布に着くたびに、素材ごとの取得音（audio.gd の coin。木コッ・真鍮チン・白蝶貝シャラン・螺鈿）。
+##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: ボタンが画面を飛んで財布へ入り、
+##     財布がぽんと跳ねる。雪のボタンを切って取った分は、3D のボタンが体（胸）に飛び込み終えた次のコマに、体の画面の位置から
+##     飛び出す（一人称では胸は画面の下の外なので、画面の下の縁から。snow_buttons.gd の into_body。2026-11-02 代表「ボタンが体に
+##     入って、体からインベントリHUDに入るようにしてほしい」）。そのときに小さく「ぷつ」。財布まで 12 fps のコマで飛ぶ（FLY_FRAMES）。財布に着くたびに、素材ごとの取得音（audio.gd の coin。木コッ・真鍮チン・白蝶貝シャラン・螺鈿）。
 ##     飛ぶボタンは、増えた分を段ごとに分けた 1 枚ずつ（真鍮・白蝶貝・螺鈿は光る）。滑ってもらった分は、速さの表示の糸の上に
 ##     縫い込まれたボタンが、上から順にぽんぽんと続けて飛ぶ
 ##   財布は段ごとの山（左から木・真鍮・白蝶貝・螺鈿。価値の低い順）。両替はひとりでに（木が 10 枚になると真鍮 1 枚）
@@ -76,7 +78,8 @@ var _coin_pop := 0.0
 var _balls := -1             # 前に見た雪玉の数（増えた・減ったで弾ませる）
 var _ball_pop := 0.0
 var _ball_dir := 0           # 増えた (1)・減った (-1)
-var _flies: Array = []       # 財布へ飛んでいるボタン 1 枚ずつ {from（画面の px）, t（0→1）, look（段）, v（値打ち）, sewn（速さの表示の糸の上の番号。なければ -1）}
+var _flies: Array = []       # 財布へ飛んでいるボタン 1 枚ずつ {from（画面の px）, t（0→1）, look（段）, v（値打ち）, sewn（速さの表示の糸の上の番号。なければ -1）,
+                             #   f0・body（体から飛び出すコマと、その体。12 fps のコマで進む）}
 var _pending := 0            # 飛んでいて、まだ財布に描かない値打ち（木のボタンの何個分）
 var _tier_at := {}           # 段 → 財布のその段の山の、次の 1 枚が載る所（画面の px。描くときに決まる）
 var _batches := {}           # 滑った分（spool）の一まとまり → {left: まだ飛んでいる数, count, brass}。全部入ったら締めくくりの「ちゃりん」
@@ -84,6 +87,7 @@ var _next_batch := 1
 var _shine_t := 0.0          # お金のボタンの光の時計
 var _wallet_at := Vector2.ZERO   # 財布の、次のボタンが載る所（画面の px。描くときに決まる）
 const FLY_T := 0.75          # 財布まで飛ぶ秒
+const FLY_FRAMES := 9        # 体から財布まで飛ぶコマ（12 fps。FLY_T と同じ長さ）
 var _bar_a := 0.0
 var _goods: Array = []       # 売る品物の並び
 var _rects: Array = []       # 品物の札の場所（画面の px）
@@ -204,6 +208,9 @@ func _on_craft(ev: Dictionary) -> void:
 					list = Craft.pieces(int(ev.n))   # 糸の上と合わないときは、段ごとに分けて糸巻きから
 			if list.size() > 24:   # 多すぎるときは大きい段だけ飛ばし、残りはまとめて財布へ
 				list = list.slice(0, 24)
+			# 雪のボタンを切って取った分: 3D のボタンが体に入り終えたら、体から飛び出す（同じボタンが二つに見えないように）
+			var sb = main.get("snow_buttons") if main and not spool else null
+			var into: Dictionary = sb.into_body(int(ev.btn), ev.at) if sb and ev.has("btn") and ev.get("at") is Vector3 else {}
 			var flown := 0
 			var gap := 0.065   # 続けて入る間: 財布でチャリチャリ…と連なる（audio.gd の coin）
 			var batch := 0
@@ -215,7 +222,12 @@ func _on_craft(ev: Dictionary) -> void:
 				var v: int = {"raden": 1000, "pearl": 100, "brass": 10, "wood": 1}[list[k]]
 				flown += v
 				var si: int = hud.sewn_claim(list[k]) if on_spool else -1
-				_flies.append({"from": from, "t": -0.45 - k * gap, "look": list[k], "v": v, "sewn": si, "step": k, "batch": batch})
+				var fl := {"from": from, "t": -0.45 - k * gap, "look": list[k], "v": v, "sewn": si, "step": k, "batch": batch}
+				if not into.is_empty():   # 1 コマずつずらして、体から続けて
+					fl.f0 = int(into.frame) + k
+					fl.body = into.body
+					fl.t = -1.0
+				_flies.append(fl)
 			_pending += flown
 		"buy", "fold":
 			_pop[int(ev.slot)] = 1.0
@@ -235,6 +247,26 @@ func _screen_of(p: Variant) -> Vector2:
 		if Rect2(Vector2.ZERO, _view.size).grow(-24.0).has_point(at):
 			return at
 	return Vector2(_view.size.x * 0.5, _view.size.y * 0.3)
+
+
+## 体の胸が画面のどこに見えるか。画面の外（一人称では胸は画面の下の外、うしろ）なら、そちらの向きの画面の縁から
+func _screen_edge(p: Vector3) -> Vector2:
+	var cam := get_viewport().get_camera_3d()
+	var r := Rect2(Vector2.ZERO, _view.size).grow(-24.0)
+	var c := r.get_center()
+	if cam == null:
+		return Vector2(c.x, r.end.y)
+	var lp := cam.global_transform.affine_inverse() * p
+	var d := Vector2(lp.x, -lp.y)
+	if lp.z < -0.05:
+		var at := cam.unproject_position(p)
+		if r.has_point(at):
+			return at
+		d = at - c
+	if d.length() < 0.001:
+		d = Vector2.DOWN
+	var k := minf(r.size.x * 0.5 / maxf(absf(d.x), 0.001), r.size.y * 0.5 / maxf(absf(d.y), 0.001))
+	return c + d * k
 
 
 func open_machine() -> void:
@@ -645,8 +677,16 @@ func _process(dt: float) -> void:
 	var hud = main.get("hud") if main else null
 	for f in _flies.duplicate():
 		var was: float = f.t
-		f.t += dt / FLY_T
+		if f.has("f0"):
+			f.t = float(Doll.frame_index() - int(f.f0)) / FLY_FRAMES
+		else:
+			f.t += dt / FLY_T
 		var audio = main.get_node_or_null("Audio") if main else null
+		if was < 0.0 and f.t >= 0.0 and f.has("body"):   # 体に入ったボタンが、体から飛び出す（ぷつ）
+			var sb = main.get("snow_buttons") if main else null
+			f.from = _screen_edge(sb.chest_of(f.body)) if sb and is_instance_valid(f.body) else f.from
+			if audio:
+				audio.coin_off()
 		if was < 0.0 and f.t >= 0.0 and int(f.get("sewn", -1)) >= 0 and hud:   # 糸の上のボタンが、ぽんと外れて飛び出す（ぷつ）
 			f.from = hud.sewn_screen(int(f.sewn))
 			hud.sewn_off(int(f.sewn))
