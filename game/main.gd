@@ -173,7 +173,8 @@ var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
 var lantern_rack: Node3D      # 番台の横のランタン掛け（lantern_rack.gd）
 var lantern_ui: CanvasLayer   # ランタンを買って提げ替える画面（lantern_ui.gd）
 var pal_stall: Node3D         # 衣装掛けの横の、頭・肩の小物とミニオンの売り台（pal_stall.gd）
-var pals_ui: CanvasLayer      # 小物とミニオンを買って付け替える画面（pals_ui.gd）
+var pals_ui: CanvasLayer      # 頭・肩の小物を買って付け替える画面（pals_ui.gd の頭・肩の段）
+var minion_ui: CanvasLayer    # 山師が育てているミニオンを買って連れ替える画面（pals_ui.gd の連れの段。山師の売り場の「連れ」の札から）
 var dye_vat: Node3D           # 衣装掛けのとなりの染め桶（dye_vat.gd）
 var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
@@ -451,6 +452,18 @@ func _ready() -> void:
 		mountain_ui.player = player
 		mountain_ui.shop = mountain_man
 		add_child(mountain_ui)
+		# 山師が育てているミニオンの画面: pals_ui.gd を連れの段だけで開く（2 階の売り台の画面とは別のもの。2 階の売り台が
+		# ほかの店に替わっても、ここは pals_ui.gd を直に読むので残る）
+		minion_ui = preload("res://pals_ui.gd").new()
+		minion_ui.name = "MinionUi"
+		minion_ui.main = self
+		minion_ui.craft = craft
+		minion_ui.player = player
+		minion_ui.tabs = ["pet"]
+		minion_ui.board_color = MountainUi.FELT
+		minion_ui.lead_tab = "mountain"   # 段の札の上の、山の道具の売り場へ戻る札
+		minion_ui.lead_pressed.connect(func(): mountain_ui.open())
+		add_child(minion_ui)
 		if args.get("spawn", "") == "mountain" and mountain_man:   # --spawn=mountain: 山男の前から始める
 			var at := mountain_man.to_global(Vector3(0, 0.1, -1.9))
 			player.global_position = at
@@ -481,6 +494,7 @@ func _ready() -> void:
 		pals_ui.main = self
 		pals_ui.craft = craft
 		pals_ui.player = player
+		pals_ui.tabs = ["head", "shoulder"]   # ミニオンは山師の売り物（2026-11-02 代表「ミニオンは山師が育てているのを買う感じにしてほしい」）
 		add_child(pals_ui)
 		if args.get("spawn", "") == "pals" and pal_stall:   # --spawn=pals: 売り台の前から始める
 			var at := pal_stall.to_global(Vector3(0, 0.1, 1.5))

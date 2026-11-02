@@ -7,7 +7,8 @@ extends Node3D
 ## person/ideas/yamaotoko/roughs.py --export で、紙と糸の素材で組み、骨を入れ、色と凹凸とくぼみの陰を焼いた game/person/yamaotoko.glb。
 ## 上着は青海波を刷った藍の和紙（裏と縁は白）、裾・衿・頭巾の縁に生成りの糸のなみ縫い、帯は前で結んで垂らす。足もとに青いやわらかい影
 ## 置き場所はロッジの 1 階の、大きなミシンの奥（main.gd の MOUNTAIN_MAN）。
-## 横（rack_side の側）に木の棚を置き、山の道具を並べる。まだ売っていない品目（mountain_goods.gd の on が false）は、白い紙に包んで麻ひもで縛ってある。
+## 横（rack_side の側）に木の棚を置き、その先に、山師が育てているミニオンの柵（ミニオンも山師から買う。売り場の「連れ」の札）。
+## 棚には山の道具を並べる。まだ売っていない品目（mountain_goods.gd の on が false）は、白い紙に包んで麻ひもで縛ってある。
 ## 動きは人形と同じ 12 コマ／秒に刻む（コマの間は止める）:
 ##   待つ   息をするように体がわずかにふくらむ。ときどき見回す
 ##   気づく 人が近づくと顔を向け、左手を挙げて小さく振る。近くに何人かいれば、いちばん近い人を見る（オンラインのほかの人も）
@@ -17,6 +18,8 @@ extends Node3D
 const Doll := preload("res://doll.gd")
 const Look := preload("res://look.gd")
 const Goods := preload("res://mountain_goods.gd")
+const Pals := preload("res://pals.gd")
+const Props := preload("res://props.gd")
 
 const MODEL := "res://person/yamaotoko.glb"
 const SCALE := 1.3           # ラフ（1.33 m）から、ゲームの人と並ぶ大きさへ（おじいさんと同じくらい）
@@ -24,6 +27,14 @@ const FOOT_SHADOW := 0.42    # 足もとの影の半径（ラフの大きさの�
 const NOTICE_R := 4.0        # この距離に人が来ると気づく (m)
 const TALK_R := 2.4          # F で話しかけられる距離 (m)
 const RACK_AT := Vector3(1.15, 0, 0.1)   # 棚の位置（山男の座標。+X が右手の側。rack_side で左右を替える）
+## 山師が育てているミニオンの柵（2026-11-02 代表「ミニオンは山師が育てているのを買う感じにしてほしい」。案 C を選んだ）。
+## 棚の先（棚と同じ側）に、毛糸を巻いた木の柵で囲った寝床。編んだ敷物、薪かごの巣、紙コップの餌の器。前（客の側）は入口をあける
+const PEN_AT := Vector3(2.75, 0, 0.0)   # 柵のまんなか（山男の座標。x は rack_side を掛ける）
+const PEN_SIZE := Vector2(1.6, 1.5)     # 柵の幅（山男の左右）と奥行き (m)
+## 柵の中のミニオン: [名前, 柵の中の所, 向き, 姿]。売り物から（はじめから連れている子狐は巣で寝ている）
+const PEN_PETS := [["kit", Vector3(-0.35, 0.18, 0.35), 0.0, "sleep"], ["rabbit", Vector3(0.35, 0, -0.15), 0.5, "sit"],
+	["frog", Vector3(-0.3, 0, -0.35), -0.2, "sit"], ["yarn", Vector3(0.45, 0, 0.4), 1.0, "sit"]]
+const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、柵のミニオンを置く
 
 const WHITE := Color("EEE8DC")
 const CREAM := Color("EBD9BC")
@@ -49,6 +60,10 @@ var _buyer: Node3D           # いま見ている買った人（少しのあい�
 var _buyer_until := -1
 var _rng := RandomNumberGenerator.new()
 var _mats := {}
+var _pen: Node3D
+var _pen_loaded := false
+var _pen_heads: Array = []   # 柵のミニオンの首（12 コマでときどき振る）
+var _check_t := 0.0
 
 
 func _ready() -> void:
@@ -69,6 +84,7 @@ func _ready() -> void:
 	col.add_child(cs)
 	add_child(col)
 	_make_rack()
+	_make_pen()
 	if craft:
 		craft.happened.connect(_on_craft)
 
@@ -306,6 +322,69 @@ func _wrapped(parent: Node3D, at: Vector3, i: int) -> void:
 		pivot.add_child(ring)
 
 
+# ---- ミニオンの柵 ----------------------------------------------------------------------
+
+func _make_pen() -> void:
+	_pen = Node3D.new()
+	_pen.name = "Pen"
+	_pen.position = Vector3(PEN_AT.x * rack_side, 0, PEN_AT.z)
+	add_child(_pen)
+	var wood := Look.wood(Color(0.50, 0.33, 0.20))
+	var dark := Look.wood(Color(0.36, 0.24, 0.15))
+	var yarn := Look.felt(YARN_RED, 4.0)
+	var w := PEN_SIZE.x
+	var d := PEN_SIZE.y
+	var rug := Props.make("res://props/room/rug_braided_cool.glb")
+	rug.scale = Vector3.ONE * 0.5
+	rug.position.y = 0.01
+	_pen.add_child(rug)
+	for p in [Vector3(-w, 0, -d), Vector3(w, 0, -d), Vector3(-w, 0, d), Vector3(w, 0, d), Vector3(0, 0, -d), Vector3(0, 0, d)]:   # 柱と、頭に巻いた毛糸
+		var q: Vector3 = p * 0.5
+		_box(_pen, Vector3(0.06, 0.55, 0.06), q + Vector3(0, 0.275, 0), dark)
+		_box(_pen, Vector3(0.075, 0.05, 0.075), q + Vector3(0, 0.42, 0), yarn)
+	for y in [0.22, 0.46]:   # 横木 2 段。前（-Z、客の側）は入口をあける
+		_box(_pen, Vector3(w, 0.035, 0.035), Vector3(0, y, d * 0.5), wood)
+		_box(_pen, Vector3(0.035, 0.035, d), Vector3(-w * 0.5, y, 0), wood)
+		_box(_pen, Vector3(0.035, 0.035, d), Vector3(w * 0.5, y, 0), wood)
+		_box(_pen, Vector3(w * 0.32, 0.035, 0.035), Vector3(-w * 0.34, y, -d * 0.5), wood)
+		_box(_pen, Vector3(w * 0.32, 0.035, 0.035), Vector3(w * 0.34, y, -d * 0.5), wood)
+	var basket := Props.make("res://props/hearth/log_basket.glb")   # 巣
+	basket.scale = Vector3.ONE * 0.5
+	basket.position = Vector3(-0.35, 0, 0.35)
+	basket.rotation.y = 0.4
+	_pen.add_child(basket)
+	for i in 2:   # 餌の器
+		var cup := Props.make("res://props/cup.glb")
+		cup.scale = Vector3.ONE * 0.6
+		cup.position = Vector3(0.05 + i * 0.25, 0, 0.1)
+		_pen.add_child(cup)
+	var body := StaticBody3D.new()   # 柵の当たり（中には入れない）
+	var cs := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(w, 0.6, d)
+	cs.shape = box
+	cs.position.y = 0.3
+	body.add_child(cs)
+	_pen.add_child(body)
+
+
+## 柵のミニオンを置く（あなたが近づいてから一度だけ。ミニオンの形を読むのは重いので）
+func _load_pen() -> void:
+	_pen_loaded = true
+	for e in PEN_PETS:
+		var n: Node3D = Pals.scene(e[0]).instantiate()
+		Pals.paint(n)
+		for c in n.get_children():
+			(c as Node3D).visible = Pals.part_name(c) == e[3]
+			if Pals.part_name(c) == e[3]:
+				var h := c.find_child("head*", false, false)
+				if h:
+					_pen_heads.append(h)
+		n.position = e[1]
+		n.rotation.y = PI + float(e[2])   # 正面（+Z）を客の側（-Z）へ
+		_pen.add_child(n)
+
+
 # ---- 動き（12 コマ／秒）----------------------------------------------------------------
 
 ## いちばん近い人（あなたとオンラインのほかの人。いなければ null）
@@ -327,12 +406,21 @@ func _nearest() -> Node3D:
 	return best
 
 
-func _process(_dt: float) -> void:
+func _process(dt: float) -> void:
+	_check_t -= dt
+	if not _pen_loaded and _check_t <= 0.0:
+		_check_t = 0.5
+		var you: Node3D = main.get("player") if main else null
+		if you == null or you.global_position.distance_to(global_position) < NEAR_LOAD:
+			_load_pen()
 	var fi := Doll.frame_index()
 	if fi == _frame:
 		return
 	_frame = fi
 	_k += 1
+	for i in _pen_heads.size():   # 柵のミニオンが、ときどき首を振る（品物ごとに違う間合い。2 階の売り台と同じ）
+		var k := (fi + i * 13) % 50
+		(_pen_heads[i] as Node3D).rotation = Vector3(0.0, 0.5 * sin(float((fi + i * 13) / 50) * 2.1) if k < 30 else 0.0, 0.25 if k > 44 else 0.0)
 	var you := _buyer if _buyer and is_instance_valid(_buyer) and _k < _buyer_until else _nearest()
 	var near := you != null
 	if near and not _noticed:
@@ -391,9 +479,11 @@ func sold(buyer: Node3D) -> void:
 		_buyer_until = _k + 30
 
 
-## だれかが山男の棚の品物を買った（通信では全員の画面に届く）
+## だれかが山男の棚の品物か、柵のミニオンを買った（通信では全員の画面に届く）
 func _on_craft(ev: Dictionary) -> void:
-	if ev.get("kind", "") != "buy" or not Goods.has(ev.get("item", {}).get("kind", "")):
+	var tool: bool = ev.get("kind", "") == "buy" and Goods.has(ev.get("item", {}).get("kind", ""))
+	var pet: bool = ev.get("kind", "") == "pal_buy" and Pals.slot_of(String(ev.get("key", ""))) == "pet"
+	if not tool and not pet:
 		return
 	sold(_person(int(ev.get("who", -1))))
 

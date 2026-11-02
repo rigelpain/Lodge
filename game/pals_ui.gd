@@ -7,6 +7,8 @@ extends CanvasLayer
 ##   ボタンが足りないと札が震える。板の下のまんなかに財布（持っているボタン）。
 ##   A/D（←/→）で札を選び、W/S（↑/↓）で段を替え、Enter か Space で押したのと同じ。閉じるのは右上の × の縫い目か、F か Esc
 ## 買う・付けるは craft.gd の出来事 pal_buy・pal_wear（通信ではほかの人の画面でも、その人の小物とミニオンが替わる）
+## 出す段は tabs で選ぶ（2026-11-02 代表「ミニオンは山師が育てているのを買う感じにしてほしい」）: 2 階の売り台は頭・肩、
+## 山師（mountain_man.gd）は連れだけ。山師の画面では、段の札の上に lead_tab の札（山の道具の売り場へ戻る）を足し、板の色も替える
 
 const Pals := preload("res://pals.gd")
 const Icons := preload("res://hud_icons.gd")
@@ -20,7 +22,13 @@ var main: Node3D
 var craft: Node
 var player: Node3D
 var is_open := false
-var tab := 0                 # いま開いている段（TABS の番号）
+var tabs: Array = TABS       # 出す段（main.gd が決める）
+var board_color := Color(0.36, 0.42, 0.33)   # 板のフェルトの色
+var lead_tab := ""           # 段の札の上に足す札の絵（"" なら出さない）。押すと lead_pressed
+signal lead_pressed
+var tab := 0                 # いま開いている段（tabs の番号）
+var _lead_rect := Rect2()
+var _hover_lead := false
 var _view: Control
 var _sel := 0
 var _hover := -1
@@ -60,16 +68,17 @@ func _who() -> int:
 
 
 func keys() -> Array:
-	return Pals.keys_of(TABS[tab])
+	return Pals.keys_of(tabs[tab])
 
 
 func open(slot := "") -> void:
 	if is_open or player == null or player.menu_open:
 		return
 	is_open = true
-	if slot in TABS:
-		tab = TABS.find(slot)
-	_sel = maxi(0, keys().find(craft.pal_worn(_who(), TABS[tab])))
+	tab = clampi(tab, 0, tabs.size() - 1)
+	if slot in tabs:
+		tab = tabs.find(slot)
+	_sel = maxi(0, keys().find(craft.pal_worn(_who(), tabs[tab])))
 	_hover = -1
 	_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -97,8 +106,8 @@ func close() -> void:
 func set_tab(i: int) -> void:
 	if i == tab:
 		return
-	tab = posmod(i, TABS.size())
-	_sel = maxi(0, keys().find(craft.pal_worn(_who(), TABS[tab])))
+	tab = posmod(i, tabs.size())
+	_sel = maxi(0, keys().find(craft.pal_worn(_who(), tabs[tab])))
 	_hover = -1
 	_free_shots()
 	_make_shots()
@@ -111,7 +120,7 @@ func choose(i: int) -> bool:
 		return false
 	_sel = i
 	var key: String = ks[i]
-	var slot: String = TABS[tab]
+	var slot: String = tabs[tab]
 	var ok := false
 	if craft.pal_owned(_who(), key):
 		var now: String = craft.pal_worn(_who(), slot)
@@ -228,22 +237,29 @@ func _draw_on(ci: Control) -> void:
 	var bh := ch + 190.0 * u
 	var r := Rect2((vs - Vector2(bw, bh)) / 2.0, Vector2(bw, bh))
 	_board(ci, r, u)
-	# 左: 段の札（頭・肩・連れ）
+	# 左: 段の札（頭・肩・連れ）。lead_tab があれば、その上に
 	_tabs.clear()
-	for i in TABS.size():
+	var lead := 1 if lead_tab != "" else 0
+	if lead_tab != "":
 		var ts := 84.0 * u
-		var tr := Rect2(r.position + Vector2(24.0 * u, 70.0 * u + i * (ts + 16.0 * u)), Vector2(ts, ts))
+		_lead_rect = Rect2(r.position + Vector2(24.0 * u, 70.0 * u), Vector2(ts, ts))
+		Icons.screen()
+		Icons.patch(ci, Icons.rr(_lead_rect.position.x, _lead_rect.position.y, ts, ts, 12.0 * u), Icons.PAPER.darkened(0.12), 1.0 if _hover_lead else 0.75, true, Icons.PAPER_EDGE)
+		Icons.icon(ci, lead_tab, _lead_rect.get_center(), ts * 0.8, 0.6)
+	for i in tabs.size():
+		var ts := 84.0 * u
+		var tr := Rect2(r.position + Vector2(24.0 * u, 70.0 * u + (i + lead) * (ts + 16.0 * u)), Vector2(ts, ts))
 		_tabs.append(tr)
 		var on := i == tab
 		Icons.screen()
 		Icons.patch(ci, Icons.rr(tr.position.x, tr.position.y, ts, ts, 12.0 * u), Icons.PAPER if on else Icons.PAPER.darkened(0.12), 1.0 if on or i == _hover_tab else 0.75, true, Icons.PAPER_EDGE)
-		Icons.icon(ci, "pal_" + TABS[i], tr.get_center(), ts * 0.8, 1.0 if on else 0.6)
+		Icons.icon(ci, "pal_" + tabs[i], tr.get_center(), ts * 0.8, 1.0 if on else 0.6)
 		if on:
 			Icons.screen()
 			Icons.dashes(ci, Icons.rr(tr.position.x - 5 * u, tr.position.y - 5 * u, ts + 10 * u, ts + 10 * u, 15.0 * u), Icons.RED, 3.0 * u, 8.0 * u, 5.0 * u, 1.0, true)
 	# 札
 	_cards.clear()
-	var worn: String = craft.pal_worn(_who(), TABS[tab])
+	var worn: String = craft.pal_worn(_who(), tabs[tab])
 	var coins: int = craft.wallet(_who())
 	var pad := 8.0 * u
 	var asp := float(SHOT.x) / SHOT.y
@@ -297,7 +313,7 @@ func _board(ci: CanvasItem, r: Rect2, u: float) -> void:
 	var uv := PackedVector2Array()
 	for p in pts:
 		uv.append(p / 40.0)
-	ci.draw_colored_polygon(pts, Color(0.36, 0.42, 0.33), uv, Icons.felt())
+	ci.draw_colored_polygon(pts, board_color, uv, Icons.felt())
 	var inset := Rect2(r.position + Vector2(14, 14) * u, r.size - Vector2(28, 28) * u)
 	Icons.dashes(ci, PackedVector2Array([inset.position, Vector2(inset.end.x, inset.position.y), inset.end, Vector2(inset.position.x, inset.end.y)]),
 			Icons.CAP, 2.4 * u, 9.0 * u, 6.0 * u, 0.8, true)
@@ -339,10 +355,14 @@ func _input(e: InputEvent) -> void:
 		_hover = _hit(e.position)
 		_hover_tab = _hit_tab(e.position)
 		_hover_close = _close_rect.has_point(e.position)
+		_hover_lead = lead_tab != "" and _lead_rect.has_point(e.position)
 	elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 		get_viewport().set_input_as_handled()
 		if _close_rect.has_point(e.position):
 			close()
+		elif lead_tab != "" and _lead_rect.has_point(e.position):
+			close()
+			lead_pressed.emit()
 		elif _hit_tab(e.position) >= 0:
 			set_tab(_hit_tab(e.position))
 		else:

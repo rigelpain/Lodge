@@ -13,7 +13,8 @@ const TABLE := Vector3(1.3, 0.78, 0.6)   # 台の幅・高さ・奥行き (m)
 const REACH := 2.3           # この距離 (m) の内で、台の方を向いていれば F で開ける
 const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、品物を並べる
 const SHOW_PERCH := [["chiyo_bird", Vector3(-0.38, 0.0, 0.0)], ["crane", Vector3(-0.06, 0.0, 0.0)], ["blue_bird", Vector3(0.26, 0.0, 0.0)]]
-const SHOW_PET := [["kit", Vector3(-0.42, 0.0, 0.12), 0.55], ["frog", Vector3(0.38, 0.0, 0.14), 0.7]]
+## ミニオンは山師の売り物になった（2026-11-02 代表「ミニオンは山師が育てているのを買う感じにしてほしい」。mountain_man.gd の柵）ので、台には並べない
+const SHOW_PET := []
 
 var player: Node3D           # main.gd が入れる
 var _loaded := false

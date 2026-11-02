@@ -38,7 +38,7 @@ extends Node
 ##   lantern_buy {look}        おじいさんの番台の横のランタン掛け（lantern_rack.gd）で、形違いのランタン（lantern.gd の LOOK）を買う。
 ##                             買ったらすぐ帯に提げる（ev に index が入る）。通信ではほかの人の画面でも、その人のランタンが替わる
 ##   lantern_own {look}        持っているランタンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
-##   pal_buy   {key}           2 階の衣装掛けの横の売り台で、頭・肩の小物かミニオン（pals.gd）を買う。買ったらすぐ身につける（ev に slot が入る）
+##   pal_buy   {key}           頭・肩の小物（2 階の衣装掛けの横の売り台）かミニオン（1 階の山師）を買う（pals.gd）。買ったらすぐ身につける（ev に slot が入る）
 ##   pal_own   {key}           持っている小物・ミニオンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
 ##   pal_wear  {slot, key}     頭（head）・肩（shoulder）・連れ（pet）に、持っている物を付ける。key が "" なら外す。
 ##                             みんなの画面で、その人の小物とミニオンが替わる（companions.gd）
