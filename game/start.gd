@@ -60,6 +60,7 @@ func _ready() -> void:
 	# 後ろの雪山: ゆっくり回るカメラ
 	_cam = Camera3D.new()
 	_cam.fov = 55
+	_cam.cull_mask &= ~(1 << 8)   # 右上の 360° 小窓用の太陽の写し（main.gd の PIP_SUN_LAYER）は映さない
 	main.add_child(_cam)
 	_cam.make_current()
 	_place_cam()

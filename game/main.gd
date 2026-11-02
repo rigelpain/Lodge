@@ -373,6 +373,7 @@ func _ready() -> void:
 
 	if player == null:
 		var cam := Camera3D.new()
+		cam.cull_mask &= ~PIP_SUN_LAYER   # 小窓用の太陽の写しは映さない
 		add_child(cam)
 		cam.position = Vector3(-30, 26, 40)
 		cam.look_at(Vector3(0, 8, 10))
@@ -607,11 +608,21 @@ void fragment() {
 
 var pip_cams: Array[Camera3D] = []
 var _pip_vps: Array[SubViewport] = []
-var _pip_tick := 0
+var _pip_next := 0        # 次に描き直す面
+var _pip_due := 0.0       # 描き直す面の数のたまり（1 たまるごとに 1 面）
+var _pip_env: Environment # 小窓の面だけの軽い環境（陰・照り返し・にじみを描かない）
+## 小窓は人形と同じ 12 fps で描き直す。6 面を一度に描くとそのコマだけ重くなるので、毎フレーム 1〜2 面ずつ順に描く
+## （2026-11-01 代表「60fpsって出すの難しい？」。6 面を毎フレーム描いていて、M2 で 26 fps だった）
+const PIP_FPS := 12.0
 var pip_hidden := false
 var settings: CanvasLayer
 var ground_mesh: MeshInstance3D
 var sun_light: DirectionalLight3D
+var _pip_sun: DirectionalLight3D   # 小窓の面だけを照らす、影を落とさない太陽の写し
+## 太陽を層で分ける: 本物（影を落とす）は層 8、小窓用の写し（影なし）は層 9。光はカメラの映す層で選ばれる。
+## 小窓の 6 面が本物の太陽を見ると、面ごとに影の地図を描き直し、1 面で本体の画面と同じくらい重くなる
+const SUN_LAYER := 1 << 7
+const PIP_SUN_LAYER := 1 << 8
 var env: Environment
 var snowfall: GPUParticles3D
 var ride_wind: Node3D
@@ -655,20 +666,27 @@ func _make_pip() -> void:
 	for f in FACES:
 		var vp := SubViewport.new()
 		vp.size = Vector2i(FACE_PX, FACE_PX)
-		vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS   # 毎フレーム小さく描く方が、コマの重さがそろう
+		vp.render_target_update_mode = SubViewport.UPDATE_ONCE   # 始めに 1 度。あとは _process が順に描く
+		vp.mesh_lod_threshold = 6.0   # 160 px の面なので、形は粗くてよい（本体は 1.0）
+		vp.positional_shadow_atlas_size = 0   # ランタンなどの点の灯りの影は描かない
 		add_child(vp)
 		_pip_vps.append(vp)
 		var cam := Camera3D.new()
 		cam.fov = 90.0
 		cam.keep_aspect = Camera3D.KEEP_WIDTH
 		cam.near = 0.08
-		cam.cull_mask = (1 << 0) | (1 << 1)   # 地面・ソリ・人・あなたの体。手（層 3）と飾り（層 4）は映さない
+		cam.cull_mask = (1 << 0) | (1 << 1) | PIP_SUN_LAYER   # 地面・ソリ・人・あなたの体と、影なしの太陽。手（層 3）と飾り（層 4）は映さない
 		cam.far = 120.0
+		cam.environment = _pip_env_of()
 		vp.add_child(cam)
 		cam.current = true
 		pip_cams.append(cam)
 		textures.append(vp.get_texture())
 	_place_pip_cams()
+	_pip_sun = DirectionalLight3D.new()
+	_pip_sun.shadow_enabled = false
+	_pip_sun.layers = PIP_SUN_LAYER
+	add_child(_pip_sun)
 
 	var layer := CanvasLayer.new()
 	layer.layer = 2
@@ -708,6 +726,35 @@ func _make_pip() -> void:
 	_layout_pip()
 
 
+## 3D を描く大きさ: 画面の縦が 1080 px より大きいとき（Retina の全画面など）は、3D だけ縦 1080 px ほどで描いて FSR で広げる。
+## HUD・文字・小窓はそのままの細かさ。--scale3d=1 で縮めない（確かめ用）
+const SCALE_3D_HEIGHT := 1080.0
+
+var _fit_h := -1   # 3D の大きさを決めたときの画面の縦 (px)。窓の大きさが変わったら決め直す（起動の直後にも変わる）
+
+func _fit_3d_scale() -> void:
+	var vp := get_viewport()
+	if vp.size.y == _fit_h:
+		return
+	_fit_h = vp.size.y
+	var k := clampf(SCALE_3D_HEIGHT / maxf(vp.size.y, 1.0), 0.5, 1.0)
+	if args.has("scale3d"):
+		k = clampf(float(args["scale3d"]), 0.25, 1.0)
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if k < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_scale = k
+
+
+## 小窓の面の環境: 本体の環境の写しから、160 px の面では見えない重いもの（陰・色の照り返し・光のにじみ・空気の厚み）を抜く
+func _pip_env_of() -> Environment:
+	if _pip_env == null:
+		_pip_env = env.duplicate()
+		_pip_env.ssao_enabled = false
+		_pip_env.ssil_enabled = false
+		_pip_env.glow_enabled = false
+		_pip_env.volumetric_fog_enabled = false
+	return _pip_env
+
+
 func _layout_pip() -> void:
 	var size: Vector2 = PIP_SIZES[pip_mode]
 	if pip_mat:
@@ -745,6 +792,7 @@ func _place_pip_cams() -> void:
 var _cloud_t := 0.0
 
 func _process(_dt: float) -> void:
+	_fit_3d_scale()
 	_cloud_t += _dt
 	if _cloud_t >= 0.5:   # 雲は 0.5 秒ごとに焼き直す
 		_cloud_t = 0.0
@@ -755,8 +803,21 @@ func _process(_dt: float) -> void:
 	if pip_cams.is_empty():
 		return
 	_place_pip_cams()
-	for vp in _pip_vps:
-		vp.render_target_update_mode = SubViewport.UPDATE_DISABLED if pip_hidden else SubViewport.UPDATE_ALWAYS
+	if pip_hidden:
+		_pip_due = 0.0
+	else:
+		_pip_env.ambient_light_energy = env.ambient_light_energy   # 時刻で変わる分（daycycle.gd）
+		_pip_env.fog_light_color = env.fog_light_color
+		_pip_sun.global_transform = sun_light.global_transform   # 時刻で変わる分（daycycle.gd）
+		_pip_sun.light_color = sun_light.light_color
+		_pip_sun.light_energy = sun_light.light_energy
+		_pip_sun.light_angular_distance = sun_light.light_angular_distance
+		_pip_sun.visible = sun_light.visible
+		_pip_due = minf(_pip_due + _dt * PIP_FPS * FACES.size(), FACES.size())
+		while _pip_due >= 1.0:
+			_pip_due -= 1.0
+			_pip_vps[_pip_next].render_target_update_mode = SubViewport.UPDATE_ONCE
+			_pip_next = (_pip_next + 1) % FACES.size()
 	var t := int(elapsed)
 	pip_label.text = "    360 LIVE  %02d:%02d" % [t / 60, t % 60]   # 後ろ向きのしるしは hud.gd が絵で出す
 
@@ -827,6 +888,7 @@ func _make_world() -> void:
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS
 	sun.directional_shadow_max_distance = 110
 	sun.directional_shadow_blend_splits = true
+	sun.layers = SUN_LAYER
 	sun_light = sun
 	add_child(sun)
 
@@ -1370,7 +1432,7 @@ func _physics_process(dt: float) -> void:
 			return
 		if args.has("third"):
 			player.third = true
-			player.cam.cull_mask = (1 << 0) | (1 << 1) | (1 << 3) | (1 << 4)
+			player.cam.cull_mask = (1 << 0) | (1 << 1) | (1 << 3) | (1 << 4) | SUN_LAYER
 		if args["sim"] == "1":
 			player.grab()
 		var ev := InputEventKey.new()

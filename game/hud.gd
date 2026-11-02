@@ -25,6 +25,7 @@ const SledTags := preload("res://sled_tags.gd")
 const PersonIcon := preload("res://person_icon.gd")
 const Player := preload("res://player.gd")
 const DampHud := preload("res://damp_hud.gd")
+const Doll := preload("res://doll.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
 const TAG_NEAR := 30.0        # ソリからこの距離より近いと札を出す (m)
 const MEET_R := 5.0           # ほかの人がこの距離に来たら身ぶりの案内
@@ -240,7 +241,10 @@ func _process(dt: float) -> void:
 	_update_speedo(dt, p, menu)
 	if plates:
 		_update_plates()
-	_view.queue_redraw()
+	var vst := _view_stamp()
+	if vst != _view_stamp_last:
+		_view_stamp_last = vst
+		_view.queue_redraw()
 
 
 # ---- 無操作で引っこめる ------------------------------------------------------------------
@@ -633,7 +637,10 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		_tag_view.rotation = Icons.wind_angle(1.0, -0.09, 0.05)
 		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui()) + Vector2(0, -16.0 * ui() * fp[1]) + Icons.tuck_off(tr, _view.size)
 		_tag_view.scale = Vector2(maxf(fp[0], 0.01), 1.0)
-		_tag_view.queue_redraw()
+		var st := _tag_stamp(true)
+		if st != _tag_view_stamp:
+			_tag_view_stamp = st
+			_tag_view.queue_redraw()
 	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
 	# 糸の上にボタンがあるあいだは、滑り終わり（snow_buttons.gd の ride_pay。0.5 m/s より遅いのが 1 秒）まで出しておく
 	# （遅くなると先に消えて、糸の上のボタンが見えないまま財布へ飛んでしまうので）
@@ -927,10 +934,10 @@ func _update_plates() -> void:
 			if k < cards.size():
 				var bo: Array = _view.back_offset(u, k)
 				plates.plate("tagb%d" % k, _painter.bind("tagback:%d" % k), tr, 12.0 * u, 7.0 * u, "paper", piv,
-					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0] + toff, 0.03 * k, 3 - k)
+					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0] + toff, 0.03 * k, 3 - k, _tag_stamp(false))
 		var fp := flip_pose()
 		plates.plate("tag", _painter.bind("tag"), tr, 12.0 * u, 8.0 * u, "paper", piv,
-			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]) + toff, 0.0, 3)
+			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]) + toff, 0.0, 3, _tag_stamp(true))
 	if _spd_a > 0.01:   # 速さの表示: 立体のボビンと、縫い目を縫うフェルトのリボンの板（ボビンから吊るす）
 		var g := Speedo.layout(speedo_box_now(), _spd_pop)
 		# 回る向き: 糸はボビンの左下から下へ出ていくので、左側が下へ動く向き（画面で反時計回り）に回して糸を送り出す。
@@ -940,6 +947,40 @@ func _update_plates() -> void:
 		plates.plate("ribbon", _painter.bind("ribbon"), rb, 8.0 * u, 5.0 * u, "felt", Vector2(rb.get_center().x, rb.position.y),
 			[6.0, 0.05, 0.05, 1.5 * u], _spd_a)
 	plates.end()
+
+
+var _tag_view_stamp := []
+var _view_stamp_last := []
+
+## HUD 本体（操作の札・刺繍枠・水のゲージとバッジ・小窓の印）の中身の印。これが変わったときだけ描き直す
+## （2026-11-02、M2 で毎コマ 2.5〜3 ms 描いていた）。風の揺れは人形と同じ 12 コマ／秒の刻みなので、そのコマで描き直す。
+## 引っこめ・札の出入り・跳ね・長押しなど動いている途中は、印が毎コマ変わるので毎コマ描く
+func _view_stamp() -> Array:
+	var p = main.player if main else null
+	var s := [_view.size, _hints.hash(), Icons.tuck, _badge_pop.hash(), float(p.get("tag_hold")) if p else 0.0]
+	if Icons.wind > 0.001:
+		s.append(Doll.frame_index() if Icons.wind_stepped else Engine.get_process_frames())
+	var sc = main.get("self_cam") if main else null
+	if sc and is_instance_valid(sc) and sc.get("_frame") != null:
+		s.append_array([sc.offset, (sc._frame as Control).get_global_rect(), sc.get("hidden")])
+	if main and main.get("_pip_layer"):
+		s.append_array([main._pip_layer.offset, main.pip_label.text, main._pip_layer.visible])
+	if main and main.get("badges") and p:
+		s.append(main.badges.of(p.id).hash())
+	if debug_on:
+		s.append(_dbg.hash())   # 確かめ用の数字（fps は 1 秒に 1 回変わる）
+	if (main and main.settings and main.settings.is_open) or (plates == null and _spd_a > 0.01):
+		s.append(Engine.get_process_frames())   # 設定の札・平らなときの速さの帯は毎コマ
+	return s
+
+## 名札の中身の印。これが変わったときだけ名札を描き直す（2026-11-02、M2 で名札を毎コマ描くと 1 コマに 4〜5 ms かかっていた）。
+## 風の揺れ・めくり・引っこめは入れ物ごと動かすので描き直さない。中の絵（回るソリの図・丘の上のソリの印）は、live なら
+## 人形と同じ 12 コマ／秒で進める（回る図はもともと 12 コマの刻み）。薄さは 0.05 刻みで、出る・消える途中も描き直す
+func _tag_stamp(live: bool) -> Array:
+	var s := [_view.size, snappedf(_tag_a, 0.05), _card, cards.hash(), _tag_sled, _tag_item.hash()]
+	if live:
+		s.append(Doll.frame_index())
+	return s
 
 
 var _hoop_tex: ImageTexture
