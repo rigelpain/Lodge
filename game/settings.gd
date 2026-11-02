@@ -10,9 +10,20 @@ signal changed(key: String, value)
 signal to_start                # 「スタート画面へ」を押した（main.gd が net.leave で読み直す）
 
 const PATH := "user://settings.cfg"
+## 画質の段: 選ぶと、下の 3D の解像度・くぼみの影・影・光のにじみが、まとめてその段の値になる（そのあと 1 つずつ変えてもよい）。
+## 解像度は、縦 1080 px の画面での割合（それより大きな画面では main.gd がさらに縮める）。
+## 2026-11-02 代表「あいかわらず FPS が 30 以下。低いと画面酔いすんだよね」
+const QUALITY_NAMES := ["とても軽い", "軽い", "ふつう", "きれい"]
+const QUALITY := [
+	{"scale": 0.5, "ssao": false, "shadows": false, "glow": false},
+	{"scale": 0.6, "ssao": false, "shadows": true, "glow": true},
+	{"scale": 0.75, "ssao": true, "shadows": true, "glow": true},
+	{"scale": 1.0, "ssao": true, "shadows": true, "glow": true},
+]
 const VERSION := 3   # 既定値を変えたら上げる。古い保存は、その項目だけ既定に戻す
 # [鍵, 見出し, 種類, 既定, 範囲や段]
 const ITEMS := [
+	["quality", "画質（軽さ）", "choice", 2, QUALITY_NAMES],   # 重いときにすぐ選べるよう、いちばん上
 	["bob", "視点の揺れ（押す・引くとき）", "bool", true, null],
 	["fov_kick", "押すときに画角が少し広がる", "bool", true, null],
 	["ride_fov", "滑るときに画角が広がる", "bool", true, null],
@@ -27,8 +38,9 @@ const ITEMS := [
 	["cam_frame", "三人称: 人形の画面の高さ", "float", -0.2, [-0.75, 0.5, 0.05]],
 	["sens", "マウスの感度", "float", 1.0, [0.3, 2.5, 0.05]],
 	["scale", "3D の描画の解像度（軽さ）", "float", 0.67, [0.4, 1.0, 0.01]],
-	["ssao", "くぼみの影（SSAO）", "bool", true, null],
+	["ssao", "くぼみの影・色の照り返し", "bool", true, null],
 	["shadows", "影", "bool", true, null],
+	["glow", "明るい所の光のにじみ", "bool", true, null],
 	["vol_music", "音量: 音楽", "float", 0.05, [0.0, 1.0, 0.01]],
 	["vol_sfx", "音量: 効果音", "float", 0.05, [0.0, 1.0, 0.01]],
 	["vol_voice", "音量: ボイス", "float", 0.05, [0.0, 1.0, 0.01]],
@@ -96,7 +108,25 @@ func _build() -> void:
 
 	for it in ITEMS:
 		var key: String = it[0]
-		if it[2] == "bool":
+		if it[2] == "choice":
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 10)
+			var lb := Label.new()
+			lb.text = it[1]
+			lb.add_theme_font_size_override("font_size", 15)
+			lb.custom_minimum_size.x = 220
+			row.add_child(lb)
+			var ob := OptionButton.new()
+			for name in it[4]:
+				ob.add_item(name)
+			ob.select(int(values[key]))
+			ob.add_theme_font_size_override("font_size", 15)
+			ob.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			ob.item_selected.connect(func(i: int): _change(key, i))
+			row.add_child(ob)
+			box.add_child(row)
+			_controls[key] = ob
+		elif it[2] == "bool":
 			var cb := CheckButton.new()
 			cb.text = it[1]
 			cb.button_pressed = values[key]
@@ -166,6 +196,11 @@ func _fmt(key: String, v: float) -> String:
 
 func _change(key: String, v) -> void:
 	values[key] = v
+	if key == "quality":   # 段の値を、それぞれの項目に入れて当てる
+		var q: Dictionary = QUALITY[clampi(int(v), 0, QUALITY.size() - 1)]
+		for k in q:
+			sync(k, q[k])
+			changed.emit(k, q[k])
 	if key == "hud_scale":
 		Icons.user_scale = v
 	elif key == "menu_scale" and _dragging != key:
@@ -206,6 +241,11 @@ func sync(key: String, v) -> void:
 		c.set_pressed_no_signal(v)
 	elif c is HSlider:
 		c.set_value_no_signal(v)
+		var num = c.get_parent().get_child(2) if c.get_parent() else null   # スライダーの右の数字も合わせる
+		if num is Label:
+			num.text = _fmt(key, v)
+	elif c is OptionButton:
+		c.select(int(v))
 	if key == "hud_scale":
 		Icons.user_scale = v
 	elif key == "menu_scale":
