@@ -10,6 +10,10 @@
   kitchen      厨房（ロッジの slot_food_kitchen に置く。炉の右）: 巨大な調理の装置は main.gd の KITCHEN が置く
                （西の端、炉の側は雪だるまの冷蔵庫）。食卓の手前の床に麻袋と仕分けの盆、奥の台（ロッジの物）に瓶と紙袋。
                前（-Y）が食堂の側
+  kotatsu_lodge_<柄>  ロッジの 2 階の掘りごたつ（slot_kotatsu_<番号> に置く。原点は穴のまんなかの畳の面）:
+               こたつ（props/build_room.py の kotatsu_lodge。柄は patch・indigo・rust）と座布団 8 枚。
+               座布団の上に座る所の目印 sit_<番号>（向きの +Y がこたつの側、大きさは座布団の幅・奥行き・厚み）。
+               大きさは lodge/dims.py（人の大きさのまま。ほかの場面の 2 倍はかけない）
 
 先に各台本で glb を game/props/ に書き出しておくこと。Godot の場面は game/props/sets/<名前>.tscn
 （game/props_set.gd が素材を着せる）。座標は Blender（前 +Y）で書き、Godot（前 -Z）に直して書く。
@@ -102,6 +106,35 @@ SCENES = {
         ("props/kitchen/pellet_jar_green.glb", 3.0, 1.08, 0.45, 0, 1),
     ],
 }
+
+# ロッジの 2 階の掘りごたつ。座布団は 2 倍で書き出してあるので半分にして置く（人の大きさ）
+import dims as LD  # noqa: E402  ロッジの寸法（common が lodge/ を道に足す）
+
+ZABUTON = (0.582, 0.591, 0.118)   # 半分にした座布団の幅・奥行き・厚み (m)
+KOTATSU_SEATS = {}                 # 場面 → 座る所の目印 [(名前, (x, y, z), 向き（度）, 大きさ)]（2 倍したあとの数）
+
+
+def kotatsu_lodge(pattern, colors):
+    """こたつ 1 卓と座布団 8 枚（長い辺に 3 枚ずつ、短い辺に 1 枚ずつ）。座布団の内の縁は穴の縁に少しかかる"""
+    W, D = LD.KOTATSU_W, LD.KOTATSU_D
+    off = LD.PIT_OUT + ZABUTON[1] / 2 - 0.03
+    spots = [(W * (j + 0.5) / 3 - W / 2, -(D / 2 + off), 0) for j in range(3)]
+    spots += [(W * (j + 0.5) / 3 - W / 2, D / 2 + off, 180) for j in range(3)]
+    spots += [(-(W / 2 + off), 0, -90), (W / 2 + off, 0, 90)]
+    items = [("props/room/kotatsu_lodge_%s.glb" % pattern, 0, 0, 0, 0, 1)]
+    marks = []
+    for i, (x, y, rot) in enumerate(spots):
+        wob = (-3, 2, 4, -2, 3, -4, 2, -3)[i]   # 手で置いたように少しずらす
+        items.append(("props/room/zabuton_%s.glb" % colors[i % len(colors)], x / X, y / X, 0, rot + wob, 0.5))
+        marks.append(("sit_%d" % i, (x, y, ZABUTON[2]), rot, ZABUTON))
+    KOTATSU_SEATS["kotatsu_lodge_" + pattern] = marks
+    return items
+
+
+SCENES["kotatsu_lodge_patch"] = kotatsu_lodge("patch", ["red", "indigo", "mustard", "moss"])
+SCENES["kotatsu_lodge_indigo"] = kotatsu_lodge("indigo", ["mustard", "red", "moss"])
+SCENES["kotatsu_lodge_rust"] = kotatsu_lodge("rust", ["indigo", "moss", "mustard"])
+SET_TRIS_OF = {n: 6000 for n in KOTATSU_SEATS}   # 8 卓並ぶので 1 組を軽く
 
 # 当たり判定の箱: (場面, x, y, 幅, 奥行き, 高さ)。床に置く（2 倍する前の数）
 COLLIDE = {}   # 厨房の装置の当たりは main.gd の KITCHEN
@@ -238,7 +271,7 @@ def merge(name, items):
     lows = []
     for g, ms in groups.items():
         low = K._join_world(ms, "prop_%s_%s" % (name, g))
-        K._decimate(low, max(150, int(min(total, SET_TRIS) * tris[g] / total)))
+        K._decimate(low, max(150, int(min(total, SET_TRIS_OF.get(name, SET_TRIS)) * tris[g] / total)))
         if g in ("glass", "snow"):
             low.data.materials.append(ms[0].active_material)
             K._flat(low, g)
@@ -252,6 +285,13 @@ def merge(name, items):
         bpy.data.objects.remove(o)
     for low in lows:
         low.parent = root
+    for nm, loc, rot, size in KOTATSU_SEATS.get(name, []):   # 座る所: 向きの +Y が卓の側、大きさは座布団
+        e = bpy.data.objects.new(nm, None)
+        C.coll("prop").objects.link(e)
+        e.parent = root
+        e.location = loc
+        e.rotation_euler = (0, 0, math.radians(rot))
+        e.scale = (size[0], size[1], size[2])
     out = os.path.join(GAME, "props", "sets", name + ".glb")
     keep = [root] + K.descendants(root)
     print("triangles", name, C.tri_count(keep), "groups", len(lows))
@@ -261,7 +301,8 @@ def merge(name, items):
     return "props/sets/%s.glb" % name
 
 
-OFFSET = {"hearth_nook": (-7.0, 0.0), "kotatsu_room": (0.0, 0.0), "dining": (7.0, 0.0), "kitchen": (0.0, 8.0)}   # 2 倍する前の位置
+OFFSET = {"hearth_nook": (-7.0, 0.0), "kotatsu_room": (0.0, 0.0), "dining": (7.0, 0.0), "kitchen": (0.0, 8.0),
+          "kotatsu_lodge_patch": (-3.0, -8.0), "kotatsu_lodge_indigo": (0.0, -8.0), "kotatsu_lodge_rust": (3.0, -8.0)}   # 2 倍する前の位置
 chosen = [n for n in SCENES if not A.scenes or n in A.scenes.split(",")]
 if not A.no_tscn:   # 組ごとに 1 つの glb に結合して、Godot の場面を書く
     for name in chosen:
@@ -292,6 +333,7 @@ cams = {
     "dining": ((15.2, 7.2, 3.4), (14.2, -0.4, 2.6), 30),
     "kitchen": ((3.0, 9.6, 4.6), (0.0, 15.6, 0.7), 22),
     "kitchen_near": ((-3.4, 12.2, 2.3), (-4.6, 15.6, 1.0), 30),
+    "kotatsu_lodge": ((0.0, -23.0, 3.4), (0.0, -16.0, 0.0), 40),
 }
 C.setup_render(A.size)
 bpy.context.scene.view_settings.exposure = 0.2

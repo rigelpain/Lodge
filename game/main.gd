@@ -117,6 +117,18 @@ const KITCHEN := [
 	["drink", "res://props/kitchen/giant_vapor.glb", Vector3(6.5, 0, 0.0), 180.0,
 		[[Vector3(2.08, 1.5, 1.52), Vector3(0, 0.75, 0.04)], [Vector3(0.14, 3.6, 0.14), Vector3(-0.68, 1.8, -0.48)]]],
 ]
+## 2 階の掘りごたつ 8 卓の柄（props/sets/kotatsu_lodge_<柄>.tscn。patch・indigo・rust）。8 卓ともパッチワーク（2026-11-02 代表「パッチワークにそろえる」）。
+## 並びはロッジの目印 slot_kotatsu_0〜7: 0〜3 が南の列、4〜7 が北の列、どちらも西から
+const KOTATSU_SETS := ["patch", "patch", "patch", "patch", "patch", "patch", "patch", "patch"]
+## こたつの横の行灯（2026-11-02 代表「行灯を置く」）: こたつの組の座標で、壁の側の隅（座布団のあいだ）。
+## 南の列（0〜3）は南（+Z）、北の列は北の隅。東西は卓ごとに交互。行灯は 2 倍で書き出してあるので半分（高さ 0.74 m）
+const KOTATSU_ANDON := Vector3(1.75, 0, 1.35)
+## こたつの上の吊り灯り（2026-11-02 代表「天井からの明かりが低すぎる」「謎の光るボックスなのはもったいない」）:
+## props/furniture/pendant_<形>.glb（drum プリーツの筒・lantern 提灯・cone 円錐）を、天井の目印 slot_pendant_<番号> から吊る。
+## 傘の上端は畳から KOTATSU_LAMP_TOP（lodge/dims.py の KOTATSU_LAMP）。コードは天井まで伸ばす。灯りは座敷の 2 つ（lodge.gd）で足りるので、吊り灯りそれぞれには灯さない
+const KOTATSU_PENDANT := "drum"   # プリーツの筒（2026-11-02 代表「まんなかの筒」）
+const KOTATSU_PENDANT_SCALE := 0.7
+const KOTATSU_LAMP_TOP := 3.2
 ## 番台（店番の商人のカウンターとレジ。2026-10-31 代表「パッチワークおじいさんにも、雪だるまにも、番台的なカウンターとレジを」）。
 ## [カウンター, レジ, お皿に盛る物, ロッジの座標 (x, y), 正面（客の側）の向き（度。0 = 南、90 = 東。lodge/dims.py の SLOTS と同じ）]。
 ## おじいさんは真東を向いて番台の後ろに立ち、雪だるまは冷蔵庫の中から番台ごしに食堂を向く。置き方は design/lodge-layout/
@@ -980,6 +992,23 @@ func _furnish_lodge() -> void:
 		kitchen_slot.add_child(set_node)
 		_put_kitchen(kitchen_slot)
 		_put_snowman(kitchen_slot)
+	# 2 階の掘りごたつ: 穴の目印に、こたつと座布団 8 枚の組（座布団の座る所の目印 sit_* は seats.gd が拾う）。
+	# 屋根の下で日は届かないので、太陽の影は落とさない（影の地図に 8 組を描き直さない）
+	for i in KOTATSU_SETS.size():
+		var ks := lodge.find_child("slot_kotatsu_%d" % i, true, false) as Node3D
+		if ks:
+			var kset := (load("res://props/sets/kotatsu_lodge_%s.tscn" % KOTATSU_SETS[i]) as PackedScene).instantiate()
+			ks.add_child(kset)
+			var andon := Props.make("res://props/furniture/andon.glb")   # 灯りの目印に暖色の灯り（影なし）
+			andon.scale = Vector3.ONE * 0.5
+			andon.position = KOTATSU_ANDON * Vector3(1.0 if i % 2 else -1.0, 0, 1.0 if i < 4 else -1.0)
+			ks.add_child(andon)
+			_solid(andon)
+			var hook := lodge.find_child("slot_pendant_%d" % i, true, false) as Node3D
+			if hook:
+				_hang_pendant(hook, hook.position.y - ks.position.y - KOTATSU_LAMP_TOP)
+			for g in ks.find_children("*", "GeometryInstance3D", true, false):
+				(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for b in BANDAI:
 		_put_bandai(lodge, b)
 	# おじいさんの番台の横に、ランタン掛け（正面は番台と同じく客の側）
@@ -1011,6 +1040,24 @@ func _furnish_lodge() -> void:
 	dye_vat.position = wardrobe.position + wardrobe.basis * DYE_VAT_AT
 	dye_vat.rotation.y = wardrobe.rotation.y
 	lodge.add_child(dye_vat)
+
+
+## 天井の目印 hook から、cord（m）のコードの先に吊り灯り（形は kind）を提げる
+func _hang_pendant(hook: Node3D, cord: float, kind := KOTATSU_PENDANT) -> void:
+	var p: Node3D = (load("res://props/furniture/pendant_%s.glb" % kind) as PackedScene).instantiate()
+	for m in p.find_children("light*", "Node3D", true, false):   # 灯りの目印は外す（灯さない）
+		if not m is MeshInstance3D:
+			m.free()
+	Props.dress(p)
+	var k := KOTATSU_PENDANT_SCALE
+	p.scale = Vector3.ONE * k
+	p.position = Vector3(0, -cord, 0)
+	hook.add_child(p)
+	for c in p.find_children("*", "MeshInstance3D", true, false):   # コード（glb では 2 m）を天井まで
+		var mi := c as MeshInstance3D
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		if "felt" in String(mi.name) or "thread" in String(mi.name):
+			mi.scale.y = cord / (mi.get_aabb().size.y * k)
 
 
 ## 持ち主（あなた・仲間）に、頭・肩の小物とミニオン（companions.gd）を付ける。--bot-pals で仲間に付ける物を決める（確かめ用）

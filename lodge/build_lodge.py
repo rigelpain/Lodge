@@ -1002,17 +1002,19 @@ def build_interior():
     rail_run(ir, (I["xm"], I["hole_y0"], FL2), (I["x1"], I["hole_y0"], FL2), h=RAIL_H,   # 2 本目の上がり口は空ける
              name="bal_stairwell_s")
     ir.done(bevel=0.01)
-    # 1 階の吊り灯り（卓の上）と 2 階の紙の灯り
+    # 1 階の吊り灯り（卓の上）。2 階のこたつの上の灯りは game/main.gd が目印 slot_pendant_<番号>（天井）に吊る
     lp = M("lamps", "paper", "interior")
     for x, y in TABLES:
         for j in (0.25, 0.75):
             cx, cy = x + tw * j, y + td / 2
             lp.cyl((cx, cy, CEIL1 - 0.9), (cx, cy, CEIL1 - 0.55), 0.22, seg=20)
-    for x, ky in KOTATSU:
-        cx = x + KOTATSU_W / 2
-        cy = ky + KOTATSU_D / 2
-        lp.cyl((cx, cy, FL2 + TATAMI["h"] + 1.75), (cx, cy, FL2 + TATAMI["h"] + 2.2), 0.30, seg=24)
     lp.done(bevel=0.03, seg=3, smooth=True)
+    for i, (x, ky) in enumerate(KOTATSU):
+        e = bpy.data.objects.new("slot_pendant_%d" % i, None)
+        e.empty_display_type = "SPHERE"
+        e.empty_display_size = 0.2
+        e.location = (x + KOTATSU_W / 2, ky + KOTATSU_D / 2, roof_z(ky + KOTATSU_D / 2) + RAFTER["h"] - 0.025)   # 野地板の下面
+        coll("markers").objects.link(e)
     cords = M("cords", "metal", "interior")
     for x, y in TABLES:
         for j in (0.25, 0.75):
@@ -1028,8 +1030,8 @@ def build_interior():
     pits = []
     for i, (x, ky0) in enumerate(KOTATSU):
         ky1 = ky0 + KOTATSU_D
-        pits.append((x - 0.25, ky0 - 0.45, x + KOTATSU_W + 0.25, ky1 + 0.45))
-        cut(plo, cutter("cut_pit_%d" % i, x - 0.25, ky0 - 0.45, zt - PIT_DEPTH, x + KOTATSU_W + 0.25, ky1 + 0.45, zt + 0.1))
+        pits.append((x - PIT_OUT, ky0 - PIT_OUT, x + KOTATSU_W + PIT_OUT, ky1 + PIT_OUT))
+        cut(plo, cutter("cut_pit_%d" % i, *pits[-1][:2], zt - PIT_DEPTH, *pits[-1][2:], zt + 0.1))
     # 畳: 半間 x 1 間を目地で並べる。掘りごたつの穴にかかる畳は外す
     tt = M("tatami", "tatami", "interior")
     nx = int(round((T_["x1"] - T_["x0"]) / (K / 2)))
@@ -1050,23 +1052,14 @@ def build_interior():
         for a in ((x0, y0, x0 + 0.06, y1), (x1 - 0.06, y0, x1, y1), (x0, y0, x1, y0 + 0.06), (x0, y1 - 0.06, x1, y1)):
             pe.box(a[0], a[1], zt - 0.03, a[2], a[3], zt + 0.005)
     pe.done(bevel=0.006)
-    kt = M("kotatsu", "board", "interior")
-    qu = M("kotatsu_quilt", "quilt", "interior")
-    zb = M("zabuton", "cushion", "interior")
-    for x, ky0 in KOTATSU:
-        ky1 = ky0 + KOTATSU_D
-        kt.box(x, ky0, zt + 0.36, x + KOTATSU_W, ky1, zt + 0.40)
-        qu.box(x - 0.12, ky0 - 0.12, zt + 0.02, x + KOTATSU_W + 0.12, ky1 + 0.12, zt + 0.36)
-        for j in range(3):
-            cx = x + KOTATSU_W * (j + 0.5) / 3
-            zb.box(cx - 0.27, ky0 - 0.98, zt, cx + 0.27, ky0 - 0.42, zt + 0.08)
-            zb.box(cx - 0.27, ky1 + 0.42, zt, cx + 0.27, ky1 + 0.98, zt + 0.08)
-        cy = (ky0 + ky1) / 2
-        zb.box(x - 0.98, cy - 0.27, zt, x - 0.42, cy + 0.27, zt + 0.08)
-        zb.box(x + KOTATSU_W + 0.42, cy - 0.27, zt, x + KOTATSU_W + 0.98, cy + 0.27, zt + 0.08)
-    kt.done(bevel=0.012)
-    qu.done(bevel=0.06, seg=4, smooth=True)
-    zb.done(bevel=0.03, seg=3, smooth=True)
+    # こたつ（卓・布団・天板）と座布団は、ゲームが props の場面を置く（props/build_room.py の kotatsu_lodge）。
+    # ここは置き場の目印だけ: 穴のまんなか、畳の面
+    for i, (x, ky0) in enumerate(KOTATSU):
+        e = bpy.data.objects.new("slot_kotatsu_%d" % i, None)
+        e.empty_display_type = "CUBE"
+        e.empty_display_size = 0.4
+        e.location = (x + KOTATSU_W / 2, ky0 + KOTATSU_D / 2, zt)
+        coll("markers").objects.link(e)
     b2 = M("bench2", "board", "interior")
     x0, y0, x1, y1 = BENCH2
     b2.box(x0, y0, FL2, x1, y1, FL2 + 0.42)
@@ -1108,7 +1101,7 @@ def build_interior():
     # 灯りは少なく（スマホでも動くように）: 食堂は炉と天井の 3 つの計 4 つ、座敷は 2 つ、風除室に 1 つ。影はなし
     lights = [("light_lamp_%d" % i, (x, y, CEIL1 - 1.0)) for i, (x, y) in enumerate(LAMPS)]
     ky = (KOTATSU[0][1] + KOTATSU[-1][1] + KOTATSU_D) / 2
-    lights += [("light_lantern_%d" % i, ((KOTATSU[a][0] + KOTATSU[a + 1][0] + KOTATSU_W) / 2, ky, FL2 + TATAMI["h"] + 1.95))
+    lights += [("light_lantern_%d" % i, ((KOTATSU[a][0] + KOTATSU[a + 1][0] + KOTATSU_W) / 2, ky, FL2 + TATAMI["h"] + KOTATSU_LAMP - 0.3))
                for i, a in enumerate((0, 2))]
     lights.append(("light_fire", ((CH["x0"] + CH["x1"]) / 2, CH["y0"] - 0.35, FL1 + 0.6)))
     lights.append(("light_vestibule", (VEST["cx"], Y0 - VEST["d"] / 2, VEST["h"] - 1.1)))
@@ -1225,7 +1218,7 @@ def build_light():
         for j in (0.25, 0.75):
             point("lamp_1f", (x + tw * j, y + td / 2, CEIL1 - 0.75), 45 * k, warm, 0.2, shadow=False)
     for x, ky in KOTATSU:
-        point("lantern_2f", (x + KOTATSU_W / 2, ky + KOTATSU_D / 2, FL2 + TATAMI["h"] + 1.95), 70 * k, warm, 0.25)
+        point("lantern_2f", (x + KOTATSU_W / 2, ky + KOTATSU_D / 2, FL2 + TATAMI["h"] + KOTATSU_LAMP - 0.3), 70 * k, warm, 0.25)
     point("kitchen", (gx(3.7), gy(0.8), CEIL1 - 0.4), 120 * k, (1.0, 0.74, 0.48), 0.4)
     point("rental", (gx(0.8), gy(0.9), CEIL1 - 0.4), 60 * k, (1.0, 0.74, 0.48), 0.4)
     point("vestibule", (VEST["cx"], Y0 - VEST["d"] / 2, VEST["h"] - 1.1), 90 * k, warm, 0.3)
@@ -1410,8 +1403,9 @@ def build_collision():
     S_ = SKI_RACK
     Fu.box(S_["x0"], S_["y0"], 0, S_["x1"], S_["y1"], 1.75)   # 外の下屋
     zt = FL2 + TATAMI["h"]
-    for x, ky in KOTATSU:
-        Fu.box(x - 0.12, ky - 0.12, zt, x + KOTATSU_W + 0.12, ky + KOTATSU_D + 0.12, zt + 0.40)
+    for x, ky in KOTATSU:   # こたつ: 天板と、穴へ垂れた布団（props の kotatsu_lodge）の外形
+        Fu.box(x - KOTATSU_FLARE, ky - KOTATSU_FLARE, zt, x + KOTATSU_W + KOTATSU_FLARE, ky + KOTATSU_D + KOTATSU_FLARE,
+               zt + KOTATSU_TOP)
     Fu.box(*BENCH2[:2], FL2, *BENCH2[2:], FL2 + 0.42)
     Fu.box(TABLE2[0], TABLE2[1], FL2, TABLE2[2], TABLE2[3], FL2 + 0.72)
     for m in groups.values():
