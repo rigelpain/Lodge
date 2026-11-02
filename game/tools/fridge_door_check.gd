@@ -6,7 +6,7 @@ extends SceneTree
 ## どちらも扉の動き（fridge_door.gd）を止めて、決めた角度で撮る。
 ##   ... -- --bots=0 --no-pip --dir=/path/walk --walk [--before]
 ## --walk: 自分の人形が通り道の遠くから冷蔵庫の前まで歩いて来て、少し待って戻る。12 fps のコマごとに斜め後ろから撮り
-## （walk_000.png …）、扉の点が人形に入ったコマを数える。--before で扉を動かさず、前の 100° のままで撮る
+## （walk_000.png …）、扉の点が人形に入ったコマを数える。--before で扉を動かさず、前の 100° のままで撮る。--close で寄って撮る
 
 var args := {}
 var main: Node3D
@@ -155,22 +155,28 @@ func _walk(fridge: Node3D, door: Node3D, mover: Node) -> void:
 	var cam := Camera3D.new()
 	cam.fov = 60.0
 	root.add_child(cam)
-	cam.global_position = c + front * 8.5 - left * 3.2 + Vector3(0, 3.4, 0)
-	cam.look_at(c + front * 1.8 + left * 0.6 + Vector3(0, 1.4, 0))
+	cam.global_position = c + front * 7.0 - left * 2.8 + Vector3(0, 3.0, 0)
+	cam.look_at(c + front * 1.6 + left * 0.5 + Vector3(0, 1.3, 0))
+	var far := c + front * 8.0 - left * 0.8
+	var near := c + front * 3.3 - left * 0.4
+	if args.has("close"):   # 冷蔵庫と番台に寄って撮る。人形は蝶番の側から来て、番台の前をふさがない（扉の回る所より外）
+		cam.global_position = c + front * 5.2 - left * 1.4 + Vector3(0, 2.1, 0)
+		cam.look_at(c + front * 1.2 + left * 0.3 + Vector3(0, 1.1, 0))
+		far = c + front * 7.5 + left * 4.0
+		near = c + front * 3.2 + left * 1.6
 	cam.current = true
 	cam.reset_physics_interpolation()
-	var far := c + front * 8.0 - left * 0.8
-	var near := c + front * 3.0 - left * 0.4
-	var plan := []   # コマごとの立つ所
+	var plan := []   # コマごとの立つ所: 歩いて来て、扉が開いて番台が組み立つあいだ待ち、戻って、畳んで閉じるまで待つ
 	for i in 30:
 		plan.append(far.lerp(near, float(i) / 29.0))
-	for i in 30:
+	for i in 50:
 		plan.append(near)
 	for i in 30:
 		plan.append(near.lerp(far, float(i) / 29.0))
-	for i in 18:
+	for i in 50:
 		plan.append(far)
 	var hits := 0
+	var was_talk := false
 	var space := main.get_world_3d().direct_space_state
 	var q := PhysicsPointQueryParameters3D.new()
 	for i in plan.size():
@@ -186,5 +192,10 @@ func _walk(fridge: Node3D, door: Node3D, mover: Node) -> void:
 			for r in space.intersect_point(q, 4):
 				if r.collider == p:
 					hits += 1
+		var shop = main.get("snowman_shop")
+		var talk: bool = shop != null and shop.can_talk(p)
+		if talk != was_talk:   # 話しかけられるようになった（なくなった）コマ
+			print("コマ %d: 話しかけ %s（番台 open=%s）" % [i, talk, shop.open])
+			was_talk = talk
 		await _shot("walk_%03d" % i)
 	print("扉の点が人形に入った数: ", hits)

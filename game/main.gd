@@ -1136,16 +1136,22 @@ func _put_bandai(lodge: Node3D, b: Array) -> void:
 	root.position = Vector3(at.x, LODGE_FLOOR, -at.y)
 	root.rotation.y = deg_to_rad(b[4]) + PI   # 模型の正面は -Z
 	lodge.add_child(root)
-	var counter := Props.make("res://props/counter/%s.glb" % b[0])
-	counter.scale = BANDAI_SCALE
+	var counter: Node3D
+	if b[2] == "snowballs":   # 雪だるまの番台は畳める（props/build_snowman.py の snowman_counter。実寸。組み立ては fridge_door.gd）
+		counter = Props.make("res://props/snowman_counter.glb")
+	else:
+		counter = Props.make("res://props/counter/%s.glb" % b[0])
+		counter.scale = BANDAI_SCALE
 	root.add_child(counter)
 	var top := BANDAI_BOX.y
 	var reg := Props.make("res://props/counter/%s.glb" % b[1])
+	reg.name = "Register"
 	reg.scale = Vector3.ONE * 0.45
 	reg.position = Vector3(0.6, top, 0.06)
 	reg.rotation.y = PI + 0.25                # 打ち鍵を店番の側へ
 	root.add_child(reg)
 	var dish := Props.make("res://props/counter/tray_round_red.glb")
+	dish.name = "Dish"
 	dish.scale = Vector3.ONE * 0.5
 	dish.position = Vector3(-0.5, top, -0.08)
 	root.add_child(dish)
@@ -1153,6 +1159,7 @@ func _put_bandai(lodge: Node3D, b: Array) -> void:
 		snowman_shop.counter = root
 		snowman_shop.dish_at = dish.position
 	var heap := Node3D.new()
+	heap.name = "Heap"
 	heap.position = dish.position + Vector3.UP * 0.03
 	root.add_child(heap)
 	if b[2] == "buttons":   # 木・真鍮・白蝶貝のボタンを重ねて
@@ -1174,6 +1181,7 @@ func _put_bandai(lodge: Node3D, b: Array) -> void:
 			heap.add_child(mi)
 	var body := StaticBody3D.new()
 	var col := CollisionShape3D.new()
+	col.name = "CounterShape"
 	var box := BoxShape3D.new()
 	box.size = BANDAI_BOX
 	col.shape = box
@@ -1238,7 +1246,7 @@ func _put_kitchen(slot: Node3D) -> void:
 
 
 ## 厨房の奥の並びのいちばん西（ミシンの右）に、扉を開けた冷蔵庫と、中に立つご飯係の雪だるま（props/build_snowman.py）。
-## 正面は食堂（+Z）、扉は装置の並びと反対の側へ開く（fridge_door.gd）。雪だるまは段ごとの節点（base・chest・head・arm_l・arm_r）を回せば動く（まだ動かさない）
+## 正面は食堂（+Z）、扉は人が近づくと装置の並びと反対の側へ開く（fridge_door.gd）。雪だるまは段ごとの節点（base・chest・head・arm_l・arm_r）を回せば動く（まだ動かさない）
 func _put_snowman(slot: Node3D) -> void:
 	var fridge := Props.make("res://props/snowman_fridge.glb")
 	fridge.name = "SnowmanFridge"
@@ -1264,7 +1272,7 @@ func _put_snowman(slot: Node3D) -> void:
 	col.position.y = FRIDGE_BOX.y / 2.0
 	body.add_child(col)
 	fridge.add_child(body)
-	var door := FridgeDoor.new()   # 扉は人が近づくと開き、離れると少しだけ開いた所へ戻る
+	var door := FridgeDoor.new()   # 扉は人が近づくと開いて番台が組み立ち、離れると番台を畳んで閉じる
 	door.name = "FridgeDoor"
 	door.main = self
 	fridge.add_child(door)

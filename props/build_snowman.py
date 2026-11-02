@@ -33,7 +33,7 @@ K.setup(A, fiber=1.5, scale=1.0)
 EX = K.S["export"]
 C.HEX.update({"felt_snowman": "F2F0EA", "felt_apron": "C4574A", "button_eye": "2B2725",
               "felt_mint": "9FC4B2", "felt_mint_dark": "77A08E", "felt_liner": "EEF0EC", "felt_frost_blue": "CFE0E6",
-              "yarn_gasket": "C4C8C4", "thread_blue": "7FA6C0", "felt_mustard": "C99A3A"})
+              "yarn_gasket": "C4C8C4", "thread_blue": "7FA6C0", "felt_mustard": "C99A3A", "felt_indigo": "2E3F66"})
 
 
 # ---------------------------------------------------------------- 共通
@@ -342,8 +342,8 @@ def fridge():
     # 冷凍の小部屋: 天井の下に棚板と、上で吊ったふた（手前へ開いている）
     fz = 1.68
     K.box(P, "felt_liner", (0, (CY0 + D / 2 - 0.08) / 2, fz), (2 * CW, D / 2 - 0.08 - CY0, 0.03))
-    K.box(P, "felt_frost_blue", (0, D / 2 - 0.13, fz + 0.12), (2 * CW - 0.08, 0.02, 0.22), rot=(-1.0, "X"))
-    K.lathe(P, "felt_mint_dark", [(0.0, -0.02), (0.016, -0.02), (0.016, 0.02), (0.0, 0.02)], center=(0, D / 2 - 0.02, fz + 0.15),
+    K.box(P, "felt_frost_blue", (0, D / 2 - 0.16, fz + 0.12), (2 * CW - 0.08, 0.02, 0.22), rot=(-0.8, "X"))
+    K.lathe(P, "felt_mint_dark", [(0.0, -0.02), (0.016, -0.02), (0.016, 0.02), (0.0, 0.02)], center=(0, D / 2 - 0.05, fz + 0.14),
             segs=10, rot=(math.pi / 2, "X"))
     # 奥の壁: 冷やす管のジグザグ（青い糸のなみ縫い）
     zig = []
@@ -356,9 +356,9 @@ def fridge():
     frost = []
     for i in range(31):
         x = -CW + 0.03 + (2 * CW - 0.06) * i / 30
-        frost.append(((x, D / 2 - 0.085 + rnd.uniform(-0.006, 0.006), fz - 0.03), rnd.uniform(0.075, 0.085), (1.4, 1.0, 0.6)))
+        frost.append(((x, D / 2 - 0.15 + rnd.uniform(-0.006, 0.006), fz - 0.03), rnd.uniform(0.075, 0.085), (1.4, 1.0, 0.6)))
         if i % 3 == 1:
-            frost.append(((x, D / 2 - 0.09, fz - 0.05 - rnd.uniform(0, 0.02)), 0.045, (0.7, 0.7, 1.5)))
+            frost.append(((x, D / 2 - 0.155, fz - 0.05 - rnd.uniform(0, 0.02)), 0.045, (0.7, 0.7, 1.5)))
     for sx in (-1, 1):
         for k in range(9):
             frost.append(((sx * (CW - 0.004), CY0 + 0.06 + k * 0.06, fz - 0.03 - 0.05 * abs(math.sin(k * 1.7))),
@@ -366,7 +366,8 @@ def fridge():
         for k in range(6):
             frost.append(((sx * (CW - 0.04 - k * 0.06), CY0 + 0.004, fz - 0.03 - 0.04 * abs(math.sin(k * 2.1))), 0.11, (1.2, 0.22, 0.8)))
     K.blob(P, "frost", "cotton", frost, 0.01, lumps=0.12, fuzz=0.006)
-    # 冷気: 床に溜まった綿の雲が、口の縁からもくもくとこぼれ、前の床に小さくちぎれる
+    # 冷気: 床に溜まった綿の雲が、口の縁からもくもくとこぼれ、前の床に小さくちぎれる。扉が閉じているあいだは隠すので、
+    # 節点 chill に分ける（原点は口の縁の下。ゲームで大きさを変えて、もくもく出てくる）
     chill = []
     for i in range(12):   # 床に溜まる雲
         chill.append(((-0.36 + 0.065 * i, rnd.uniform(-0.2, 0.25), CZ0 + 0.03), rnd.uniform(0.11, 0.14), (1.1, 1.1, 0.75)))
@@ -377,7 +378,10 @@ def fridge():
     for i in range(6):    # 前の床に、ちぎれた小さな雲
         x = rnd.uniform(-0.4, 0.4)
         chill.append(((x, D / 2 + rnd.uniform(0.22, 0.4), 0.035), rnd.uniform(0.06, 0.085), (1.2, 1.1, 0.8)))
-    K.blob(P, "chill", "cotton", chill, 0.014, lumps=0.25, fuzz=0.012)
+    Cp = K.Parts("chill", tris=1200)
+    K.blob(Cp, "chill", "cotton", chill, 0.014, lumps=0.25, fuzz=0.012)
+    Cp.finish()
+    shift_part(Cp, (0, D / 2, CZ0), P.root)
     P.root["tris"] = 4000
     P.mark("snowman_spot", (0, 0.04, CZ0))
     P.mark("chill_spot", (0, D / 2, CZ0))
@@ -440,36 +444,91 @@ def fridge():
     gk = K.round_rect(W - 0.1, h - 0.1, 0.18, n=8)
     C.tube(Dp.m("yarn_gasket"), [Vector((x, yi - 0.004, zc + z)) for x, z in gk + [gk[0]]], 0.018, sides=8, caps=False)
     sw = W - 0.3
-    for k, z in enumerate((zc - 0.55, zc - 0.02, zc + 0.48)):
-        K.box(Dp, "felt_liner", (0, yi - 0.09, z), (sw, 0.13, 0.018))
-        K.box(Dp, "felt_frost_blue", (0, yi - 0.153, z + 0.045), (sw, 0.014, 0.085))
+    for k, z in enumerate((zc - 0.37, zc + 0.03, zc + 0.36)):
+        K.box(Dp, "felt_liner", (0, yi - 0.07, z), (sw, 0.09, 0.018))
+        K.box(Dp, "felt_frost_blue", (0, yi - 0.113, z + 0.045), (sw, 0.014, 0.085))
         for sx in (-1, 1):
-            K.box(Dp, "felt_frost_blue", (sx * (sw / 2 - 0.007), yi - 0.09, z + 0.045), (0.014, 0.13, 0.085))
-        K.stitch_line(Dp, "thread_blue", [(-sw / 2 + 0.03, yi - 0.162, z + 0.07), (sw / 2 - 0.03, yi - 0.162, z + 0.07)], r=0.0025, dash=0.016)
+            K.box(Dp, "felt_frost_blue", (sx * (sw / 2 - 0.007), yi - 0.07, z + 0.045), (0.014, 0.09, 0.085))
+        K.stitch_line(Dp, "thread_blue", [(-sw / 2 + 0.03, yi - 0.122, z + 0.07), (sw / 2 - 0.03, yi - 0.122, z + 0.07)], r=0.0025, dash=0.016)
         zt = z + 0.009
         if k == 2:     # 卵
             for i in range(6):
                 K.lathe(Dp, "felt_bun", [(0.0, 0.0), (0.014, 0.002), (0.021, 0.015), (0.022, 0.03), (0.017, 0.046), (0.008, 0.055), (0.0, 0.057)],
-                        center=(-0.3 + 0.12 * i, yi - 0.085, zt), segs=12)
+                        center=(-0.3 + 0.12 * i, yi - 0.065, zt), segs=12)
         elif k == 1:   # ジャムの瓶 2 つとバター
             for x, role in ((-0.28, "felt_red"), (-0.14, "felt_orange")):
                 K.lathe(Dp, role, [(0.0, 0.0), (0.04, 0.0), (0.043, 0.01), (0.043, 0.075), (0.036, 0.085), (0.0, 0.085)],
-                        center=(x, yi - 0.085, zt), segs=16)
-                K.disc(Dp, "paper_white", (x, yi - 0.085, zt + 0.092), 0.046, 0.016, segs=16)
-                K.ring(Dp, "thread_red", (x, yi - 0.085, zt + 0.088), 0.046, 0.003, n=24)
-            K.box(Dp, "felt_yellow", (0.12, yi - 0.085, zt + 0.03), (0.16, 0.07, 0.06))
-            K.box(Dp, "paper_white", (0.12, yi - 0.085, zt + 0.03), (0.05, 0.074, 0.064))
+                        center=(x, yi - 0.065, zt), segs=16)
+                K.disc(Dp, "paper_white", (x, yi - 0.065, zt + 0.092), 0.046, 0.016, segs=16)
+                K.ring(Dp, "thread_red", (x, yi - 0.065, zt + 0.088), 0.046, 0.003, n=24)
+            K.box(Dp, "felt_yellow", (0.12, yi - 0.065, zt + 0.03), (0.16, 0.07, 0.06))
+            K.box(Dp, "paper_white", (0.12, yi - 0.065, zt + 0.03), (0.05, 0.074, 0.064))
         else:          # 瓶の牛乳 3 本（紙のふたに赤いふち）
             for i in range(3):
                 x = -0.2 + 0.11 * i
                 K.lathe(Dp, "felt_rice", [(0.0, 0.0), (0.03, 0.0), (0.032, 0.01), (0.032, 0.09), (0.024, 0.13), (0.018, 0.15),
-                                          (0.019, 0.162), (0.0, 0.162)], center=(x, yi - 0.085, zt), segs=16)
-                K.disc(Dp, "paper_white", (x, yi - 0.085, zt + 0.166), 0.02, 0.008, segs=12)
-                K.ring(Dp, "felt_red", (x, yi - 0.085, zt + 0.163), 0.02, 0.003, n=16)
+                                          (0.019, 0.162), (0.0, 0.162)], center=(x, yi - 0.065, zt), segs=16)
+                K.disc(Dp, "paper_white", (x, yi - 0.065, zt + 0.166), 0.02, 0.008, segs=12)
+                K.ring(Dp, "felt_red", (x, yi - 0.065, zt + 0.163), 0.02, 0.003, n=16)
     Dp.finish(fuzz=0.003)
     shift_part(Dp, (W / 2 - 0.012, D / 2 + 0.04, 0.0), P.root)
     Dp.root.rotation_euler.z = math.radians(-DOOR_OPEN)
-    return P.root, [Dp.root]
+    return P.root, [Dp.root, Cp.root]
+
+
+# ---------------------------------------------------------------- 畳める番台
+CTW, CTD, CTH = 1.8, 0.68, 0.84   # 幅・奥行き・高さ（ゲームの番台の当たりの箱 main.gd の BANDAI_BOX と同じ）
+CTB, CTS = 0.04, 0.03             # 前の板と天板の厚み、横の板の厚み
+CT_TOP_Y = CTD / 2 - CTB - CTS - 0.005   # 天板の蝶番の線（畳むと、天板は横の板の後ろに下がる）
+
+
+def counter():
+    """雪だるまの番台（2026-11-02 代表「普段0、開いたときに番台が組み立てられる感じ」）: 冷蔵庫の扉が開くと組み立ち、
+    閉じる前に床へ畳む。藍のフェルトを張った前の板（節点 front。支点は床の前の縁）に、横の板 2 枚（side_l・side_r。
+    前の板の内の面の端で縦に回る）と天板（top。前の板の上の縁の少し後ろで回る）が、布の蝶番でつながる。
+    書き出しは組み立った形（回転 0）。畳んだ形はゲームで回す: front.x −90°（客の側へ倒れて床に寝る）、
+    side_l.y +90°・side_r.y −90°（前の板の内の面に重なる）、top.x +90°（横の板の後ろに垂れる）。畳んだ厚みは約 0.12 m で、
+    扉の下の縁（ゲームで床から 0.39 m）より低い。前は +Y（客の側）"""
+    yb = CTD / 2 - CTB                 # 前の板の内の面
+    Fp = K.Parts("front", tris=900)
+    for r in ("wood", "wood_dark"):
+        Fp.hard[r] = 0.004
+    K.box(Fp, "wood_dark", (0, CTD / 2 - CTB / 2, CTH / 2), (CTW, CTB, CTH))
+    K.pbox(Fp, "felt_indigo", (0, CTD / 2 + 0.008, CTH * 0.5), (CTW / 2 - 0.05, 0.012, CTH * 0.36), n=8.0, nz=8.0, c=6)
+    for z in (CTH * 0.83, CTH * 0.17):
+        K.stitch_line(Fp, "thread", [(-CTW / 2 + 0.07, CTD / 2 + 0.021, z), (CTW / 2 - 0.07, CTD / 2 + 0.021, z)], r=0.003, dash=0.03)
+    K.box(Fp, "wood", (0, CTD / 2 + 0.012, 0.045), (CTW, 0.024, 0.09))          # 蹴込み
+    for sx in (-1, 1):   # 横の板の布の蝶番（からし色のフェルトの帯を、なみ縫いで留める）
+        x = sx * (CTW / 2 - 0.04)
+        K.box(Fp, "felt_mustard", (x, yb - 0.002, CTH * 0.5), (0.05, 0.004, CTH * 0.7))
+        K.stitch_line(Fp, "thread", [(x, yb - 0.005, CTH * 0.17), (x, yb - 0.005, CTH * 0.83)], r=0.0025, dash=0.025)
+    Fp.finish(fuzz=0.0015)
+    shift_part(Fp, (0, CTD / 2, 0))
+    subs = [Fp.root]
+    for sx, nm in ((-1, "side_l"), (1, "side_r")):
+        Sp = K.Parts(nm, tris=300)
+        Sp.hard["wood_dark"] = 0.004
+        xp = sx * (CTW / 2 - 0.04)
+        K.box(Sp, "wood_dark", (xp + sx * CTS / 2, (yb + (-CTD / 2 + 0.04)) / 2, (0.02 + CTH - CTB) / 2),
+              (CTS, yb + CTD / 2 - 0.04, CTH - CTB - 0.02))
+        K.box(Sp, "felt_indigo", (xp + sx * (CTS + 0.002), (yb + (-CTD / 2 + 0.04)) / 2, (CTH - CTB) / 2),
+              (0.004, yb + CTD / 2 - 0.16, CTH * 0.6))                                # 外の面の布
+        Sp.finish(fuzz=0.0015)
+        shift_part(Sp, (xp, yb, 0), Fp.root, parent_pivot=(0, CTD / 2, 0))
+        subs.append(Sp.root)
+    Tp = K.Parts("top", tris=500)
+    Tp.hard["wood"] = 0.004
+    K.box(Tp, "wood", (0, (CT_TOP_Y - CTD / 2) / 2, CTH - CTB / 2), (CTW + 0.04, CT_TOP_Y + CTD / 2, CTB))
+    K.box(Tp, "felt_indigo", (0, (CT_TOP_Y - CTD / 2) / 2 + 0.04, CTH + 0.002), (CTW - 0.2, 0.3, 0.004))   # 天板の上の布の敷物
+    K.stitch_line(Tp, "thread", [(-CTW / 2 + 0.12, CT_TOP_Y - 0.22, CTH + 0.005), (CTW / 2 - 0.12, CT_TOP_Y - 0.22, CTH + 0.005)],
+                  r=0.0025, dash=0.025)
+    K.box(Tp, "felt_mustard", (0, (CT_TOP_Y + CTD / 2) / 2, CTH - 0.002), (CTW - 0.1, CTD / 2 - CT_TOP_Y + 0.02, 0.004))   # 前の板との布の蝶番
+    Tp.finish(fuzz=0.0015)
+    shift_part(Tp, (0, CT_TOP_Y, CTH - CTB), Fp.root, parent_pivot=(0, CTD / 2, 0))
+    subs.append(Tp.root)
+    root = K.root("snowman_counter", kind="counter", box=[CTW, CTH, CTD])
+    Fp.root.parent = root
+    return root, subs
 
 
 # ---------------------------------------------------------------- 書き出す
@@ -500,18 +559,24 @@ def export_tree(top, subs, path):
 
 SM, SM_SUBS = snowman()
 FR, FR_SUBS = fridge()
+CT, CT_SUBS = counter()
 
 if A.export:
     SM.location = (20.0, 0.0, 0.0)   # 焼くとき、互いの陰（くぼみの陰）が写らないよう離す
     bpy.context.view_layer.update()
-    only = A.only.split(",") if A.only else ["snowman", "snowman_fridge"]
+    CT.location = (0.0, 20.0, 0.0)
+    bpy.context.view_layer.update()
+    only = A.only.split(",") if A.only else ["snowman", "snowman_fridge", "snowman_counter"]
     if "snowman" in only:
         export_tree(SM, SM_SUBS, os.path.join(A.export, "snowman.glb"))
     if "snowman_fridge" in only:
         export_tree(FR, FR_SUBS, os.path.join(A.export, "snowman_fridge.glb"))
+    if "snowman_counter" in only:
+        export_tree(CT, CT_SUBS, os.path.join(A.export, "snowman_counter.glb"))
 else:
     spot = next(o for o in bpy.data.objects if o.name == "snowman_spot")
     SM.location = (2.1, 1.4, 0.0) if A.apart else spot.location
+    CT.location = (2.6, 1.0, 0.0)   # 冷蔵庫の横に出して描く（ゲームでは冷蔵庫の前に置き、冷蔵庫だけ 1.85 倍）
     K.room(floor_size=24.0, wall_y=-0.6)
     K.interior_light(1.0)
     s = Vector(SM.location)

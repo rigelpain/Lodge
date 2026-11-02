@@ -28,6 +28,11 @@ var _bow_from := -100
 var _ring_from := -100
 var _flights: Array = []     # [{node, from, mid, to, start, len, then}]
 var _head_yaw := 0.0
+var _arm_l: Node3D
+var open := false            # 番台が組み立っている（fridge_door.gd が決める）。畳んでいるあいだは話しかけられない
+var tuck := 0.0              # 扉が閉じるあいだの身構え（1 = 両手を上げて少し奥へ。fridge_door.gd が決める）
+const TUCK_ARM := 1.22       # 手を上げる角度（70°）。下げずに閉じると、扉の内の棚に腕が当たる
+const TUCK_BACK := 0.015     # 奥へ下がる長さ（冷蔵庫の座標）
 
 
 func _ready() -> void:
@@ -35,14 +40,15 @@ func _ready() -> void:
 		_chest = man.find_child("chest", true, false) as Node3D
 		_head = man.find_child("head", true, false) as Node3D
 		_arm_r = man.find_child("arm_r", true, false) as Node3D
-		for n in [_chest, _head, _arm_r]:
+		_arm_l = man.find_child("arm_l", true, false) as Node3D
+		for n in [_chest, _head, _arm_r, _arm_l]:
 			if n:
 				_rest[n] = n.rotation
 
 
 ## 人 who が番台で話しかけられる所にいるか（番台の客の側。冷蔵庫の側からは話しかけない）
 func can_talk(who: Node3D) -> bool:
-	if counter == null or who == null:
+	if counter == null or who == null or not open:
 		return false
 	var p := counter.to_local(who.global_position)
 	return Vector2(p.x, p.z).length() < TALK_R and (man == null or
@@ -97,7 +103,10 @@ func _step() -> void:
 	if n >= 0 and n < 10:
 		ring = [0.3, 0.6, 0.2, -0.3, 0.5, 0.7, 0.2, -0.2, 0.1, 0.0][n]
 	if _arm_r:
-		_arm_r.rotation = _rest[_arm_r] + Vector3(0, 0, ring)
+		_arm_r.rotation = _rest[_arm_r] + Vector3(TUCK_ARM * tuck, 0, ring)
+	if _arm_l:
+		_arm_l.rotation = _rest[_arm_l] + Vector3(TUCK_ARM * tuck, 0, 0)
+	man.position = Vector3(0, 0, TUCK_BACK * tuck)
 	# 近くの人へ頭を向ける（3 コマで寄せる）
 	var target := 0.0
 	var who: Node3D = main.get("player") if main else null

@@ -1,10 +1,12 @@
 """雪だるまの冷蔵庫の扉（2026-11-02。game/fridge_door.gd）。どれも合成で、外の素材は使わない。
 
-扉はフェルトでくるんだ綿の板で、内に瓶の牛乳とジャムの瓶を並べた棚がある。人が近づくと 220° まで開き、離れると
-番台の横（105°）まで戻る。
+扉はフェルトでくるんだ綿の板で、内に瓶の牛乳とジャムの瓶を並べた棚がある。人が近づくと 220° まで開いて、前の床に
+畳んであった番台が組み立ち、離れると番台を畳んでから閉まる。
 
 fridge_open    木の蝶番のきしみ、扉があおる空気の「ふわっ」、止まるときに棚の瓶が「かちゃ」
-fridge_close   戻って止まる「ぽす」（綿を詰めた扉が蝶番の止めに当たる）、少し遅れて棚の瓶が「かちん」
+fridge_close   閉まる「ぽす」（綿を詰めた扉がパッキンに当たる）、少し遅れて棚の瓶が「かちん」
+stall_flap     畳める番台の板が起きて止まる・床に寝る「ぱたん」（藍のフェルトを張った木の板。木のこつんを布でくるむ）
+stall_tap      横の板・天板が開いて止まる、小さな「ぱた」
 """
 import numpy as np
 
@@ -44,6 +46,15 @@ def bump(rng, dur=0.35):
     return lp(body + air, 900)
 
 
+def flap(rng, size=1.0):
+    """布を張った木の板が当たる: 木の短いこつん（高い倍音を布で落とす）と、布の空気の「ぱふ」"""
+    n = n_of(0.3)
+    knock = modes(n, np.array([180, 410, 690, 1150]) * size * rng.uniform(0.95, 1.05), [0.05, 0.03, 0.018, 0.01],
+                  [1.0, 0.55, 0.3, 0.15], rng)
+    puff = bp(rng.standard_normal(n), 200, 1200, 2) * ar(n, 0.004, 0.08, 2.0) * 0.6
+    return lp(knock * 0.8 + puff, 2500)
+
+
 def fridge_open(rng):
     out = np.zeros(n_of(1.4))
     place(out, creak(rng, 0.45, 260, 340) * 0.12, 0.0)
@@ -65,3 +76,5 @@ def fridge_close(rng):
 if __name__ == "__main__":
     write("fridge_open.wav", fridge_open(np.random.default_rng(1100)), -10)
     write("fridge_close.wav", fridge_close(np.random.default_rng(1101)), -8)
+    write("stall_flap.wav", fade(flap(np.random.default_rng(1102), 0.85), 0.0005, 0.08), -8)
+    write("stall_tap.wav", fade(flap(np.random.default_rng(1103), 1.2) * 0.6, 0.0005, 0.06), -12)
