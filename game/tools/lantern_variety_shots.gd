@@ -1,13 +1,13 @@
 extends SceneTree
-## ランタンの形違い（lantern.gd の LOOK）と、番台の横のランタン掛け（lantern_rack.gd・lantern_ui.gd）を確かめて撮る。
+## ランタンの形違い（lantern.gd の LOOK）と、売り場（2 階の紙細工屋さん paper_lady.gd・paper_shop_ui.gd の提灯の段）を確かめて撮る。
 ##   Godot --path game --resolution 1280x720 -s res://tools/lantern_variety_shots.gd -- --part=line --no-sound --no-pip --dir=/path/shots
 ##   --part=line   夜の雪の上に 10 体の人形を並べ、帯にそれぞれの形を灯して提げる（L1〜L10）
-##   --part=rack   番台の横のランタン掛けを、夕方のロッジで一人称・三人称・引きで撮る（--spawn=lanterns を付ける）
-##   --part=ui     掛けの前で F の画面を開き、買う・足りない・提げ替える・外すを流して、財布と帯の形を log.txt に書く。装備の画面も撮る
+##   --part=rack   紙細工屋さんのスタンドを、夕方のロッジで一人称・三人称・引きで撮る（--spawn=lanterns を付ける）
+##   --part=ui     婦人の前で F の画面（提灯の段）を開き、買う・足りない・提げ替える・外すを流して、財布と帯の形を log.txt に書く。装備の画面も撮る
 ##   --part=bots   仲間に --bot-lanterns の形を提げて、夜の外で撮る（ほかの人の画面にも、その人のランタンが見えるか）
 ##   --part=load   起動の前に保存へ「10 の形を全部持ち、螺鈿を提げている」と書き、起動して戻ったかを見る。装備の画面と、帯の螺鈿を撮る
 ##   --part=net    通信: 同じ Mac で 2 つ起動する（--host と --join=127.0.0.1。--port= をそろえる）。ホストは指ぬきを、
-##                 つなぐ側は掛けの画面で蛍かごを買って灯す。互いの画面で、相手の人の体（remote_person.gd）の帯の形を書いて撮る
+##                 つなぐ側は紙細工屋さんの画面で蛍かごを買って灯す。互いの画面で、相手の人の体（remote_person.gd）の帯の形を書いて撮る
 ## 自分の保存（user://my_tag.cfg）は、始めに写しを取り、終わりに戻す
 
 var args := {}
@@ -138,9 +138,9 @@ func _run() -> void:
 			await _cam_shot("02_line_left", base + Vector3(-3.75, 1.0, 2.8), base + Vector3(-3.75, 0.45, 0), 58.0)
 			await _cam_shot("03_line_right", base + Vector3(3.75, 1.0, 2.8), base + Vector3(3.75, 0.45, 0), 58.0)
 		"rack":
-			var rk: Node3D = main.lantern_rack
+			var rk: Node3D = main.paper_lady
 			if rk == null:
-				_say("ランタン掛けがない")
+				_say("紙細工屋さんがいない")
 			else:
 				await _hour(18.2)
 				await _wait(1.0)
@@ -149,19 +149,17 @@ func _run() -> void:
 				await _wait(0.6)
 				await _shot("05_rack_3rd")
 				p.set_third(false)
-				var sk: Node3D = main.shopkeeper
-				var mid: Vector3 = (rk.global_position + sk.global_position) * 0.5
-				await _cam_shot("06_rack_bandai", rk.to_global(Vector3(0.6, 1.7, 4.6)), mid + Vector3.UP * 1.0, 60.0)
-				await _cam_shot("07_rack_close", rk.to_global(Vector3(0.0, 1.55, 1.9)), rk.to_global(Vector3(0, 1.5, 0)), 50.0)
+				await _cam_shot("06_rack_wide", rk.to_global(Vector3(0.7, 1.9, 5.2)), rk.to_global(Vector3(0.7, 1.1, 0)), 55.0)
+				await _cam_shot("07_rack_close", rk.to_global(Vector3(1.35, 1.2, 1.9)), rk.to_global(Vector3(1.35, 0.8, -0.3)), 50.0)
 		"ui":
 			c.wallets[who] = 400
 			_say("始め: 財布 %d 提げている %s 持っている %s" % [c.wallet(who), c.lantern(who), c.lanterns[who]])
 			await _wait(1.0)
 			await _key(KEY_F)
 			await _wait(1.2)
-			_say("画面が開いた %s" % main.lantern_ui.is_open)
+			_say("画面が開いた %s" % main.paper_shop_ui.is_open)
 			await _shot("08_ui_open")
-			var ui = main.lantern_ui
+			var ui = main.paper_shop_ui
 			_say("糸巻きを買う %s → 財布 %d 提げている %s" % [ui.choose(2), c.wallet(who), c.lantern(who)])
 			_say("毛糸の編み帽子を買う %s → 財布 %d" % [ui.choose(3), c.wallet(who)])
 			_say("螺鈿を買う（足りない）%s → 財布 %d" % [ui.choose(9), c.wallet(who)])
@@ -176,7 +174,7 @@ func _run() -> void:
 			_say("刺繍枠を提げる %s → 提げている %s" % [ui.choose(4), c.lantern(who)])
 			await _key(KEY_ESCAPE)
 			await _wait(0.5)
-			_say("画面を閉じた %s" % (not main.lantern_ui.is_open))
+			_say("画面を閉じた %s" % (not main.paper_shop_ui.is_open))
 			var cf := ConfigFile.new()
 			cf.load(TAG_FILE)
 			_say("保存: 持っている %s 提げている %s" % [cf.get_value("lantern", "owned", []), cf.get_value("lantern", "wear", "?")])
@@ -225,7 +223,9 @@ func _run() -> void:
 						await _wait(0.5)
 						t += 0.5
 					_say("つなぐ側: 財布 %d" % c.wallet(who))
-					_say("つなぐ側: 蛍かごを押す %s" % main.lantern_ui.choose(7))
+					main.paper_shop_ui.open("lantern")
+					_say("つなぐ側: 蛍かごを押す %s" % main.paper_shop_ui.choose(7))
+					main.paper_shop_ui.close()
 					c.send({"kind": "lamp", "who": who, "on": true})
 				await _wait(4.0)
 				_say("%s: 自分の帯 %s 点いている %s 財布 %d" % [_tag(), c.lantern(who), c.lamp_on(who), c.wallet(who)])

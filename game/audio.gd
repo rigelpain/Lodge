@@ -666,18 +666,18 @@ func button(what: String, at: Vector3, frame: int, tier := 0) -> void:
 const SHOP_SOUNDS := {
 	"patch": ["pay_button", 6, "till_patch", "wrap_paper"],    # パッチワークのおじいさんの番台（型紙と布）
 	"snow": ["pay_snowball", 3, "till_snow", "wrap_bag"],      # 雪だるまの番台（ペレット。お代は雪玉）
-	"pal": ["pay_button", 6, "till_pal", "wrap_tissue"],       # 2 階の衣装掛けの横の売り台（頭・肩の小物）
+	"pal": ["pay_button", 6, "till_pal", "wrap_tissue"],       # 2 階の衣装掛けの横の紙細工屋さん（提灯と頭・肩の小物）
 	"mountain": ["pay_button", 6, "till_patch", "wrap_paper"], # 1 階の山師（山の道具とミニオン）
 }
 ## 店の所（ロッジの中の節の名前）。見つからなければ買った人の所で鳴らす
-const SHOP_NODES := {"patch": "Bandai_counter_patch", "snow": "Bandai_counter_indigo", "pal": "PalStall", "mountain": "MountainMan"}
+const SHOP_NODES := {"patch": "Bandai_counter_patch", "snow": "Bandai_counter_indigo", "pal": "PaperLady", "mountain": "MountainMan"}
 const PAY_GAP := 0.075     # 払いの粒の間 (s)。sound/gen/shop.py の PAY_GAP と同じ
 const TILL_AFTER := 0.12   # 最後の払いからレジまで
 const WRAP_AFTER := 0.55   # レジから包むまで
 var _purses := {}          # 人の番号 → 前に見た財布の中身（払った数を、出来事の前後の差で知る）
 
 
-## 工房（craft.gd）の出来事から、買ったことを拾う。buy はおじいさん、pal_buy は 2 階の売り台、
+## 工房（craft.gd）の出来事から、買ったことを拾う。buy はおじいさん、pal_buy と lantern_buy は 2 階の紙細工屋さん、
 ## 名前に food か pellet を含む買う出来事は雪だるまの店（feature/snowman-food の売り場が出す名前に合わせる）
 func _on_craft(ev: Dictionary) -> void:
 	var craft: Node = world.get_node_or_null("Craft")
@@ -692,7 +692,9 @@ func _on_craft(ev: Dictionary) -> void:
 		paid = Craft.price(ev.item)
 	var shop := "patch"
 	if kind == "pal_buy":
-		shop = "mountain" if preload("res://pals.gd").slot_of(String(ev.get("key", ""))) == "pet" else "pal"   # ミニオンは山師から買う
+		shop = "mountain" if preload("res://pals.gd").slot_of(String(ev.get("key", ""))) == "pet" else "pal"   # ミニオンは山師、小物は紙細工屋さんから買う
+	elif kind == "lantern_buy":
+		shop = "pal"   # 提灯も紙細工屋さん
 	elif kind == "buy" and ev.get("item") is Dictionary and preload("res://mountain_goods.gd").has(String(ev.item.get("kind", ""))):
 		shop = "mountain"   # 山師の棚の道具
 	elif "food" in kind or "pellet" in kind:
@@ -713,8 +715,6 @@ func purchase(shop: String, near: Vector3, count := 1, looks := []) -> void:
 	var at := near
 	if lodge:
 		var node := lodge.find_child(SHOP_NODES.get(shop, ""), true, false) as Node3D
-		if node == null and world.get("pal_stall") is Node3D and shop == "pal":
-			node = world.pal_stall
 		if node:
 			at = node.global_position + Vector3.UP * 0.95   # 台の上（お皿・レジの高さ）
 	var t := 0.0

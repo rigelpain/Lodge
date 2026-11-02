@@ -91,7 +91,7 @@ func _run() -> void:
 	await _wait(1.2)
 	var ui = main.minion_ui
 	var i: int = ui.keys().find("frog")
-	print("連れの段だけ: ", ui.tabs, "  2 階の売り台の段: ", main.pals_ui.tabs)
+	print("連れの段だけ: ", ui.tabs)
 	print("カエルを買う: ", ui.choose(i), "  持っている ", main.craft.pal_owned(who, "frog"), "  連れている ", main.craft.pal_worn(who, "pet"),
 			"  財布 ", main.craft.wallet(who))
 	await _wait(0.6)
@@ -99,9 +99,11 @@ func _run() -> void:
 	ui.close()
 	await _wait(2.0)
 	await _shot("walk")
-	main.pals_ui.open()
-	await _wait(1.0)
-	await _shot("stall")
-	main.pals_ui.close()
+	var shop = main.get("paper_shop_ui")   # 2 階の小物の店は紙細工屋さん（#125）
+	if shop:
+		shop.open()
+		await _wait(1.0)
+		await _shot("stall")
+		shop.close()
 	_restore_tag()
 	quit(0)

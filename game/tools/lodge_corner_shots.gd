@@ -93,7 +93,7 @@ func _run() -> void:
 	await _wait(2.0)
 	lodge = main.get_node("Lodge")
 	main.player.doll.visible = false
-	for n in [["ミシン", main.sewing.machine if main.sewing else null], ["おじいさん", main.shopkeeper], ["ランタン掛け", main.lantern_rack],
+	for n in [["ミシン", main.sewing.machine if main.sewing else null], ["おじいさん", main.shopkeeper], ["紙細工屋さん", main.get("paper_lady")],
 			["番台", lodge.get_node_or_null("Bandai_counter_patch")], ["山男", main.get("mountain_man")]]:
 		if n[1]:
 			print("%s %s" % [n[0], _l((n[1] as Node3D).global_position)])
