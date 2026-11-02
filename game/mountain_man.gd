@@ -7,8 +7,8 @@ extends Node3D
 ## person/ideas/yamaotoko/roughs.py --export で、紙と糸の素材で組み、骨を入れ、色と凹凸とくぼみの陰を焼いた game/person/yamaotoko.glb。
 ## 上着は青海波を刷った藍の和紙（裏と縁は白）、裾・衿・頭巾の縁に生成りの糸のなみ縫い、帯は前で結んで垂らす。足もとに青いやわらかい影
 ## 置き場所はロッジの 1 階の、大きなミシンの奥（main.gd の MOUNTAIN_MAN）。
-## 横（rack_side の側）に木の棚を置き、その先に、山師が育てているミニオンの柵（ミニオンも山師から買う。売り場の「連れ」の札）。
-## 棚には山の道具を並べる。まだ売っていない品目（mountain_goods.gd の on が false）は、白い紙に包んで麻ひもで縛ってある。
+## 後ろに伏せて休む白いヤク、横（rack_side の側）に品物を積んだソリの屋台、その先に山師が育てているミニオンの柵と遊び場
+## （ミニオンも山師から買う。売り場の「連れ」の札）。どれも焼いた glb（下の SET）。
 ## 動きは人形と同じ 12 コマ／秒に刻む（コマの間は止める）:
 ##   待つ   息をするように体がわずかにふくらむ。ときどき見回す
 ##   気づく 人が近づくと顔を向け、左手を挙げて小さく振る。近くに何人かいれば、いちばん近い人を見る（オンラインのほかの人も）
@@ -16,29 +16,38 @@ extends Node3D
 ## F で話しかける（player.gd の mountain_near）。
 
 const Doll := preload("res://doll.gd")
-const Look := preload("res://look.gd")
 const Goods := preload("res://mountain_goods.gd")
 const Pals := preload("res://pals.gd")
-const Props := preload("res://props.gd")
 
 const MODEL := "res://person/yamaotoko.glb"
 const SCALE := 1.3           # ラフ（1.33 m）から、ゲームの人と並ぶ大きさへ（おじいさんと同じくらい）
 const FOOT_SHADOW := 0.42    # 足もとの影の半径（ラフの大きさのまま。人形の FOOT_SHADOW と同じ考え）
 const NOTICE_R := 4.0        # この距離に人が来ると気づく (m)
 const TALK_R := 2.4          # F で話しかけられる距離 (m)
-const RACK_AT := Vector3(1.15, 0, 0.1)   # 棚の位置（山男の座標。+X が右手の側。rack_side で左右を替える）
-## 山師が育てているミニオンの柵（2026-11-02 代表「ミニオンは山師が育てているのを買う感じにしてほしい」。案 C を選んだ）。
-## 棚の先（棚と同じ側）に、毛糸を巻いた木の柵で囲った寝床。編んだ敷物、薪かごの巣、紙コップの餌の器。前（客の側）は入口をあける
-const PEN_AT := Vector3(2.75, 0, 0.0)   # 柵のまんなか（山男の座標。x は rack_side を掛ける）
-const PEN_SIZE := Vector2(1.6, 1.5)     # 柵の幅（山男の左右）と奥行き (m)
-## 柵の中のミニオン: [名前, 柵の中の所, 向き, 姿]。売り物から（はじめから連れている子狐は巣で寝ている）
-const PEN_PETS := [["kit", Vector3(-0.35, 0.18, 0.35), 0.0, "sleep"], ["rabbit", Vector3(0.35, 0, -0.15), 0.5, "sit"],
-	["frog", Vector3(-0.3, 0, -0.35), -0.2, "sit"], ["yarn", Vector3(0.45, 0, 0.4), 1.0, "sit"]]
+## 山師のまわり（2026-11-02 代表「山師の後ろにこういう白いヤク置いてほしい」「棚スカスカすぎだし素っ気なさすぎ」
+## 「動物たちの柵と遊び場みたいなのも狭すぎ小さすぎ」。person/ideas/yamaotoko/corner.py で組んで焼いた glb。どれも山師の座標で作ってある）:
+##   ヤク     後ろで伏せて休む白いヤク（毛糸の房の毛、フェルトの角、赤い鞍掛けと鐙）
+##   出店     左手のソリの屋台（代表が「背負子と茣蓙」と比べて選んだ）: 赤いフェルトを敷いたソリの台、赤と生成りの縞の日よけ、
+##            焚き火セット・桶に立てたペグ・縄の輪・かんじき・提灯
+##   柵       出店の先の、ミニオンの柵と遊び場（4 × 3.2 m）: 敷物 2 枚、フェルトのトンネル、切り株と坂、毛糸玉、薪かごの寝床、水桶と餌の器。
+##            入口は客の側。中にも入れる（当たりは柵だけ）
+const SET := ["res://person/yama_yak.glb", "res://person/yama_stall.glb", "res://person/yama_pen.glb"]
+const SET_SCALE := 1.15      # 組んだ寸法（山師 1.33 m）から。山師ほど大きくはせず、柵が西の壁に届かない大きさ
+## 当たり（組んだ寸法の、山師の座標。前は -Z、左手は -X）: [大きさ, まんなか]
+const SET_BOXES := [
+	[Vector3(2.0, 0.9, 1.1), Vector3(0.35, 0.45, 1.8)],     # ヤク（体は左右＝南北に長い）
+	[Vector3(2.5, 1.2, 1.2), Vector3(-1.8, 0.6, -0.05)],    # 出店
+	[Vector3(4.0, 0.62, 0.08), Vector3(-5.3, 0.31, 2.7)],   # 柵の奥（西）
+	[Vector3(0.08, 0.62, 3.2), Vector3(-7.3, 0.31, 1.1)],   # 柵の北
+	[Vector3(0.08, 0.62, 3.2), Vector3(-3.3, 0.31, 1.1)],   # 柵の南（出店の側）
+	[Vector3(1.6, 0.62, 0.08), Vector3(-6.5, 0.31, -0.5)],  # 柵の前（入口の北）
+	[Vector3(1.6, 0.62, 0.08), Vector3(-4.1, 0.31, -0.5)],  # 柵の前（入口の南）
+]
+## 柵の中のミニオン: [名前, 所（組んだ寸法の、山師の座標）, 向き, 姿]。売り物から。子狐はかごの寝床で寝ている
+const PEN_PETS := [["kit", Vector3(-6.7, 0.16, 0.15), 0.4, "sleep"], ["chiyo_fox", Vector3(-6.2, 0.14, -0.05), -0.6, "sleep"],
+	["frog", Vector3(-6.5, 0.34, 2.1), 0.3, "sit"], ["rabbit", Vector3(-5.0, 0.0, 0.7), 0.6, "walk"],
+	["yarn", Vector3(-4.6, 0.0, 1.0), -0.5, "walk"], ["pony", Vector3(-5.7, 0.0, 1.4), 0.2, "sit"], ["peacock", Vector3(-4.3, 0.0, 2.0), -0.3, "walk"]]
 const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、柵のミニオンを置く
-
-const WHITE := Color("EEE8DC")
-const CREAM := Color("EBD9BC")
-const YARN_RED := Color("B8402E")
 
 var main: Node               # main.gd（人と craft を探す）
 var craft: Node
@@ -59,8 +68,7 @@ var _head_pitch := 0.0
 var _buyer: Node3D           # いま見ている買った人（少しのあいだ）
 var _buyer_until := -1
 var _rng := RandomNumberGenerator.new()
-var _mats := {}
-var _pen: Node3D
+var _set: Node3D             # ヤク・出店・柵（rack_side が右手なら左右を映す）
 var _pen_loaded := false
 var _pen_heads: Array = []   # 柵のミニオンの首（12 コマでときどき振る）
 var _check_t := 0.0
@@ -83,77 +91,9 @@ func _ready() -> void:
 	cs.position.y = 0.65 * SCALE
 	col.add_child(cs)
 	add_child(col)
-	_make_rack()
-	_make_pen()
+	_make_set()
 	if craft:
 		craft.happened.connect(_on_craft)
-
-
-func _paper(c: Color) -> StandardMaterial3D:
-	if not _mats.has(c):
-		var m := Look.paper(c)
-		m.cull_mode = BaseMaterial3D.CULL_DISABLED
-		_mats[c] = m
-	return _mats[c]
-
-
-## 平らな面の三角の列（3 点ずつ）。面は inside から外を向ける（片面の素材でも光が正しく当たるように）
-func _flat(parent: Node3D, tris: PackedVector3Array, inside: Variant, mat: Material) -> MeshInstance3D:
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in range(0, tris.size(), 3):
-		var a := tris[i]
-		var b := tris[i + 1]
-		var c := tris[i + 2]
-		var n := (b - a).cross(c - a)
-		if n.length() < 1e-9:
-			continue
-		n = n.normalized()
-		var mid := (a + b + c) / 3.0
-		var into: Vector3 = Vector3(0, mid.y, 0) if inside == null else inside
-		if n.dot(mid - into) < 0.0:
-			n = -n
-			var t := b
-			b = c
-			c = t
-		st.set_normal(n)
-		for p in [a, c, b]:   # Godot は時計回りが表
-			st.add_vertex(p)
-	var mi := MeshInstance3D.new()
-	mi.mesh = st.commit()
-	mi.material_override = mat
-	parent.add_child(mi)
-	return mi
-
-
-## 折り紙の多面体: 分割の少ない球を、少しゆがめて平らな面のまま（ラフの facet_ball と同じ）。half は (x, y, z) の半径（この節の座標）
-func _facet(parent: Node3D, center: Vector3, half: Vector3, u: int, v: int, jit: float, seed: int, mat: Material) -> MeshInstance3D:
-	var rng := RandomNumberGenerator.new()
-	rng.seed = seed
-	var rows: Array = []
-	for j in v + 1:
-		var lat := -PI / 2.0 + PI * j / v
-		var row: Array = []
-		for i in u:
-			var a := TAU * i / u
-			var p := Vector3(cos(lat) * cos(a), sin(lat), cos(lat) * sin(a))
-			var q := center + p * half + Vector3(rng.randf_range(-jit, jit), rng.randf_range(-jit, jit), rng.randf_range(-jit, jit))
-			if j == 0 or j == v:
-				q = center + p * half
-			row.append(q)
-		rows.append(row)
-	var tris := PackedVector3Array()
-	for j in v:
-		for i in u:
-			var a: Vector3 = rows[j][i]
-			var b: Vector3 = rows[j][(i + 1) % u]
-			var c: Vector3 = rows[j + 1][(i + 1) % u]
-			var d: Vector3 = rows[j + 1][i]
-			if j > 0:
-				tris.append_array([a, b, c])
-			if j < v - 1:
-				tris.append_array([a, c, d])
-	return _flat(parent, tris, center, mat)
 
 
 ## 骨を、骨の座標の空間（前は -Z、右は +X）の回転 e（オイラー角）で、付け根を軸に回す。親の骨は休みの姿のままとする
@@ -188,184 +128,24 @@ func _make_foot_shadow() -> void:
 	add_child(d)
 
 
-# ---- 棚 --------------------------------------------------------------------------------
+# ---- ヤク・出店・柵 ----------------------------------------------------------------------
 
-## 木の棚: 柱 2 本と板 2 段、上に白い和紙の毛皮を掛ける。品目ごとに、売っていれば道具を並べ、まだなら紙に包んで麻ひもで縛った包み
-func _make_rack() -> void:
-	var rack := Node3D.new()
-	rack.name = "Rack"
-	rack.position = Vector3(RACK_AT.x * rack_side, RACK_AT.y, RACK_AT.z)
-	rack.rotation.y = -0.35 * rack_side   # 少し客の方へ向ける
-	add_child(rack)
-	var wood := Look.wood(Color(0.50, 0.33, 0.20))
-	var dark := Look.wood(Color(0.36, 0.24, 0.15))
-	const W := 1.2
-	const D := 0.45
-	for sx in [-1.0, 1.0]:
-		for sz in [-1.0, 1.0]:
-			_box(rack, Vector3(0.06, 1.5, 0.06), Vector3(sx * (W / 2.0 - 0.03), 0.75, sz * (D / 2.0 - 0.03)), dark)
-	var shelves := [0.42, 0.9]
-	for y in shelves:
-		_box(rack, Vector3(W, 0.04, D), Vector3(0, y, 0), wood)
-	_box(rack, Vector3(W + 0.1, 0.05, D + 0.1), Vector3(0, 1.52, 0), wood)
-	var pelt := _paper(WHITE)   # 屋根の上の毛皮（多面体の和紙）
-	_facet(rack, Vector3(0, 1.56, 0), Vector3(W * 0.55, 0.05, D * 0.7), 8, 3, 0.01, 60, pelt)
-	for i in Goods.SHELF.size():
-		var e: Dictionary = Goods.SHELF[i]
-		var y: float = shelves[i % 2] + 0.02
-		var at := Vector3(0.0, y, -0.02)
-		if e.on or Goods.all_on:
-			match e.item.kind:
-				"campfire": _show_campfire(rack, at)
-				"peg": _show_pegs(rack, at)
-		else:
-			_wrapped(rack, at, i)
+func _make_set() -> void:
+	_set = Node3D.new()
+	_set.name = "Set"
+	_set.scale = Vector3(-rack_side, 1.0, 1.0) * SET_SCALE   # 組んだ形は出店が左手（-X）。右手に置くときは映す
+	add_child(_set)
+	for path in SET:
+		_set.add_child((load(path) as PackedScene).instantiate())
 	var body := StaticBody3D.new()
-	var cs := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(W, 1.6, D)
-	cs.shape = box
-	cs.position.y = 0.8
-	body.add_child(cs)
-	rack.add_child(body)
-
-
-func _box(parent: Node3D, size: Vector3, at: Vector3, mat: Material) -> MeshInstance3D:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.material_override = mat
-	mi.position = at
-	parent.add_child(mi)
-	return mi
-
-
-## 焚き火セットの見本: 毛糸を巻いた薪の束と、フェルトの石 3 つ
-func _show_campfire(parent: Node3D, at: Vector3) -> void:
-	var wood := Look.wood(Color(0.55, 0.38, 0.22))
-	var yarns := [YARN_RED, Color(0.88, 0.66, 0.20), Color(0.24, 0.32, 0.55)]
-	for k in 3:
-		for j in 2:
-			var stick := MeshInstance3D.new()
-			var cm := CylinderMesh.new()
-			cm.top_radius = 0.045
-			cm.bottom_radius = 0.045
-			cm.height = 0.42
-			stick.mesh = cm
-			stick.material_override = wood
-			stick.rotation.z = PI / 2.0
-			stick.position = at + Vector3(-0.2, 0.05 + j * 0.08, -0.09 + k * 0.09 - j * 0.045)
-			parent.add_child(stick)
-	for s in [-1.0, 1.0]:   # 束ねた毛糸
-		var ring := MeshInstance3D.new()
-		var tm := TorusMesh.new()
-		tm.inner_radius = 0.15
-		tm.outer_radius = 0.17
-		ring.mesh = tm
-		ring.material_override = Look.felt(yarns[0 if s < 0 else 1], 4.0)
-		ring.rotation.z = PI / 2.0
-		ring.scale = Vector3(1.0, 1.0, 0.7)
-		ring.position = at + Vector3(-0.2 + s * 0.11, 0.09, -0.02)
-		parent.add_child(ring)
-	var stones := [Color(0.55, 0.53, 0.52), Color(0.46, 0.40, 0.36), Color(0.42, 0.45, 0.50)]
-	for k in 3:
-		_facet(parent, at + Vector3(0.12 + k * 0.1, 0.04, 0.04 * (k % 2)), Vector3(0.05, 0.035, 0.045), 6, 4, 0.004, 70 + k, Look.felt(stones[k], 3.0))
-
-
-## ペグの見本: 木の杭を 5 本、毛糸で束ねて立てかける
-func _show_pegs(parent: Node3D, at: Vector3) -> void:
-	var wood := Look.wood(Color(0.62, 0.45, 0.28))
-	for k in 5:
-		var peg := Node3D.new()
-		peg.position = at + Vector3(0.12 + k * 0.045, 0.0, 0.05)
-		peg.rotation.z = -0.25
-		parent.add_child(peg)
-		var mi := MeshInstance3D.new()
-		var cm := CylinderMesh.new()
-		cm.top_radius = 0.018
-		cm.bottom_radius = 0.004
-		cm.height = 0.36
-		cm.radial_segments = 6
-		mi.mesh = cm
-		mi.material_override = wood
-		mi.position.y = 0.18
-		peg.add_child(mi)
-		var loop := MeshInstance3D.new()
-		var tm := TorusMesh.new()
-		tm.inner_radius = 0.022
-		tm.outer_radius = 0.03
-		loop.mesh = tm
-		loop.material_override = Look.felt([YARN_RED, Color(0.24, 0.32, 0.55)][k % 2], 4.0)
-		loop.position.y = 0.33
-		loop.rotation.x = PI / 2.0
-		peg.add_child(loop)
-
-
-## まだ売っていない品目: 白い紙に包んで、麻ひもで十字に縛った包み
-func _wrapped(parent: Node3D, at: Vector3, i: int) -> void:
-	var c := at + Vector3(0.0, 0.13, 0.0)
-	_facet(parent, c, Vector3(0.3, 0.13, 0.15), 6, 3, 0.012, 80 + i, _paper(CREAM))
-	var hemp := Look.felt(Color(0.78, 0.66, 0.46), 6.0)
-	for k in 2:   # 腰を回る輪と、上から下へ回る輪（前から見て十字。包みに沿う楕円。輪は寝かせて作り、縦の輪は立てる）
-		var pivot := Node3D.new()
-		pivot.position = c
-		pivot.rotation = Vector3.ZERO if k == 0 else Vector3(0, 0, PI / 2.0)
-		parent.add_child(pivot)
-		var ring := MeshInstance3D.new()
-		var tm := TorusMesh.new()
-		tm.inner_radius = 0.97
-		tm.outer_radius = 1.03
-		ring.mesh = tm
-		ring.material_override = hemp
-		ring.scale = Vector3(0.305, 0.08, 0.155) if k == 0 else Vector3(0.135, 0.08, 0.155)
-		pivot.add_child(ring)
-
-
-# ---- ミニオンの柵 ----------------------------------------------------------------------
-
-func _make_pen() -> void:
-	_pen = Node3D.new()
-	_pen.name = "Pen"
-	_pen.position = Vector3(PEN_AT.x * rack_side, 0, PEN_AT.z)
-	add_child(_pen)
-	var wood := Look.wood(Color(0.50, 0.33, 0.20))
-	var dark := Look.wood(Color(0.36, 0.24, 0.15))
-	var yarn := Look.felt(YARN_RED, 4.0)
-	var w := PEN_SIZE.x
-	var d := PEN_SIZE.y
-	var rug := Props.make("res://props/room/rug_braided_cool.glb")
-	rug.scale = Vector3.ONE * 0.5
-	rug.position.y = 0.01
-	_pen.add_child(rug)
-	for p in [Vector3(-w, 0, -d), Vector3(w, 0, -d), Vector3(-w, 0, d), Vector3(w, 0, d), Vector3(0, 0, -d), Vector3(0, 0, d)]:   # 柱と、頭に巻いた毛糸
-		var q: Vector3 = p * 0.5
-		_box(_pen, Vector3(0.06, 0.55, 0.06), q + Vector3(0, 0.275, 0), dark)
-		_box(_pen, Vector3(0.075, 0.05, 0.075), q + Vector3(0, 0.42, 0), yarn)
-	for y in [0.22, 0.46]:   # 横木 2 段。前（-Z、客の側）は入口をあける
-		_box(_pen, Vector3(w, 0.035, 0.035), Vector3(0, y, d * 0.5), wood)
-		_box(_pen, Vector3(0.035, 0.035, d), Vector3(-w * 0.5, y, 0), wood)
-		_box(_pen, Vector3(0.035, 0.035, d), Vector3(w * 0.5, y, 0), wood)
-		_box(_pen, Vector3(w * 0.32, 0.035, 0.035), Vector3(-w * 0.34, y, -d * 0.5), wood)
-		_box(_pen, Vector3(w * 0.32, 0.035, 0.035), Vector3(w * 0.34, y, -d * 0.5), wood)
-	var basket := Props.make("res://props/hearth/log_basket.glb")   # 巣
-	basket.scale = Vector3.ONE * 0.5
-	basket.position = Vector3(-0.35, 0, 0.35)
-	basket.rotation.y = 0.4
-	_pen.add_child(basket)
-	for i in 2:   # 餌の器
-		var cup := Props.make("res://props/cup.glb")
-		cup.scale = Vector3.ONE * 0.6
-		cup.position = Vector3(0.05 + i * 0.25, 0, 0.1)
-		_pen.add_child(cup)
-	var body := StaticBody3D.new()   # 柵の当たり（中には入れない）
-	var cs := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(w, 0.6, d)
-	cs.shape = box
-	cs.position.y = 0.3
-	body.add_child(cs)
-	_pen.add_child(body)
+	for b in SET_BOXES:
+		var cs := CollisionShape3D.new()
+		var box := BoxShape3D.new()
+		box.size = (b[0] as Vector3).abs()
+		cs.shape = box
+		cs.position = b[1]
+		body.add_child(cs)
+	_set.add_child(body)
 
 
 ## 柵のミニオンを置く（あなたが近づいてから一度だけ。ミニオンの形を読むのは重いので）
@@ -380,9 +160,9 @@ func _load_pen() -> void:
 				var h := c.find_child("head*", false, false)
 				if h:
 					_pen_heads.append(h)
-		n.position = e[1]
+		n.position = (e[1] as Vector3) * Vector3(-rack_side, 1.0, 1.0) * SET_SCALE
 		n.rotation.y = PI + float(e[2])   # 正面（+Z）を客の側（-Z）へ
-		_pen.add_child(n)
+		add_child(n)
 
 
 # ---- 動き（12 コマ／秒）----------------------------------------------------------------
