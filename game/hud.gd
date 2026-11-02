@@ -241,7 +241,10 @@ func _process(dt: float) -> void:
 	_update_speedo(dt, p, menu)
 	if plates:
 		_update_plates()
-	_view.queue_redraw()
+	var vst := _view_stamp()
+	if vst != _view_stamp_last:
+		_view_stamp_last = vst
+		_view.queue_redraw()
 
 
 # ---- 無操作で引っこめる ------------------------------------------------------------------
@@ -947,6 +950,28 @@ func _update_plates() -> void:
 
 
 var _tag_view_stamp := []
+var _view_stamp_last := []
+
+## HUD 本体（操作の札・刺繍枠・水のゲージとバッジ・小窓の印）の中身の印。これが変わったときだけ描き直す
+## （2026-11-02、M2 で毎コマ 2.5〜3 ms 描いていた）。風の揺れは人形と同じ 12 コマ／秒の刻みなので、そのコマで描き直す。
+## 引っこめ・札の出入り・跳ね・長押しなど動いている途中は、印が毎コマ変わるので毎コマ描く
+func _view_stamp() -> Array:
+	var p = main.player if main else null
+	var s := [_view.size, _hints.hash(), Icons.tuck, _badge_pop.hash(), float(p.get("tag_hold")) if p else 0.0]
+	if Icons.wind > 0.001:
+		s.append(Doll.frame_index() if Icons.wind_stepped else Engine.get_process_frames())
+	var sc = main.get("self_cam") if main else null
+	if sc and is_instance_valid(sc) and sc.get("_frame") != null:
+		s.append_array([sc.offset, (sc._frame as Control).get_global_rect(), sc.get("hidden")])
+	if main and main.get("_pip_layer"):
+		s.append_array([main._pip_layer.offset, main.pip_label.text, main._pip_layer.visible])
+	if main and main.get("badges") and p:
+		s.append(main.badges.of(p.id).hash())
+	if debug_on:
+		s.append(_dbg.hash())   # 確かめ用の数字（fps は 1 秒に 1 回変わる）
+	if (main and main.settings and main.settings.is_open) or (plates == null and _spd_a > 0.01):
+		s.append(Engine.get_process_frames())   # 設定の札・平らなときの速さの帯は毎コマ
+	return s
 
 ## 名札の中身の印。これが変わったときだけ名札を描き直す（2026-11-02、M2 で名札を毎コマ描くと 1 コマに 4〜5 ms かかっていた）。
 ## 風の揺れ・めくり・引っこめは入れ物ごと動かすので描き直さない。中の絵（回るソリの図・丘の上のソリの印）は、live なら
