@@ -785,8 +785,9 @@ func _make_pip() -> void:
 	_layout_pip()
 
 
-## 3D を描く大きさ: 画面の縦が 1080 px より大きいとき（Retina の全画面など）は、3D だけ縦 1080 px ほどで描いて FSR で広げる。
-## HUD・文字・小窓はそのままの細かさ。--scale3d=1 で縮めない（確かめ用）
+## 3D を描く大きさ: 設定の「3D の描画の解像度」（縦 1080 px の画面での割合）に、画面の縦が 1080 px より大きいとき
+## （Retina の全画面など）の縮めをかけ合わせ、FSR で広げる。HUD・文字・小窓はそのままの細かさ。
+## --scale3d=割合 で、設定も画面の大きさも見ずにその割合で描く（確かめ用。1 なら縮めない）
 const SCALE_3D_HEIGHT := 1080.0
 
 var _fit_h := -1   # 3D の大きさを決めたときの画面の縦 (px)。窓の大きさが変わったら決め直す（起動の直後にも変わる）
@@ -796,7 +797,8 @@ func _fit_3d_scale() -> void:
 	if vp.size.y == _fit_h:
 		return
 	_fit_h = vp.size.y
-	var k := clampf(SCALE_3D_HEIGHT / maxf(vp.size.y, 1.0), 0.5, 1.0)
+	var user: float = settings.values.get("scale", 0.67) if settings else 0.67
+	var k := clampf(user * clampf(SCALE_3D_HEIGHT / maxf(vp.size.y, 1.0), 0.5, 1.0), 0.25, 1.0)
 	if args.has("scale3d"):
 		k = clampf(float(args["scale3d"]), 0.25, 1.0)
 	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if k < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
@@ -1646,7 +1648,10 @@ func _apply_setting(key: String, v) -> void:
 		"sens":
 			if player: player.mouse_sens = v
 		"scale":
-			get_viewport().scaling_3d_scale = v
+			_fit_h = -1   # 窓の大きさの縮めとかけ合わせて当て直す（_fit_3d_scale）
+			_fit_3d_scale()
+		"glow":
+			if env: env.glow_enabled = v
 		"ssao":
 			if env:
 				env.ssao_enabled = v
