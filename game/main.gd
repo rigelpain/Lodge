@@ -126,7 +126,7 @@ const KOTATSU_ANDON := Vector3(1.75, 0, 1.35)
 ## こたつの上の吊り灯り（2026-11-02 代表「天井からの明かりが低すぎる」「謎の光るボックスなのはもったいない」）:
 ## props/furniture/pendant_<形>.glb（drum プリーツの筒・lantern 提灯・cone 円錐）を、天井の目印 slot_pendant_<番号> から吊る。
 ## 傘の上端は畳から KOTATSU_LAMP_TOP（lodge/dims.py の KOTATSU_LAMP）。コードは天井まで伸ばす。灯りは座敷の 2 つ（lodge.gd）で足りるので、吊り灯りそれぞれには灯さない
-const KOTATSU_PENDANT := "lantern"
+const KOTATSU_PENDANT := "drum"   # プリーツの筒（2026-11-02 代表「まんなかの筒」）
 const KOTATSU_PENDANT_SCALE := 0.7
 const KOTATSU_LAMP_TOP := 3.2
 ## 番台（店番の商人のカウンターとレジ。2026-10-31 代表「パッチワークおじいさんにも、雪だるまにも、番台的なカウンターとレジを」）。

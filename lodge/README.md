@@ -54,7 +54,7 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 - 原点は 1 階の外形の中心の真下、雪の地面の高さ。正面（南）が -Y（Blender）＝ +Z（Godot）を向く
 - 機械の置き場の目印（空の節点）: `slot_food_kitchen`、`slot_craft_rental`、`slot_vending_1`〜`3`。場所と向きは `dims.py` の `SLOTS`（並びは [design/lodge-layout/](../design/lodge-layout/)）。機械は `game/main.gd` が置く
 - 2 階の掘りごたつの目印（空の節点）: `slot_kotatsu_0`〜`7`（穴のまんなか、畳の面。0〜3 が南の列、4〜7 が北の列、西から）。ロッジは穴だけを作り、こたつと座布団は `game/main.gd` が `props/sets/kotatsu_lodge_<柄>.tscn` を置く（2026-11-01、箱のこたつから差し替え）。大きさは `dims.py` の `KOTATSU_W`・`KOTATSU_D`・`KOTATSU_TOP`・`PIT_OUT`・`PIT_DEPTH`、当たり判定は `KOTATSU_FLARE` まで
-- 2 階のこたつの上の吊り灯りの目印: `slot_pendant_0`〜`7`（卓のまんなかの上、天井の野地板の下面。番号は `slot_kotatsu_*` と同じ）。`game/main.gd` が `props/furniture/pendant_<形>.glb` を、傘の上端が畳から `KOTATSU_LAMP`（3.2 m）になるよう吊り、コードを天井まで伸ばす（2026-11-02、畳の上 1.75 m に浮いていた紙の筒から替えた）。座敷の灯り `light_lantern_*` も同じ高さへ上げた
+- 2 階のこたつの上の吊り灯りの目印: `slot_pendant_0`〜`7`（卓のまんなかの上、天井の野地板の下面。番号は `slot_kotatsu_*` と同じ）。`game/main.gd` が `props/furniture/pendant_drum.glb`（プリーツの筒）を、傘の上端が畳から `KOTATSU_LAMP`（3.2 m）になるよう吊り、コードを天井まで伸ばす（2026-11-02、畳の上 1.75 m に浮いていた紙の筒から替えた）。座敷の灯り `light_lantern_*` も同じ高さへ上げた
 - 灯りの場所の目印（空の節点）: `light_lamp_0`〜`2`（食堂の天井）、`light_lantern_0`〜`1`（座敷）、`light_fire`（炉）、`light_vestibule`（風除室）。食堂は炉を入れて 4 つまで。ゲームはここに暖色の OmniLight3D を影なしで灯し、炉の火だけ揺らす
 - 書き出しでは面取りを外し、形を 2 つの物体にまとめる。建物は `lodge_body`、中の家具と小物（卓・椅子・灯り・自販機など）は `lodge_props_interior`（名前の prop で 360° 映像から外せる）。動かす自動ドアだけ別。三角形はロッジ全体で 10 万以下が目安（いま約 6.7 万）
 - 自動ドアの戸は `autodoor_l` / `autodoor_r`（ガラスは `autodoor_glass_l` / `_r`）。`lodge.gd` が、人（CharacterBody3D）が戸の前後 3 m に入ると左右へ 1.4 m 引き分ける
@@ -73,4 +73,4 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 | `05-day-kotatsu.png` | カット 4: 2 階の掘りごたつ |
 | `05-day-terrace.png` | カット 5: テラスから丘 |
 | `06-kotatsu-swap-*.jpg` | 2 階のこたつの差し替え（ゲームの画面。左が前、右が後。上が昼、下が夜）。`-sit-side` は 7 体を座布団に座らせた横から（`06-kotatsu-before-sit-side` が前） |
-| `06-kotatsu-pendant-night.jpg` `06-kotatsu-pendant-close.jpg` | 代表に聞く案: こたつの上の吊り灯りの形（左から提灯・プリーツの筒・円錐）。`-night` は夜の 2 列と近く、`-close` は見上げ（上が昼、下が夜） |
+| `06-kotatsu-pendant.jpg` | こたつの上の吊り灯り（プリーツの筒。代表「まんなかの筒」）を見上げた所（左が昼、右が夜） |
