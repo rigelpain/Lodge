@@ -29,6 +29,8 @@ ap.add_argument("--size", default="2400x1100")
 ap.add_argument("--samples", type=int, default=64)
 ap.add_argument("--turn", type=float, default=0.0)
 ap.add_argument("--views", default="front,quarter,backq")
+ap.add_argument("--game", action="store_true", help="代表が選んだ C を、ゲーム用に細部を足して 1 体だけ組んで描く")
+ap.add_argument("--export", default="", help="--game の形に骨を入れて焼き、glb をこのフォルダーに書き出す（person/rig_export.py。例: game/person）")
 A = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
 
 # 人形のラフの台本から、組み立ての前（素材と形の道具）だけを借りる
@@ -43,6 +45,33 @@ finally:
     sys.argv = _argv
 C, V, part, blob, ball, stitch, rope, ribbon, hit, facet_ball, sheet_cone, paper, register_paper = (
     _ns[k] for k in ("C", "V", "part", "blob", "ball", "stitch", "rope", "ribbon", "hit", "facet_ball", "sheet_cone", "paper", "register_paper"))
+Mat, fiber_bump, lin, seigaiha_image, helix = (_ns[k] for k in ("Mat", "fiber_bump", "lin", "seigaiha_image", "helix"))
+
+
+def pattern_paper(name, image, scale, back="F6F2EA", fiber=0.4, crinkle=0.08):
+    """柄を刷った和紙: 表は柄の画像（箱の投影）、裏は白。繊維の凹凸とわずかな透け（paper と同じ作り）"""
+    M = Mat(name)
+    co = M.obj_coords(1.0)
+    tex = M.n("ShaderNodeTexImage", projection="BOX", projection_blend=0.3)
+    tex.image = image
+    M.l(M.obj_coords(scale), 0, tex, "Vector")
+    bf = M.n("ShaderNodeNewGeometry")
+    M.l(M.mix((bf, "Backfacing"), (tex, "Color"), lin(back)), 2, M.b, "Base Color")
+    bp = fiber_bump(M, co, fiber)
+    if crinkle:
+        vo = M.n("ShaderNodeTexVoronoi", Scale=14.0, Randomness=1.0)
+        vo.feature = "F2"
+        M.l(co, 0, vo, "Vector")
+        b2 = M.n("ShaderNodeBump", Strength=crinkle, Distance=0.01)
+        M.l(vo, "Distance", b2, "Height")
+        M.l(bp, 0, b2, "Normal")
+        bp = b2
+    M.l(bp, 0, M.b, "Normal")
+    M.b.inputs["Roughness"].default_value = 0.84
+    M.b.inputs["Subsurface Weight"].default_value = 0.08
+    M.b.inputs["Subsurface Radius"].default_value = (0.01, 0.008, 0.006)
+    M.b.inputs["Specular IOR Level"].default_value = 0.25
+    return M.m
 
 
 def paper_roles():
@@ -56,6 +85,8 @@ def paper_roles():
         "washi_indigo": paper("washi_indigo", "34477E", back="C8CEDC", fiber=0.45, crinkle=0.1, sss=0.08),
         "washi_white": paper("washi_white", "EEE8DC", back="F6F2EA", fiber=0.55, crinkle=0.12, sss=0.18),
         "washi_grey": paper("washi_grey", "B8B2A6", back="E6E2DA", fiber=0.55, crinkle=0.12, sss=0.12),
+        # ゲーム用の C: 藍の和紙に、少し明るい藍で青海波を刷る（着物の人の柄の紙。裏と縁は白）
+        "washi_indigo_print": pattern_paper("washi_indigo_print", seigaiha_image("34477E", "4B5F98"), 5.0, back="DCE0EA"),
     })
 
 
@@ -214,6 +245,85 @@ def build_wolf():
     return 1.33
 
 
+# ================================================================ C をゲーム用に（2026-11-02 代表「山師がアートコンセプトに沿ってない気がする。キャラの要素は良いんだけど」）
+def build_yamaotoko():
+    """ラフの C と同じ要素（藍の上着、クリームの衿、赤い毛糸の帯、白い和紙の狼の頭巾と毛皮、折り紙の顔と糸の目）に、
+    人形と同じ手芸の細部を足す: 上着は青海波を刷った藍の和紙（裏と縁は白）、裾と袖口と衿に生成りの糸のなみ縫い、
+    袖口にクリームの紙の折り返し（袖口の縫い目の輪は浮いて見えたので入れない）、帯は前で結んで端を垂らす、長靴に麻ひもを巻く、狼の頭巾の縁になみ縫い。
+    部品の名前は person/rig_export.py の RULES["yamaotoko"] で骨に分ける。前は +Y"""
+    for s in (1, -1):
+        part("boot", "kraft_dark", lambda m, s=s: facet_ball(m, V(0.1 * s, 0.03, 0.06), (0.08, 0.11, 0.06), 6, 4, 0.006, 40 + s), smooth=False)
+        rope("boot_bind", "hemp", helix(V(0.1 * s, 0.02, 0), 0.075, 0.07, 0.12, 2.0, sy=1.25), r=0.006)
+    prof = [(0.17, 0.98), (0.22, 0.8), (0.27, 0.5), (0.33, 0.14)]
+    coat = part("coat", "washi_indigo_print", lambda m: sheet_cone(m, prof, n=10, sy=0.8), smooth=False, solid=0.008)
+    part("coat_top", "washi_indigo_print", lambda m: facet_ball(m, V(0, 0, 0.97), (0.18, 0.15, 0.05), 10, 4, 0.0, 41), smooth=False)
+    # 裾のなみ縫い（裾の少し上を一周）
+    hem = [V(math.cos(a) * 0.322, math.sin(a) * 0.322 * 0.8, 0.17) for a in [2 * math.pi * k / 60 for k in range(61)]]
+    stitch("hem_st", hem, [V(math.cos(2 * math.pi * k / 60), math.sin(2 * math.pi * k / 60), 0) for k in range(61)], "thread_cream",
+           dash=0.022, gap=0.014, r=0.0032)
+    # 衿: クリームの紙の帯を左前で斜めに重ね、まんなかになみ縫い
+    for nm, pts, w in (("collar", [V(0.1, 0.13, 0.97), V(0.0, 0.19, 0.8), V(-0.07, 0.215, 0.6)], 0.06),
+                       ("collar_under", [V(-0.1, 0.13, 0.97), V(-0.03, 0.18, 0.86)], 0.055)):
+        m_c = C.M(nm, "washi", "doll")
+        ribbon(m_c, pts, w, None)
+        o = m_c.done(smooth=False)
+        o.modifiers.new("sol", "SOLIDIFY").thickness = 0.006
+    st = [V(0.1, 0.135, 0.97).lerp(V(0.0, 0.196, 0.8), t / 6) for t in range(7)] + [V(0.0, 0.196, 0.8).lerp(V(-0.07, 0.222, 0.6), t / 6) for t in range(1, 7)]
+    stitch("collar_st", st, [V(p.x, p.y, 0).normalized() for p in st], "thread_cream", dash=0.014, gap=0.01, r=0.0026)
+    # 赤い毛糸の帯: 2 巻きして、前の左で結び、端を垂らす
+    rope("belt", "yarn_red", helix(V(0, 0, 0), 0.248, 0.595, 0.62, 2, sy=0.81), r=0.012)
+    part("belt_knot", "yarn_red", lambda m: ball(m, V(-0.1, 0.19, 0.6), 0.026, 1.1, 0.8, 1.0))
+    for dx, L in ((0.015, 0.16), (-0.02, 0.12)):
+        rope("belt_end", "yarn_red", [V(-0.1, 0.2, 0.59), V(-0.1 + dx, 0.215, 0.52), V(-0.1 + dx * 1.6, 0.225, 0.59 - L)], r=0.01)
+    # 袖: 折った藍の筒、袖口にクリームの紙の折り返し。折り紙の手
+    for s in (1, -1):
+        sh, el, wr = V(0.17 * s, 0.0, 0.94), V(0.27 * s, 0.05, 0.75), V(0.25 * s, 0.13, 0.6)
+        rope("sleeve", "washi_indigo_print", [sh, el, wr], r=0.06, sides=6)
+        cuff = [wr + (el - wr).normalized() * 0.03, wr - (el - wr).normalized() * 0.005]
+        rope("sleeve_cuff", "washi", cuff, r=0.064, sides=6)
+        ring = []
+        ax = (wr - el).normalized()
+        t1 = ax.cross(V(0, 0, 1)).normalized()
+        t2 = ax.cross(t1).normalized()
+        for k in range(13):
+            a = 2 * math.pi * k / 12
+            ring.append(wr + (el - wr).normalized() * 0.012 + (t1 * math.cos(a) + t2 * math.sin(a)) * 0.066)
+        stitch("sleeve_st", ring, [(q - wr).normalized() for q in ring], "thread_cream", dash=0.012, gap=0.009, r=0.0024)
+        part("hand", "ori_face", lambda m, s=s: facet_ball(m, V(0.24 * s, 0.17, 0.56), (0.04, 0.04, 0.05), 6, 4, 0.003, 42 + s), smooth=False)
+    # 顔: 折り紙の多面体に、黒い糸の閉じた目
+    hc = V(0, 0.04, 1.07)
+    head = part("face", "ori_face", lambda m: facet_ball(m, hc, (0.085, 0.08, 0.095), 8, 6, 0.004, 44), smooth=False)
+    thread_eyes(head, hc, 0.03, -0.005, 0.012)
+    # 狼の頭巾: 白い和紙の頭、鼻すじ、灰色の紙の鼻、とがった耳（内側は生成りの紙）。縁になみ縫い
+    wolf = part("wolf_head", "washi_white", lambda m: facet_ball(m, V(0, -0.01, 1.17), (0.13, 0.14, 0.09), 7, 5, 0.006, 45), smooth=False)
+    part("wolf_snout", "washi_white", lambda m: facet_ball(m, V(0, 0.15, 1.17), (0.05, 0.1, 0.045), 6, 4, 0.003, 46), smooth=False)
+    part("wolf_nose", "washi_grey", lambda m: facet_ball(m, V(0, 0.245, 1.18), (0.02, 0.018, 0.016), 5, 4, 0.0, 47), smooth=False)
+    for s in (1, -1):
+        def ear(m, s=s, k=1.0, lift=0.0):
+            b = V(0.08 * s, -0.03 + lift, 1.22)
+            vs = [m.bm.verts.new(p) for p in (b + V(-0.04 * k, 0, 0), b + V(0.04 * k, 0, 0), b + V(0.0, -0.035 * k, 0), b + V(0.01 * s, -0.015, 0.11 * k))]
+            for f in ((0, 1, 3), (1, 2, 3), (2, 0, 3)):
+                m.bm.faces.new([vs[i] for i in f])
+        part("wolf_ear", "washi_white", ear, smooth=False)
+        part("wolf_ear_in", "washi", lambda m, s=s: ear(m, s, 0.6, 0.006), smooth=False)
+    rim = [V(math.cos(a) * 0.118, -0.01 + math.sin(a) * 0.128, 1.115) for a in [math.radians(20 + 140 * k / 14) for k in range(15)]]
+    pts, nrm = [], []
+    for q in rim:
+        p_, n_ = hit(wolf, q + V(q.x, q.y + 0.01, 0).normalized() * 0.2, -V(q.x, q.y + 0.01, 0).normalized())
+        pts.append(p_ + n_ * 0.002)
+        nrm.append(n_)
+    stitch("wolf_st", pts, nrm, "thread_cream", dash=0.014, gap=0.01, r=0.0026)
+    # 毛皮: 背中へ垂れる白い和紙と、肩から胸へ垂れる前足
+    part("pelt", "washi_white", lambda m: sheet_cone(m, [(0.12, 1.12), (0.2, 0.95), (0.27, 0.72), (0.3, 0.55)], n=6, sy=0.85, lon=(215.0, 325.0)),
+         smooth=False, solid=0.008)
+    for s in (1, -1):
+        m_p = C.M("pelt_paw", "washi_white", "doll")
+        ribbon(m_p, [V(0.15 * s, 0.02, 1.0), V(0.13 * s, 0.13, 0.9), V(0.1 * s, 0.17, 0.78)], 0.06, [V(1, 0, 0)] * 3, notch=0.025)
+        m_p.done(smooth=False).modifiers.new("sol", "SOLIDIFY").thickness = 0.006
+    _ = coat
+    return 1.33
+
+
 BUILDS = [("A", build_mino), ("B", build_bear), ("C", build_wolf)]
 
 
@@ -239,6 +349,23 @@ def stage(size):
 
 
 VIEWS = {"front": 0, "quarter": 32, "side": 85, "backq": 145, "back": 180}
+
+if A.game or A.export:
+    C.reset()
+    paper_roles()
+    top = build_yamaotoko()
+    if A.export:
+        sys.path.insert(0, os.path.normpath(os.path.join(HERE, "..", "..")))
+        import rig_export  # noqa: E402
+        rig_export.export("yamaotoko", A.export)
+        sys.exit(0)
+    stage(A.size)
+    os.makedirs(OUT, exist_ok=True)
+    tgt = V(0.0, 0, top * 0.5)
+    for v in A.views.split(","):
+        a = math.radians(VIEWS[v] + A.turn)
+        C.render(tgt + V(math.sin(a) * 4.2, math.cos(a) * 4.2, 0.35), tgt, 80, os.path.join(OUT, "game-%s.png" % v))
+    sys.exit(0)
 
 C.reset()
 paper_roles()

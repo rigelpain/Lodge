@@ -8,6 +8,7 @@
 4. 素材を焼いた画像の 1 つにして、骨ごと glb に書き出す
 骨の名前は 7 体で同じ（ゲームの doll.gd が同じ名前で動かす）。
 4 回目のキャラ案の 4 体（robo・musha・ningyo・golem）は person/ideas/characters/roughs.py の --export から呼ぶ。
+山の道具を売る山男（yamaotoko）は person/ideas/yamaotoko/roughs.py の --export から呼ぶ。
 部品の名前がちがうので、重みの付け方は RULES に人形ごとに書く。
 """
 import math
@@ -46,6 +47,10 @@ JOINTS = {
     "golem": {"pelvis": (0, 0.01, 0.45), "chest": (0, 0.04, 0.75), "neck": (0, 0.1, 1.04), "head": (0, 0.12, 1.06), "top": (0, 0.12, 1.25),
               "shoulder": (0.42, 0.04, 0.94), "elbow": (0.47, 0.1, 0.69), "wrist": (0.45, 0.19, 0.46), "hand": (0.45, 0.22, 0.33),
               "hip": (0.17, 0, 0.36), "knee": (0.17, 0, 0.24), "ankle": (0.17, 0.02, 0.11), "toe": (0.17, 0.2, 0.04)},
+    # 山の道具を売る山男（person/ideas/yamaotoko/roughs.py の --export）: 長い上着で脚は見えない。長靴の先だけ前に出る
+    "yamaotoko": {"pelvis": (0, 0, 0.55), "chest": (0, 0, 0.8), "neck": (0, 0.02, 0.98), "head": (0, 0.03, 1.0), "top": (0, 0, 1.3),
+                  "shoulder": (0.17, 0, 0.94), "elbow": (0.27, 0.05, 0.75), "wrist": (0.25, 0.13, 0.6), "hand": (0.24, 0.17, 0.56),
+                  "hip": (0.1, 0, 0.5), "knee": (0.1, 0, 0.3), "ankle": (0.1, 0.02, 0.08), "toe": (0.1, 0.13, 0.02)},
 }
 
 # 4 回目のキャラ案の部品の名前 → 重みの付け方。上から順に、名前の頭が合ったものを使う。
@@ -95,6 +100,14 @@ RULES = {
         (("hip_seam",), ("side", "thigh")),
         (("leg",), ("leg",)),
         (("foot",), ("side", "foot")),
+    ],
+    "yamaotoko": [
+        (("face", "eye", "wolf_"), ("rigid", "head")),
+        (("pelt", "coat_top", "collar"), ("rigid", "chest")),
+        (("coat", "hem_st", "belt"), ("bend", ["chest", "hips"])),
+        (("sleeve",), ("arm",)),
+        (("hand",), ("side", "hand")),
+        (("boot",), ("side", "foot")),
     ],
 }
 
