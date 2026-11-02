@@ -11,7 +11,7 @@ extends Node3D
 ## ミニオン: 姿は 3 つ（walk 歩く・sit 座って待つ・sleep 丸まって寝る）を置き換える（コマ撮りの置き換え人形）。
 ##   持ち主の右の少しうしろをついて歩き、止まると座り（SIT_T）、しばらくすると寝る（SLEEP_T）。座っているあいだは、指している所か
 ##   持ち主の顔を見上げる。持ち主がソリに乗ると、ソリの横を走ってついて滑る（速いと遅れ、離れすぎると追いつく。代表 2026-11-01）。
-##   ロッジの中では暖炉の前（炉の長椅子の前の床）へ行って寝て待ち、持ち主が外へ出ると起きて、うしろから駆けてくる（代表 2026-11-01）。
+##   ロッジの中では暖炉の前（暖炉の前のラグの、暖炉の側。hearth_nook.gd の pet_spot）へ行って寝て待ち、持ち主が外へ出ると起きて、うしろから駆けてくる（代表 2026-11-01）。
 ##   層は誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す
 ##
 ## 居場所（ミニオンの位置と向き）は毎フレームなめらか。姿勢（首・羽・脚・しっぽ・跳ねる）は人形と同じ 12 コマ／秒の時計で刻む。
@@ -286,20 +286,14 @@ func _zone(p: Vector3) -> int:
 	return Audio.zone_at(_lodge, p)
 
 
-## 暖炉の前の寝る所: 炉の長椅子の前の床（人ごとに違う長椅子）。長椅子がなければ炉の目印の前
+## 暖炉の前の寝る所: 暖炉の前のラグの、暖炉の側（人ごとに散らす。hearth_nook.gd）。ラグがなければ炉の目印の前
 func _hearth_spot() -> Vector3:
 	if _hearth != Vector3.INF:
 		return _hearth
-	var seats = host.get_parent().get_node_or_null("Seats")
-	var benches := []
-	if seats:
-		for s in seats.seats:
-			if s.kind == "bench":
-				benches.append(s)
-	if not benches.is_empty():
-		var s: Dictionary = benches[posmod(_who * 3, benches.size())]
-		var p: Vector3 = s.pos + (s.face as Vector3) * 0.75
-		_hearth = Vector3(p.x, float(s.floor), p.z)
+	var nook = _lodge.find_child("HearthNook", true, false) if _lodge else null
+	if nook:
+		var p: Vector3 = nook.pet_spot(_who)
+		_hearth = Vector3(p.x, _ground(p), p.z)
 	elif _lodge:
 		var mark := _lodge.find_child("light_fire", true, false) as Node3D
 		if mark:

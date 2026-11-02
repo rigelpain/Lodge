@@ -120,6 +120,11 @@ var seat_soft := false       # 座面が座布団（やわらかい）。お尻�
 var spin_axis := Vector3.ZERO   # 乾燥機の胴といっしょに回る軸（世界。ZERO なら回らない。持ち主が毎フレーム入れる。cook_station.gd）
 var spin := 0.0              # その軸まわりに回った角 (rad)
 var spin_at := Vector3.ZERO  # 回る中心（世界。胴の真ん中）
+## 席といっしょに体ごと傾く（揺り椅子が前後に揺れる、ビーズクッションでうしろへもたれる。hearth_nook.gd）。
+## 姿勢はそのまま（乾燥機の胴と違い、手足はぶらぶらしない）。持ち主が毎フレーム入れる。ZERO なら傾かない
+var rock_axis := Vector3.ZERO
+var rock := 0.0              # その軸まわりに傾いた角 (rad)
+var rock_at := Vector3.ZERO  # 傾く中心（世界。揺り椅子の弓の円の中心、ビーズクッションは腰）
 var drum_fit := 1.0          # 乾燥機の胴の中で、人形を小さくする倍（胴に収まらない大きな人形。dryer_flop.gd。持ち主が毎フレーム入れる）
 var flop := {}               # 胴の中で、手足と頭が戸の向きのまわりにぶらぶら振れる角 (rad。dryer_flop.gd の arm.L・leg.R・head など)
 var _foot_shade: Decal       # 足もとの影（胴の中では隠す）
@@ -184,6 +189,7 @@ var _em_roll := 0.0          # 身ぶりが頭に足す傾き（首をかしげ�
 
 func _ready() -> void:
 	top_level = true
+	add_to_group("dolls")   # 暖炉のまわりの家具が、座っている人形を探す（hearth_nook.gd）
 	_scale = SCALE[kind]
 	var inst: Node3D = (load(SCENES[kind]) as PackedScene).instantiate()
 	inst.scale = Vector3.ONE * _scale
@@ -1076,6 +1082,10 @@ func _physics_process(dt: float) -> void:
 		var r := Basis(spin_axis.normalized(), spin)
 		b = r * b
 		pos = spin_at + r * (pos - spin_at)
+	if rock_axis != Vector3.ZERO and rock != 0.0:
+		var r := Basis(rock_axis.normalized(), rock)
+		b = r * b
+		pos = rock_at + r * (pos - rock_at)
 	if drum_fit != 1.0:
 		b = b.scaled(Vector3.ONE * drum_fit)
 	global_transform = Transform3D(b, pos)

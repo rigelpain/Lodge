@@ -38,7 +38,7 @@ const VIEWS := [
 	["c5_stand", Vector3(-18.9, 8.6, 2.1), Vector3(-20.7, 9.6, 1.6)],
 	["c6_kitchen_gas", Vector3(3.5, 7.0, 3.0), Vector3(1.7, 12.4, 4.1)],
 	["c7_wheel", Vector3(-12.5, -9.5, 2.0), Vector3(-15.0, -6.5, 4.0)],
-	["c8_hearth", Vector3(-9.6, 8.4, 1.35), Vector3(-10.4, 11.6, 0.9)],          # 暖炉の火（hearth_fire.gd。--old-hearth で前の火）
+	["c8_hearth", Vector3(-9.6, 8.4, 1.35), Vector3(-10.4, 11.6, 0.9)],          # 暖炉の火（hearth_fire.gd）
 	# 真上からの間取り（--views=p。この高さより上を切って、正射影で見下ろす）
 	["p1_plan_1f_w", Vector3(-11.0, -6.0, 4.5), Vector3.ZERO],
 	["p2_plan_1f_e", Vector3(11.0, -6.0, 4.5), Vector3.ZERO],

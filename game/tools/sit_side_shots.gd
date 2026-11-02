@@ -3,6 +3,7 @@ extends SceneTree
 ##   Godot --path game --resolution 1000x1000 -s res://tools/sit_side_shots.gd -- [--kinds=all|kasa,news] [--seats=chair,stool,bench,zabuton] [--out=DIR]
 ##     [--quarter（真横でなく、斜め前の上から撮る）] [--bones（座布団の席で、骨ごとのいちばん低い所も書く）]
 ##     [--hard（座布団も椅子と同じ座り方。くらべる用）] [--cell=800（1 枚の大きさ）]
+##   暖炉のまわりの席は --seats=sofa,rocker,beanbag（揺り椅子はいちばんうしろへ揺れた所、ビーズクッションはもたれた所で撮る）
 ## 席は種類ごとに、カメラを置く横が空いている席（並びの端。なければ並びのまんなか）。人形のまわりの奥行きだけを映す（手前と奥は切る）。
 ## 脚（太もも・すね・足）の頂点のうち、座面の真下（座面の幅と奥行きの中で、座面より低く床より高い所＝椅子の中）に入った数を書き出す。
 ## 座布団の席では、こたつ（天板と垂れた布団の外形の箱）の中へ入った体の頂点も数える
@@ -123,6 +124,9 @@ func _place(seats) -> void:
 		d.seat_edge = st.get("edge", 0.2)
 	if "seat_soft" in d:
 		d.seat_soft = st.kind == "zabuton" and not args.has("hard")
+	d.rock_axis = st.get("rock_axis", Vector3.ZERO)   # 揺り椅子・ビーズクッション: いちばんうしろへ傾いた所
+	d.rock = float(st.get("rock_lean", 0.0)) + float(st.get("rock_amp", 0.0))
+	d.rock_at = st.get("rock_at", Vector3.ZERO)
 	var side: Vector3 = _side_of[sk]
 	var h: float = d.height()
 	var c: Vector3 = st.pos + Vector3.UP * (h * 0.3 - 0.2) + st.face * (0.1 + h * 0.1)
@@ -183,6 +187,13 @@ func _count(seats) -> void:
 	var n := 0
 	var deep := 0.0
 	var groups := _skinned(d)
+	if float(st.get("rock_amp", 0.0)) > 0.0:   # 揺り椅子: 椅子もいっしょに傾いているので、椅子に対しての所で数える
+		var un := Basis(st.rock_axis, -d.rock)
+		for b in groups:
+			var arr: PackedVector3Array = groups[b]
+			for i in arr.size():
+				arr[i] = st.rock_at + un * (arr[i] - st.rock_at)
+			groups[b] = arr
 	for b in groups:
 		if not (b.begins_with("thigh") or b.begins_with("shin") or b.begins_with("foot")):
 			continue
@@ -197,11 +208,12 @@ func _count(seats) -> void:
 	# 椅子の背もたれ: 座面の後ろの縁より後ろへ出た体の頂点（座面から 0.5 m の高さまで）
 	var back := 0
 	var back_deep := 0.0
-	if sk == "chair":
+	if sk in ["chair", "sofa", "rocker"]:
+		var back_d: float = st.get("back", size.y - edge)   # 腰の所から背もたれの前の面まで
 		for b in groups:
 			for v in groups[b]:
 				var rel: Vector3 = v - st.pos
-				var behind: float = (edge - size.y) - rel.dot(st.face)
+				var behind: float = -back_d - rel.dot(st.face)
 				if behind > 0.01 and rel.y > 0.0 and rel.y < 0.5 and absf(rel.dot(side)) < size.x * 0.5:
 					back += 1
 					back_deep = maxf(back_deep, behind)
@@ -245,6 +257,14 @@ func _count(seats) -> void:
 					m = minf(m, (v - st.pos).y)
 				per[b] = snappedf(m, 0.001)
 			print(d.kind, " ", per)
+	# 浮き: 座面の上（腰のまわり 0.15 m）にある体の頂点のうち、いちばん低いものと座面の高さの差（正なら浮いている）
+	var low_all := INF
+	for b in groups:
+		for v in groups[b]:
+			var rel: Vector3 = v - st.pos
+			if Vector2(rel.dot(st.face), rel.dot(side)).length() < 0.15:
+				low_all = minf(low_all, rel.y)
+	print("%s %s: 浮き %.3f m" % [d.kind, sk, low_all])
 	print("%s %s: 座面の真下に入った脚の頂点 %d（いちばん深く %.3f m）、背もたれへ出た体の頂点 %d（%.3f m）%s　座面の奥行き %.2f m（腰から縁まで %.2f m）" % [d.kind, sk, n, deep, back, back_deep, kot, size.y, edge])
 
 

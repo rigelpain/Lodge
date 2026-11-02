@@ -80,13 +80,14 @@ func _ready() -> void:
 			l.light_energy = 1.4
 		if e.name == "light_fire":                 # 影は付けない（スマホでも軽く）
 			l.light_color = Color(1.0, 0.45, 0.16)
-			l.omni_range = 7.0
-			l.position = Vector3(0, 0, 1.0)   # 炉の石の面から部屋の側へ離す（近いと石が白く飛ぶ）
+			l.omni_range = 11.0                    # 大きな暖炉（hearth_nook.gd）: まわりの居場所の端の席まで
+			l.light_energy = 2.0
+			l.omni_attenuation = 0.6               # 夜、遠いソファまで火の色が届くように（lodge_lights.gd と同じ考え）
+			l.position = Vector3(0, 0.8, 2.6)   # 炉の石の面から部屋の側へ離す（近いと小石が白く飛ぶ）
 			fire_light = l
 		e.add_child(l)
 
 	add_child(preload("res://lodge_lights.gd").new())   # 暗い所に、火の灯りの道具（松明・ガス灯・キャンドル）
-	add_child(preload("res://hearth_fire.gd").new())    # 暖炉の火を、焚き火と同じフェルトの薪と薄葉紙の炎に（前の光る板は隠す）
 	_make_auto_door()
 	_make_swing_doors()
 

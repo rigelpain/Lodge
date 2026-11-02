@@ -1,7 +1,7 @@
 extends Node
 
 const Doll := preload("res://doll.gd")
-## ロッジの席の配り役。食堂の椅子・窓辺の丸椅子・炉を囲む長椅子・2 階のこたつの座布団に、F で座れる。
+## ロッジの席の配り役。食堂の椅子・窓辺の丸椅子・暖炉のまわりのソファ・揺り椅子・ビーズクッション・2 階のこたつの座布団に、F で座れる。
 ## 座る・立つは「誰が・どの席に・座った／立った」の短い出来事 {kind, who, seat, frame}（emotes.gd と同じ形）。
 ## 中身は数だけにして、そのまま通信に乗せられるようにする。seat は席の番号（seats の並び。同じ glb なら全員の画面で同じ）。
 ##   sit   {seat}   その席に座る（空いていなければ断る）
@@ -11,6 +11,8 @@ const Doll := preload("res://doll.gd")
 ## 席はロッジの glb（lodge/build_lodge.py）の座面（素材 cushion の面）から、ゲームを始めたときに見つける。
 ## 家具は 1 つの形にまとめて書き出されていて、椅子ごとの名前がないので、面をつながったかたまりに分け、高さと形で見分ける。
 ## 向きは、座面の少し上から四方へ当たりを探り、机（窓辺のカウンター）に当たる向き。長椅子は炉の灯りの目印（light_fire）の向き。
+## 暖炉のまわりの家具（hearth_nook.gd）は、座る所の目印 nook_seat_<番号>（-Z が座って向く向き。種類・高さ・奥行き・揺れは目印の meta）。
+##   sofa: 何人かで並ぶ（座る所が人数分）、rocker: 座りきると前後に揺れる、beanbag: 沈み込み、うしろへもたれる
 ## 2 階の座布団は、こたつの組（props/sets/kotatsu_lodge_*。main.gd が slot_kotatsu_* に置く）の座る所の目印 sit_<番号>
 ## （目印の -Z がこたつの側、大きさは座布団の幅・厚み・奥行き）。
 ## ロッジの台本で家具を動かしても、書き出し直せばそのまま合う。
@@ -24,7 +26,10 @@ const REACH := 1.5           # 座れる、席までの距離 (m)
 const BENCH_STEP := 0.75     # 長椅子に並ぶ間
 const KOTATSU_PIT := 0.40    # 掘りごたつの穴の深さ（lodge/dims.py の PIT_DEPTH）。座布団の席の足はここまで下ろせる
 const KOTATSU_HIPS := 0.56   # 座布団の席: 腰の所を、こたつ（天板と垂れた布団）の縁からこれだけ手前に（座布団に腰かけ、脚を穴へ下ろす。大きな人形の腹が天板に当たらない）
-const STAND_BACK := {"chair": 0.62, "stool": 0.6, "bench": -0.6, "zabuton": 0.48}   # 立つ所: 席の後ろへ（負は前へ）
+const STAND_BACK := {"chair": 0.62, "stool": 0.6, "bench": -0.6, "zabuton": 0.48,
+		"sofa": -1.0, "rocker": -0.95, "beanbag": 0.95}   # 立つ所: 席の後ろへ（負は前へ）。ビーズクッションはラグの上でまわりを囲まれるので、うしろ（部屋の側）から乗り込む
+const ROCK_EASE := 18        # 揺り椅子: 座りきってから、揺れが大きくなりきるまでのコマ
+const LEAN_EASE := 3         # ビーズクッション: 座りきってから、もたれきるまでのコマ
 const STEP_IN := 3           # 歩み寄るコマ。その次の 1 コマが中腰
 const SIT_IN := STEP_IN + 2  # 座りきるまでのコマ
 const SIT_OUT := 2           # 立ちきるまでのコマ（中腰 1 コマ）
@@ -100,12 +105,12 @@ func near(at: Vector3, look: Vector3) -> int:
 	return best
 
 
-## 空いた席のうち、at に近い順に最大 n 個（床の高さが at と同じもの）。仲間が座る席を選ぶ
-func free_near(at: Vector3, n: int, max_d := 30.0) -> Array:
+## 空いた席のうち、at に近い順に最大 n 個（床の高さが at と同じもの）。仲間が座る席を選ぶ。kinds を決めると、その種類の席だけ
+func free_near(at: Vector3, n: int, max_d := 30.0, kinds := []) -> Array:
 	var list := []
 	for i in seats.size():
 		var s: Dictionary = seats[i]
-		if taken.has(i) or absf(at.y - s.stand.y) > 0.6:
+		if taken.has(i) or absf(at.y - s.stand.y) > 0.6 or (not kinds.is_empty() and not s.kind in kinds):
 			continue
 		var d: float = (s.stand - at).length()
 		if d <= max_d:
@@ -132,6 +137,23 @@ static func place(s: Dictionary, from: Vector3, f: int, sit_f: int, stand_f: int
 	if k < SIT_IN - 1:
 		return [s.pos, 1, false]
 	return [s.pos, 2, false]
+
+
+## 席といっしょに体ごと傾く角 (rad。正でうしろへ)。揺り椅子は座りきってから前後に揺れ、ビーズクッションはうしろへもたれる。
+## 揺れは全員の画面で同じコマの時計（Doll.frame_index）から決まるので、通信で揃えなくても同じ形になる。
+## f はいまのコマ、sit_f・stand_f は座る・立つ出来事のコマ（立っていなければ stand_f は -1）
+static func rock_of(s: Dictionary, f: int, sit_f: int, stand_f: int) -> float:
+	if not s.has("rock_axis") or (stand_f >= 0 and f >= stand_f):
+		return 0.0
+	var k := f - sit_f - (SIT_IN - 1)   # 座りきってからのコマ
+	if k < 0:
+		return 0.0
+	var a: float = float(s.get("rock_lean", 0.0)) * minf(1.0, float(k + 1) / LEAN_EASE)
+	var amp: float = float(s.get("rock_amp", 0.0))
+	if amp > 0.0:
+		var period: float = float(s.get("rock_period", 2.0)) * 12.0
+		a += amp * minf(1.0, float(k + 1) / ROCK_EASE) * sin(TAU * float(f) / period + float(s.get("rock_phase", 0.0)))
+	return a
 
 
 # ---------------------------------------------------------------- 席を見つける
@@ -191,6 +213,11 @@ func _find() -> void:
 			_add_zabuton(b, face, hit[1])
 			continue
 		_add(kind, p, face, floor_y, _edge(b, p, face), b.size)
+	# 暖炉のまわりの家具（hearth_nook.gd の目印。名前の番号の順）
+	var nook := lodge.find_children("nook_seat_*", "Node3D", true, false)
+	nook.sort_custom(func(a: Node, b: Node) -> bool: return String(a.name) < String(b.name))
+	for m: Node3D in nook:
+		_add_nook(m)
 	# 2 階の座布団（こたつの組の目印）。2 階なので、並びは 1 階の席のあと。奥（-Z）から、西から
 	var marks := lodge.find_children("sit_*", "Node3D", true, false)
 	var at_of := func(m: Node3D) -> Vector3: return lodge.to_local(m.global_position)
@@ -208,6 +235,32 @@ func _find() -> void:
 		if hit.is_empty():
 			continue
 		_add_zabuton(b, hit[0], hit[1])
+
+
+## 暖炉のまわりの家具の席: 目印の所が腰を下ろす所、-Z が座って向く向き。meta は
+##   kind（sofa・rocker・beanbag）、height（腰の所から足を下ろす床まで、m）、edge（腰の所から座面の前の縁まで）、size（座面の幅と奥行き）、back（腰の所から背もたれまで）、
+##   rock_amp・rock_period・rock_phase・rock_pivot（揺り椅子: 揺れの角・周期 s・ずれ・弓の円の中心（目印の座標））、rock_lean（もたれる角）
+func _add_nook(m: Node3D) -> void:
+	var kind: String = m.get_meta("kind", "sofa")
+	var p := lodge.to_local(m.global_position)
+	var face := lodge.global_basis.inverse() * -m.global_basis.z
+	face.y = 0
+	face = face.normalized()
+	var k := lodge.global_basis.get_scale().x
+	var size: Vector2 = m.get_meta("size", Vector2(0.6, 0.5))
+	var floor_y := p.y - float(m.get_meta("height", 0.45)) / k
+	_add(kind, p, face, floor_y, float(m.get_meta("edge", 0.2)) / k, Vector3.ZERO)
+	var st: Dictionary = seats[-1]
+	st.size = size
+	st["back"] = float(m.get_meta("back", 0.3)) * k   # 腰の所から背もたれの前の面まで
+	if m.has_meta("rock_amp") or m.has_meta("rock_lean"):
+		var fw: Vector3 = st.face
+		st["rock_axis"] = fw.cross(Vector3.UP).normalized()
+		st["rock_at"] = m.to_global(m.get_meta("rock_pivot", Vector3.ZERO))
+		st["rock_amp"] = float(m.get_meta("rock_amp", 0.0))
+		st["rock_period"] = float(m.get_meta("rock_period", 2.0))
+		st["rock_phase"] = float(m.get_meta("rock_phase", 0.0))
+		st["rock_lean"] = float(m.get_meta("rock_lean", 0.0))
 
 
 ## 座布団の席: 腰の所を、こたつ（布団と天板の当たり）から KOTATSU_HIPS 手前まで前へ出し、足は穴の底まで下ろせる

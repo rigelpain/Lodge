@@ -166,10 +166,12 @@ TABLES = [(x - TABLE["w"] / 2, y - TABLE["d"] / 2) for y in TABLE_CY for x in TA
 WINDOW_BAR = dict(x0=GLASS_S_X0 + 0.35, x1=X1 - LOG_D / 2 - 0.05, y0=Y0 + POST / 2 + 0.10,
                   d=0.50, h=1.05, t=0.06)
 STOOL = dict(step=0.80, y=WINDOW_BAR["y0"] + 0.50 + 0.38, seat=0.76, r=0.21)
-# 炉をコの字に囲む長椅子（奥行き 0.45）。炉を細くしても、コの字の大きさは前のまま（代表の並びの図のとおり）
-HEARTH_BENCH = [(HEARTH_CX - 2.55, CH["y0"] - 2.8, HEARTH_CX + 2.55, CH["y0"] - 2.35),
-                (HEARTH_CX - 4.15, CH["y0"] - 2.8, HEARTH_CX - 3.7, CH["y0"] - 0.6),
-                (HEARTH_CX + 3.7, CH["y0"] - 2.8, HEARTH_CX + 4.15, CH["y0"] - 0.6)]
+# 炉の前の居場所（2026-11-02 代表「暖炉がちゃっちい。暖炉前のベンチもなんか味気ない」）。長椅子はやめた。
+# 暖炉・ラグ・揺り椅子・ビーズクッション・大きなソファは props/build_nook.py の品物を、ゲーム（game/hearth_nook.gd）が
+# 目印 slot_hearth（暖炉の前の面のまんなか、床の高さ）に置く。ロッジは煙突の塊だけを作り、炉の口・炉床・飾り棚は作らない。
+# 暖炉の大きさは build_nook.py の FW（幅）・BACK（壁から前の面まで）と同じ
+HEARTH = dict(w=6.0, back=2.1)
+HEARTH["front"] = Y1 - LOG_D / 2 - HEARTH["back"]   # 前の面（y）
 # 2 階
 TATAMI = dict(x0=gx(3.25), x1=gx(10.75), y0=gy(4.6), y1=gy(0.6), h=0.40)   # 小上がり
 KOTATSU_W, KOTATSU_D = 1.2 * K, 0.7 * K
@@ -189,6 +191,7 @@ TABLE2 = (gx(0.4), Y2_0 + 2.0, gx(1.6), Y2_0 + 3.1)
 # 0 で機械の正面が南（食堂）、90 で東、270 で西
 SLOTS = {
     "slot_food_kitchen": (3.0, 10.0, FL1, 0),          # 厨房（炉の右）。装置は props/build_scenes.py の kitchen
+    "slot_hearth": (HEARTH_CX, HEARTH["front"], FL1, 0),   # 暖炉の前の面のまんなか。暖炉とまわりの居場所は game/hearth_nook.gd
     # ミシン（南西の隅）。正面は東（入口からの通り道）。2026-11-02 代表「ミシンはパッチワークのおじさんに近づけよう」で
     # 南へ 2 m（y -3.4 → -5.4）。北にあいた所は山師の出店とミニオンの柵
     "slot_craft_rental": (-18.3, -5.4, FL1, 90),
