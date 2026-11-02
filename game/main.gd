@@ -718,10 +718,12 @@ func _make_pip() -> void:
 	pip_label.add_theme_color_override("font_color", Color.WHITE)
 	pip_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.5))
 	pip_label.add_theme_constant_override("shadow_offset_y", 1)
+	pip_label.visible = false   # 映像の上には文字も印も重ねない（2026-11-02 代表「小窓のカメラに LIVE とか小さい文字いろいろありますが全部消してほしい」）
 	layer.add_child(pip_label)
 	var dot := ColorRect.new()
 	dot.name = "Dot"
 	dot.color = Color(0.95, 0.2, 0.15)
+	dot.visible = false
 	layer.add_child(dot)
 	_layout_pip()
 
@@ -818,8 +820,6 @@ func _process(_dt: float) -> void:
 			_pip_due -= 1.0
 			_pip_vps[_pip_next].render_target_update_mode = SubViewport.UPDATE_ONCE
 			_pip_next = (_pip_next + 1) % FACES.size()
-	var t := int(elapsed)
-	pip_label.text = "    360 LIVE  %02d:%02d" % [t / 60, t % 60]   # 後ろ向きのしるしは hud.gd が絵で出す
 
 
 func _make_world() -> void:

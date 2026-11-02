@@ -1105,7 +1105,6 @@ class View extends Control:
 		_draw_tag_hold(u)
 		_draw_hoop(u)
 		_draw_damp(u)
-		_draw_pip_back(u)
 		if hud._spd_a > 0.01:
 			_draw_speedo(u)
 		if hud.debug_on and not hud._dbg.is_empty():
@@ -1364,17 +1363,6 @@ class View extends Control:
 		draw_set_transform_matrix(Icons.wind_xform(c, 5.0, 0.0, 0.03, 2.5 * u))
 		DampHud.draw(self, c, fr.size.x / 2.0, u, hud.main.badges.of(p.id), hud._badge_pop)
 		draw_set_transform_matrix(Transform2D.IDENTITY)
-
-	## 右上の 360° 映像が後ろ向きのしるし（「後ろ」の文字の代わり）
-	func _draw_pip_back(u: float) -> void:
-		var main: Node3D = hud.main
-		if main.pip_label == null or main._pip_layer == null or main.pip_mode != 0 or not main._pip_layer.visible:
-			return
-		var lr: Rect2 = main.pip_label.get_global_rect()
-		lr.position += main._pip_layer.offset   # 引っこめは窓の層ごと
-		var font: Font = main.pip_label.get_theme_font("font")
-		var tw: float = font.get_string_size(main.pip_label.text, HORIZONTAL_ALIGNMENT_LEFT, -1, 13).x
-		Icons.icon(self, "back", Vector2(lr.position.x + tw + 14.0, lr.position.y + lr.size.y / 2.0), 22.0, 0.95)
 
 	## Esc の札: すべてのキーと絵（設定の画面の左）
 	func _draw_card(u: float, fit := true) -> void:
