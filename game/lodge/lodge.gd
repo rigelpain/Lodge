@@ -78,6 +78,7 @@ func _ready() -> void:
 			fire_light = l
 		e.add_child(l)
 
+	add_child(preload("res://lodge_lights.gd").new())   # 暗い所に、火の灯りの道具（松明・ガス灯・キャンドル）
 	_make_auto_door()
 
 
