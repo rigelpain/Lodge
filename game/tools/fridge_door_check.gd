@@ -2,7 +2,11 @@ extends SceneTree
 ## 雪だるまの冷蔵庫の扉の開き具合の確かめ。扉（節点 door）を角度ごとに回し、扉の形の点が
 ## ほかの当たり（壁・装置）に入らないかを数え、厨房の通り道からの目線と真上から撮る。
 ##   Godot --path game --resolution 1280x720 -s res://tools/fridge_door_check.gd -- --dir=/path/shots --angles=100,180,220
-## 角度は閉じた所からの開き（度）。--keep を付けると、glb のままの角度で撮る（角度の名前は now）
+## 角度は閉じた所からの開き（度）。--keep を付けると、glb のままの角度で撮る（角度の名前は now）。
+## どちらも扉の動き（fridge_door.gd）を止めて、決めた角度で撮る。
+##   ... -- --bots=0 --no-pip --dir=/path/walk --walk [--before]
+## --walk: 自分の人形が通り道の遠くから冷蔵庫の前まで歩いて来て、少し待って戻る。12 fps のコマごとに斜め後ろから撮り
+## （walk_000.png …）、扉の点が人形に入ったコマを数える。--before で扉を動かさず、前の 100° のままで撮る
 
 var args := {}
 var main: Node3D
@@ -83,6 +87,13 @@ func _run() -> void:
 	await create_timer(4.0).timeout
 	var fridge := main.find_child("SnowmanFridge", true, false) as Node3D
 	var door := fridge.find_child("door", true, false) as Node3D
+	var mover := fridge.find_child("FridgeDoor", true, false)
+	if args.has("walk"):
+		await _walk(fridge, door, mover)
+		quit()
+		return
+	if mover:
+		mover.set_process(false)
 	var base_y := door.rotation.y
 	print("扉の rotation.y（glb のまま）: ", rad_to_deg(base_y))
 	var cam := Camera3D.new()
@@ -129,3 +140,51 @@ func _run() -> void:
 			await create_timer(0.3).timeout
 			await _shot("%s_%s" % [l[0], label])
 	quit()
+
+
+## 人形が歩いて来て、扉が開き、戻ると閉じる流れをコマごとに撮る
+func _walk(fridge: Node3D, door: Node3D, mover: Node) -> void:
+	var f := fridge.global_transform
+	var front := -(f.basis.z.normalized())
+	var left := f.basis.x.normalized()
+	var c := f.origin
+	if args.has("before") and mover:
+		mover.set_process(false)
+		door.rotation.y = deg_to_rad(-100.0)
+	var p: CharacterBody3D = main.get("player")
+	var cam := Camera3D.new()
+	cam.fov = 60.0
+	root.add_child(cam)
+	cam.global_position = c + front * 8.5 - left * 3.2 + Vector3(0, 3.4, 0)
+	cam.look_at(c + front * 1.8 + left * 0.6 + Vector3(0, 1.4, 0))
+	cam.current = true
+	cam.reset_physics_interpolation()
+	var far := c + front * 8.0 - left * 0.8
+	var near := c + front * 3.0 - left * 0.4
+	var plan := []   # コマごとの立つ所
+	for i in 30:
+		plan.append(far.lerp(near, float(i) / 29.0))
+	for i in 30:
+		plan.append(near)
+	for i in 30:
+		plan.append(near.lerp(far, float(i) / 29.0))
+	for i in 18:
+		plan.append(far)
+	var hits := 0
+	var space := main.get_world_3d().direct_space_state
+	var q := PhysicsPointQueryParameters3D.new()
+	for i in plan.size():
+		var at: Vector3 = plan[i]
+		p.global_position = Vector3(at.x, p.global_position.y, at.z)
+		p.velocity = Vector3.ZERO
+		var d := c - at
+		p.rotation.y = atan2(-d.x, -d.z)
+		p.reset_physics_interpolation()
+		await create_timer(1.0 / 12.0).timeout
+		for pt in _door_points(door):
+			q.position = pt
+			for r in space.intersect_point(q, 4):
+				if r.collider == p:
+					hits += 1
+		await _shot("walk_%03d" % i)
+	print("扉の点が人形に入った数: ", hits)

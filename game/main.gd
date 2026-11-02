@@ -72,6 +72,7 @@ const MountainMan := preload("res://mountain_man.gd")
 const MountainUi := preload("res://mountain_ui.gd")
 const MountainGoods := preload("res://mountain_goods.gd")
 const SnowmanShop := preload("res://snowman_shop.gd")
+const FridgeDoor := preload("res://fridge_door.gd")
 const CookStation := preload("res://cook_station.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
@@ -1237,7 +1238,7 @@ func _put_kitchen(slot: Node3D) -> void:
 
 
 ## 厨房の奥の並びのいちばん西（ミシンの右）に、扉を開けた冷蔵庫と、中に立つご飯係の雪だるま（props/build_snowman.py）。
-## 正面は食堂（+Z）、扉は東（厨房の側）へ開く。雪だるまは段ごとの節点（base・chest・head・arm_l・arm_r）を回せば動く（まだ動かさない）
+## 正面は食堂（+Z）、扉は装置の並びと反対の側へ開く（fridge_door.gd）。雪だるまは段ごとの節点（base・chest・head・arm_l・arm_r）を回せば動く（まだ動かさない）
 func _put_snowman(slot: Node3D) -> void:
 	var fridge := Props.make("res://props/snowman_fridge.glb")
 	fridge.name = "SnowmanFridge"
@@ -1263,6 +1264,10 @@ func _put_snowman(slot: Node3D) -> void:
 	col.position.y = FRIDGE_BOX.y / 2.0
 	body.add_child(col)
 	fridge.add_child(body)
+	var door := FridgeDoor.new()   # 扉は人が近づくと開き、離れると少しだけ開いた所へ戻る
+	door.name = "FridgeDoor"
+	door.main = self
+	fridge.add_child(door)
 
 
 ## 舞う雪: 羊毛のふわふわが、あなたのまわりでゆっくり落ちる

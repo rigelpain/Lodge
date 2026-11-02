@@ -1,0 +1,67 @@
+"""雪だるまの冷蔵庫の扉（2026-11-02。game/fridge_door.gd）。どれも合成で、外の素材は使わない。
+
+扉はフェルトでくるんだ綿の板で、内に瓶の牛乳とジャムの瓶を並べた棚がある。人が近づくと 220° まで開き、離れると
+番台の横（105°）まで戻る。
+
+fridge_open    木の蝶番のきしみ、扉があおる空気の「ふわっ」、止まるときに棚の瓶が「かちゃ」
+fridge_close   戻って止まる「ぽす」（綿を詰めた扉が蝶番の止めに当たる）、少し遅れて棚の瓶が「かちん」
+"""
+import numpy as np
+
+from lib import SR, ar, bp, exp_decay, fade, lp, modes, n_of, place, write
+
+
+def creak(rng, dur, f0, f1):
+    """木の蝶番のきしみ: 高さがゆっくり上がる、こすれの多いうなり（小さく）"""
+    n = n_of(dur)
+    t = np.arange(n) / SR
+    f = f0 + (f1 - f0) * t / dur + 12 * np.sin(2 * np.pi * 7 * t)
+    tone = np.sin(2 * np.pi * np.cumsum(f) / SR) + 0.4 * np.sin(4 * np.pi * np.cumsum(f) / SR)
+    rub = bp(rng.standard_normal(n), 500, 2200, 2)
+    return (tone * 0.5 + rub * 0.8) * ar(n, dur * 0.3, dur * 0.6, 1.5)
+
+
+def swish(rng, dur):
+    """扉があおる空気: 低い帯域のノイズがふくらんでしぼむ"""
+    n = n_of(dur)
+    return bp(rng.standard_normal(n), 120, 900, 2) * ar(n, dur * 0.45, dur * 0.55, 1.4)
+
+
+def clink(rng, f0):
+    """棚の瓶どうしが触れる: 小さなガラスの「かちっ」"""
+    n = n_of(0.25)
+    ring = modes(n, np.array([1.0, 1.47, 2.32, 3.61]) * f0, [0.018, 0.012, 0.008, 0.005], [1.0, 0.7, 0.5, 0.3], rng)
+    tick = bp(rng.standard_normal(n), 2500, 9000, 2) * exp_decay(n, 0.002)
+    return ring * 0.4 + tick * 0.7
+
+
+def bump(rng, dur=0.35):
+    """綿を詰めた扉が止まる「ぽす」: 低いノイズの塊と、布の空気が抜ける短い「ふっ」（音程を持たせない）"""
+    n = n_of(dur)
+    body = lp(rng.standard_normal(n), 220, 4) * ar(n, 0.025, dur * 0.6, 1.8)
+    body += bp(rng.standard_normal(n), 80, 400, 2) * ar(n, 0.015, dur * 0.35, 2.0) * 0.6
+    air = bp(rng.standard_normal(n), 300, 1000, 2) * ar(n, 0.04, 0.18, 2.0) * 0.12
+    return lp(body + air, 900)
+
+
+def fridge_open(rng):
+    out = np.zeros(n_of(1.4))
+    place(out, creak(rng, 0.45, 260, 340) * 0.12, 0.0)
+    place(out, swish(rng, 0.8) * 0.7, 0.05)
+    place(out, bump(rng, 0.25) * 0.35, 0.78)    # 開ききって止まる
+    for at, f0, g in ((0.8, 2900, 0.18), (0.87, 3400, 0.12), (0.97, 3100, 0.07)):
+        place(out, clink(rng, f0 * rng.uniform(0.97, 1.03)) * g, at)
+    return fade(out, 0.002, 0.12)
+
+
+def fridge_close(rng):
+    out = np.zeros(n_of(0.9))
+    place(out, bump(rng) * 1.0, 0.0)
+    for at, f0, g in ((0.06, 3200, 0.15), (0.14, 2800, 0.08)):
+        place(out, clink(rng, f0 * rng.uniform(0.97, 1.03)) * g, at)
+    return fade(out, 0.0005, 0.12)
+
+
+if __name__ == "__main__":
+    write("fridge_open.wav", fridge_open(np.random.default_rng(1100)), -10)
+    write("fridge_close.wav", fridge_close(np.random.default_rng(1101)), -8)
