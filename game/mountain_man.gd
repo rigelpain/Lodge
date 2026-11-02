@@ -3,12 +3,12 @@ extends Node3D
 ## 姿はラフの C「狼の毛皮の山男」（person/ideas/yamaotoko。代表が 3 案から選んだ。ボードの白い和紙の狼と、折り紙の着物の人から）:
 ## 藍の和紙を折った長い上着、クリームの紙の衿を左前に重ね、赤い毛糸の帯。白い和紙の狼の頭を頭巾にかぶり、毛皮を背中へ垂らし、
 ## 前足の毛皮を肩から胸へ。顔は折り紙の多面体に、黒い糸の閉じた目。どれも面の少ない折り紙の多面体（平らな面のまま描く）。
-## 置き場所はロッジの玄関（風除室）を出た所の、山への道の脇（main.gd の _put_mountain_man）。登る前に買って、そのまま山へ出られる。
-## 横に木の棚を置き、山の道具を並べる。まだ売っていない品目（mountain_goods.gd の on が false）は、白い紙に包んで麻ひもで縛ってある。
+## 置き場所はロッジの 1 階の、大きなミシンの奥（main.gd の MOUNTAIN_MAN）。
+## 横（rack_side の側）に木の棚を置き、山の道具を並べる。まだ売っていない品目（mountain_goods.gd の on が false）は、白い紙に包んで麻ひもで縛ってある。
 ## 動きは人形と同じ 12 コマ／秒に刻む（コマの間は止める）:
 ##   待つ   息をするように体がわずかにふくらむ。ときどき見回し、狼の耳がぴくりと動く
 ##   気づく 人が近づくと顔を向け、左手を挙げて小さく振る。近くに何人かいれば、いちばん近い人を見る（オンラインのほかの人も）
-##   売る   売り場（mountain_ui.gd）が開くと、右手で棚を示す。だれかが買うと（ほかの人の買い物でも）その人を向いてうなずき、狼の耳が立つ
+##   売る   売り場（mountain_ui.gd）が開くと、棚の側の手で棚を示す。だれかが買うと（ほかの人の買い物でも）その人を向いてうなずき、狼の耳が立つ
 ## F で話しかける（player.gd の mountain_near）。
 
 const Doll := preload("res://doll.gd")
@@ -18,7 +18,7 @@ const Goods := preload("res://mountain_goods.gd")
 const SCALE := 1.3           # ラフ（1.33 m）から、ゲームの人と並ぶ大きさへ（おじいさんと同じくらい）
 const NOTICE_R := 4.0        # この距離に人が来ると気づく (m)
 const TALK_R := 2.4          # F で話しかけられる距離 (m)
-const RACK_AT := Vector3(1.15, 0, 0.1)   # 棚の位置（山男の座標。左手の側）
+const RACK_AT := Vector3(1.15, 0, 0.1)   # 棚の位置（山男の座標。+X が右手の側。rack_side で左右を替える）
 
 const INDIGO := Color("34477E")
 const WHITE := Color("EEE8DC")
@@ -32,6 +32,7 @@ const INK := Color("1A1716")
 var main: Node               # main.gd（人と craft を探す）
 var craft: Node
 var shop_open := false       # 売り場が開いている（mountain_ui.gd が入れる）
+var rack_side := 1.0         # 棚を置く側（1 右手、-1 左手。main.gd が入れる）
 var _body: Node3D
 var _head: Node3D
 var _arm_l: Node3D
@@ -330,8 +331,8 @@ func _flat_reorient(mi: MeshInstance3D, pts: Array) -> void:
 func _make_rack() -> void:
 	var rack := Node3D.new()
 	rack.name = "Rack"
-	rack.position = RACK_AT
-	rack.rotation.y = -0.35   # 少し客の方へ向ける
+	rack.position = Vector3(RACK_AT.x * rack_side, RACK_AT.y, RACK_AT.z)
+	rack.rotation.y = -0.35 * rack_side   # 少し客の方へ向ける
 	add_child(rack)
 	var wood := Look.wood(Color(0.50, 0.33, 0.20))
 	var dark := Look.wood(Color(0.36, 0.24, 0.15))
@@ -531,9 +532,11 @@ func _process(_dt: float) -> void:
 	else:
 		_arm_l.rotation = Vector3(0, 0, -0.03 * sin(_k * 0.3))
 	var p := _k - _show_from
-	if p >= 0 and p < 24:   # 棚（左手の側、+X）へ右腕を振って示す
+	if p >= 0 and p < 24:   # 棚の側の腕を、棚へ振って示す（右手の側は +X）
 		var out: float = [0.4, 0.9, 1.2, 1.3][mini(p, 3)] if p < 20 else [0.9, 0.5, 0.2, 0.0][p - 20]
-		_arm_r.rotation = Vector3(-0.6 * out, 0.9 * out, 0)
+		(_arm_r if rack_side > 0.0 else _arm_l).rotation = Vector3(-0.6 * out, 0.9 * out * rack_side, 0)
+		if rack_side < 0.0:
+			_arm_r.rotation = Vector3(0, 0, 0.03 * sin(_k * 0.27))
 	elif n >= 0 and n < 10:   # 買った人へ差し出す
 		var o: float = [0.3, 0.7, 0.9, 0.9, 0.9, 0.8, 0.6, 0.4, 0.2, 0.0][n]
 		_arm_r.rotation = Vector3(-o, 0, 0)
