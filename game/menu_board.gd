@@ -9,10 +9,11 @@ extends Node3D
 const Food := preload("res://food.gd")
 const Icons := preload("res://hud_icons.gd")
 
-## 板の大きさ（m）。装置の間（いちばん狭いのは乾燥機とスチーマーの 2.8 m）に収まる幅
-const SIZE := Vector2(2.4, 1.35)
-## 板の上の端の高さ（床から）と、前後の位置（装置の正面の側）。下の端は乾燥機の天板（3.46 m）より上
-const TOP := 4.95
+## 板の大きさ（m）。料理がなるべく大きく見えるよう（2026-11-02 代表）、装置の間（いちばん狭いのは乾燥機とスチーマーの 2.8 m）と、
+## 天井と乾燥機の天板（3.46 m）の間いっぱいにとる
+const SIZE := Vector2(2.6, 1.6)
+## 板の上の端の高さ（床から）と、前後の位置（装置の正面の側）。傾けた下の端は 3.53 m
+const TOP := 5.12
 const FRONT_Z := 1.0
 const TILT := 12.0           # 前へ傾ける（度）
 const CEIL := 5.25           # 1 階の天井（lodge/dims.py の CEIL1 5.7 - FL1 0.45）
@@ -134,9 +135,21 @@ func render(kind: String) -> Image:
 	return img
 
 
+## 料理の絵（png のまわりの透明な余白を切り落とす。絵を升いっぱいに描くため）
 func tex(path: String) -> Texture2D:
 	if not _tex.has(path):
-		_tex[path] = load(path) if ResourceLoader.exists(path) else null
+		var t: Texture2D = load(path) if ResourceLoader.exists(path) else null
+		if t:
+			var img := t.get_image()
+			if img and img.is_compressed():
+				img.decompress()
+			var used := img.get_used_rect() if img else Rect2i()
+			if used.has_area():
+				var at := AtlasTexture.new()
+				at.atlas = t
+				at.region = Rect2(used)
+				t = at
+		_tex[path] = t
 	return _tex[path]
 
 
@@ -151,19 +164,40 @@ class View extends Control:
 		var h := size.y / U
 		draw_rect(Rect2(Vector2.ZERO, size), FELT.darkened(0.2))
 		Icons.patch(self, Icons.rr(0, 0, w, h, 4.0), FELT, 1.0, false, Color(0, 0, 0, 0), false)
-		Icons.dashes(self, Icons.rr(5, 5, w - 10, h - 10, 6.0), Icons.CAP, 0.9, 4.0, 2.6, 0.85, true)
-		# 2 段に並べる（下の段が短いときは中ほどへ寄せる）
-		var cols := ceili(dishes.size() / 2.0)
-		var area := Rect2(10, 9, w - 20, h - 18)
+		Icons.dashes(self, Icons.rr(4, 4, w - 8, h - 8, 5.0), Icons.CAP, 0.9, 4.0, 2.6, 0.85, true)
+		# 升は板を割った長方形。段の数は、料理の絵（縦横の比はそれぞれ）をいちばん大きく描けるものにする
+		# （描く絵の面積の合計で比べる）。最後の段が短いときは中ほどへ寄せる
+		var area := Rect2(8, 8, w - 16, h - 16)
+		var n := dishes.size()
+		var pics := []
+		for d in dishes:
+			pics.append(board.tex(Food.dish_icon(d)))
+		var rows := 1
+		var best := 0.0
+		for r in range(1, n + 1):
+			var cw := area.size.x / ceili(float(n) / r) - 3.0
+			var ch := area.size.y / r - 3.0
+			var sum := 0.0
+			for t in pics:
+				if t:
+					var f := minf(cw / t.get_width(), ch / t.get_height())
+					sum += t.get_width() * t.get_height() * f * f
+			if sum > best:
+				best = sum
+				rows = r
+		var cols := ceili(float(n) / rows)
 		var cw := area.size.x / cols
-		var ch := area.size.y / 2.0
-		var isz := minf(cw * 0.92, ch * 0.94)
-		for k in dishes.size():
+		var ch := area.size.y / rows
+		for k in n:
 			var row := k / cols
-			var n_row := cols if row == 0 else dishes.size() - cols
+			var n_row := mini(cols, n - row * cols)
 			var x0 := area.position.x + (area.size.x - cw * n_row) / 2.0
 			var c := Vector2(x0 + cw * (k % cols + 0.5), area.position.y + ch * (row + 0.5))
-			Icons.patch(self, Icons.circ(c + Vector2(0, isz * 0.03), isz * 0.48, 30), Icons.PAPER, 1.0, true, Icons.PAPER_EDGE)
-			var t: Texture2D = board.tex(Food.dish_icon(dishes[k]))
+			# 生成りのフェルトの台紙に、料理を台紙いっぱいに
+			var cs := Vector2(cw, ch) - Vector2(3, 3)
+			Icons.patch(self, Icons.rr(c.x - cs.x / 2.0, c.y - cs.y / 2.0, cs.x, cs.y, minf(cs.x, cs.y) * 0.14), Icons.PAPER, 1.0, true, Icons.PAPER_EDGE)
+			var t: Texture2D = pics[k]
 			if t:
-				draw_texture_rect(t, Rect2((c - Vector2(isz, isz) / 2.0) * U, Vector2(isz, isz) * U), false)
+				var fit := minf(cs.x * 0.9 / t.get_width(), cs.y * 0.88 / t.get_height())
+				var sz := Vector2(t.get_width(), t.get_height()) * fit
+				draw_texture_rect(t, Rect2((c - sz / 2.0) * U, sz * U), false)
