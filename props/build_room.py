@@ -272,7 +272,10 @@ def kotatsu_lodge(name, quilt_role, top_role="wood"):
     h = 0.5
     TW, TD = LD.KOTATSU_W * h, LD.KOTATSU_D * h
     tz = LD.KOTATSU_TOP * h - 0.02                  # 天板の芯
-    TZ = tz - 0.095                                 # 卓の枠（kotatsu と同じ重ね: 枠 → 布団 → 天板）
+    # 卓の枠（重ね: 枠 → 布団 → 天板）。板の上の布団は計算のあと板から約 0.04 の厚みなので、天板の下の面が布団の上面を
+    # 0.005 押さえる高さに枠を上げる（天板の高さは KOTATSU_TOP のまま。2026-11-02 代表「こたつの板こたつぶとんから浮いてる」）
+    TZ = tz - 0.05
+    OW, OD = TW + 0.08, TD + 0.08                   # 天板の大きさ。布団はここまで平らで、縁から垂れる
     PW, PD, PZ = TW + 2 * LD.PIT_OUT * h, TD + 2 * LD.PIT_OUT * h, LD.PIT_DEPTH * h
     for role in ("wood", "wood_dark", top_role, "felt_charcoal"):
         P.hard[role] = 0.006
@@ -288,11 +291,11 @@ def kotatsu_lodge(name, quilt_role, top_role="wood"):
     # 布団: 卓の上から落とす。穴の外の畳は輪の 4 枚、穴の底も当たる。裾は穴の底より上で止まる長さ（布は重さで伸び、
     # 四隅は斜めの分だけ長く垂れて底に着く）
     hang = (TZ + 0.04) + PZ - 0.13
-    col = K.collider_box((0, 0, (TZ - 0.005) / 2), (TW, TD, TZ - 0.005))
+    col = K.collider_box((0, 0, (TZ - 0.005) / 2), (OW, OD, TZ - 0.005))   # 天板が押さえる所まで平らに受ける
     ring = [K.collider_box((0, (PD + 1.0) / 2 * s, -0.05), (PW + 2.0, 1.0, 0.1)) for s in (-1, 1)]
     ring += [K.collider_box(((PW + 1.0) / 2 * s, 0, -0.05), (1.0, PD, 0.1)) for s in (-1, 1)]
     bottom = K.collider_box((0, 0, -PZ - 0.05), (PW, PD, 0.1))
-    cw, cd = TW + 2 * hang, TD + 2 * hang
+    cw, cd = OW + 2 * hang, OD + 2 * hang
     nu, nv = int(cw / 0.032), int(cd / 0.032)
     cloth = K.cloth_grid(name + "_futon", quilt_role, cw, cd, nu, nv, (0, 0, TZ + 0.04))
     K.cloth_sim(cloth, [col, bottom] + ring, frames=70, mass=0.5, stiff=12.0, bend=3.0, thickness=0.012, solidify=0.035,
@@ -301,8 +304,7 @@ def kotatsu_lodge(name, quilt_role, top_role="wood"):
         K.drop(c)
     cloth.parent = P.root
     P.parts.append(cloth)
-    K.box(P, top_role, (0, 0, tz), (TW + 0.08, TD + 0.08, 0.04))
-    K.box(P, "wood_dark", (0, 0, tz - 0.026), (TW + 0.02, TD + 0.02, 0.012))
+    K.box(P, top_role, (0, 0, tz), (OW, OD, 0.04))   # 縁の一段（kotatsu の下の薄い板）は布団に埋まるので付けない
     # 天板の上: みかんの籠（kotatsu の 0.7 倍。ロッジの人形に合う大きさ）
     s, bx, by = 0.7, TW * 0.22, TD * 0.1
     K.lathe(P, "hemp", [(x * s, y * s) for x, y in ((0.0, 0.0), (0.09, 0.0), (0.11, 0.05), (0.1, 0.05), (0.085, 0.006), (0.0, 0.006))],
