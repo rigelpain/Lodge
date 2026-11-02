@@ -66,6 +66,7 @@ const Hud := preload("res://hud.gd")
 const SelfCam := preload("res://self_cam.gd")
 const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
+const BandaiCurtain := preload("res://bandai_curtain.gd")
 const CraftUi := preload("res://craft_ui.gd")
 const FoodUi := preload("res://food_ui.gd")
 const MountainMan := preload("res://mountain_man.gd")
@@ -1151,6 +1152,12 @@ func _put_bandai(lodge: Node3D, b: Array) -> void:
 	if b[2] == "snowballs" and snowman_shop:   # 雪だるまの番台: 話しかける所と、ペレットを跳ばすお皿
 		snowman_shop.counter = root
 		snowman_shop.dish_at = dish.position
+	if b[2] == "buttons":   # おじいさんの番台: パッチワークのカーテン（ふだんは閉じて、人が近づくと開く）
+		var curtain := BandaiCurtain.new()
+		curtain.name = "Curtain"
+		curtain.shopkeeper = shopkeeper
+		curtain.world = self
+		root.add_child(curtain)
 	var heap := Node3D.new()
 	heap.position = dish.position + Vector3.UP * 0.03
 	root.add_child(heap)
