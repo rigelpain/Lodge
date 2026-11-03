@@ -1,7 +1,7 @@
 extends SceneTree
 ## 染め桶の決まりを確かめる（画面なしで動く）。
 ##   Godot --headless --path game -s res://tools/dye_check.gd
-## 染め代は変える部位の数で上がる・同じ色では染めない・足りなければ断る・保存の戻しはただ・人形ごとに色が残る・前の保存を部位に直す
+## 染め代は染める部位の数で上がる・脱色はただ・同じ色では染めない・足りなければ断る・保存の戻しはただ・人形ごとに色が残る・前の保存を部位に直す
 
 const Craft := preload("res://craft.gd")
 
@@ -27,8 +27,11 @@ func _initialize() -> void:
 	_ok("2 部位ぶんの染め代を取る", c.wallet(1) == start - P[2])
 	_ok("同じ色では染めない", not c.send({"kind": "dye", "who": 1, "doll": "kasa", "colors": ["C9603C", "", "d8a43e", ""]}))
 	_ok("断ったら取らない", c.wallet(1) == start - P[2])
-	_ok("主の色だけ戻す", c.send({"kind": "dye", "who": 1, "doll": "kasa", "colors": ["", "", "d8a43e", ""]}))
-	_ok("戻すのも 1 部位の染め", c.wallet(1) == start - P[2] - P[1])
+	_ok("主の色だけ脱色（もとの色に戻す）", c.send({"kind": "dye", "who": 1, "doll": "kasa", "colors": ["", "", "d8a43e", ""]}))
+	_ok("脱色はただ", c.wallet(1) == start - P[2])
+	_ok("脱色と染めをいっしょに: 染める 1 部位ぶんだけ", c.send({"kind": "dye", "who": 1, "doll": "kasa", "colors": ["", "6a4c93", "", ""]}) \
+			and c.wallet(1) == start - P[2] - P[1])
+	_ok("2 番目を脱色して 3 番目を染め直す: 1 部位ぶんだけ", c.send({"kind": "dye", "who": 1, "doll": "kasa", "colors": ["", "", "d8a43e", ""]}) and c.wallet(1) == start - P[2] - P[1] * 2)
 	var o: Array = c.outfit_of(1, "kasa")
 	_ok("部位は 4 つ。主はもとの色・3 番目は色", o.size() == 4 and o[0] == null and o[2] is Color)
 	var w: int = c.wallet(1)
@@ -36,11 +39,14 @@ func _initialize() -> void:
 			and c.wallet(1) == w - P[4] and c.outfits[1]["golem"] == ["aa3322", "3355aa", "ddbb33", "33aa55"])
 	_ok("ほかの人形の色は残る", (c.outfit_of(1, "kasa")[2] as Color).to_html(false) == "d8a43e")
 	_ok("ない人形は断る", not c.send({"kind": "dye", "who": 1, "doll": "nobody", "colors": ["ffffff"]}))
-	_ok("全部もとの色に戻すと、帳面から消える", c.send({"kind": "dye", "who": 1, "doll": "golem", "colors": ["", "", "", ""]}) and not c.outfits[1].has("golem"))
+	w = c.wallet(1)
+	_ok("全部脱色すると、帳面から消える（ただ）", c.send({"kind": "dye", "who": 1, "doll": "golem", "colors": ["", "", "", ""]}) and not c.outfits[1].has("golem") and c.wallet(1) == w)
+	_ok("もとの色のまま脱色は断る", not c.send({"kind": "dye", "who": 1, "doll": "golem", "colors": ["", "", "", ""]}))
 	c.wallets[1] = P[2] - 1
 	_ok("足りなければ断る（2 部位）", not c.send({"kind": "dye", "who": 1, "doll": "news", "colors": ["7a4a6e", "", "", "3f6b4a"]}))
 	_ok("1 部位なら足りる", c.send({"kind": "dye", "who": 1, "doll": "news", "colors": ["", "", "", "3f6b4a"]}))
 	c.wallets[1] = 0
+	_ok("お金がなくても脱色はできる", c.send({"kind": "dye", "who": 1, "doll": "news", "colors": ["", "", "", ""]}) and c.wallet(1) == 0)
 	_ok("保存の戻し（outfit）はただ", c.send({"kind": "outfit", "who": 1, "doll": "robo", "colors": ["7a4a6e", "", "", ""]}) and c.wallet(1) == 0)
 	_ok("色でない文字は、もとの色", Craft.dye_colors("musha", ["zz", Color("d8a43e"), "", ""]) == ["", "d8a43e", "", ""])
 	# 前の保存（布ごとの 1〜2 色）は、部位に直して読む

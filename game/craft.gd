@@ -29,8 +29,8 @@ extends Node
 ##   doll      {doll}          自分の人形（doll.gd の KINDS のどれか）を替える（2 階の衣装掛け）。みんなの画面で、その人の人形が作り直される。
 ##                             入った時にも今の人形で 1 度送る（通信では、あとから来た人もこれでほかの人の人形を知る）
 ##   dye       {doll, colors}  2 階の染め桶で、人形 doll の服を部位ごとに染める。colors は部位ごとの色 4 つ（"rrggbb"。"" はもとの色。
-##                             outfit.gd の PARTS の順。前の保存の 1〜2 色は outfit.gd の upgrade で部位に直す）。染め代は変わる部位の数で
-##                             決まる（DYE_PRICES。ev に price が入る）。色は自由に選べ、色ではなく染め代を 1 回ごとに払う（2026-11-01 代表「全部買う、染色桶をつくって、
+##                             outfit.gd の PARTS の順。前の保存の 1〜2 色は outfit.gd の upgrade で部位に直す）。染め代は別の色に染める部位の数で
+##                             決まる（DYE_PRICES。ev に price が入る。もとの色に戻す脱色はただ）。色は自由に選べ、色ではなく染め代を 1 回ごとに払う（2026-11-01 代表「全部買う、染色桶をつくって、
 ##                             色に払うんじゃなくて染色代として払う」）。染めた色は人形ごとに残る（ほかの人形に着替えて戻っても同じ色）
 ##   outfit    {doll, colors}  保存してある染めた色を戻す（起動したとき。値はここでは取らない）
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
@@ -221,11 +221,12 @@ static func dye_colors(kind: String, cols: Array) -> Array:
 	return out
 
 
-## 染め代: cols（部位ごとの色）のうち、いまの色 old から変わる部位の数で決まる（もとの色に戻すのも 1 部位）
+## 染め代: cols（部位ごとの色）のうち、いまの色 old から別の色に染める部位の数で決まる。
+## もとの色に戻す（脱色。""）部位は数えない（2026-11-03 代表「脱色はただに」）
 static func dye_price(cols: Array, old: Array) -> int:
 	var n := 0
 	for i in cols.size():
-		if i >= old.size() or cols[i] != old[i]:
+		if String(cols[i]) != "" and (i >= old.size() or cols[i] != old[i]):
 			n += 1
 	return DYE_PRICES[mini(n, DYE_PRICES.size() - 1)]
 
@@ -768,7 +769,7 @@ func _apply(ev: Dictionary) -> bool:
 			var old: Array = mine.get(k, dye_colors(k, []))
 			if ev.kind == "dye":
 				var cost := dye_price(cols, old)
-				if cost <= 0 or wallets[who] < cost:   # 同じ色のままなら染めない（染め代も取らない）
+				if cols == old or wallets[who] < cost:   # 同じ色のままなら染めない（脱色だけなら染め代は 0）
 					return false
 				wallets[who] -= cost
 				ev["price"] = cost
