@@ -107,10 +107,11 @@ func _dump(path: String) -> void:
 			paths.append(pw)
 	var secs := {}
 	if "Mountain" in main:
-		for sec in main.Mountain.SECTIONS:
-			secs[sec[0]] = main.Mountain.section(sec[0])
-		secs["course_x"] = main.Mountain.COURSE_X
-		secs["path_x"] = main.Mountain.PATH_X
+		var kicks := []
+		for i in main.Mountain.KICKERS.size():
+			kicks.append([main.Mountain.kicker(i).lip.x, main.Mountain.kicker(i).lip.y])
+		secs["kickers"] = kicks
+		secs["ridge"] = main.Mountain.RIDGE.map(func(v): return [v.x, v.y])
 	var f := FileAccess.open(path, FileAccess.WRITE)
 	f.store_string(JSON.stringify({"hill_h": main.HILL_H, "hill_r": main.HILL_R, "size": main.SIZE,
 			"start": [main.START.x, main.START.z], "lodge": [main.LODGE_POS.x, main.LODGE_POS.y],

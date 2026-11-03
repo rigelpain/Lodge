@@ -1,7 +1,7 @@
 extends SceneTree
 ## 雪に縫い留められたボタン（snow_buttons.gd）を撮る（見た目の確かめ用）。
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/button_shots.gd -- \
-##       --no-player --bots=0 --no-sound --no-pip --dir=/path/shots --case=<名前>（mountain は大きな山のコース）
+##       --no-player --bots=0 --no-sound --no-pip --dir=/path/shots --case=<名前>（mountain は大きな山の北の斜面）
 ## 場面（--case）:
 ##   field  ゲームと同じ選び方（_pick_spot）でばらばらに 12 個降らせ、縫い付いたあと、上から斜めに見た全体と、
 ##          遠く（ふもとの登り口）から見上げた 2 枚
@@ -154,7 +154,8 @@ func _case_field() -> void:
 	_save(await _grab(), "far")
 
 
-## 大きな山のコースに降ったボタン（山ごと・標高ごと。上ほど多く、上の素材が多い）: 頂上の上から下を、中腹から上を見る
+## 大きな山の北の斜面に降ったボタン（山ごと・標高ごと。上ほど多く、上の素材が多い）: 頂上の上から下を、中腹の肩から上を見る。
+## 置いた所が斜面の上か（滑る所の外・30° より急・ジャンプ台の台の上に置いていないか）も数える
 func _case_mountain() -> void:
 	const Mountain := preload("res://mountain.gd")
 	sb.gust_override = 0.4
@@ -165,15 +166,33 @@ func _case_mountain() -> void:
 		if p != Vector3.INF:
 			sb.drop_at(p, -1, true)
 	await _wait_steps(4)
-	var cx := Mountain.COURSE_X
+	var cx := Mountain.FACE_X
 	var tiers := [0, 0, 0, 0]
 	for b in sb.buttons.values():
 		tiers[b.tier] += 1
 	print("大きな山のボタン: 木 %d・真鍮 %d・白蝶貝 %d・螺鈿 %d" % tiers)
+	var off := 0
+	var steep := 0
+	var lane := 0
+	var lift := 0.0
+	for b in sb.buttons.values():
+		if not Mountain.on_face(b.at.x, b.at.z):
+			off += 1
+		if (b.up as Vector3).y < cos(deg_to_rad(30.0)):
+			steep += 1
+		for i in Mountain.KICKERS.size():
+			var k := Mountain.kicker(i)
+			var d := Vector2(b.at.x, b.at.z) - (k.lip as Vector2)
+			var along := d.dot(k.f)
+			if along > -Mountain.KICK_L - 0.5 and along < Mountain.KICK_TOP + 2.0 and absf(d.cross(k.f)) < Mountain.KICK_W * 0.5 + 1.0:
+				lane += 1
+		lift = maxf(lift, absf(b.at.y - (main.height(b.at.x, b.at.z) + main.snow_lift(b.at.x, b.at.z))))
+	print("大きな山のボタン %d 個: 滑る所の外 %d・30° より急 %d・ジャンプ台の台の上 %d・見た目の雪面からのずれ いちばん %.2f m" % [
+			sb.buttons.size(), off, steep, lane, lift])
 	_look(_snow(cx + 3.0, Mountain.top_z - 4.0) + Vector3.UP * 3.5, _snow(cx, Mountain.top_z - 34.0), 55.0)
 	_save(await _grab(), "top")
-	var mid: Array = Mountain.section("中腹")
-	_look(_snow(cx + 6.0, mid[1] + 4.0) + Vector3.UP * 3.0, _snow(cx, mid[0] + 40.0) + Vector3.UP * 4.0, 60.0)
+	var rest: Vector2 = Mountain.REST
+	_look(_snow(rest.x + 6.0, rest.y - 4.0) + Vector3.UP * 3.0, _snow(rest.x, rest.y + 40.0) + Vector3.UP * 4.0, 60.0)
 	_save(await _grab(), "mid")
 
 

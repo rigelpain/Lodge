@@ -3,12 +3,12 @@ extends SceneTree
 ##   Godot --headless --fixed-fps 60 --path game -s res://tools/mountain_check.gd -- --case=<名前> --sled=KIND --no-player --bots=0 --no-sound
 ##
 ##   --case=run    頂上から、--sled の大きさで（小は 1・2 人、中は 1・3 人、大は 1・8 人、米袋は蹴らないと 1 秒に 10 回蹴り続ける）
-##                 頂上の平らの下の端から、まっすぐ北へ滑り降りる。滑り出しは全員前傾で雪をかき、あとは何もしない（米袋は蹴り続ける）。
-##                 区間ごとの最高速度、ジャンプ（踏み切った所・着いた所・宙にいた時間）、コースのまんなかからいちばん離れた横の距離、
+##                 頂上の北の端（Mountain.START）から、北へ滑り降りる。滑り出しは全員前傾で雪をかき、あとは何もしない（米袋は蹴り続ける）。
+##                 帯（Mountain.ZONES）ごとの最高速度、ジャンプ（踏み切った所・着いた所・宙にいた時間）、北の斜面のまんなかからいちばん離れた横の距離、
 ##                 止まった所（z と、ロッジのならした範囲まで）
 ##   --case=rail   手すりの上の端の手前に、--speed (m/s, 既定 6) で手すりへ向けて走り込む。手すりに乗っていた長さ
-##   --case=climb  登り道の下の端から、--pushers 人が後ろから押して頂上まで登る（押す力は sled.push。人の歩きは省く）。
-##                 中腹と頂上に着くまでの時間
+##   --case=climb  東の尾根の下の端から、--pushers 人が後ろから押して、背に沿って頂上まで登る（押す力は sled.push。人の歩きは省く）。
+##                 中腹（中腹の肩の高さ）と頂上に着くまでの時間
 
 const DUMMY_SRC := """extends Node3D
 var sled: Node3D
@@ -53,11 +53,7 @@ func _pad_gap(p: Vector3) -> float:
 
 
 func _section_at(z: float) -> String:
-	for s in Mountain.SECTIONS:
-		var r: Array = Mountain.section(s[0])
-		if z <= r[0] and z >= r[1]:
-			return s[0]
-	return "受け皿" if z < Mountain.BOTTOM_Z else "裏"
+	return Mountain.zone(z)
 
 
 ## 雪面からソリの底までの高さ
@@ -114,17 +110,18 @@ func _physics_process(dt: float) -> bool:
 		var c = _queue.pop_front()
 		match args.get("case", "run"):
 			"run":
-				_place(Vector3(Mountain.COURSE_X, 0, Mountain.section("頂上")[1] + 1.0), Vector3(0, 0, -1))   # 頂上の平らの下の端（押し出したところ）
+				_place(Vector3(Mountain.START.x, 0, Mountain.START.y), Vector3(0, 0, -1))   # 頂上の北の端（押し出したところ）
 				_run = {"c": c, "rs": _riders(c[0]), "t": 0.0, "go": false, "max": 0.0, "secs": {}, "air": [], "air_from": -1.0, "air_t": 0.0,
 						"side": 0.0, "gap": 1e9, "still": 0.0, "next": 0.0}
 			"rail":
-				var s: Array = Mountain.section("なだらか 2（手すり）")
-				var z0: float = s[0] + 3.0
+				var z0: float = Mountain.RAIL_Z.x + 3.0
 				_place(Vector3(Mountain.RAIL_X, 0, z0), Vector3(0, 0, -1))
 				sled.linear_velocity = Vector3(0, 0, -float(args.get("speed", "6")))
 				_run = {"rail": true, "rs": _riders(1), "t": 0.0, "on": 0.0, "from": 1e9, "to": -1e9, "still": 0.0, "max_dx": 0.0}
 			"climb":
-				_place(Vector3(Mountain.PATH_X, 0, Mountain.BOTTOM_Z + 1.0), Vector3(0, 0, 1))
+				var foot: Vector2 = Mountain.RIDGE[Mountain.RIDGE.size() - 1]
+				var up: Vector2 = Mountain.ridge_guide(foot)
+				_place(Vector3(foot.x, 0, foot.y), Vector3(up.x, 0, up.y))
 				_run = {"climb": c, "t": 0.0, "mid": -1.0, "top": -1.0, "log": 0.0}
 		return false
 	var r := _run
@@ -156,7 +153,7 @@ func _run_step(r: Dictionary, dt: float) -> void:
 		r.max = maxf(r.max, v)
 	var sec := _section_at(p.z)
 	r.secs[sec] = maxf(r.secs.get(sec, 0.0), v)
-	r.side = maxf(r.side, absf(p.x - Mountain.COURSE_X))
+	r.side = maxf(r.side, absf(p.x - Mountain.FACE_X))
 	r.gap = minf(r.gap, _pad_gap(p))
 	# 宙: 雪から 0.35 m より上にいるあいだ（0.15 秒より長いものだけ数える）
 	if _clear() > 0.35:
@@ -171,7 +168,7 @@ func _run_step(r: Dictionary, dt: float) -> void:
 	r.still = r.still + dt if v < 0.2 and r.t > 3.0 else 0.0
 	if r.still > 1.5 or r.t > 180.0:
 		var secs := []
-		for s in Mountain.SECTIONS:
+		for s in Mountain.ZONES + [["窪地"]]:
 			if r.secs.has(s[0]):
 				secs.append("%s %.0f" % [s[0], r.secs[s[0]]])
 		var tilt := rad_to_deg(acos(clampf(sled.global_basis.y.dot(Vector3.UP), -1.0, 1.0)))
@@ -210,15 +207,15 @@ func _rail_step(r: Dictionary, dt: float) -> void:
 func _climb_step(r: Dictionary, dt: float) -> void:
 	var n: int = r.climb
 	var p := sled.global_position
-	# 押す向き: 頂上（+z）へ、登り道のまんなかへ寄せる
-	var dir := Vector3(clampf((Mountain.PATH_X - p.x) * 0.3, -0.5, 0.5), 0, 1).normalized()
+	# 押す向き: 東の尾根の背に沿って上へ、背のまんなかへ寄せる
+	var g: Vector2 = Mountain.ridge_guide(Vector2(p.x, p.z))
+	var dir := Vector3(g.x, 0, g.y)
 	var fwd := -sled.global_basis.z
 	for i in n:
 		var side := -1.0 if i % 2 == 0 else 1.0
 		var at := sled.to_global(Vector3(side * sled.HALF.x * 0.8, 0.2, sled.HALF.y))
 		sled.push(dir, at)
-	var mid: Array = Mountain.section("中腹")
-	if r.mid < 0.0 and p.z >= mid[1]:
+	if r.mid < 0.0 and p.y >= main.height(Mountain.REST.x, Mountain.REST.y):
 		r.mid = r.t
 	if r.top < 0.0 and p.z >= Mountain.top_z - 10.0:
 		r.top = r.t

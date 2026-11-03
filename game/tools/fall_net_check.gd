@@ -47,8 +47,9 @@ func _run() -> void:
 			_say("相手が来なかった")
 			quit(1)
 			return
-	var land: Array = Mountain.section("着地")
-	var at := Vector3(Mountain.COURSE_X, 0, (land[0] + land[1]) * 0.5)
+	var k := Mountain.kicker(1)   # 中腹の肩の先のジャンプ台の着地
+	var land: Vector2 = (k.lip as Vector2) + (k.f as Vector2) * 8.0
+	var at := Vector3(land.x, 0, land.y)
 	var sled: RigidBody3D = main.sled
 	var p: CharacterBody3D = main.player
 	if not args.has("join"):

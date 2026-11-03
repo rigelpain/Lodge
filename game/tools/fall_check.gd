@@ -8,7 +8,7 @@ extends SceneTree
 ##   --net-check   落ちたあと、安全網で雪の上へ戻ったか（戻った数）も出す
 ##   --only=所,前,下,傾き   その 1 回だけ（例 --only=頂上の裏,25,30,水平）。1 コマずつの様子も出す
 ##   --trace=所,前,下,傾き  全部回しつつ、その 1 回の 1 コマずつの様子を出す（--trace-t=秒 まで。既定 0.4）
-##   --case=jump   ジャンプ台の踏み切りの 6 m 手前から、1 人乗せて 6・9・12 m/s で踏み切りへ入れ、宙にいた時間と飛んだ長さを出す
+##   --case=jump   ジャンプ台（中腹の肩の先）の踏み切りの坂の 6 m 手前から、1 人乗せて 6・9・12 m/s で踏み切りへ入れ、宙にいた時間と飛んだ長さを出す
 ##                 （当たりを変えたときに、飛び方が変わっていないかを見る用）
 
 const Mountain := preload("res://mountain.gd")
@@ -44,13 +44,13 @@ func _initialize() -> void:
 
 ## 着地させる所: [名前, x, z]
 func _spots() -> Array:
-	var land: Array = Mountain.section("着地")
-	var steep: Array = Mountain.section("急 2")
+	var k := Mountain.kicker(1)
+	var land: Vector2 = (k.lip as Vector2) + (k.f as Vector2) * 8.0
 	return [
-		["ジャンプ台の着地", Mountain.COURSE_X, (land[0] + land[1]) * 0.5],
-		["コースの脇の土手の外", Mountain.COURSE_X - Mountain.COURSE_W - Mountain.COURSE_BANK - 2.0, (steep[0] + steep[1]) * 0.5],
-		["山の脇の急な所", Mountain.COURSE_X - 45.0, (steep[0] + steep[1]) * 0.5],
-		["頂上の裏", Mountain.COURSE_X, Mountain.top_z + 40.0],
+		["ジャンプ台の着地", land.x, land.y],
+		["東の尾根の東の急な所", 52.0, 400.0],
+		["山の脇の急な所", Mountain.SX - 70.0, 420.0],
+		["頂上の裏", Mountain.SX, Mountain.top_z + 40.0],
 	]
 
 
@@ -146,12 +146,14 @@ func _physics_process(dt: float) -> bool:
 
 
 func _jump_start(c: Dictionary) -> void:
-	var lip: float = Mountain.section("助走")[1]
-	var x := Mountain.COURSE_X
-	var z := lip + Mountain.KICK_LEN + 6.0
+	var k := Mountain.kicker(1)
+	var f: Vector2 = k.f
+	var st: Vector2 = (k.lip as Vector2) - f * (Mountain.KICK_L + 6.0)
+	var x := st.x
+	var z := st.y
 	sled.reset_to(Vector3(x, main.height(x, z) + 0.3, z))
 	sled.parked = false
-	var d := Vector3(0, main.height(x, z - 1.0) - main.height(x, z), -1.0).normalized()
+	var d := Vector3(f.x, main.height(x + f.x, z + f.y) - main.height(x, z), f.y).normalized()
 	sled.linear_velocity = d * float(c.jump)
 	var r := Node3D.new()
 	r.set_script(_dummy)
@@ -160,7 +162,8 @@ func _jump_start(c: Dictionary) -> void:
 	sled.mount(r)
 	c.rider = r
 	c.t = 0.0
-	c.lip = lip
+	c.lip = k.lip
+	c.f = f
 	c.air = -1.0
 	c.from = 0.0
 	c.v_lip = -1.0
@@ -169,20 +172,21 @@ func _jump_start(c: Dictionary) -> void:
 func _jump_step(c: Dictionary, dt: float) -> void:
 	c.t += dt
 	var p := sled.global_position
-	if c.v_lip < 0.0 and p.z < c.lip:
+	var along: float = (Vector2(p.x, p.z) - (c.lip as Vector2)).dot(c.f)   # 縁から先へ (m)
+	if c.v_lip < 0.0 and along > 0.0:
 		c.v_lip = sled.linear_velocity.length()
 	var clear: float = p.y - main.height(p.x, p.z)
 	if c.v_lip >= 0.0 and clear > 0.35 and c.air < 0.0:
 		c.air = 0.0
-		c.from = p.z
+		c.from = along
 	elif c.air >= 0.0 and not c.has("land"):
 		if clear > 0.35:
 			c.air += dt
 		else:
-			c.land = p.z
+			c.land = along
 	if c.has("land") or c.t > 6.0:
 		print("%s: 踏み切りへ %.0f m/s で入れた。踏み切りの縁で %.1f m/s、宙 %.2f 秒、飛んだ長さ %.1f m" % [sled.kind, c.jump, c.v_lip,
-				maxf(c.air, 0.0), (c.from - c.get("land", p.z)) if c.air >= 0.0 else 0.0])
+				maxf(c.air, 0.0), (c.get("land", along) - c.from) if c.air >= 0.0 else 0.0])
 		sled.dismount(c.rider)
 		c.rider.queue_free()
 		_cur = {}

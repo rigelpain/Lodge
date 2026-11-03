@@ -224,7 +224,7 @@ func _make_posts() -> void:
 		var z := sin(a) * POST_R
 		var node := Node3D.new()
 		node.name = "SpeakerPost%d" % k
-		node.position = Vector3(x, world.height(x, z), z)
+		node.position = Vector3(x, world.foot_y(x, z, 0.3), z)   # 根もとのまわりで見た目の雪面がいちばん低い所（吹きだまりで浮かない）
 		world.add_child(node)
 		var pole := MeshInstance3D.new()
 		var cyl := CylinderMesh.new()
