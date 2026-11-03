@@ -3,7 +3,7 @@ extends SceneTree
 ##   Godot --path game --resolution 1000x1000 -s res://tools/sit_side_shots.gd -- [--kinds=all|kasa,news] [--seats=chair,stool,bench,zabuton] [--out=DIR]
 ##     [--quarter（真横でなく、斜め前の上から撮る）] [--bones（座布団の席で、骨ごとのいちばん低い所も書く）]
 ##     [--hard（座布団も椅子と同じ座り方。くらべる用）] [--cell=800（1 枚の大きさ）]
-##   暖炉のまわりの席は --seats=sofa,rocker,beanbag（揺り椅子はいちばんうしろへ揺れた所、ビーズクッションはもたれた所で撮る）
+##   2 階のテラスの椅子は --seats=terrace（種類は chair）。暖炉のまわりの席は --seats=sofa,rocker,beanbag（揺り椅子はいちばんうしろへ揺れた所、ビーズクッションはもたれた所で撮る）
 ## 席は種類ごとに、カメラを置く横が空いている席（並びの端。なければ並びのまんなか）。人形のまわりの奥行きだけを映す（手前と奥は切る）。
 ## 脚（太もも・すね・足）の頂点のうち、座面の真下（座面の幅と奥行きの中で、座面より低く床より高い所＝椅子の中）に入った数を書き出す。
 ## 座布団の席では、こたつ（天板と垂れた布団の外形の箱）の中へ入った体の頂点も数える
@@ -145,7 +145,7 @@ func _place(seats) -> void:
 func _pick(seats, sk: String) -> void:
 	var list := []
 	for i in seats.seats.size():
-		if seats.seats[i].kind == sk:
+		if _is(seats, i, sk):
 			list.append(i)
 	if list.is_empty():
 		return
@@ -171,6 +171,14 @@ func _pick(seats, sk: String) -> void:
 				return
 	_seat_of[sk] = list[list.size() / 2]
 	_side_of[sk] = seats.seat(_seat_of[sk]).face.cross(Vector3.UP)
+
+
+## 席 i が種類 sk か。terrace は 2 階のテラスの椅子（lodge/dims.py の TERRACE_TABLES。種類は chair）
+func _is(seats, i: int, sk: String) -> bool:
+	if sk == "terrace":
+		var l: Vector3 = main.get_node("Lodge").to_local(seats.seats[i].pos)
+		return seats.seats[i].kind == "chair" and l.y > 5.9
+	return seats.seats[i].kind == sk
 
 
 ## いま撮る人形の脚の頂点のうち、座面の真下（椅子の中）に入った数

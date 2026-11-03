@@ -1347,7 +1347,8 @@ func _make_snowfall(follow: Node3D) -> void:
 ## 窓や開いた戸の外では今までどおり降り、戸口を出入りしても雪がぱっと消えたり出たりしない。
 ## 箱はロッジの座標（glb: x 東、y 上、z 南。lodge/dims.py の x, 高さ, -y）。外の下屋・デッキ・テラスは箱に入れない
 const SHELTER_1F := AABB(Vector3(-22.1, -1.0, -13.0), Vector3(44.2, 7.0, 26.0))     # 1 階: 外の壁から 0.3 m 外まで、テラスの床（FL2 6.1）の下まで
-const SHELTER_2F := AABB(Vector3(-22.1, 6.0, -13.73), Vector3(44.2, 4.3, 21.18))    # 2 階: 北の軒（1 m）から南の軒（2 m）まで、北の屋根の下（10.3）まで
+## 2 階: 西の壁（dims.X2_0 = -11.82。西の端はテラス）から東の壁の 0.3 m 外まで、北の軒（1 m）から南の軒（2 m）まで、北の屋根の下（10.3）まで
+const SHELTER_2F := AABB(Vector3(-12.12, 6.0, -13.73), Vector3(34.22, 4.3, 21.18))
 const SHELTER_VEST := AABB(Vector3(-17.8, -1.0, 12.7), Vector3(8.8, 7.4, 5.2))      # 風除室: 両脇の丸太の端まで、前はアーチ戸の外面まで
 const ROOF_N := Vector2(-13.73, 10.72)    # 2 階の屋根（雪を載せた上面）の北の軒先 (z, 高さ)
 const ROOF_S := Vector2(7.45, 13.96)      # 南の軒先。片流れなので、2 階の箱の上に屋根なりに傾けた板を重ねる
@@ -1364,7 +1365,7 @@ func _shelter_snow(lodge: Node3D) -> void:
 	slab.basis = Basis(Vector3.RIGHT, -atan2(slope.y, slope.x))   # 南（+z）ほど高い
 	slab.size = Vector3(SHELTER_2F.size.x, ROOF_SLAB, slope.length())
 	var top := (ROOF_N + ROOF_S) / 2.0
-	slab.position = Vector3(0, top.y, top.x) - slab.basis.y * ROOF_SLAB / 2.0
+	slab.position = Vector3(SHELTER_2F.get_center().x, top.y, top.x) - slab.basis.y * ROOF_SLAB / 2.0
 	lodge.add_child(slab)
 
 
