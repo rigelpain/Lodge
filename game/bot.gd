@@ -773,4 +773,5 @@ func _pose_lounge() -> void:
 		if st.has("rock_axis"):   # 揺り椅子・ビーズクッション: 体ごと傾く
 			doll.rock_axis = st.rock_axis
 			doll.rock_at = st.rock_at
+			doll.rock_roll = float(st.get("rock_roll", 0.0))
 			doll.rock = Seats.rock_of(st, Doll.frame_index(), _sit_frame, _stand_frame)

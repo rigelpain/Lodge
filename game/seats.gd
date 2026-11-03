@@ -239,7 +239,7 @@ func _find() -> void:
 
 ## 暖炉のまわりの家具の席: 目印の所が腰を下ろす所、-Z が座って向く向き。meta は
 ##   kind（sofa・rocker・beanbag）、height（腰の所から足を下ろす床まで、m）、edge（腰の所から座面の前の縁まで）、size（座面の幅と奥行き）、back（腰の所から背もたれまで）、
-##   rock_amp・rock_period・rock_phase・rock_pivot（揺り椅子: 揺れの角・周期 s・ずれ・弓の円の中心（目印の座標））、rock_lean（もたれる角）
+##   rock_amp・rock_period・rock_phase・rock_pivot・rock_roll（揺り椅子: 揺れの角・周期 s・ずれ・弓の円の中心（目印の座標）・弓が床を転がる半径）、rock_lean（もたれる角）
 func _add_nook(m: Node3D) -> void:
 	var kind: String = m.get_meta("kind", "sofa")
 	var p := lodge.to_local(m.global_position)
@@ -261,6 +261,7 @@ func _add_nook(m: Node3D) -> void:
 		st["rock_period"] = float(m.get_meta("rock_period", 2.0))
 		st["rock_phase"] = float(m.get_meta("rock_phase", 0.0))
 		st["rock_lean"] = float(m.get_meta("rock_lean", 0.0))
+		st["rock_roll"] = float(m.get_meta("rock_roll", 0.0)) * m.global_basis.get_scale().y   # 世界の長さに
 
 
 ## 座布団の席: 腰の所を、こたつ（布団と天板の当たり）から KOTATSU_HIPS 手前まで前へ出し、足は穴の底まで下ろせる

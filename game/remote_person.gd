@@ -241,6 +241,7 @@ func _pose_doll() -> void:
 	doll.rock_axis = _s.get("ra", Vector3.ZERO)   # 揺り椅子・ビーズクッションで体ごと傾く
 	doll.rock = float(_s.get("rk", 0.0))
 	doll.rock_at = _s.get("rp", Vector3.ZERO)
+	doll.rock_roll = float(_s.get("rr", 0.0))   # 揺り椅子: 弓が床を転がる
 	doll.rock_turns = bool(_s.get("rt", false))   # ビーズクッション: その人の見ている向き（f）へ、12 コマで回る
 	doll.spin_axis = Vector3.ZERO
 	doll.drum_fit = 1.0
