@@ -17,9 +17,9 @@ const PARTS := {
 	"origami": [[Color("3c619c"), false], [Color("f8f4ec"), false], [Color("f2eee6"), false], [Color("eee2ca"), false]],   # 青いエプロン・頭巾・上着と袖・裾と靴
 	"news": [[Color("707e50"), false], [Color("748453"), false], [Color("67574b"), false], [Color("884d2d"), false]],   # 麻布の上着・頭巾・背負い袋・革ひも
 	"robo": [[Color("49898b"), false], [Color("b68b5b"), false], [Color("baa072"), false], [Color("855e3d"), false]],   # 青緑の塗り・段ボール・縄とひも・アンテナの玉とボタン
-	"musha": [[Color("2a365d"), false], [Color("35456d"), false], [Color("a13e30"), false], [Color("a6a6a2"), false]],   # 紺・もう 1 つの紺・赤い縅の糸・三日月
+	"musha": [[Color("2a365d"), false], [Color("35456d"), false], [Color("a13e31"), false], [Color("a6a6a2"), false]],   # 紺・もう 1 つの紺・赤い縅の糸・三日月
 	"ningyo": [[Color("a83f3a"), true], [Color("d6ddd0"), false], [Color("5e4d59"), true], [Color("e1d3b8"), false]],   # 茜の裙・月白の上着・藍の刺繍・結びと披帛
-	"golem": [[Color("3b446a"), false], [Color("75716a"), false], [Color("b89434"), false], [Color("aa7f6e"), true]],   # 藍の肩当て・腕の灰色・無地の継ぎ当て・柄の継ぎ当て
+	"golem": [[Color("3b4369"), false], [Color("747069"), false], [Color("b89435"), false], [Color("ae8270"), true]],   # 藍の肩当て・腕の灰色・無地の継ぎ当て・柄の継ぎ当て
 }
 const COUNT := 4               # 部位の数（どの人形も 4 つ）
 const STEP := 60.0             # 塗り分けの絵の値の刻み（rig_export.py の DYE_STEP）
