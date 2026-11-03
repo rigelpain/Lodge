@@ -35,6 +35,7 @@ var sled: RigidBody3D
 var player: CharacterBody3D
 var bots: Array = []
 var lodge: Node3D
+var _doormats: Array = []       # 出入り口のマットの目印 doormat_*（ロッジの座標からマットの座標への変換。マットは x, z が ±1 の中）
 var rng := RandomNumberGenerator.new()
 var debug := ""
 ## 確かめ用: true のあいだ、鳴らした音を played に書きとめる {t（ゲームの秒）, name, near（耳元か）, dist（聞く所からの m）, wind（滑走の風の dB）}
@@ -471,9 +472,14 @@ func _update_walkers(dt: float) -> void:
 			var stride := STRIDE + 0.3 * clampf((speed - 4.0) / 3.0, 0.0, 1.0)
 			if w.acc >= stride:
 				w.acc = 0.0
-				var s := _pick_name("step_wood", 4) if on_wood(who) else _pick_name("step_snow", 6)
+				var surf := surface_at(who.global_position, who)
+				var s := _pick_name("step_snow", 6) if surf == "snow" else _pick_name("step_wood", 4)
 				var loud := db_step + 4.0 * clampf((speed - 4.0) / 3.0, 0.0, 1.0)
-				_play_step(who, w, s, loud, rng.randf_range(0.94, 1.06))
+				var pitch := rng.randf_range(0.94, 1.06)
+				if surf == "mat":   # マットの上: 板の音を布でくぐもらせる（小さく、低く）
+					loud -= 4.0
+					pitch *= 0.86
+				_play_step(who, w, s, loud, pitch)
 		else:
 			w.acc = minf(w.acc, STRIDE * 0.6)
 		if pushing:
@@ -853,15 +859,28 @@ func _push_name(who: Node3D) -> String:
 ## 足もとが木の床か（ロッジの当たり判定 lodge_collision.glb の上: 中の床・風除室・玄関前の広場・外階段・テラス・内階段）。
 ## 足もとから下へ光線を落とし、当たった物がロッジの下にあれば木。雪の丘（高さの地図）や外の物の上なら雪。
 ## 段の坂の、見た目のいちばん下の段より外の裾（STEP_FOOT より低い所）は雪。ソリ・米袋（動く体）は通り抜けて、その下の床を見る（米袋に乗って蹴る・引きずられるときの足は、袋の横の床に着く）。
-## 光線が何にも当たらない（跳んでいる・通信の体が少し浮いている）ときは、ロッジの中なら木、外なら雪
+## 光線が何にも当たらない（跳んでいる・通信の体が少し浮いている）ときは、ロッジの中なら木、外なら雪。
+## 出入り口のマットの上は、雪の上に敷いたマットも含めて木（踏ん張り・着地は板の音、歩く音は布でくぐもらせる）
 func on_wood(who: Node3D) -> bool:
-	return surface_at(who.global_position, who) == "wood"
+	return surface_at(who.global_position, who) != "snow"
 
 
-## 位置 at の足もとの床の種類（"wood" か "snow"）。skip は光線から外す体（その人自身）
+## 位置 at の足もとの床の種類（"wood"・"snow"・"mat"）。skip は光線から外す体（その人自身）。
+## "mat" は出入り口のマット（lodge.glb の目印 doormat_*。マットに当たり判定はないので、光線でなく目印の範囲で見る）
 func surface_at(at: Vector3, skip: Node3D = null) -> String:
 	if lodge == null:
 		return "snow"
+	if _doormats.is_empty():
+		for n in lodge.find_children("doormat_*", "Node3D", true, false):
+			if not n is MeshInstance3D:
+				_doormats.append((lodge.global_transform.affine_inverse() * (n as Node3D).global_transform).affine_inverse())
+		if _doormats.is_empty():
+			_doormats.append(Transform3D.IDENTITY.scaled(Vector3.ONE * 1e-6))   # 目印のない古い glb: 探しなおさない
+	var l := lodge.to_local(at)
+	for xf in _doormats:
+		var q: Vector3 = xf * l
+		if absf(q.x) <= 1.0 and absf(q.z) <= 1.0 and q.y > -0.3 and q.y < 0.4:   # 拡大は x, z だけ（y は m のまま）
+			return "mat"
 	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 0.3, at + Vector3.DOWN * 0.6)
 	if skip is CollisionObject3D:
 		q.exclude = [(skip as CollisionObject3D).get_rid()]

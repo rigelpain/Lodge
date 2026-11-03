@@ -45,6 +45,7 @@ CLAY = {
     "dark": (0.05, 0.04, 0.04), "tatami": (0.76, 0.74, 0.56), "cushion": (0.70, 0.46, 0.36),
     "quilt": (0.66, 0.52, 0.40), "paper": (0.95, 0.92, 0.85), "felt_red": (0.62, 0.30, 0.25),
     "felt_blue": (0.28, 0.38, 0.60), "felt_green": (0.40, 0.52, 0.32), "felt_yellow": (0.80, 0.64, 0.30),
+    "mat_out": (0.55, 0.45, 0.32), "mat_out_edge": (0.25, 0.20, 0.16), "mat_in": (0.60, 0.40, 0.34), "mat_fringe": (0.90, 0.87, 0.80),
     "floor": (0.55, 0.45, 0.36), "ceiling": (0.70, 0.64, 0.54), "fire": (0.9, 0.5, 0.2), "tree": (0.30, 0.42, 0.34), "trunk": (0.36, 0.25, 0.16), "far": (0.78, 0.83, 0.90),
 }
 MAT = {}
@@ -340,7 +341,8 @@ def opening(F, G, D, axis, fixed, sgn, c, w, cb, ct, kind, tag=""):
         lw = (w - 2 * L) / leaves
         for k in range(leaves):
             a, b = u0 + L + k * lw + 0.005, u0 + L + (k + 1) * lw - 0.005
-            swing_leaf("%s_%d" % (tag, k), axis, fixed, sgn, a, b, cb + 0.03, ct - L, -0.06, -0.01,
+            # 板の下端は床から 5.5 cm（敷居 3 cm の上）。開くと出入り口のマット（dims.DOORMATS）の上を、当たらずに通る
+            swing_leaf("%s_%d" % (tag, k), axis, fixed, sgn, a, b, cb + 0.055, ct - L, -0.06, -0.01,
                        hinge_at_u0=(k == 0))
 
 
@@ -771,6 +773,7 @@ def build_vestibule():
     rb = M("vest_mat_ribs", "metal", "interior")
     rb.box(mx0 + 0.05, yb + 0.30, FL1 + 0.015, mx0 + 0.09, Y0 - 0.20, FL1 + 0.035)
     rb.done(array=(int((mx1 - mx0 - 0.1) / 0.08), (0.08, 0, 0)))
+    doormat_marker("vest", mx0, yb + 0.25, mx1, Y0 - 0.15, FL1)
     # 自販機は組まない。ゲームが目印 slot_vending_4・5（自動ドアの左右）に props/ の自販機を置く
     lp = M("vest_lamp", "paper", "interior")
     lp.cyl((cx, (yb + Y0) / 2, V["h"] - 0.95), (cx, (yb + Y0) / 2, V["h"] - 0.45), 0.32, seg=24)
@@ -779,6 +782,50 @@ def build_vestibule():
     cd.cyl((cx, (yb + Y0) / 2, V["h"] - 0.45), (cx, (yb + Y0) / 2, V["h"]), 0.008, seg=6)
     cd.done()
 
+
+
+def doormat_marker(name, x0, y0, x1, y1, z):
+    """マットの目印 doormat_<name>: 真ん中の床の上。拡大（x, y）がマットの半分の大きさ。ゲームの audio.gd が足音に使う"""
+    e = bpy.data.objects.new("doormat_" + name, None)
+    e.empty_display_type = "CUBE"
+    e.empty_display_size = 1.0
+    e.location = ((x0 + x1) / 2, (y0 + y1) / 2, z)
+    e.scale = ((x1 - x0) / 2, (y1 - y0) / 2, 1.0)
+    coll("markers").objects.link(e)
+
+
+def build_doormats():
+    """出入り口の内と外のマット（dims.DOORMATS）。外は目の粗い棕櫚に濃い縁の帯、中は裂き織りに両端の房。
+    床に置くだけ（当たり判定なし）"""
+    t = DOORMAT_T
+    for name, kind, x0, y0, x1, y1, z in DOORMATS:
+        if kind == "out":
+            b = 0.065   # 縁の帯（棕櫚の目を包む濃い布）
+            body = M("doormat_body_" + name, "mat_out", "crown")
+            body.box(x0 + b, y0 + b, z, x1 - b, y1 - b, z + t)
+            body.done(bevel=0.003)
+            ed = M("doormat_edge_" + name, "mat_out_edge", "crown")
+            for q in ((x0, y0, x1, y0 + b), (x0, y1 - b, x1, y1), (x0, y0 + b, x0 + b, y1 - b), (x1 - b, y0 + b, x1, y1 - b)):
+                ed.box(q[0], q[1], z, q[2], q[3], z + t + 0.002)
+            ed.done(bevel=0.004)
+        else:
+            body = M("doormat_body_" + name, "mat_in", "interior")
+            body.box(x0, y0, z, x1, y1, z + t)
+            body.done(bevel=0.004)
+            # 房: 短い 2 辺から、たて糸の束を床に垂らす
+            fr = M("doormat_fringe_" + name, "mat_fringe", "interior")
+            gap, ln, w = 0.045, 0.07, 0.014
+            if x1 - x0 >= y1 - y0:   # 長い辺が x: 房は西と東の端
+                n = int((y1 - y0 - 0.04) / gap)
+                for xa, xb in ((x0 - ln, x0), (x1, x1 + ln)):
+                    fr.box(xa, y0 + 0.02, z, xb, y0 + 0.02 + w, z + 0.004)
+            else:
+                n = int((x1 - x0 - 0.04) / gap)
+                for ya, yb_ in ((y0 - ln, y0), (y1, y1 + ln)):
+                    fr.box(x0 + 0.02, ya, z, x0 + 0.02 + w, yb_, z + 0.004)
+            off = (0, gap, 0) if x1 - x0 >= y1 - y0 else (gap, 0, 0)
+            fr.done(array=(n + 1, off))
+        doormat_marker(name, x0, y0, x1, y1, z)
 
 
 def rail_run(Rm, p0, p1, h=RAIL_H, posts_every=K, name=None):
@@ -1137,6 +1184,7 @@ def build_interior():
     b2 = M("bench2", "board", "interior")
     b2.box(TATAMI["x1"] + 0.10, INSTAIR["hole_y0"] - 1.9, FL2, TATAMI["x1"] + 0.45, INSTAIR["hole_y0"] - 0.4, FL2 + 0.9)   # 下足箱（畳の東の縁）。西の端の長椅子と卓はテラスへ（build_terrace_set）
     b2.done(bevel=0.012)
+    build_doormats()
 
     # ---- 下屋: 貸出のスキー立てと腰掛け ----
     L = LEAN
