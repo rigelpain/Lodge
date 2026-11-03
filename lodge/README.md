@@ -56,6 +56,8 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 - 1 階の暖炉の置き場の目印（空の節点）: `slot_hearth`（暖炉の前の面のまんなか、床の高さ。`dims.py` の `HEARTH`）。ロッジは煙突の塊だけを作り、炉の口・炉床・飾り棚・火と、前の長椅子は作らない。暖炉と、まわりのラグ・揺り椅子・ビーズクッション・大きなソファは `props/build_nook.py` の品物を `game/hearth_nook.gd` が置き、当たり判定も付ける（2026-11-02、代表「暖炉がちゃっちい。暖炉前のベンチもなんか味気ない」）
 - 2 階の掘りごたつの目印（空の節点）: `slot_kotatsu_0`〜`7`（穴のまんなか、畳の面。0〜3 が南の列、4〜7 が北の列、西から）。ロッジは穴だけを作り、こたつと座布団は `game/main.gd` が `props/sets/kotatsu_lodge_<柄>.tscn` を置く（2026-11-01、箱のこたつから差し替え）。大きさは `dims.py` の `KOTATSU_W`・`KOTATSU_D`・`KOTATSU_TOP`・`PIT_OUT`・`PIT_DEPTH`、当たり判定は `KOTATSU_FLARE` まで
 - 2 階のこたつの上の吊り灯りの目印: `slot_pendant_0`〜`7`（卓のまんなかの上、天井の野地板の下面。番号は `slot_kotatsu_*` と同じ）。`game/main.gd` が `props/furniture/pendant_drum.glb`（プリーツの筒）を、傘の上端が畳から `KOTATSU_LAMP`（3.2 m）になるよう吊り、コードを天井まで伸ばす（2026-11-02、畳の上 1.75 m に浮いていた紙の筒から替えた）。座敷の灯り `light_lantern_*` も同じ高さへ上げた
+- 2 階の西の端はテラス（2026-11-03 代表「外からの入口がつながってる木板床のスペースをごっそり外にしてテラス化したい」）。2 階の部屋の西の壁は `dims.py` の `X2_0`（畳の西の縁から 1.8 m 西。中に板の通り道が残る）で、テラスへの両開きの戸はこの壁に西向き。テラスは南の帯と西の端の L 字で、床板・手すりは一続き。屋根は `X2_0` からで、ゲームの雪よけの箱（`game/main.gd` の `SHELTER_2F`）と中か外かの判定（`game/audio.gd` の `zone_at`。2 階の高さでは部屋だけが中）も合わせてある
+- 2 階のテラスの卓と椅子: `dims.py` の `TERRACE_TABLES`（卓 3 つ、椅子 4 脚ずつ）。雪を少しかぶった木の卓と椅子で、座布団は素材 `cushion`（ゲームの `game/seats.gd` が 1 階の椅子と同じく席にする）。卓の当たりは `col_furniture`、椅子の当たりはない
 - 灯りの場所の目印（空の節点）: `light_lamp_0`〜`2`（食堂の天井）、`light_lantern_0`〜`1`（座敷）、`light_fire`（大きな暖炉の炉の口の前）、`light_vestibule`（風除室）。食堂は炉を入れて 4 つまで。ゲームはここに暖色の OmniLight3D を影なしで灯し、炉の火だけ揺らす
 - 書き出しでは面取りを外し、形を 2 つの物体にまとめる。建物は `lodge_body`、中の家具と小物（卓・椅子・灯り・マットなど）は `lodge_props_interior`（名前の prop で 360° 映像から外せる）。動かす自動ドアだけ別。三角形はロッジ全体で 10 万以下が目安（いま約 6.7 万）
 - 自動ドアの戸は `autodoor_l` / `autodoor_r`（ガラスは `autodoor_glass_l` / `_r`）。`lodge.gd` が、人（CharacterBody3D）が戸の前後 3 m に入ると左右へ 1.4 m 引き分ける
@@ -74,4 +76,6 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 | `05-day-kotatsu.png` | カット 4: 2 階の掘りごたつ |
 | `05-day-terrace.png` | カット 5: テラスから丘 |
 | `06-kotatsu-swap-*.jpg` | 2 階のこたつの差し替え（ゲームの画面。左が前、右が後。上が昼、下が夜）。`-sit-side` は 7 体を座布団に座らせた横から（`06-kotatsu-before-sit-side` が前） |
+| `08-terrace-2f-before-after.jpg` | 2 階の西の端をテラスにした前（左）と後（右）。上から、南西の外から、南のテラスに立って、西の端に立って（ゲームの画面。`game/tools/terrace_shots.gd`） |
+| `08-terrace-2f-sit.jpg` `08-terrace-2f-sit-side.jpg` | テラスの椅子に人形を座らせた所。`-sit-side` は 7 体を 1 階の椅子（左）とテラスの椅子（右）に座らせた真横（`game/tools/sit_side_shots.gd --seats=chair,terrace`） |
 | `06-kotatsu-pendant.jpg` | こたつの上の吊り灯り（プリーツの筒。代表「まんなかの筒」）を見上げた所（左が昼、右が夜） |
