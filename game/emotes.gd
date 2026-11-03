@@ -41,6 +41,7 @@ const KINDS := {
 	"huh": {"frames": 16, "root": false},         # 声「ウン？」首をかしげる
 	"oi": {"frames": 18, "root": false},          # 声「おーーーい」遠くの人を呼ぶ（空いた手を口に当てる）
 	"eat": {"frames": 16, "root": false},         # 手の料理をひと口（右手を口へ運び、もぐもぐ。ev.last で最後のひと口: ほっと息）
+	"catch": {"frames": 10, "root": false},       # 雪合戦の対決で、相手の雪玉を両手で取る（duel.gd が決めて出す。ev.ball の雪玉が消える）
 }
 const VOICES := ["wa", "un", "nn", "huh", "oi"]
 const HANDS := Palm.HANDS
@@ -59,6 +60,7 @@ var people := {}             # 番号 → 人（player.gd・bot.gd）
 var aims := {}               # 番号 → 指している向き {dir: 頭から見た向き（世界）, dist: その先までの長さ}。指していなければ無い
 var hands := {}              # 番号 → いま掲げている手（HANDS の名前。"high_R" など）
 var _next_id := 1
+var _next_ball := 1          # 投げた雪玉の番号（ホストが付ける。どの画面でも同じ雪玉を指せる。対決のキャッチで使う）
 
 
 ## 人を登録して番号をもらう。通信で遊んでいるときは、通信の番号をそのまま人の番号にする（全員の画面で同じ番号になる。
@@ -170,6 +172,10 @@ func _apply(ev: Dictionary) -> void:
 			if balls_of(ev.who) <= 0:
 				return   # 投げる雪玉がない
 			_set_balls(ev.who, balls_of(ev.who) - 1)
+			ev["ball"] = _next_ball
+			_next_ball += 1
+		"catch":
+			return   # 取れたかは対決の配り役（duel.gd）が決めて出す
 		"spend":   # 雪だるまの店で、雪玉で払う（craft.gd の food_buy が呼ぶ。足りなければ払わない。通信ではホストの craft が呼ぶ）
 			if balls_of(ev.who) < int(ev.n):
 				ev["ok"] = false
@@ -194,6 +200,11 @@ func _apply(ev: Dictionary) -> void:
 func _emit(ev: Dictionary) -> void:
 	if ev.kind == "hit":
 		_making.erase(ev.who)   # びっくりして、丸めていた雪玉は崩れる
+	if ev.kind == "catch":   # 取られた雪玉は、どの画面でも消える
+		var b := ball(int(ev.get("ball", -1)))
+		if b:
+			b.caught()
+		Snowball.splat_at(self, ev.get("point", Vector3.ZERO), Vector3.UP, true)
 	if ev.kind == "splat":
 		_show_splat(ev)
 	elif ev.kind == "high_five" and ev.who < ev.with:
@@ -399,16 +410,41 @@ func _spawn_ball(ev: Dictionary) -> void:
 	var ball := Snowball.new()
 	ball.hub = self
 	ball.thrower = ev.who
+	ball.ball_id = int(ev.get("ball", -1))
 	add_child(ball)
 	ball.global_position = ev.origin
 	ball.linear_velocity = ev.velocity
+
+
+## 番号の雪玉（まだ飛んでいるもの。なければ null）
+func ball(id: int) -> Snowball:
+	if id < 0:
+		return null
+	for c in get_children():
+		if c is Snowball and c.ball_id == id and not c._done:
+			return c
+	return null
+
+
+## 投げた人の雪玉が、その人に当たるか（雪合戦の対決中の 2 人と、それ以外の人の雪玉は互いに当たらない。duel.gd）
+func can_hit(thrower: int, target: int) -> bool:
+	var duel := get_parent().get_node_or_null("Duel")
+	return duel == null or duel.can_hit(thrower, target)
 
 
 ## 雪玉が人に当たった（雪玉が呼ぶ）。のけぞりは出来事として配る
 func ball_hit_person(ball: Node3D, id: int, point: Vector3, dir: Vector3) -> void:
 	if _client():
 		return   # つなぐ側の雪玉は見た目だけ。当たりはホストから届く
-	_emit({"kind": "hit", "who": id, "by": ball.thrower, "frame": Doll.frame_index() + 1, "point": point, "dir": dir})
+	var duel := get_parent().get_node_or_null("Duel")
+	if duel and duel.park_hit(ball, id, point, dir):
+		return   # 対決の相手の雪玉: 取りにいった知らせが届くかもしれないので、少し待ってから当てる（duel.gd）
+	hit_person(ball.thrower, id, point, dir)
+
+
+## 人に当てる（のけぞりと、崩れた雪）。by は投げた人
+func hit_person(by: int, id: int, point: Vector3, dir: Vector3) -> void:
+	_emit({"kind": "hit", "who": id, "by": by, "frame": Doll.frame_index() + 1, "point": point, "dir": dir})
 	_emit({"kind": "splat", "frame": Doll.frame_index(), "point": point, "normal": -dir, "on_person": id})
 
 

@@ -85,6 +85,9 @@ func _ready() -> void:
 	var craft := world.get_node_or_null("Craft")
 	if craft:
 		craft.happened.connect(_on_craft)
+	var duel := world.get_node_or_null("Duel")
+	if duel:
+		duel.happened.connect(_on_duel)
 
 
 # ---- 読み込み ---------------------------------------------------------------
@@ -1047,6 +1050,7 @@ const EMOTE_SOUNDS := {
 	"clap": [[2, "felt_pat", 3, -12.0, 1.3], [6, "felt_pat", 3, -12.0, 1.25], [10, "felt_pat", 3, -12.0, 1.3], [14, "felt_pat", 3, -12.0, 1.2]],
 	"make_ball": [[4, "step_snow", 6, -16.0, 1.7], [6, "step_snow", 6, -17.0, 1.8], [8, "step_snow", 6, -16.0, 1.7], [10, "step_snow", 6, -17.0, 1.8], [12, "step_snow", 6, -16.0, 1.75], [14, "step_snow", 6, -18.0, 1.9]],
 	"breath": [[0, "breath", 4, -22.0, 1.1], [5, "breath", 4, -14.0, 0.6]],
+	"catch": [[1, "felt_pat", 3, -5.0, 0.85], [1, "till_snow", 3, -12.0, 1.3]],   # 雪玉を両手で、ぽふっと取る
 }
 
 
@@ -1084,6 +1088,28 @@ func _on_emote(ev: Dictionary) -> void:
 		# 声（voice_*）はその人形の 1 つ。ほかの音は毎回選ぶ
 		var fixed: String = doll_kind if (s[1] as String).begins_with("voice_") else ""
 		_emote_sound(ev, s[0], s[1], s[2], s[3], p, who.global_position + Vector3.UP * 1.0, is_self, "Voice" if voice else "", fixed)
+
+
+## 雪合戦の対決（duel.gd）の合図: 始まりと終わりに鈴、当たると留め具がぱちん、払いでボタンがじゃらり。
+## 2 人のどちらかなら耳元、ほかの人のものはフィールドのまんなかから
+func _on_duel(ev: Dictionary) -> void:
+	var d: Dictionary = ev.get("duel", {})
+	if d.is_empty():
+		return
+	var me: int = int(player.get("id")) if player and player.get("id") != null else -99
+	var near: bool = int(d.a) == me or int(d.b) == me
+	var at: Vector3 = d.at + Vector3.UP * 1.2
+	match String(ev.get("cue", "")):
+		"start":
+			_emote_sound(ev, 0, "cook_bell", 2, -3.0, 1.1, at, near)
+		"struck":
+			_emote_sound(ev, 2, "button_snap", 3, -7.0, 0.9, at, near)
+		"end":
+			_emote_sound(ev, 0, "cook_bell", 2, -2.0, 1.0, at, near)
+			_emote_sound(ev, 4, "cook_bell", 2, -4.0, 1.25, at, near)
+		"paid":
+			if int(d.stake) > 0:
+				_emote_sound(ev, 0, "button_reward", 3, -6.0, 1.0, at, near)
 
 
 ## 出来事のコマ + k に、音を 1 つ鳴らす。自分の音は耳元（Self／Voice）、人の音はその場所から

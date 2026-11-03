@@ -62,6 +62,8 @@ const Audio := preload("res://audio.gd")
 const RideWind := preload("res://ride_wind.gd")
 const SewingMachine := preload("res://sewing_machine.gd")
 const Emotes := preload("res://emotes.gd")
+const Duel := preload("res://duel.gd")
+const DuelHud := preload("res://duel_hud.gd")
 const Hud := preload("res://hud.gd")
 const SelfCam := preload("res://self_cam.gd")
 const Craft := preload("res://craft.gd")
@@ -148,6 +150,8 @@ const LODGE_FLOOR := 0.45     # ロッジの 1 階の床の高さ（lodge/dims.p
 var sled: RigidBody3D
 var player: CharacterBody3D
 var emotes: Emotes          # 身ぶりと声の配り役（人より先に置く。人が登録する）
+var duel: Duel              # 雪合戦の対決の配り役（duel.gd）。握手から始まる 1 対 1
+var duel_hud: CanvasLayer   # 対決の画面（duel_hud.gd）
 var hud: CanvasLayer        # 画面の表示（hud.gd）。文字を使わず、アイコンと形で伝える
 var args := {}
 var elapsed := 0.0
@@ -306,6 +310,12 @@ func _ready() -> void:
 	emotes = Emotes.new()
 	emotes.name = "Emotes"
 	add_child(emotes)
+	duel = Duel.new()
+	duel.name = "Duel"
+	duel.world = self
+	duel.hub = emotes
+	duel.craft = craft
+	add_child(duel)
 	badges = Badges.new()
 	badges.name = "Badges"
 	add_child(badges)
@@ -364,6 +374,15 @@ func _ready() -> void:
 			_bot_lantern(b, int(args.get("bots", "1")) + i)
 			_add_pals(b)
 
+	if args.has("duel-bot"):
+		# 確かめ用: 仲間を雪合戦の対決の相手にする（あなたと仲間に雪玉を 1 つ。低い手のひらを掲げると握手しに来る）
+		for c in get_children():
+			if c.get_script() == Bot and not c.lounge:
+				c.duelist = true
+				emotes._set_balls(c.id, 1)
+				break
+		if player:
+			emotes._set_balls(player.id, 1)
 	if player and net.spawn_slot() > 0:
 		# つなぐ側は、ホストの横に並んで始める（同じ所に重ならないように）
 		var slot := net.spawn_slot()
@@ -434,6 +453,11 @@ func _ready() -> void:
 	add_child(hud)
 
 	if player:
+		duel_hud = DuelHud.new()
+		duel_hud.main = self
+		duel_hud.duel = duel
+		duel_hud.player = player
+		add_child(duel_hud)
 		craft_ui = CraftUi.new()
 		craft_ui.main = self
 		craft_ui.craft = craft

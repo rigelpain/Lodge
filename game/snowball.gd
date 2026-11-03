@@ -11,6 +11,7 @@ const LIFE := 6.0            # どこにも当たらなかったら消える (s)
 
 var hub: Node3D              # emotes.gd
 var thrower := -1            # 投げた人の番号（自分には当たらない）
+var ball_id := -1            # 雪玉の番号（emotes.gd が付ける。対決で取るときに指す）
 var _t := 0.0
 var _last := Vector3.INF
 var _vel := Vector3.ZERO      # 前のコマの速さ（当たった瞬間は跳ね返ったあとの速さになっているので）
@@ -53,7 +54,7 @@ func _physics_process(dt: float) -> void:
 		_last = p
 	# このコマで進んだ線分が、人形の体の形（人形ごとに測った、高さごとの太さ）に入るか
 	for id in hub.people:
-		if id == thrower:
+		if id == thrower or not hub.can_hit(thrower, id):
 			continue
 		var who: Node3D = hub.who_of(id)
 		if who == null or who.get("doll") == null:
@@ -77,6 +78,12 @@ func _segment_vs_body(a: Vector3, b: Vector3, doll: Node3D) -> Vector3:
 		if doll.body_hit(q, RADIUS):
 			return q
 	return Vector3.INF
+
+
+## 取られた（対決のキャッチ。emotes.gd）。崩れずに消える
+func caught() -> void:
+	_done = true
+	queue_free()
 
 
 func _on_body(body: Node) -> void:

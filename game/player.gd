@@ -389,6 +389,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				set_third(not third)
 				get_parent().settings.sync("third", third)
 			KEY_F:
+				var duel := get_parent().get_node_or_null("Duel")
+				if duel and mode == Mode.WALK and duel.try_catch(self):
+					return   # 雪合戦の対決: 照準に合った、手の届く相手の雪玉を取る（2026-11-02 代表「キャッチはFキーにしましょう」）
 				if rooted():
 					return
 				if mode == Mode.SIT:
@@ -798,6 +801,7 @@ func _physics_process(dt: float) -> void:
 			_sit_step(dt)
 		Mode.DRUM:
 			_drum_step(dt)
+	_keep_in_duel()
 	_update_point(dt)
 	_update_emote(dt)
 	_sack_events()
@@ -1463,6 +1467,25 @@ func _left_click() -> void:
 		emote("clap")
 
 
+# ---------------------------------------------------------------- 雪合戦の対決（duel.gd）
+
+## 戦っているあいだは円の中（見えない壁）。ソリをつかんだり乗ったりして円の外へ出たら、手を離す・降りる
+func _keep_in_duel() -> void:
+	var duel := get_parent().get_node_or_null("Duel")
+	if duel == null or duel.fighting(id).is_empty():
+		return
+	if mode == Mode.WALK:
+		duel.keep_in(self, id)
+		return
+	var d: Dictionary = duel.fighting(id)
+	var off := Vector2(global_position.x - d.at.x, global_position.z - d.at.z)
+	if off.length() > duel.RADIUS:
+		if mode == Mode.GRIP or mode == Mode.ROPE:
+			let_go()
+		elif mode == Mode.RIDE:
+			get_off()
+
+
 # ---------------------------------------------------------------- ペグ（peg.gd・sled.gd の peg_to）
 
 const PEG_AHEAD := 0.7        # ペグを刺す所: 足もとから見ている向きへ (m)
@@ -1788,6 +1811,13 @@ func _emote_hand(s: int) -> Vector3:
 		"clap":
 			var gap: float = [0.32, 0.14, 0.03, 0.2][k % 4]
 			return Vector3(s * gap * 0.5, -0.17, -0.42)
+		"catch":
+			# 両手をまんなかへ突き出して、ぱっと包み、胸へ引き寄せる（雪玉の対決のキャッチ）
+			if k < 2:
+				return Vector3(s * 0.09, 0.02, -0.62)
+			if k < 6:
+				return Vector3(s * 0.05, -0.1 - 0.03 * (k - 2), -0.5 + 0.03 * (k - 2))
+			return Vector3(s * 0.12, -0.26, -0.4)
 		"wa":
 			if k < 2:
 				return Vector3(s * 0.2, -0.38, -0.4)
