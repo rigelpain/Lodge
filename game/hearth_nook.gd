@@ -9,7 +9,8 @@ extends Node3D
 ## 席: 品物の glb の目印 seat_<番号>（座面の上の腰を下ろす所。build_nook.py が布の計算のあとの座面の高さに置く）から、
 ## 座る所の目印 nook_seat_<番号> を作り、seats.gd が拾う（種類・高さ・奥行き・揺れは meta）。
 ##   ソファ: 何人かで並んで座る（座る所が人数分）
-##   揺り椅子: 座りきると前後に揺れる（人形も椅子といっしょに。弓の円の中心まわりに回すので、弓は床から離れない）
+##   揺り椅子: 座りきると前後に揺れる（人形も椅子といっしょに。弓が床の上を転がる: 弓の円の中心まわりに回しながら、
+##   中心を回った角 × 半径だけ床に沿って動かす。支点は弓が床に触れている所で、揺れるにつれて前後にずれる）
 ##   ビーズクッション: 座ると袋がつぶれて沈み込み、うしろへもたれる
 ## 揺れの角は、座っている人形（仲間分け dolls）の rock から読む。あなた・仲間・つないだ人の誰が座っても、その画面の人形と同じに揺れる。
 ## ラグの毛足はここで作る（シェルの層を重ねて、毛糸の房を立てる。glb にはしない）
@@ -36,6 +37,8 @@ const ENTRIES := [[Vector2(-1.3, 9.2), Vector2(-1.1, 6.3)], [Vector2(1.3, 9.2), 
 const ROCK_AMP := 0.085       # 揺り椅子の揺れの角 (rad、片側)
 const ROCK_PERIOD := 2.2      # 揺り椅子の 1 往復 (s)
 const ROCK_PIVOT := Vector3(0.0, 1.435, 0.05)   # 揺り椅子の弓の円の中心（glb の座標。build_nook.py の R + 0.035 の高さ）
+const ROCK_FLOAT := 0.007     # 揺り椅子の弓の下の面は、glb では床より少し上（build_nook.py の弓の太さ）。置くときにこれだけ下げ、床に触れさせる
+const ROCK_ROLL := 1.428      # 揺り椅子の弓が床を転がる半径（glb の座標。弓の円の中心から弓の下の面まで）
 const BEAN_SINK := 0.38       # ビーズクッション: 座ると袋がこれだけ（割合）低くつぶれ、横へ広がる（まわりの盛り上がりが下がり、脚が袋に入らない）
 const BEAN_BIG := 0.2         # ビーズクッション: 大きな人形（背 1.7 m の巨人）が座ると、これだけ多くつぶれる
 const BEAN_LEAN := 0.5        # ビーズクッション: うしろへもたれる角 (rad。太ももが袋の縁の上へ上がる)
@@ -45,7 +48,7 @@ const SEAT_FORWARD := {"sofa": 0.11, "rocker": 0.08, "beanbag": 0.0}
 const SEAT_BACK := {"sofa": 0.25, "rocker": 0.28, "beanbag": 0.4}   # 腰の所から背もたれ（背のクッション・背の棒・袋のうしろ）の前の面まで (m)
 const SEAT_SIZE := {"sofa": Vector2(0.86, 0.82), "rocker": Vector2(0.62, 0.5), "beanbag": Vector2(0.8, 0.7)}
 
-var _rockers: Array = []      # [品物, 置いた形, 座る所の目印]
+var _rockers: Array = []      # [品物, 置いた形, 座る所の目印, いまの角]
 var _beans: Array = []        # [品物, 置いた形, 座る所の目印, いまのつぶれ 0〜1, 座っている人形のつぶれの割合]
 var _k := -1
 
@@ -70,7 +73,7 @@ func _ready() -> void:
 			mk.position = item.to_local((m as Node3D).global_position) + Vector3(0.0, 0.0, -SEAT_FORWARD[kind])
 			mk.position.y = _top_at(item, mk.position, mk.position.y)   # 座面の高さは、置いた形の面から測り直す
 			mk.set_meta("kind", kind)
-			mk.set_meta("height", mk.position.y)
+			mk.set_meta("height", mk.position.y + item.position.y)   # 床から（揺り椅子は置いた形が床より ROCK_FLOAT 下）
 			mk.set_meta("edge", SEAT_EDGE[kind] - SEAT_FORWARD[kind])
 			mk.set_meta("size", SEAT_SIZE[kind])
 			mk.set_meta("back", SEAT_BACK[kind] + SEAT_FORWARD[kind])
@@ -79,6 +82,7 @@ func _ready() -> void:
 				mk.set_meta("rock_period", ROCK_PERIOD)
 				mk.set_meta("rock_phase", float(n) * 1.7)   # 揺り椅子ごとに少しずらす
 				mk.set_meta("rock_pivot", ROCK_PIVOT - mk.position)
+				mk.set_meta("rock_roll", ROCK_ROLL)
 			elif kind == "beanbag":
 				mk.position.y *= 1.0 - BEAN_SINK   # 沈んだ所に腰を下ろす
 				mk.set_meta("height", mk.position.y)
@@ -86,7 +90,7 @@ func _ready() -> void:
 			add_child(mk)
 			mk.transform = item.transform * mk.transform
 			if kind == "rocker":
-				_rockers.append([item, item.transform, mk])
+				_rockers.append([item, item.transform, mk, 0.0])
 			elif kind == "beanbag":
 				_beans.append([item, item.transform, mk, 0.0, BEAN_SINK])
 
@@ -110,7 +114,7 @@ func _put(glb: String, x: float, y: float, deg: float) -> Node3D:
 		add_child(empty)
 		return empty
 	var item := Props.make(DIR + glb + ".glb")
-	item.position = Vector3(x, 0.0, -y)
+	item.position = Vector3(x, -ROCK_FLOAT if glb.begins_with("rocker") else 0.0, -y)
 	item.rotation.y = deg_to_rad(deg)
 	add_child(item)
 	var box := AABB()
@@ -166,18 +170,19 @@ func _sitter(mk: Node3D) -> Node:
 	return null
 
 
-## 12 コマ／秒で、揺り椅子を座っている人形と同じ角に傾け、ビーズクッションをつぶす
+## 揺り椅子を座っている人形と同じ角に傾け（弓を床の上で転がす。人形の角が変わったフレームに合わせる）、
+## 12 コマ／秒でビーズクッションをつぶす
 func _process(_dt: float) -> void:
+	for r in _rockers:
+		var d = _sitter(r[2])
+		var a: float = d.rock if d else 0.0
+		if a != r[3]:
+			r[3] = a
+			(r[0] as Node3D).transform = (r[1] as Transform3D) * roll_xf(a)
 	var k := Doll.frame_index()
 	if k == _k:
 		return
 	_k = k
-	for r in _rockers:
-		var d = _sitter(r[2])
-		var a: float = d.rock if d else 0.0
-		var base: Transform3D = r[1]
-		var piv := ROCK_PIVOT
-		(r[0] as Node3D).transform = base * Transform3D(Basis(Vector3.RIGHT, a), piv - Basis(Vector3.RIGHT, a) * piv)
 	for b in _beans:
 		var d = _sitter(b[2])
 		var goal := 1.0 if d and d.sit_stage == 2 else (0.5 if d else 0.0)
@@ -186,6 +191,13 @@ func _process(_dt: float) -> void:
 			b[4] = BEAN_SINK + BEAN_BIG * clampf((d.height() - 1.2) / 0.5, 0.0, 1.0)
 		var s: float = b[3] * b[4]
 		(b[0] as Node3D).transform = (b[1] as Transform3D) * Transform3D(Basis.from_scale(Vector3(1.0 + s * 0.45, 1.0 - s, 1.0 + s * 0.45)), Vector3.ZERO)
+
+
+## 揺り椅子が角 a（正でうしろへ）だけ揺れた形（glb の座標）。弓の円の中心まわりに a 回し、中心を a × 半径だけうしろ（+Z）へ。
+## 弓は床の上を滑らずに転がり、いつも床に触れている（触れる所は弓の上を前後に動く）。人形は doll.gd の rock_roll で同じに動く
+static func roll_xf(a: float) -> Transform3D:
+	var r := Basis(Vector3.RIGHT, a)
+	return Transform3D(r, ROCK_PIVOT - r * ROCK_PIVOT + Vector3(0.0, 0.0, ROCK_ROLL * a))
 
 
 ## at（世界）から、内側の席の立つ所 to（世界）へ回り込む道（世界の点の列。外の所 → 内の所）。いちばん短い入り口

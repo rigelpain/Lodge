@@ -838,6 +838,7 @@ func _pose_doll() -> void:
 		if st.has("rock_axis"):   # 揺り椅子・ビーズクッション: 体ごと傾く（seats.gd の rock_of）
 			doll.rock_axis = st.rock_axis
 			doll.rock_at = st.rock_at
+			doll.rock_roll = float(st.get("rock_roll", 0.0))
 			doll.rock = Seats.rock_of(st, Doll.frame_index(), _sit_frame, _stand_frame)
 	doll.seat_soft = mode == Mode.SIT and seats.seat(seat_i).kind == "zabuton"
 	if mode == Mode.DRUM:
@@ -1104,9 +1105,9 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			eye = to_local(_drum.drum_center() + Vector3.UP * 0.1)
 			_cam_roll = 0.08 * sin(Doll.frame_index() * SPIN_SWAY)
 		elif mode == Mode.SIT and _sit_stage > 0:
-			# ロッジの席: 座った人形の目の所（中腰のあいだは半ば）
+			# ロッジの席: 座った人形の目の所（中腰のあいだは半ば）。揺り椅子・ビーズクッションでは、傾いて動いた人形の目の所（視点は傾けない）
 			var e := doll.eye_point(true) if _sit_stage == 2 else doll.eye_point(false).lerp(doll.eye_point(true), 0.55)
-			eye = to_local(Transform3D(doll.global_basis, global_position) * e)
+			eye = to_local(doll.global_transform * e)
 		eye.y += _cam_em.z
 		# 着地の沈みは目の高さの追いかけ（lerp）の外で足す（なまらず、すとんと沈んですっと戻る）
 		cam.position.y += _dip_shown

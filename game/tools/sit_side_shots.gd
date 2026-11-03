@@ -127,6 +127,7 @@ func _place(seats) -> void:
 	d.rock_axis = st.get("rock_axis", Vector3.ZERO)   # 揺り椅子・ビーズクッション: いちばんうしろへ傾いた所
 	d.rock = float(st.get("rock_lean", 0.0)) + float(st.get("rock_amp", 0.0))
 	d.rock_at = st.get("rock_at", Vector3.ZERO)
+	d.rock_roll = float(st.get("rock_roll", 0.0))   # 揺り椅子: 弓が床を転がった所
 	var side: Vector3 = _side_of[sk]
 	var h: float = d.height()
 	var c: Vector3 = st.pos + Vector3.UP * (h * 0.3 - 0.2) + st.face * (0.1 + h * 0.1)
@@ -197,10 +198,11 @@ func _count(seats) -> void:
 	var groups := _skinned(d)
 	if float(st.get("rock_amp", 0.0)) > 0.0:   # 揺り椅子: 椅子もいっしょに傾いているので、椅子に対しての所で数える
 		var un := Basis(st.rock_axis, -d.rock)
+		var rolled: Vector3 = (st.rock_axis as Vector3).cross(Vector3.UP) * float(st.get("rock_roll", 0.0)) * d.rock   # 床を転がって動いた分
 		for b in groups:
 			var arr: PackedVector3Array = groups[b]
 			for i in arr.size():
-				arr[i] = st.rock_at + un * (arr[i] - st.rock_at)
+				arr[i] = st.rock_at + un * (arr[i] - rolled - st.rock_at)
 			groups[b] = arr
 	for b in groups:
 		if not (b.begins_with("thigh") or b.begins_with("shin") or b.begins_with("foot")):

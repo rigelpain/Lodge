@@ -127,6 +127,7 @@ var spin_at := Vector3.ZERO  # 回る中心（世界。胴の真ん中）
 var rock_axis := Vector3.ZERO
 var rock := 0.0              # その軸まわりに傾いた角 (rad)
 var rock_at := Vector3.ZERO  # 傾く中心（世界。揺り椅子の弓の円の中心、ビーズクッションは腰）
+var rock_roll := 0.0         # 揺り椅子: 弓が床を転がる半径 (m)。傾いた角 × これだけ、うしろへ床に沿って動く（支点が弓の床に触れた所になる）
 ## ビーズクッション: 座っているあいだ、体の向きが見ている向き（facing）についてくる（2026-11-03 代表「全方位に向かって座れるから」）。
 ## 向きは人形と同じ 12 コマ／秒で、1 コマに TURN_STEP まで回る（沈んだまま、もぞもぞ向きを変える）。もたれ（rock）の軸も体の向きから決める。
 ## 持ち主が毎フレーム入れる（つないだ人へは net.gd の "rt"）
@@ -1109,7 +1110,7 @@ func _physics_process(dt: float) -> void:
 		var ax := Basis(Vector3.UP, _yaw) * Vector3.RIGHT if rock_turns else rock_axis.normalized()
 		var r := Basis(ax, rock)
 		b = r * b
-		pos = rock_at + r * (pos - rock_at)
+		pos = rock_at + r * (pos - rock_at) + ax.cross(Vector3.UP).normalized() * (rock_roll * rock)
 	if drum_fit != 1.0:
 		b = b.scaled(Vector3.ONE * drum_fit)
 	global_transform = Transform3D(b, pos)
