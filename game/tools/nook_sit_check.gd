@@ -31,6 +31,8 @@ func _process(dt: float) -> bool:
 		print("%s: 座った %s 人形の傾き %.3f 〜 %.3f rad%s" % [_kinds[_step], p.seat_i >= 0 and st.kind == _kinds[_step], _rocks.min(), _rocks.max(), sq])
 		p.stand_up()
 		return false
+	if _step >= 0 and t - _t0 > 4.9 and t - _t0 - dt <= 4.9:
+		print("  立った: ", p.seat_i < 0, " 動き ", p.mode)
 	if _step < 0 or t - _t0 > 5.0:
 		_step += 1
 		_rocks = []
@@ -49,4 +51,12 @@ func _process(dt: float) -> bool:
 		print("  sit_down: ", p.sit_down())
 	if p.seat_i >= 0:
 		_rocks.append(p.doll.rock)
+		if _kinds[_step] == "beanbag" and t - _t0 > 2.5 and t - _t0 - dt <= 2.5:   # 座ったまま見回す: 体が見ている向きへついてくるか
+			p.rotate_y(PI * 0.75)
+		if t - _t0 > 3.9 and t - _t0 - dt <= 3.9:
+			var view: Vector3 = -p.global_basis.z
+			var body: Vector3 = -p.doll.global_basis.z
+			view.y = 0
+			body.y = 0
+			print("  %s: 見ている向きと体の向きの差 %.1f°（向きについてくる %s）" % [_kinds[_step], rad_to_deg(view.normalized().angle_to(body.normalized())), p.doll.rock_turns])
 	return false

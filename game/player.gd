@@ -807,9 +807,16 @@ func _pose_doll() -> void:
 	doll.airborne = mode == Mode.WALK and not is_on_floor()
 	doll.facing = (sled.global_basis * push_dir) if mode == Mode.GRIP else Vector3.ZERO
 	doll.rock_axis = Vector3.ZERO
+	doll.rock_turns = false
 	if mode == Mode.SIT:
 		var st := seats.seat(seat_i)
 		doll.facing = st.face
+		if st.kind == "beanbag" and _sit_stage == 2 and _stand_frame < 0:
+			# ビーズクッション: 座りきったら、体の向きが見ている向き（左右）についてくる（人形が 12 コマで回る。doll.gd の rock_turns）
+			var view := -global_basis.z
+			view.y = 0
+			doll.facing = view.normalized()
+			doll.rock_turns = true
 		doll.sit_stage = _sit_stage
 		doll.seat_drop = st.pos.y - st.floor
 		doll.seat_edge = st.edge

@@ -36,8 +36,9 @@ const ENTRIES := [[Vector2(-1.3, 9.2), Vector2(-1.1, 6.3)], [Vector2(1.3, 9.2), 
 const ROCK_AMP := 0.085       # 揺り椅子の揺れの角 (rad、片側)
 const ROCK_PERIOD := 2.2      # 揺り椅子の 1 往復 (s)
 const ROCK_PIVOT := Vector3(0.0, 1.435, 0.05)   # 揺り椅子の弓の円の中心（glb の座標。build_nook.py の R + 0.035 の高さ）
-const BEAN_SINK := 0.12       # ビーズクッション: 座ると袋がこれだけ（割合）低くつぶれる
-const BEAN_LEAN := 0.2        # ビーズクッション: うしろへもたれる角 (rad)
+const BEAN_SINK := 0.38       # ビーズクッション: 座ると袋がこれだけ（割合）低くつぶれ、横へ広がる（まわりの盛り上がりが下がり、脚が袋に入らない）
+const BEAN_BIG := 0.2         # ビーズクッション: 大きな人形（背 1.7 m の巨人）が座ると、これだけ多くつぶれる
+const BEAN_LEAN := 0.5        # ビーズクッション: うしろへもたれる角 (rad。太ももが袋の縁の上へ上がる)
 const SEAT_EDGE := {"sofa": 0.36, "rocker": 0.24, "beanbag": 0.3}   # 前へ出す前の値   # 腰の所から座面の前の縁まで (m)
 ## 腰の所を、glb の目印から前へ出す (m)。いちばん大きな巨人（golem）の背中が、背のクッション・背の棒に入らないように
 const SEAT_FORWARD := {"sofa": 0.11, "rocker": 0.08, "beanbag": 0.0}
@@ -45,7 +46,7 @@ const SEAT_BACK := {"sofa": 0.25, "rocker": 0.28, "beanbag": 0.4}   # 腰の所�
 const SEAT_SIZE := {"sofa": Vector2(0.86, 0.82), "rocker": Vector2(0.62, 0.5), "beanbag": Vector2(0.8, 0.7)}
 
 var _rockers: Array = []      # [品物, 置いた形, 座る所の目印]
-var _beans: Array = []        # [品物, 置いた形, 座る所の目印, いまのつぶれ 0〜1]
+var _beans: Array = []        # [品物, 置いた形, 座る所の目印, いまのつぶれ 0〜1, 座っている人形のつぶれの割合]
 var _k := -1
 
 
@@ -87,7 +88,7 @@ func _ready() -> void:
 			if kind == "rocker":
 				_rockers.append([item, item.transform, mk])
 			elif kind == "beanbag":
-				_beans.append([item, item.transform, mk, 0.0])
+				_beans.append([item, item.transform, mk, 0.0, BEAN_SINK])
 
 
 func _kind_of(glb: String) -> String:
@@ -181,7 +182,9 @@ func _process(_dt: float) -> void:
 		var d = _sitter(b[2])
 		var goal := 1.0 if d and d.sit_stage == 2 else (0.5 if d else 0.0)
 		b[3] = move_toward(b[3], goal, 0.34)   # 3 コマでつぶれる・ふくらむ
-		var s: float = b[3] * BEAN_SINK
+		if d:   # 大きな人形（巨人）ほど深くつぶれる（太い太ももが袋に入らない）
+			b[4] = BEAN_SINK + BEAN_BIG * clampf((d.height() - 1.2) / 0.5, 0.0, 1.0)
+		var s: float = b[3] * b[4]
 		(b[0] as Node3D).transform = (b[1] as Transform3D) * Transform3D(Basis.from_scale(Vector3(1.0 + s * 0.45, 1.0 - s, 1.0 + s * 0.45)), Vector3.ZERO)
 
 
