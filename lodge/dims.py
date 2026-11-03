@@ -145,10 +145,14 @@ PLAZA = dict(x0=ESTAIR["x0"] - 1.6, x1=VEST["x1"] + 0.8, y0=ESTAIR["y_foot"] - 1
 # （2026-11-02 代表「ミシン前の柱撤去してほしい。邪魔。」。梁は西の壁から通っている）
 COLS = [(gx(n), Y2_0 + 0.2) for n in (4, 6, 8, 10)]
 COL_D = 0.50
-_ir = round((FL2 - FL1) / 0.18)    # 内階段: 蹴上げ約 0.18、踏面 0.26、幅 1.6 m の 2 本。東の隅で踊り場を挟んで折り返す
-INSTAIR = dict(x1=X1 - LOG_D / 2, y_top=Y1 - LOG_D / 2, risers=_ir, n1=_ir // 2, tread=0.26, width=1.6, landing=1.6)
-INSTAIR["xm"] = INSTAIR["x1"] - INSTAIR["width"]          # 1 本目（東）と 2 本目（西）の境
-INSTAIR["x0"] = INSTAIR["xm"] - INSTAIR["width"]          # 2 本目の西の縁
+# 内階段: 蹴上げ約 0.18、踏面 0.26、幅 2.4 m の 2 本。東の隅で、北の壁ぎわの踊り場を挟んで折り返す。
+# 1 本目（のぼり口）は部屋の内側（西）を北へ、2 本目は東の壁ぎわを南へ上って 2 階に着く
+# （2026-11-03 代表「うち階段の幅をふやしてほしい。いま壁側をのぼって折り返しで内側に来ますが、これを逆にしてほしい」。
+# 幅は 1.6 → 2.4 m、踊り場の奥行きも幅にそろえて 2.4 m。2 階の床の穴は 2 本とも上にあける（代表の選んだ案 A）
+_ir = round((FL2 - FL1) / 0.18)
+INSTAIR = dict(x1=X1 - LOG_D / 2, y_top=Y1 - LOG_D / 2, risers=_ir, n1=_ir // 2, tread=0.26, width=2.4, landing=2.4)
+INSTAIR["xm"] = INSTAIR["x1"] - INSTAIR["width"]          # 1 本目（西）と 2 本目（東）の境
+INSTAIR["x0"] = INSTAIR["xm"] - INSTAIR["width"]          # 1 本目の西の縁
 INSTAIR["y_land"] = INSTAIR["y_top"] - INSTAIR["landing"]  # 踊り場の南の縁（北の壁際に踊り場）
 INSTAIR["y_bottom"] = INSTAIR["y_land"] - (INSTAIR["n1"] - 1) * INSTAIR["tread"]   # 1 本目の上り口（南）
 INSTAIR["z_land"] = FL1 + INSTAIR["n1"] * (FL2 - FL1) / _ir
@@ -176,7 +180,7 @@ STOOL = dict(step=0.80, y=WINDOW_BAR["y0"] + 0.50 + 0.38, seat=0.76, r=0.21)
 HEARTH = dict(w=6.0, back=2.1)
 HEARTH["front"] = Y1 - LOG_D / 2 - HEARTH["back"]   # 前の面（y）
 # 2 階
-TATAMI = dict(x0=gx(3.25), x1=gx(10.75), y0=gy(4.6), y1=gy(0.6), h=0.40)   # 小上がり
+TATAMI = dict(x0=gx(3.25), x1=gx(10.25), y0=gy(4.6), y1=gy(0.6), h=0.40)   # 小上がり。東の端は内階段の穴の手前（2026-11-03 gx(10.75) から削った）
 KOTATSU_W, KOTATSU_D = 1.2 * K, 0.7 * K
 KOTATSU = [(gx(3.9 + 1.7 * i), y) for y in (gy(3.4), gy(2.0)) for i in range(4)]   # 8 卓。南西の角
 PIT_DEPTH = 0.40

@@ -149,7 +149,7 @@ function drawStatic(g) {
     else if (t === "stair") {
       const [, x0, y0, x1, y1, xm, tread, n1, yl] = s;
       el("rect", { x: x0, y: -y1, width: x1 - x0, height: y1 - y0, fill: "#e9dcc2", stroke: "var(--wood-d)", "stroke-width": 0.05 }, g);
-      for (let i = 0; i < n1; i++) el("line", { x1: xm, y1: -(y0 + i * tread), x2: x1, y2: -(y0 + i * tread), stroke: "var(--wood-d)", "stroke-width": 0.03 }, g);
+      for (let i = 0; i < n1; i++) el("line", { x1: x0, y1: -(y0 + i * tread), x2: xm, y2: -(y0 + i * tread), stroke: "var(--wood-d)", "stroke-width": 0.03 }, g);
       el("line", { x1: xm, y1: -y0, x2: xm, y2: -yl, stroke: "var(--wood-d)", "stroke-width": 0.05 }, g);
     }
     else if (t === "label") {

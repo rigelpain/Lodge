@@ -79,3 +79,5 @@ Blender 5.2 を画面なしで動かす。外の素材は使わない。
 | `08-terrace-2f-before-after.jpg` | 2 階の西の端をテラスにした前（左）と後（右）。上から、南西の外から、南のテラスに立って、西の端に立って（ゲームの画面。`game/tools/terrace_shots.gd`） |
 | `08-terrace-2f-sit.jpg` `08-terrace-2f-sit-side.jpg` | テラスの椅子に人形を座らせた所。`-sit-side` は 7 体を 1 階の椅子（左）とテラスの椅子（右）に座らせた真横（`game/tools/sit_side_shots.gd --seats=chair,terrace`） |
 | `06-kotatsu-pendant.jpg` | こたつの上の吊り灯り（プリーツの筒。代表「まんなかの筒」）を見上げた所（左が昼、右が夜） |
+| `07-instair-plan.jpg` | 内階段の案（上から見た間取り。左が前、まんなかが案 B、右が案 A。代表は案 A を選んだ） |
+| `07-instair-before-after-1.jpg` `-2.jpg` | 内階段の前と後（ゲームの画面。左が前、右が後）。幅 1.6 → 2.4 m、内側からのぼって東の壁ぎわで 2 階へ |
