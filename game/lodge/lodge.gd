@@ -59,6 +59,7 @@ func _ready() -> void:
 		"fire": fire,
 		"metal": _metal(),
 		"dark": Look.felt(Color(0.17, 0.16, 0.16), 2.0),   # 雪落としのマット、自販機の口
+		"glass": _glass(),                                   # 窓・ガラスの壁・戸のガラス（glb の濃い藍で 32% は暗く、外が見えにくかった）
 	}
 	for n in find_children("*", "MeshInstance3D", true, false):
 		var mi: MeshInstance3D = n
@@ -262,6 +263,24 @@ static func _plank_images(across: bool) -> Array:
 	bump.generate_mipmaps()
 	_plank_maps[across] = [ImageTexture.create_from_image(img), ImageTexture.create_from_image(bump)]
 	return _plank_maps[across]
+
+
+## ガラス: ほとんど透けて、外の雪と空が見える。淡い水色をわずかにのせ、縁の照り返しで「ガラスがある」と分かる程度に
+## （2026-11-03 代表「ロッジのガラスの透明度を挙げられますか？」）
+static func _glass() -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(0.86, 0.93, 1.0, GLASS_ALPHA)
+	m.roughness = 0.05
+	m.metallic_specular = 0.7
+	m.rim_enabled = true   # 斜めから見ると少し白く光る（板ガラスの縁の照り返し）
+	m.rim = 0.25
+	m.rim_tint = 0.0
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED   # 中からも外からも同じに見える
+	return m
+
+
+const GLASS_ALPHA := 0.10   # ガラスの濃さ（0 で何もない、1 で不透明）
 
 
 static func _metal() -> StandardMaterial3D:
