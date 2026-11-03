@@ -7,6 +7,8 @@ extends SceneTree
 ##   menu.png         F で開いた、服を染める画面（もとの色）
 ##   menu_part<n>.png 部位 n（1〜4）を選んで、その部位に色を入れたところ（人形のその部位が脈打つ。染め代が部位の数で上がる）
 ##   menu_pick.png    4 部位とも色を選んだところ（見本の人形が染まる。染め代の札が押せる）
+##   menu_bleach.png  染めたあと、2 番目と 4 番目の部位の下の丸い布を押して脱色したところ（見本の人形のその部位がもとの色に）
+##   bleached_menu.png 脱色を染めたあと（2 部位ぶんの染め代）
 ##   dyed_tp.png      染めたあと、三人称（うしろから、少し横に回って）。桶の液も同じ色に
 ##   dyed_fp.png      同じく一人称（袖と手も染まる）
 ##   dyed_vat.png     染めたあとの染め桶（液と縁の布が、染めた色に）
@@ -114,6 +116,19 @@ func _run() -> void:
 	print("同じ色でもう一度（断られるはず）: ", _dye(p.id, p.doll.kind, main.craft.dye_colors(p.doll.kind, ui._pick)))
 	await _wait(1.5)
 	await _shot("dyed_menu")
+	ui.bleach(1)   # 2 番目と 4 番目を脱色（もとの色に戻す）
+	ui.bleach(3)
+	ui._glow = 0.0
+	await _wait(0.5)
+	await _shot("menu_bleach")
+	before = main.craft.wallet(p.id)
+	print("脱色（2 部位）: ", _dye(p.id, p.doll.kind, main.craft.dye_colors(p.doll.kind, ui._pick)), " 財布 ", before, " → ", main.craft.wallet(p.id),
+			" 服 ", main.craft.outfits[p.id].get(p.doll.kind))
+	await _wait(1.5)
+	await _shot("bleached_menu")
+	for i in 4:   # 次の 7 体の撮影のために、もう一度 4 部位とも染めた色に
+		ui._pick[i] = Color(DYES[p.doll.kind][i])
+	_dye(p.id, p.doll.kind, main.craft.dye_colors(p.doll.kind, ui._pick))
 	ui.close()
 	p.set_third(true)
 	p.rotation.y = v.global_rotation.y + PI * 0.8

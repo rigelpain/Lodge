@@ -4,11 +4,12 @@ extends CanvasLayer
 ##   右上: 染める部位の見本 4 枚（主の色・2 番目・3 番目・4 番目。outfit.gd の PARTS）。押した部位を染める。見本の右下の折り返しが、もとの色。
 ##       見本を押す・見本に乗ると、札の中の人形のその部位が明るく脈打つ（どこを染めるかを、文字でなく人形の上で指す）
 ##   右: 色の輪（まわりで色合い、外ほど鮮やか）と、明るさの帯。色は自由に選べる（2026-11-01 代表「自由に選ぶ」）。
-##       輪の下の小さな布は「もとの色に戻す」。
+##   見本の下の小さな丸い布は、その部位の「脱色」（もとの色に戻す）。もとの色の布に戻る矢印。染めてある部位だけ押せる
+##       （2026-11-03 代表「デフォルトカラーに戻す脱色を各部位でできるようにしてほしい」）。戻すのも 1 部位の染めとして染め代に入る
 ##   右下: 染める札（桶の絵と、染め代のボタン）。色ではなく 1 回ごとに染め代を払う。染め代は、変える部位の数で上がる（craft.gd の
 ##       DYE_PRICES。桶の下に、変える部位の新しい色の小さな布が並ぶ）。何も変えていなければ押せない。足りなければ値段が赤い。
 ##       染めると、みんなの画面でその人の人形が染まる（craft.gd の出来事 dye）
-##   閉じるのは右上の × の縫い目か、F か Esc。Tab で部位を替え、←→ で色合い、↑↓ で明るさ、Enter で染める
+##   閉じるのは右上の × の縫い目か、F か Esc。Tab で部位を替え、←→ で色合い、↑↓ で明るさ、Backspace で脱色、Enter で染める
 
 const Doll := preload("res://doll.gd")
 const Outfit := preload("res://outfit.gd")
@@ -43,7 +44,7 @@ var _wheel_c := Vector2.ZERO
 var _wheel_r := 1.0
 var _value_rect := Rect2()
 var _swatches: Array[Rect2] = []
-var _undo_rect := Rect2()
+var _bleaches: Array[Rect2] = []   # 見本の下の、部位ごとの脱色の布
 var _dye_rect := Rect2()
 var _close_rect := Rect2()
 
@@ -198,7 +199,10 @@ func _process(dt: float) -> void:
 	_pop = maxf(0.0, _pop - dt * 2.5)
 	_glow = maxf(0.0, _glow - dt)
 	if _mat:   # 見本に乗っている部位か、選んだばかりの部位を、人形の上で光らせる
-		var on := int(_hover.trim_prefix("swatch")) if _hover.begins_with("swatch") else (_cloth if _glow > 0.0 else -1)
+		var on := _cloth if _glow > 0.0 else -1
+		for pre in ["swatch", "bleach"]:
+			if _hover.begins_with(pre):
+				on = int(_hover.trim_prefix(pre))
 		Outfit.glow(_mat, on)
 	var f := Doll.frame_index()
 	if f != _frame and _spin:   # 12 コマでゆっくり回す
@@ -228,21 +232,22 @@ func _draw_on(ci: Control) -> void:
 	var rx := card.end.x + 48.0 * u
 	var n := _pick.size()
 	var sw := 74.0 * u
+	var bs := 30.0 * u
 	_swatches.clear()
+	_bleaches.clear()
 	for i in n:
-		var sr := Rect2(Vector2(rx + i * (sw + 26.0 * u), r.position.y + 40.0 * u), Vector2(sw, sw))
+		var sr := Rect2(Vector2(rx + i * (sw + 26.0 * u), r.position.y + 34.0 * u), Vector2(sw, sw))
 		_swatches.append(sr)
 		_swatch(ci, sr, i, u)
+		var br := Rect2(Vector2(sr.get_center().x - bs / 2.0, sr.end.y + 8.0 * u), Vector2(bs, bs))
+		_bleaches.append(br)
+		_bleach(ci, br, i, u)
 	# 右: 色の輪と明るさの帯
 	_wheel_r = minf(150.0 * u, (r.end.y - (r.position.y + 150.0 * u) - 40.0 * u) / 2.0)
 	_wheel_c = Vector2(rx + _wheel_r + 4.0 * u, r.position.y + 150.0 * u + _wheel_r)
 	_wheel(ci, u)
 	_value_rect = Rect2(Vector2(_wheel_c.x + _wheel_r + 34.0 * u, _wheel_c.y - _wheel_r), Vector2(30.0 * u, _wheel_r * 2.0))
 	_value(ci, u)
-	# 輪の左下: もとの色に戻す小さな布
-	var us := 44.0 * u
-	_undo_rect = Rect2(Vector2(_wheel_c.x - _wheel_r - 6.0 * u, _wheel_c.y + _wheel_r - us + 6.0 * u), Vector2(us, us))
-	_undo(ci, u)
 	# 右下: 染める札（桶の絵と染め代）
 	var dw := 150.0 * u
 	var dh := 200.0 * u
@@ -326,15 +331,25 @@ func _value(ci: CanvasItem, u: float) -> void:
 	ci.draw_circle(Vector2(r.end.x + 10.0 * u, y), 5.5 * u, Icons.RED)
 
 
-## もとの色に戻す: もとの色の小さな布と、戻る矢印
-func _undo(ci: CanvasItem, u: float) -> void:
-	var sr := _undo_rect
-	var a := 1.0 if _pick[_cloth] is Color else 0.4
+## 部位 i の脱色（もとの色に戻す）: もとの色の小さな丸い布と、戻る矢印。染めてある（選んでいる色がある）ときだけ濃い
+func _bleach(ci: CanvasItem, sr: Rect2, i: int, u: float) -> void:
+	var a := 1.0 if _pick[i] is Color else 0.3
 	Icons.screen()
-	var grow := 1.08 if _hover == "undo" and a > 0.5 else 1.0
+	var grow := 1.12 if _hover == "bleach%d" % i and a > 0.5 else 1.0
 	var c := sr.get_center()
-	Icons.patch(ci, Icons.circ(c, sr.size.x * 0.5 * grow, 20), Outfit.base_color(_kind, _cloth), a, true)
-	Icons.arc_arrow(ci, c, sr.size.x * 0.3, PI * 0.15, PI * 1.55, Icons.CAP, a, 3.0 * u)
+	Icons.patch(ci, Icons.circ(c, sr.size.x * 0.5 * grow, 18), Outfit.base_color(_kind, i), a, true)
+	Icons.arc_arrow(ci, c, sr.size.x * 0.3, PI * 0.15, PI * 1.55, Icons.CAP, a, 2.4 * u)
+
+
+## 部位 i を脱色する（もとの色に戻す。染めるのは桶の札を押してから）
+func bleach(i: int) -> void:
+	if i < 0 or i >= _pick.size():
+		return
+	_cloth = i
+	_glow = GLOW
+	_pick[i] = null
+	_take_hsv()
+	_show_pick()
 
 
 ## 染める札: 紙の札に、桶の絵（布はいま選んだ色）と、変える部位の新しい色の小さな布の並び（数が多いほど染め代が上がる）と、
@@ -382,8 +397,9 @@ func _hit(p: Vector2) -> String:
 		return "close"
 	if _dye_rect.has_point(p):
 		return "dye"
-	if _undo_rect.has_point(p):
-		return "undo"
+	for i in _bleaches.size():
+		if _bleaches[i].grow(4.0).has_point(p):
+			return "bleach%d" % i
 	for i in _swatches.size():
 		if _swatches[i].has_point(p):
 			return "swatch%d" % i
@@ -430,6 +446,9 @@ func _input(e: InputEvent) -> void:
 			KEY_S, KEY_DOWN:
 				_hsv.z = maxf(V_MIN, _hsv.z - 0.05)
 				_set_from_hsv()
+			KEY_BACKSPACE, KEY_DELETE:
+				if not e.echo:
+					bleach(_cloth)
 			KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
 				if not e.echo:
 					dye()
@@ -450,10 +469,6 @@ func _input(e: InputEvent) -> void:
 				close()
 			"dye":
 				dye()
-			"undo":
-				_pick[_cloth] = null
-				_take_hsv()
-				_show_pick()
 			"wheel", "value":
 				_drag = h
 				_drag_to(e.position)
@@ -462,3 +477,5 @@ func _input(e: InputEvent) -> void:
 					_cloth = int(h.trim_prefix("swatch"))
 					_glow = GLOW
 					_take_hsv()
+				elif h.begins_with("bleach"):
+					bleach(int(h.trim_prefix("bleach")))
