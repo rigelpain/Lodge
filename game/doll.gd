@@ -125,6 +125,11 @@ var spin_at := Vector3.ZERO  # 回る中心（世界。胴の真ん中）
 var rock_axis := Vector3.ZERO
 var rock := 0.0              # その軸まわりに傾いた角 (rad)
 var rock_at := Vector3.ZERO  # 傾く中心（世界。揺り椅子の弓の円の中心、ビーズクッションは腰）
+## ビーズクッション: 座っているあいだ、体の向きが見ている向き（facing）についてくる（2026-11-03 代表「全方位に向かって座れるから」）。
+## 向きは人形と同じ 12 コマ／秒で、1 コマに TURN_STEP まで回る（沈んだまま、もぞもぞ向きを変える）。もたれ（rock）の軸も体の向きから決める。
+## 持ち主が毎フレーム入れる（つないだ人へは net.gd の "rt"）
+var rock_turns := false
+const TURN_STEP := 0.45      # 座ったまま向きを変えるとき、1 コマに回る角 (rad)
 var drum_fit := 1.0          # 乾燥機の胴の中で、人形を小さくする倍（胴に収まらない大きな人形。dryer_flop.gd。持ち主が毎フレーム入れる）
 var flop := {}               # 胴の中で、手足と頭が戸の向きのまわりにぶらぶら振れる角 (rad。dryer_flop.gd の arm.L・leg.R・head など)
 var _foot_shade: Decal       # 足もとの影（胴の中では隠す）
@@ -169,6 +174,7 @@ var _idle_t := 0.0           # 立ち止まりの揺れの時計（暖かいと�
 var _next_out := 0
 var _frame := -1
 var _yaw := 0.0
+var _turn_frame := -1
 var _last := Vector3.INF
 var _speed := 0.0
 var _phase := 0.0
@@ -516,6 +522,12 @@ func _apply() -> void:
 	var sk := _id("skirt")
 	if sk >= 0:
 		skel.set_bone_pose_scale(sk, Vector3(1, _squash, 1))
+		# 体ごとうしろへもたれる席（ビーズクッション）: 裾だけはもたれを打ち消して水平に（広がった裾のうしろが床を抜けない。座面に広がる）
+		var q := Quaternion.IDENTITY
+		if act == Act.SIT and rock_axis != Vector3.ZERO and absf(rock) > 0.1:
+			var hb := skel.get_bone_global_pose(skel.get_bone_parent(sk)).basis.orthonormalized()
+			q = Quaternion(hb.inverse() * Basis(Vector3.RIGHT, -rock) * hb)
+		skel.set_bone_pose_rotation(sk, q)
 	# 手形のワッペンを出している手は、元の手を隠す（2026-11-02 代表「エモートで手のワッペン出すとき、元のキャラの手は一時的に
 	# 消してほしい。どっちもあると意味わからない」）。手の骨を手首へ縮める。手に付けた物（雪玉・小窓の持ち物）も一緒に隠れる。
 	# 手形の置き所と同じく姿勢のコマで決まるので、手形が出るコマに消え、手形が消えるコマに戻る（どの画面でも同じコマ）
@@ -1076,14 +1088,24 @@ func _physics_process(dt: float) -> void:
 		var f := facing if facing != Vector3.ZERO else -host.global_basis.z
 		f.y = 0
 		if f.length() > 0.01:
-			_yaw = lerp_angle(_yaw, atan2(-f.x, -f.z), 1.0 - exp(-dt * 14.0))
+			if rock_turns and act == Act.SIT and sit_stage == 2:
+				# 座ったまま向きを変える: コマが進んだときだけ、見ている向きへ TURN_STEP まで回る（コマのあいだは止める）
+				var fk := frame_index()
+				if fk != _turn_frame:
+					_turn_frame = fk
+					var d := wrapf(atan2(-f.x, -f.z) - _yaw, -PI, PI)
+					_yaw += clampf(d, -TURN_STEP, TURN_STEP)
+			else:
+				_yaw = lerp_angle(_yaw, atan2(-f.x, -f.z), 1.0 - exp(-dt * 14.0))
 		b = Basis(Vector3.UP, _yaw)
 	if spin_axis != Vector3.ZERO:
 		var r := Basis(spin_axis.normalized(), spin)
 		b = r * b
 		pos = spin_at + r * (pos - spin_at)
 	if rock_axis != Vector3.ZERO and rock != 0.0:
-		var r := Basis(rock_axis.normalized(), rock)
+		# 向きについてくる席（ビーズクッション）では、もたれの軸も体の向きから（体の右＝前 × 上）
+		var ax := Basis(Vector3.UP, _yaw) * Vector3.RIGHT if rock_turns else rock_axis.normalized()
+		var r := Basis(ax, rock)
 		b = r * b
 		pos = rock_at + r * (pos - rock_at)
 	if drum_fit != 1.0:

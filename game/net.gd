@@ -282,6 +282,7 @@ func _my_state() -> Dictionary:
 		s["ra"] = d.rock_axis
 		s["rk"] = d.rock
 		s["rp"] = d.rock_at
+		s["rt"] = d.rock_turns
 	# 体の調子: 紙の水（damp.gd、整数）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
 	if main.damp:
 		s["dw"] = int(roundf(main.damp.water_of(p.id)))
