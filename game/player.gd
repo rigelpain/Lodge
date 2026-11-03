@@ -936,7 +936,11 @@ func _send_point(force: bool) -> void:
 
 ## 小さな段差（STEP_UP まで）は、歩くだけで乗り上げる。
 ## 前がふさがっていて、持ち上げると前へ進め、その先に平らな床があるときだけ体を持ち上げる（壁やソリには上らない）。
-## 前をふさいでいるのが歩ける斜面なら段差ではない（斜面を段差と見て持ち上げては落ちると、視点が震える）
+## 前をふさいでいるのが歩ける斜面なら段差ではない（斜面を段差と見て持ち上げては落ちると、視点が震える）。
+## 歩ける斜面かどうかは、move_and_slide が床とみなす傾き（floor_max_angle）と同じで見る。違うと、その間の傾きの縁
+## （雪から 12〜14 cm 出た段の縁に体の丸い底が当たるとき）で、段とも斜面ともみなされず、そこで止まってしまう。
+## 前が上りの雪の坂なら、坂に沿って進めた先も見る（雪の坂の途中から段が出ていると、真横へ動かすと坂に当たって段に気づかない）。
+## 2026-11-03 代表「看板の当たり判定大きく感じる、変につまずく」: ロッジの前の広場の縁の段（道しるべの立っていた所）で止まっていた
 func _step_up(dir: Vector3) -> void:
 	if dir.length() < 0.1:
 		return
@@ -944,8 +948,11 @@ func _step_up(dir: Vector3) -> void:
 	var block := KinematicCollision3D.new()
 	if not test_move(global_transform, ahead, block):
 		return
-	if block.get_normal().y > 0.6:
-		return
+	var walkable := cos(floor_max_angle)
+	if block.get_normal().y >= walkable:
+		ahead = ahead.slide(block.get_normal())
+		if not test_move(global_transform, ahead, block) or block.get_normal().y >= walkable:
+			return
 	var up := Vector3(0, STEP_UP, 0)
 	if test_move(global_transform, up):
 		return
@@ -957,7 +964,7 @@ func _step_up(dir: Vector3) -> void:
 		return
 	if col.get_normal().y < 0.7 or col.get_collider() is RigidBody3D:
 		return
-	var rise := STEP_UP - col.get_travel().length()
+	var rise := STEP_UP + ahead.y - col.get_travel().length()
 	if rise > 0.02:
 		global_position.y += rise + 0.01
 		# 体は一気に上がっても、視点はすっと追いつく（カメラを同じ高さに残し、_place_camera が戻す）
