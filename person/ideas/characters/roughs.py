@@ -1044,13 +1044,16 @@ def build_musha():
     part("hakama", "felt_indigo", lambda m: sheet_cone(m, [(0.13, 0.27), (0.155, 0.17), (0.17, 0.105)], n=48, sy=0.86), solid=0.008, fuzz=0.003)
     for s in (1, -1):
         lc = V(0.066 * s, 0.008, 0)
-        part("suneate", "felt_indigo2", lambda m, lc=lc: C.tube(m, [lc + V(0, 0, 0.15), lc + V(0, 0.006, 0.05)], [0.052, 0.049], sides=14), subsurf=1, fuzz=0.003)
+        sn = part("suneate", "felt_indigo2", lambda m, lc=lc: C.tube(m, [lc + V(0, 0, 0.15), lc + V(0, 0.006, 0.05)], [0.052, 0.049], sides=14), subsurf=1, fuzz=0.003)
+        # 縫い目と紐は、角を丸めて細くなった脛当ての面へ外から落として置く（決まった半径だと 6〜11 mm 浮いた）。縫い目は丸まった上下の端にかからない高さだけ
         for a in (60, 90, 120):
             aa = math.radians(a)
             o = V(math.cos(aa), math.sin(aa), 0)
-            ln = [lc + o * 0.056 + V(0, 0, z) for z in (0.14, 0.11, 0.08, 0.06)]
-            stitch("sune_st", ln, [o] * 4, "thread_cream", dash=0.012, gap=0.008, r=0.0024)
-        rope("sune_tie", "yarn_red", [lc + V(math.cos(a) * 0.056, math.sin(a) * 0.056, 0.135) for a in [2 * math.pi * k / 24 for k in range(25)]], r=0.005, sides=6)
+            res = cast_many(sn, [lc + o * 0.5 + V(0, 0, z) for z in (0.13, 0.11, 0.09, 0.075)], [-o] * 4)
+            stitch("sune_st", [p + nn * 0.0015 for p, nn in res], [nn for _, nn in res], "thread_cream", dash=0.012, gap=0.008, r=0.0024)
+        outs = [V(math.cos(a), math.sin(a), 0) for a in [2 * math.pi * k / 24 for k in range(25)]]
+        res = cast_many(sn, [lc + o * 0.5 + V(0, 0, 0.135) for o in outs], [-o for o in outs])
+        rope("sune_tie", "yarn_red", [p + nn * 0.003 for p, nn in res], r=0.005, sides=6)
         part("tabi", "felt_cream2", lambda m, s=s: blob(m, V(0.066 * s, 0.032, 0.03), (0.047, 0.066, 0.03), 2.4, 2.4), fuzz=0.003)
         coil = [V(0.066 * s + math.cos(a) * (0.012 + 0.032 * a / 18.8) * 0.85, 0.032 + math.sin(a) * (0.012 + 0.032 * a / 18.8) * 1.25, 0.004) for a in [k * 0.3 for k in range(63)]]
         rope("waraji", "hemp", coil, r=0.0045, sides=6)
@@ -1264,15 +1267,16 @@ PATCH_FABRICS = [("felt_denim", "thread_cream"), ("felt_indigo2", "thread_cream"
                  ("print", "thread_red"), ("felt_rust", "thread_cream"), ("felt_boot", "thread_cream")]
 
 
-def seam_ring(name, c, axis, r, n=12, size=0.011):
-    """手足を胴に縫いつけた輪: 太い十字縫いをぐるりと"""
+def seam_ring(name, ob, c, axis, n=12, size=0.011):
+    """手足を胴に縫いつけた輪: 太い十字縫いをぐるりと。c を通る輪の向きから、ob（腕・脚）の面へ外から落として置く。
+    前は決まった半径の輪にしていて、角を丸めて細くなった腕（とくに丸まった手首の端）から 1〜3 cm 浮いた（2026-11-03 代表「ゴーレムの腕の縫い目が浮いてる」）"""
     axis = Vector(axis).normalized()
     e1, e2 = tangent_frame(axis)
+    outs = [e1 * math.cos(2 * math.pi * k / n) + e2 * math.sin(2 * math.pi * k / n) for k in range(n)]
+    res = cast_many(ob, [Vector(c) + o * 0.5 for o in outs], [-o for o in outs])
     m = C.M(name, "yarn_cream", "doll")
-    for k in range(n):
-        a = 2 * math.pi * k / n
-        o = e1 * math.cos(a) + e2 * math.sin(a)
-        xstitch(m, Vector(c) + o * r, o, size, 0.004)
+    for p, nn in res:
+        xstitch(m, p + nn * 0.0015, nn, size, 0.004)
     m.done(smooth=True)
 
 
@@ -1288,7 +1292,7 @@ def build_golem():
         leg = part("leg", "felt_grey", lambda m, s=s: blob(m, V(0.17 * s, 0.0, 0.25), (0.125, 0.125, 0.13), 2.6, 2.4, 6), fuzz=0.004)
         patch_on("leg_patch", PATCH_FABRICS[(3 + s) % 11][0], leg, V(0.17 * s, 0.4, 0.25), V(0, -1, 0), V(1, 0, 0), V(0, 0, 1), 0.12, 0.1,
                  PATCH_FABRICS[(3 + s) % 11][1], style="x", rot=0.15 * s, n=6)
-        seam_ring("hip_seam", V(0.17 * s, 0.0, 0.345), V(0, 0, 1), 0.118, 14)
+        seam_ring("hip_seam", leg, V(0.17 * s, 0.0, 0.345), V(0, 0, 1), 14)
     # 腰: 幅の広い塊と、太い麻縄
     pelvis = part("pelvis", "felt_grey", lambda m: blob(m, V(0, 0.01, 0.42), (0.31, 0.22, 0.12), 3.0, 2.6, 7), fuzz=0.004)
     # 胴: 大きな樽。少し前へかがむ
@@ -1333,8 +1337,8 @@ def build_golem():
         ax = (wr - el).normalized()
         patch_on("arm_patch", PATCH_FABRICS[(7 + s) % 11][0], arm, el.lerp(wr, 0.5) + out * 0.4, -out, ax, ax.cross(out).normalized(), 0.13, 0.12,
                  PATCH_FABRICS[(7 + s) % 11][1], style="run", n=6)
-        seam_ring("arm_seam", sh + (el - sh) * 0.18, el - sh, 0.128, 14)
-        seam_ring("wrist_seam", wr + (el - wr) * 0.33, wr - el, 0.142, 14)
+        seam_ring("arm_seam", arm, sh + (el - sh) * 0.18, el - sh, 14)
+        seam_ring("wrist_seam", arm, wr + (el - wr) * 0.33, wr - el, 14)
         fc = wr + V(0, 0.025, -0.075)
         part("fist", "crumple", lambda m, fc=fc, s=s: crumple_ball(m, fc, (0.12, 0.11, 0.13), 0.012, 5.0, 3, 4.0 + s), smooth=False)
         part("thumb", "crumple", lambda m, fc=fc, s=s: crumple_ball(m, fc + V(-0.1 * s, 0.07, 0.03), (0.04, 0.045, 0.06), 0.006, 6.0, 2, 6.0 + s), smooth=False)
@@ -1348,8 +1352,8 @@ def build_golem():
     ribbon(m_s, [V(-0.06, 0.22, 1.05), V(-0.08, 0.3, 0.95), V(-0.085, 0.33, 0.84)], 0.07, [V(1, 0, 0)] * 3)
     o = m_s.done()
     o.modifiers.new("sol", "SOLIDIFY").thickness = 0.012
-    sc = [V(-0.085 + 0.032 * u, 0.335, 0.86) for u in (-1, -0.5, 0, 0.5, 1)]
-    stitch("scarf_st", sc, [V(0, 1, 0)] * 5, "thread_cream", dash=0.012, gap=0.008, r=0.0026)
+    sc, sn = on_surface(o, [V(-0.085 + 0.032 * u, 0.335, 0.86) for u in (-1, -0.5, 0, 0.5, 1)], lift=0.0015)   # 首巻きの端の面に沿わせる
+    stitch("scarf_st", sc, sn, "thread_cream", dash=0.012, gap=0.008, r=0.0026)
     for s in (1, -1):
         p, n = hit(head, hc + V(s * 0.03, 0.5, 0.005), V(0, -1, 0))
         rope("eye", "thread_ink", [p + V(-0.012, 0, 0) + n * 0.002, p + n * 0.003, p + V(0.012, 0, 0) + n * 0.002], r=0.0035, sides=6)

@@ -93,12 +93,11 @@ RULES = {
         (("scarf",), ("rigid", "neck")),
         (("pelvis", "waist_rope", "rope_"), ("rigid", "hips")),
         (("torso", "body_patch"), ("bend", ["chest", "hips"])),
-        (("shoulder", "snow_sh", "arm_seam"), ("side", "upper_arm")),
-        (("wrist_seam",), ("side", "forearm")),
-        (("arm",), ("arm",)),
+        (("shoulder", "snow_sh"), ("side", "upper_arm")),
+        # 肩口・手首・腰の十字縫いの輪は、下の腕・脚と同じに骨に沿って曲げる（1 本の骨に固定すると、曲げたとき腕の面から離れた）
+        (("arm", "wrist_seam"), ("arm",)),
         (("fist", "thumb"), ("side", "hand")),
-        (("hip_seam",), ("side", "thigh")),
-        (("leg",), ("leg",)),
+        (("leg", "hip_seam"), ("leg",)),
         (("foot",), ("side", "foot")),
     ],
     "yamaotoko": [
