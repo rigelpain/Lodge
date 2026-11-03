@@ -17,6 +17,8 @@ HEX = {
     "cushion": "C98A67", "quilt": "B45A4A", "paper": "F5D6A0", "felt_red": "B45A4A",
     "felt_blue": "4C6FA8", "felt_green": "7C9A5C", "felt_yellow": "D7A24A", "tree": "3E5C48",
     "trunk": "5C3B23", "fire": "FF8A3A", "far": "A9BCD6", "floor": "9A714A", "ceiling": "C8A26C",
+    # 出入り口のマット: 外は棕櫚（ゲームでは lodge.gd が目の粗い編みの素材に）と濃い縁、中は裂き織りと生成りの房
+    "mat_out": "8C6A3E", "mat_out_edge": "3B2A1E", "mat_in": "9A5A4A", "mat_fringe": "E6DCC4",
 }
 
 

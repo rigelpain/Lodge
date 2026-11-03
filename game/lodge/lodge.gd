@@ -59,6 +59,12 @@ func _ready() -> void:
 		"fire": fire,
 		"metal": _metal(),
 		"dark": Look.felt(Color(0.17, 0.16, 0.16), 2.0),   # 雪落としのマット、自販機の口
+		# 出入り口のマット（2026-11-03 代表「出入り口の内外にマット敷きましょう」）: 外は雪を落とす目の粗い棕櫚と濃い縁の布、
+		# 中は布を裂いて織った柔らかい裂き織りと、生成りの房
+		"mat_out": _doormat(false),
+		"mat_out_edge": Look.cloth(Color(0.20, 0.14, 0.10), 14.0),
+		"mat_in": _doormat(true),
+		"mat_fringe": Look.cloth(Color(0.80, 0.74, 0.62), 30.0),
 		"glass": _glass(),                                   # 窓・ガラスの壁・戸のガラス（glb の濃い藍で 32% は暗く、外が見えにくかった）
 	}
 	for n in find_children("*", "MeshInstance3D", true, false):
@@ -263,6 +269,96 @@ static func _plank_images(across: bool) -> Array:
 	bump.generate_mipmaps()
 	_plank_maps[across] = [ImageTexture.create_from_image(img), ImageTexture.create_from_image(bump)]
 	return _plank_maps[across]
+
+
+static var _doormat_maps := {}   # rag → [色の絵, 凹凸の絵]
+
+
+## 出入り口のマット。rag でなければ棕櫚: 太い繊維の束を縦と横に交互に詰めた目の粗い網代（1 目 2 cm）、繊維の筋と毛羽、
+## 束の境は深い溝。rag なら裂き織り: 裂いた布の横糸を 1 段ずつ打ち込み、布の色が数段ずつ替わる縞。たて糸の上下で横糸がうねる
+static func _doormat(rag: bool) -> StandardMaterial3D:
+	var maps := _doormat_images(rag)
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = maps[0]
+	m.normal_enabled = true
+	m.normal_texture = maps[1]
+	m.normal_scale = 1.6 if not rag else 1.0
+	m.roughness = 1.0
+	m.uv1_triplanar = true
+	m.uv1_scale = Vector3.ONE * (4.0 if not rag else 1.6)   # 棕櫚は 25 cm、裂き織りは 62 cm でひと巡り
+	m.rim_enabled = true   # 毛羽が縁で光る（フェルトと同じ）
+	m.rim = 0.35 if not rag else 0.45
+	m.rim_tint = 0.6
+	return m
+
+
+static func _doormat_images(rag: bool) -> Array:
+	if _doormat_maps.has(rag):
+		return _doormat_maps[rag]
+	var n := 256
+	var img := Image.create(n, n, false, Image.FORMAT_RGB8)
+	var bump := Image.create(n, n, false, Image.FORMAT_RGB8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 23 if rag else 17
+	if not rag:
+		var cell := 16
+		var cells := n / cell
+		var tone: Array[float] = []
+		for i in cells * cells:
+			tone.append(rng.randf_range(0.82, 1.12))
+		var fib: Array[float] = []   # 繊維 1 本ずつの明るさ（束の中の筋）
+		for i in n * 4:
+			fib.append(rng.randf_range(0.70, 1.20))
+		for y in n:
+			for x in n:
+				var cx := x / cell
+				var cy := y / cell
+				var across := (cx + cy) % 2 == 0   # 束の向きを 1 目ごとに替える
+				var u := x % cell
+				var v := y % cell
+				var f: float = fib[(y + cx * 37) % (n * 4)] if across else fib[(x + cy * 53 + n) % (n * 4)]
+				var t: float = tone[cy * cells + cx]
+				var w := float(v if across else u) / float(cell - 1)   # 束の幅の中の位置（端ほど沈む）
+				var dome := sin(w * PI)
+				var hair := rng.randf_range(-0.10, 0.10)
+				var k := clampf(t * f * (0.55 + 0.45 * dome) + hair, 0.0, 1.4)
+				img.set_pixel(x, y, Color(0.45 * k, 0.35 * k, 0.23 * k))   # 棕櫚の枯れた茶（橙に寄せない）
+				var h := clampf(0.15 + 0.75 * dome * (0.85 + 0.3 * (f - 0.95)) + hair * 0.6, 0.0, 1.0)
+				bump.set_pixel(x, y, Color(h, h, h))
+	else:
+		# 布の色（くすんだ藍・錆・黄土・生成り・苔・小豆）。数段ずつ同じ布が続き、段ごとに少し濃さが違う
+		var cloths := [Color(0.24, 0.30, 0.45), Color(0.60, 0.30, 0.22), Color(0.70, 0.52, 0.25), Color(0.80, 0.74, 0.62),
+				Color(0.38, 0.45, 0.30), Color(0.45, 0.24, 0.28)]
+		var row := 4
+		var rows := n / row
+		var col: Array[Color] = []
+		var phase: Array[float] = []
+		var left := 0
+		var pick := 0
+		for r in rows:
+			if left <= 0:
+				pick = (pick + 1 + rng.randi_range(0, cloths.size() - 2)) % cloths.size()
+				left = rng.randi_range(2, 7)
+			left -= 1
+			col.append((cloths[pick] as Color) * rng.randf_range(0.86, 1.08))
+			phase.append(rng.randf_range(0.0, TAU))
+		for y in n:
+			for x in n:
+				var r := y / row
+				var v := float(y % row) / float(row - 1)
+				var warp := (x / 4 + r) % 2 == 0   # たて糸の上を通るか下をくぐるか
+				var twist := 0.5 + 0.5 * sin(float(x) * 0.55 + phase[r])   # 裂いた布のよじれ
+				var dome := sin(v * PI)
+				var k := (0.62 + 0.38 * dome) * (1.0 if warp else 0.86) * (0.9 + 0.2 * twist) + rng.randf_range(-0.04, 0.04)
+				var c: Color = col[r] * k
+				img.set_pixel(x, y, Color(c.r, c.g, c.b))
+				var h := clampf(0.2 + 0.6 * dome * (1.0 if warp else 0.8) + 0.1 * twist, 0.0, 1.0)
+				bump.set_pixel(x, y, Color(h, h, h))
+	bump.bump_map_to_normal_map(6.0 if not rag else 4.0)
+	img.generate_mipmaps()
+	bump.generate_mipmaps()
+	_doormat_maps[rag] = [ImageTexture.create_from_image(img), ImageTexture.create_from_image(bump)]
+	return _doormat_maps[rag]
 
 
 ## ガラス: ほとんど透けて、外の雪と空が見える。淡い水色をわずかにのせ、縁の照り返しで「ガラスがある」と分かる程度に
