@@ -17,7 +17,7 @@
 | `drawings/daihyo.svg` | 代表の図面 |
 | `renders/` | 描いた画像（下の表） |
 | `../game/lodge/lodge.glb` | ゲームで使う見た目と、機械の置き場・灯りの目印。Godot が読めるよう `game/` の中に書き出す |
-| `../game/lodge/lodge_collision.glb` | 当たり判定（箱と坂だけ） |
+| `../game/lodge/lodge_collision.glb` | 当たり判定（箱と坂。食堂の丸柱だけ円柱） |
 
 ## 動かし方
 

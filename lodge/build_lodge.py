@@ -532,10 +532,11 @@ def build_lean_to():
     L = LEAN
     zr = lambda x: L["z_wall"] + (x - X0) * (L["z_wall"] - L["z_out"]) / (X0 - L["x_out"])   # noqa: E731
     p = M("lean_posts", "post", "crown")
+    h, hb = L["post"] / 2, L["post"] * 0.9   # 柱の半幅と、台の半幅
     for y in L["posts"]:
-        p.box(L["x_post"] - 0.10, y - 0.10, 0, L["x_post"] + 0.10, y + 0.10, zr(L["x_post"]))
+        p.box(L["x_post"] - h, y - h, 0, L["x_post"] + h, y + h, zr(L["x_post"]))
         if PH >= 3:
-            p.box(L["x_post"] - 0.18, y - 0.18, 0, L["x_post"] + 0.18, y + 0.18, 0.18)   # 石の束の代わりの台
+            p.box(L["x_post"] - hb, y - hb, 0, L["x_post"] + hb, y + hb, 0.18)   # 石の束の代わりの台
     if PH >= 3:
         p.box(L["x_post"] - 0.09, L["y0"], zr(L["x_post"]) - 0.24, L["x_post"] + 0.09, L["y1"], zr(L["x_post"]))   # 桁
         p.box(X0 - 0.30, L["y0"], L["z_wall"] - 0.24, X0 - 0.13, L["y1"], L["z_wall"])                           # 壁の受け
@@ -618,8 +619,8 @@ def build_walls():
     Bm.done(bevel=0.015)
     Cl = M("columns", "post", "walls")
     for x, y in COLS:
-        Cl.cyl((x, y, FL1), (x, y, FL2), COL_D / 2, seg=20)
-        Cl.cyl((x, y, FL2), (x, y, roof_z(y) + (RAFTER["h"] if PH >= 3 else 0)), COL_D / 2 * 0.85, seg=20)
+        Cl.cyl((x, y, FL1), (x, y, FL2), COL_D / 2, seg=28)
+        Cl.cyl((x, y, FL2), (x, y, roof_z(y) + (RAFTER["h"] if PH >= 3 else 0)), COL_D / 2 * 0.85, seg=28)
     Cl.done(smooth=True)
     build_vestibule()
     # 継ぎ目の綿: 丸太の丸みのくぼみに、外と中の両面から見える細い帯（厚み 2 cm の箱 1 本。丸太にほぼ埋まり、くぼみにだけ出る）
@@ -846,10 +847,11 @@ def build_rails_and_stair():
                      h=1.0, posts_every=3, name="bal_stair_%d_%s" % (round(z0 * 10), "w" if x < (xa + xb) / 2 else "e"))
     yl0, yl1 = E["y_land0"], E["y_land1"]
     T.box(xa, yl0, E["z_land"] - 0.12, xb, yl1, E["z_land"])                 # 踊り場
-    for x in (xa + 0.08, xb - 0.08):
-        for y in (yl0 + 0.08, yl1 - 0.08):
-            S.box(x - 0.08, y - 0.08, 0, x + 0.08, y + 0.08, E["z_land"] - 0.12)
-        S.box(x - 0.08, (yl1 + E["y_top"]) / 2 - 0.08, 0, x + 0.08, (yl1 + E["y_top"]) / 2 + 0.08,
+    h = 0.16   # 柱の半幅（2026-11-03 代表「柱の半径を倍に」で 0.08 → 0.16。外の面は踊り場の縁にそろえたまま）
+    for x in (xa + h, xb - h):
+        for y in (yl0 + h, yl1 - h):
+            S.box(x - h, y - h, 0, x + h, y + h, E["z_land"] - 0.12)
+        S.box(x - h, (yl1 + E["y_top"]) / 2 - h, 0, x + h, (yl1 + E["y_top"]) / 2 + h,
               (E["z_land"] + FL2) / 2 - 0.3)                                  # 2 本目の中ほどの柱
     rail_run(Rm, (xb - 0.05, yl0, E["z_land"]), (xb - 0.05, yl1, E["z_land"]), h=1.0, name="bal_landing_e")
     # 踊り場の西のミニテラス（踊り場と一続きの床）。手すりで囲む（自販機 2 台はゲームが西の手すりを背に置く）
@@ -859,9 +861,10 @@ def build_rails_and_stair():
     S.box(Mi["x0"], Mi["y0"], zt_ - 0.40, Mi["x1"], Mi["y0"] + 0.12, zt_ - 0.12)     # 縁の梁
     S.box(Mi["x0"], Mi["y1"] - 0.12, zt_ - 0.40, Mi["x1"], Mi["y1"], zt_ - 0.12)
     S.box(Mi["x0"], Mi["y0"], zt_ - 0.40, Mi["x0"] + 0.12, Mi["y1"], zt_ - 0.12)
-    for x in (Mi["x0"] + 0.1, (Mi["x0"] + Mi["x1"]) / 2):
-        for y in (Mi["y0"] + 0.1, Mi["y1"] - 0.1):
-            S.box(x - 0.09, y - 0.09, 0, x + 0.09, y + 0.09, zt_ - 0.40)
+    h = 0.18   # 0.09 → 0.18（同じく倍）
+    for x in (Mi["x0"] + h + 0.01, (Mi["x0"] + Mi["x1"]) / 2):
+        for y in (Mi["y0"] + h + 0.01, Mi["y1"] - h - 0.01):
+            S.box(x - h, y - h, 0, x + h, y + h, zt_ - 0.40)
     rail_run(Rm, (Mi["x0"] + 0.05, Mi["y0"] + 0.05, zt_), (Mi["x1"], Mi["y0"] + 0.05, zt_), h=1.0, name="bal_mini_s")
     rail_run(Rm, (Mi["x0"] + 0.05, Mi["y1"] - 0.05, zt_), (Mi["x1"], Mi["y1"] - 0.05, zt_), h=1.0, name="bal_mini_n")
     rail_run(Rm, (Mi["x0"] + 0.05, Mi["y0"] + 0.05, zt_), (Mi["x0"] + 0.05, Mi["y1"] - 0.05, zt_), h=1.0, name="bal_mini_w")
@@ -1051,8 +1054,9 @@ def build_interior():
     st.beam((I["x0"] + 0.03, I["y_bottom"] - 0.05, FL1 + 0.05), (I["x0"] + 0.03, I["y_land"], I["z_land"] - 0.05), 0.06, 0.3)
     st.beam((I["xm"] - 0.03, I["y_bottom"] - 0.05, FL1 + 0.05), (I["xm"] - 0.03, I["y_land"], I["z_land"] - 0.05), 0.06, 0.3)
     st.beam((I["xm"] + 0.03, I["y_land"], I["z_land"] + 0.05), (I["xm"] + 0.03, I["hole_y0"], FL2 - 0.05), 0.06, 0.3)
-    st.box(I["x0"], I["y_top"] - 0.22, FL1, I["x0"] + 0.12, I["y_top"] - 0.10, I["z_land"] - 0.15)   # 踊り場の柱（北西の角）
-    st.box(I["x0"], I["y_land"] + 0.10, FL1, I["x0"] + 0.12, I["y_land"] + 0.22, I["z_land"] - 0.15)   # 踊り場の柱（南西の角）
+    # 踊り場の柱は 2026-11-03 に 0.12 角 → 0.24 角（代表「柱の半径を倍に」）
+    st.box(I["x0"], I["y_top"] - 0.34, FL1, I["x0"] + 0.24, I["y_top"] - 0.10, I["z_land"] - 0.15)   # 踊り場の柱（北西の角）
+    st.box(I["x0"], I["y_land"] + 0.10, FL1, I["x0"] + 0.24, I["y_land"] + 0.34, I["z_land"] - 0.15)   # 踊り場の柱（南西の角）
     st.done(bevel=0.01)
     # 2 本目の下（東の壁際）は板で塞ぐ。1 本目の脇から 2 本目の裏へ入り込まないように
     sp = M("instair_panel", "board", "interior")
@@ -1137,7 +1141,7 @@ def build_interior():
     # ---- 下屋: 貸出のスキー立てと腰掛け ----
     L = LEAN
     rk = M("rental_rack", "board", "setsue")
-    xr = L["x_post"] + 0.35
+    xr = L["x_post"] + L["post"] * 0.9 + 0.17   # 柱の台から 0.12 離す
     rk.box(xr - 0.05, L["y0"] + 0.4, 0, xr + 0.05, L["y1"] - 0.4, 0.15)
     rk.box(xr - 0.05, L["y0"] + 0.4, 1.20, xr + 0.05, L["y1"] - 0.4, 1.26)
     rk.done(bevel=0.01)
@@ -1337,7 +1341,7 @@ def render(view, path):
 
 # ---------------------------------------------------------------- 当たり判定（書き出し用）
 def build_collision():
-    """箱と坂だけの当たり判定。名前の -colonly で、Godot は見た目なしの当たり判定として読み込む。
+    """箱と坂の当たり判定（食堂の丸柱だけ円柱）。名前の -colonly で、Godot は見た目なしの当たり判定として読み込む。
     戸の開口は抜き、窓は塞ぐ。椅子・灯り・小物は入れない"""
     groups = {}
 
@@ -1378,9 +1382,13 @@ def build_collision():
     wall(Wl, "x", Y1, X0, X1, FL1, CEIL1, [(c1 - dw / 2, c1 + dw / 2, FL1 + DOOR1["h"])])
     wall(Wl, "y", X1, Y0, Y1, FL1, CEIL1)
     wall(Wl, "x", Y0, X0, GLASS_S_X0, FL1, CEIL1, [(DOOR_IN["x0"], DOOR_IN["x1"], FL1 + DOOR_IN["h"])])
-    wall(Wl, "x", Y0, GLASS_S_X0, X1, FL1, CEIL1, t=POST)
+    wall(Wl, "x", Y0, GLASS_S_X0, X1, FL1, CEIL1, t=GLASS_T)
     wp = sorted(GLASS_W_POSTS)
-    wall(Wl, "y", X0, Y0, Y1, FL1, CEIL1, [(wp[GLASS_W_DOOR_BAY] + POST / 2, wp[GLASS_W_DOOR_BAY + 1] - POST / 2, TRANSOM)], t=POST)
+    wall(Wl, "y", X0, Y0, Y1, FL1, CEIL1, [(wp[GLASS_W_DOOR_BAY] + POST / 2, wp[GLASS_W_DOOR_BAY + 1] - POST / 2, TRANSOM)], t=GLASS_T)
+    for u in GLASS_S_POSTS:                                                  # ガラスの壁の柱は壁より太い
+        Wl.box(u - POST / 2, Y0 - POST / 2, FL1, u + POST / 2, Y0 + POST / 2, CEIL1)
+    for u in GLASS_W_POSTS:
+        Wl.box(X0 - POST / 2, u - POST / 2, FL1, X0 + POST / 2, u + POST / 2, CEIL1)
     V, A_ = VEST, ARCH
     y0v, cx = Y0 - V["d"], V["cx"]
     F.box(V["x0"], y0v, 0, V["x1"], Y0, FL1)
@@ -1420,8 +1428,9 @@ def build_collision():
     for x in (X1,):
         Wl.solid([(x - R, Y2_0, FL2), (x + R, Y2_0, FL2), (x + R, Y1, FL2), (x - R, Y1, FL2)],
                  [(x - R, Y2_0, roof_z(Y2_0)), (x + R, Y2_0, roof_z(Y2_0)), (x + R, Y1, roof_z(Y1)), (x - R, Y1, roof_z(Y1))])
-    for x, y in COLS:
-        Wl.box(x - COL_D / 2, y - COL_D / 2, FL1, x + COL_D / 2, y + COL_D / 2, roof_z(y))
+    for x, y in COLS:   # 丸柱は丸いまま（径 1 m の箱だと、柱のない角に当たる）
+        Wl.cyl((x, y, FL1), (x, y, FL2), COL_D / 2, seg=12)
+        Wl.cyl((x, y, FL2), (x, y, roof_z(y)), COL_D / 2 * 0.85, seg=12)
     # 煙突と炉
     c = CH
     Wl.box(c["x0"], Y1 - LOG_D / 2 - 0.02, 0, c["x1"], c["y1"], FL2)   # 部屋の側の暖炉の当たりは game/hearth_nook.gd
@@ -1435,7 +1444,7 @@ def build_collision():
     Rf.prism_y([(L["x_out"], L["z_out"]), (X0, L["z_wall"]), (X0, L["z_wall"] + 0.4), (L["x_out"], L["z_out"] + 0.4)],
                L["y0"], L["y1"])
     for y in L["posts"]:
-        Wl.box(L["x_post"] - 0.10, y - 0.10, 0, L["x_post"] + 0.10, y + 0.10, L["z_out"])
+        Wl.box(L["x_post"] - L["post"] / 2, y - L["post"] / 2, 0, L["x_post"] + L["post"] / 2, y + L["post"] / 2, L["z_out"])
     # 手すり（テラス・外階段・吹き抜け）
     for b in ((X0, Y0, FL2, ESTAIR["x0"], Y0 + 0.12, FL2 + RAIL_H), (ESTAIR["x1"], Y0, FL2, X1, Y0 + 0.12, FL2 + RAIL_H),
               (X1 - 0.12, Y0, FL2, X1, Y2_0, FL2 + RAIL_H),
