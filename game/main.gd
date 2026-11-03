@@ -95,8 +95,9 @@ const DyeUi := preload("res://dye_ui.gd")
 const Net := preload("res://net.gd")
 const Start := preload("res://start.gd")
 ## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
-## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 7.0〜12.5）より南、小上がり（x 17.3 まで）より東
-const WARDROBE_AT := Vector2(21.25, 2.2)
+## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 6.2〜12.5）より南、小上がり（x 15.5 まで）より東。
+## 内階段は東の壁ぎわを南へ上って y 6.2 に着くので、着いた正面に染め桶が来ないよう、染め桶・紙細工屋さんごと 1 m 南へ（2026-11-03）
+const WARDROBE_AT := Vector2(21.25, 1.2)
 const WARDROBE_FLOOR := 6.1   # 2 階の床（dims.FL2）
 ## 染め桶（dye_vat.gd）の所（衣装掛けの座標。+X が竿の右の端のほう、+Z が正面）。竿の右の端の横には紙細工屋さん
 ## （PAPER_LADY_AT）がいるので、桶は竿の左の端の横
