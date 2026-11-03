@@ -13,6 +13,8 @@
 
 ### Mac
 
+Apple シリコン（M1 以降）の Mac で動きます。2020 年ごろより前の Intel の Mac では動きません（「この Mac について」の「チップ」が「Apple M…」なら大丈夫です）。
+
 1. もらった `Lodge-mac.zip` をダブルクリックして展開し、`Lodge.app` を「アプリケーション」フォルダへ移します。
 2. `Lodge.app` を右クリック（control を押しながらクリック）して「開く」を選び、出てきた画面でもう一度「開く」を押します。
 3. 「開発元を確認できないため開けません」とだけ出て開けないとき（macOS 15 以降）:
@@ -97,6 +99,14 @@ cd game
 ```
 
 - Windows は `Lodge.exe` ひとつにまとまります（中身を exe に埋め込む）。フォルダごと zip にして `Lodge-windows.zip` で配ります。
-- Mac は Intel と Apple シリコンの両方で動く版で、Apple の公証はしていません（その場しのぎの署名だけ）。`Lodge.zip` を `Lodge-mac.zip` にして配ります。
+- Mac は Apple シリコン専用の版で、Apple の公証はしていません（その場しのぎの署名だけ）。Godot の雛形は Intel と Apple の両方入りしかないので、書き出したあとに Intel の分を抜いて、署名し直します（両方入りのままだと、本体が約 2 倍、zip が約 90 MB 大きくなります。Intel の Mac に配るときは、この手順を飛ばします）。
+
+```bash
+cd ../build/mac && unzip -q Lodge.zip && rm Lodge.zip
+lipo Lodge.app/Contents/MacOS/Lodge -thin arm64 -output Lodge.arm64 && mv Lodge.arm64 Lodge.app/Contents/MacOS/Lodge
+codesign --force --deep -s - Lodge.app
+ditto -c -k --keepParent Lodge.app Lodge-mac.zip
+```
+
 - `build/` は git に入れません。zip は Google ドライブなどで渡します。itch.io の限定公開（リンクを知っている人だけ）でも配れます。
 - 書き出しの設定は `game/export_presets.cfg`。`tools/` と `shots/` は入れません。
