@@ -374,8 +374,8 @@ def door_leaf(D, G, axis, fixed, sgn, u0, u1, z0, z1, v0, v1, glass=0.55):
     wbox(G, axis, fixed, sgn, u0 + S, u1 - S, (v0 + v1) / 2 - 0.005, (v0 + v1) / 2 + 0.005, g0, z1 - S)
 
 
-def glass_wall(P, F, G, D, axis, fixed, sgn, posts, z0, z1, door_bay=None):
-    """柱とガラスの壁。各間に縦桟 1 本と欄間の横桟"""
+def glass_wall(P, F, G, D, axis, fixed, sgn, posts, z0, z1, door_bay=None, plain=False):
+    """柱とガラスの壁。各間に縦桟 1 本と欄間の横桟。plain は桟なしの 1 枚ガラス（柱と上下の枠だけ）"""
     posts = sorted(posts)
     for u in posts:
         wbox(P, axis, fixed, sgn, u - POST / 2, u + POST / 2, -POST / 2, POST / 2, z0, z1)
@@ -383,8 +383,11 @@ def glass_wall(P, F, G, D, axis, fixed, sgn, posts, z0, z1, door_bay=None):
         a, b = a + POST / 2, b - POST / 2
         wbox(F, axis, fixed, sgn, a, b, -0.09, 0.09, z0, z0 + 0.10)
         wbox(F, axis, fixed, sgn, a, b, -0.09, 0.09, z1 - 0.14, z1)
-        wbox(F, axis, fixed, sgn, a, b, -0.05, 0.05, TRANSOM - 0.045, TRANSOM + 0.045)
         wbox(F, axis, fixed, sgn, a - 0.02, b + 0.02, 0.09, 0.14, z0 - 0.02, z0 + 0.04)   # 外の水切り
+        if plain:
+            wbox(G, axis, fixed, sgn, a, b, -0.005, 0.005, z0 + 0.10, z1 - 0.14)
+            continue
+        wbox(F, axis, fixed, sgn, a, b, -0.05, 0.05, TRANSOM - 0.045, TRANSOM + 0.045)
         mid = (a + b) / 2
         if k == door_bay:
             for j, (u0, u1) in enumerate(((a, mid), (mid, b))):
@@ -606,7 +609,8 @@ def build_walls():
                      [(fixed - R, u0, roof_z(u0)), (fixed + R, u0, roof_z(u0)),
                       (fixed + R, u1, roof_z(u1)), (fixed - R, u1, roof_z(u1))])
     # 1 階のガラスの壁（南の東 8.5 間、西の全面）。西の北の間は貸出への戸
-    glass_wall(P, F, G, D, "x", Y0, -1, GLASS_S_POSTS, FL1, CEIL1)
+    # 正面（南）は桟を抜いた 1 枚ガラス（2026-11-03 代表「ロッジ正面側のガラスの格子外して」。見通しのため）
+    glass_wall(P, F, G, D, "x", Y0, -1, GLASS_S_POSTS, FL1, CEIL1, plain=True)
     glass_wall(P, F, G, D, "y", X0, -1, GLASS_W_POSTS, FL1, CEIL1, door_bay=GLASS_W_DOOR_BAY)
     # 2 階の南の壁を受ける梁と丸柱
     Bm = M("beam", "post", "walls")
