@@ -4,6 +4,8 @@ extends SceneTree
 ##   --part=look   婦人とスタンドを、一人称・三人称・引き・スタンドの寄りで撮る（昼と夕方）。婦人が顔を向けるのも撮る
 ##   --part=ui     前で F の画面を開き、提灯・頭・肩の 3 段を撮る。買う・足りない・付け替える・外すを流して、財布と身につけた物を log.txt に書く。
 ##                 婦人がうなずくのも撮る
+##   --part=motion 婦人の動きを 2 コマおきに撮る: だれもいないときの紙細工（折る・切る）、近づいたときのおじぎ、買ったときの売る動き。
+##                 婦人の動き（_act）とコマを log.txt に書く。絵は motion_<動き>_<番号>.png（ffmpeg で gif にできる）
 ##   --part=net    通信: 同じ Mac で 2 つ起動する（--host と --join=127.0.0.1。--port= をそろえる。どちらも --spawn=paper_shop）。
 ##                 つなぐ側が画面で糸巻きの提灯とどんぐりを買い、互いの画面で相手の人の帯と頭の物を書いて撮る
 ## 自分の保存（user://my_tag.cfg）は、始めに写しを取り、終わりに戻す
@@ -90,6 +92,28 @@ func _cam_shot(name: String, from: Vector3, at: Vector3, fov := 45.0) -> void:
 	p.cam.current = true
 
 
+## 婦人の動きを、12 コマの 2 コマおきに n 枚撮る（別のカメラで）
+func _frames(tag: String, n: int, from: Vector3, at: Vector3) -> void:
+	var lady: Node3D = main.paper_lady
+	var cam := Camera3D.new()
+	main.add_child(cam)
+	cam.look_at_from_position(from, at, Vector3.UP)
+	cam.fov = 48.0
+	cam.cull_mask = (1 << 0) | (1 << 1) | (1 << 3)
+	cam.current = true
+	var Doll := preload("res://doll.gd")
+	for i in n:
+		var f := Doll.frame_index()
+		while Doll.frame_index() < f + 2:
+			await process_frame
+		await process_frame
+		var path := _dir().path_join("motion_%s_%02d.png" % [tag, i])
+		root.get_texture().get_image().save_png(path)
+		_say("%s %02d: 動き %s（%d コマ目）" % [tag, i, lady.get("_act"), int(lady.get("_k")) - int(lady.get("_act_k"))])
+	cam.queue_free()
+	p.cam.current = true
+
+
 func _worn(who: int) -> String:
 	var c: Node = main.craft
 	return "提灯 %s 頭 %s 肩 %s" % [c.lantern(who).get("look", ""), c.pal_worn(who, "head"), c.pal_worn(who, "shoulder")]
@@ -108,6 +132,32 @@ func _run() -> void:
 		return
 	_say("婦人 %s スタンド %s 開ける %s" % [lady.global_position, lady.stand.global_position, p.paper_shop_near()])
 	match args.get("part", "look"):
+		"motion":
+			await _hour(13.0)
+			var cam_at: Vector3 = lady.to_global(Vector3(0.35, 1.45, 2.5))
+			var cam_to: Vector3 = lady.to_global(Vector3(0.45, 1.1, 0))
+			if args.has("close"):   # --close: 胸から上の寄り（手もとの紙や包みを見る）
+				cam_at = lady.to_global(Vector3(-0.15, 1.45, 1.35))
+				cam_to = lady.to_global(Vector3(0.05, 1.2, 0))
+			# だれもいない: あなたを遠くへ（婦人から 8 m）。紙細工を 2 回ぶん撮る
+			p.global_position = lady.to_global(Vector3(0, 0.1, 8.0))
+			p.velocity = Vector3.ZERO
+			await _wait(1.0)
+			await _frames("craft", 44, cam_at, cam_to)
+			# 近づく: 婦人の前 2 m へ
+			p.global_position = lady.to_global(Vector3(-2.0, 0.1, 1.6))
+			p.velocity = Vector3.ZERO
+			await _frames("bow", 10, cam_at, cam_to)
+			await _wait(1.0)
+			# 買う: どんぐりを買う出来事（お代のボタンは財布から）
+			c.wallets[who] = 300
+			c.send({"kind": "pal_buy", "who": who, "key": "acorn"})
+			await _frames("sale", 22, cam_at, cam_to)
+			# 離れて、また近づく: もう一度おじぎ
+			p.global_position = lady.to_global(Vector3(0, 0.1, 8.0))
+			await _wait(1.5)
+			p.global_position = lady.to_global(Vector3(-2.1, 0.1, 1.4))
+			await _frames("bow2", 8, cam_at, cam_to)
 		"look":
 			await _hour(13.0)
 			await _shot("01_fp")
@@ -185,9 +235,14 @@ func _run() -> void:
 				if net.is_host():
 					c.send({"kind": "earn", "who": pid, "n": 300, "at": rp.global_position})   # つなぐ側にボタンを配る
 					t = 0.0
+					var acts := {}
 					while (c.lantern(pid).get("look", "") != "spool" or c.pal_worn(pid, "head") != "acorn") and t < 25.0:   # つなぐ側が買うのを待つ
-						await _wait(0.5)
-						t += 0.5
+						await _wait(0.25)
+						t += 0.25
+						acts[String(lady.get("_act"))] = true
+					await _wait(0.5)
+					acts[String(lady.get("_act"))] = true
+					_say("host: つなぐ側が買うあいだの婦人の動き %s" % str(acts.keys()))
 				else:
 					t = 0.0
 					while c.wallet(who) < 200 and t < 10.0:

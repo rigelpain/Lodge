@@ -1088,6 +1088,7 @@ func _furnish_lodge() -> void:
 	paper_lady.name = "PaperLady"
 	paper_lady.player = player
 	paper_lady.craft = craft
+	paper_lady.main = self
 	paper_lady.transform = wardrobe.transform * Transform3D(Basis(), PAPER_LADY_AT)
 	lodge.add_child(paper_lady)
 	# そのとなりの染め桶: 前で F を押すと服を染める（竿の左の端の少し前。正面は竿と同じ西）
