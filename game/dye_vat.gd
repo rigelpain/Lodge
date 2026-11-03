@@ -1,7 +1,7 @@
 extends Node3D
 ## 2 階の染め桶: 衣装掛けのとなりの、木の板を輪で締めた桶。中に染め液が張ってあり、縁に染めたフェルトが掛かり、櫂が立てかけてある。
 ## 前で F を押すと、服を染める画面（dye_ui.gd）が開く（2026-11-01 代表「服の色変え」「染色桶をつくって、色に払うんじゃなくて染色代として払う」）。
-## だれかが染めると（craft.gd の出来事 dye）、染め液と縁のフェルトが、その人の 1 枚めの布の色にじわっと変わる。
+## だれかが染めると（craft.gd の出来事 dye）、染め液と縁のフェルトが、その人の染めた色にじわっと変わる。
 ## 置き方は main.gd の _put_wardrobe（衣装掛けの竿の端の、少し前）。この節の +Z が桶の正面
 
 const Look := preload("res://look.gd")
@@ -134,16 +134,16 @@ func can_use(p: Node3D) -> bool:
 	return (-p.global_basis.z).dot(d.normalized()) > 0.5 or d.length() < 0.7
 
 
-## だれかが染めた: 染め液と縁の布を、その人の 1 枚めの布の色へ
+## だれかが染めた: 染め液と縁の布を、その人の染めた色（主の色から順に、染めた最初の部位の色）へ
 func _on_craft(ev: Dictionary) -> void:
 	if ev.get("kind") != "dye":
 		return
-	var cols: Array = ev.get("colors", [])
-	if cols.is_empty() or String(cols[0]) == "":
-		return
-	_from = _liquid.albedo_color
-	_to = Color(String(cols[0]))
-	_t = 0.0
+	for h in ev.get("colors", []):
+		if String(h) != "":
+			_from = _liquid.albedo_color
+			_to = Color(String(h))
+			_t = 0.0
+			return
 
 
 func _process(dt: float) -> void:

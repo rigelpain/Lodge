@@ -92,18 +92,18 @@ static func sleeve_r(z: float, kind := "") -> float:
 	return MOUTH_R * float(SLEEVE_WIDE.get(kind, 1.0)) * lerpf(1.0, 0.72, clampf((z - 0.03) / SLEEVE_LEN, 0.0, 1.0))
 
 
-## STYLE の袖と脚の布の色を、染めた服の色に塗り直した写し（人形の絵と同じ決まり。outfit.gd の tint）
+## STYLE の袖と脚の布の色を、染めた服の色に塗り直した写し（人形の絵と同じ決まり。どの部位の布かは outfit.gd の FP）
 static func _dyed(kind: String, outfit: Array) -> Dictionary:
 	var st: Dictionary = STYLE.get(kind, STYLE["kasa"]).duplicate(true)
 	if outfit.is_empty():
 		return st
-	var dye := func(spec: Array) -> Array:
+	var dye := func(spec: Array, part: String, side: int) -> Array:
 		var out := spec.duplicate()
 		for j in range(1, out.size()):
-			out[j] = Outfit.tint(kind, Color(out[j]), outfit).to_html(false)
+			out[j] = Outfit.tint(kind, part, side, Color(out[j]), outfit).to_html(false)
 		return out
-	st["sleeve"] = [dye.call(st["sleeve"][0]), dye.call(st["sleeve"][1])]
-	st["leg"] = dye.call(st["leg"])
+	st["sleeve"] = [dye.call(st["sleeve"][0], "sleeve", 0), dye.call(st["sleeve"][1], "sleeve", 1)]
+	st["leg"] = dye.call(st["leg"], "leg", 0)
 	return st
 
 
