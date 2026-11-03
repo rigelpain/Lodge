@@ -36,6 +36,7 @@ ap.add_argument("--turn", type=float, default=0.0)
 ap.add_argument("--size", default="900x1100")
 ap.add_argument("--samples", type=int, default=64)
 ap.add_argument("--blend", default="")
+ap.add_argument("--dye-mask", default="", help="染める部位の塗り分けの絵を、このフォルダーの <doll>.glb の UV で作る（rig_export.dye_mask）")
 ap.add_argument("--export", default="", help="骨を入れて焼き、ゲーム用の glb をこのフォルダーに書き出す（person/rig_export.py）")
 A = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
 
@@ -1449,6 +1450,11 @@ else:
         sys.path.insert(0, PERSON)
         import rig_export  # noqa: E402
         rig_export.export(A.doll, A.export)
+        sys.exit(0)
+    if A.dye_mask:
+        sys.path.insert(0, PERSON)
+        import rig_export  # noqa: E402
+        rig_export.dye_mask(A.doll, A.dye_mask)
         sys.exit(0)
     stage(A.size)
     if A.blend:

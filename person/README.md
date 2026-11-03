@@ -14,14 +14,22 @@
 
 ゲームの中では、ロッジ 2 階の衣装掛けで選び直せる（[アートコンセプト](../design/art-concept.md) の「人形を選ぶ」）。
 
-服の色は、衣装掛けのとなりの染め桶で染められる（色は自由、1 回ごとに染め代）。焼いた色の絵のうち、服の布の色の所だけを塗り直す（[game/outfit.gd](../game/outfit.gd) の `CLOTH` に、人形ごとの布の色）。人形の絵を焼き直したら、`CLOTH` の色も測り直す。
+服の色は、衣装掛けのとなりの染め桶で、部位ごとに 4 色まで染められる（色は自由、染め代は 1 回に染める部位の数で上がる）。どこがどの部位かは、人形ごとの塗り分けの絵 `game/person/<doll>_dye.png`（glb の UV の上に、部位 k の所を k × 60 で塗った絵）で引く。部位の決め方は [rig_export.py](rig_export.py) の `DYE`（部品の名前と素材）、部位のもとの色は [game/outfit.gd](../game/outfit.gd) の `PARTS`。
+
+**人形を焼き直したら（`--export`）、塗り分けの絵も作り直す**（UV が変わるため）。出てきた `dye base` の色を `PARTS` に写す（柄を残す部位は `sat` の方）。
+
+```bash
+/Applications/Blender.app/Contents/MacOS/Blender -b -P person/ideas/characters/roughs.py -- --doll golem --dye-mask game/person
+```
+
+kasa・origami・news は `person/build_dolls.py` の方で同じ `--dye-mask game/person`。
 
 ## ファイル
 
 | ファイル | 中身 |
 |---|---|
 | [build_dolls.py](build_dolls.py) | 3 体を組んで描く。`--export` で骨を入れてゲーム用に書き出す |
-| [rig_export.py](rig_export.py) | 骨と重み、色と法線の焼き込み、glb の書き出し（骨の名前は 7 体で同じ。④〜⑦ の重みは部品の名前ごとの RULES） |
+| [rig_export.py](rig_export.py) | 骨と重み、色と法線の焼き込み、glb の書き出し（骨の名前は 7 体で同じ。④〜⑦ の重みは部品の名前ごとの RULES）。染める部位の塗り分けの絵（`DYE`・`dye_mask`） |
 | [newsprint.py](newsprint.py) | 北欧の新聞紙の地（`textures/newsprint.png`）。読めない作り語の段組み |
 | `blend/*.blend` | 開いて回して見る用。Blender で開き、`Z` →「Rendered」、「View → Cameras → Active Camera」で絵と同じ光と構図 |
 | `renders/` | 描いた絵と、ゲームの中の録画（`06-play-*.mp4`） |
@@ -44,3 +52,4 @@
 - 書き出しは 1 体 30 秒ほど。`game/person/<doll>.glb` に色と法線の画像（2048）が入る
 - 書き出し直したら、`game/person/<doll>_<doll>_color.png`・`_normal.png` も glb の中の画像で上書きする。Godot は前に取り出した画像があると取り出し直さず、新しい UV に古い絵が貼られて色がずれる
 - ゲームの中の確かめ: `game/tools/doll_shots.gd`（3 体を並べて撮る。`--kinds=all` で 7 体）、`game/tools/wardrobe_shots.gd`（衣装掛けと、7 体に着替えた一人称・三人称）、`game/tools/play_record.gd`（押す・乗る・滑るをソリの横から録る）、`game/tools/outfit_shots.gd`（服の色違いを並べて撮る）、`game/tools/dye_shots.gd`（染め桶と染める画面、7 体を染めた三人称）、`game/tools/dye_check.gd`（染め代の決まり。画面なし）、`game/tools/arm_seam_shots.gd`（立つ・指さし・ハイタッチ・座る・押すの形で腕の縫い目に寄って撮る。`--limb=leg` で脚）
+- ゲームの中の確かめ: `game/tools/doll_shots.gd`（3 体を並べて撮る。`--kinds=all` で 7 体）、`game/tools/wardrobe_shots.gd`（衣装掛けと、7 体に着替えた一人称・三人称）、`game/tools/play_record.gd`（押す・乗る・滑るをソリの横から録る）、`game/tools/outfit_shots.gd`（服の色違いを並べて撮る。`:back` で背中）、`game/tools/dye_shots.gd`（染め桶と染める画面、部位ごとに選ぶところ、7 体を染めた三人称）、`game/tools/dye_check.gd`（部位の数で上がる染め代・前の保存の読み込み。画面なし）

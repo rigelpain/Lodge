@@ -28,8 +28,9 @@ extends Node
 ##   profile   {name, color}   自分の名前と、キャラの色（COLORS の番号）を決める（装備の画面）。HUD の札で、人の形の色と頭の上の名前になる
 ##   doll      {doll}          自分の人形（doll.gd の KINDS のどれか）を替える（2 階の衣装掛け）。みんなの画面で、その人の人形が作り直される。
 ##                             入った時にも今の人形で 1 度送る（通信では、あとから来た人もこれでほかの人の人形を知る）
-##   dye       {doll, colors}  2 階の染め桶で、人形 doll の服の布を染める。colors は布ごとの色（"rrggbb"。"" はもとの色。outfit.gd の CLOTH の順）。
-##                             色は自由に選べ、色ではなく染め代（DYE_PRICE）を 1 回ごとに払う（2026-11-01 代表「全部買う、染色桶をつくって、
+##   dye       {doll, colors}  2 階の染め桶で、人形 doll の服を部位ごとに染める。colors は部位ごとの色 4 つ（"rrggbb"。"" はもとの色。
+##                             outfit.gd の PARTS の順。前の保存の 1〜2 色は outfit.gd の upgrade で部位に直す）。染め代は別の色に染める部位の数で
+##                             決まる（DYE_PRICES。ev に price が入る。もとの色に戻す脱色はただ）。色は自由に選べ、色ではなく染め代を 1 回ごとに払う（2026-11-01 代表「全部買う、染色桶をつくって、
 ##                             色に払うんじゃなくて染色代として払う」）。染めた色は人形ごとに残る（ほかの人形に着替えて戻っても同じ色）
 ##   outfit    {doll, colors}  保存してある染めた色を戻す（起動したとき。値はここでは取らない）
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
@@ -88,7 +89,9 @@ const FABRIC_PRICE := 10
 ## ペグの名前・値段・束の本数は peg.gd（品目の定義をそこにまとめる）
 const Peg := preload("res://peg.gd")
 ## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
-const DYE_PRICE := 15
+## 1 回に染める部位の数ごとの染め代（0〜4 部位）。部位が多いほど高く、まとめて染めると 1 部位ぶんずつは少し安い
+## （2026-11-03 代表「部位数ごとに値段を上げてほしい」）
+const DYE_PRICES := [0, 15, 25, 33, 40]
 const PATTERNS := ["sack", "small", "mid", "large"]
 ## ロッジの中から外へ運び出せないソリ（tools/carry_out_check.gd で確かめた。大は西の通路の家具と壁に当たる）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
@@ -206,15 +209,27 @@ func outfit_of(who: int, kind: String) -> Array:
 	return out
 
 
-## 布ごとの色の並びを、通信に乗せる形（"rrggbb" か ""。布の数にそろえる）にする。色でない物は ""
+## 部位ごとの色の並びを、通信に乗せる形（"rrggbb" か ""。部位の数にそろえる）にする。色でない物は ""
 static func dye_colors(kind: String, cols: Array) -> Array:
 	var out := []
-	for i in preload("res://outfit.gd").cloth_count(kind):
+	var Outfit := preload("res://outfit.gd")
+	cols = Outfit.upgrade(kind, cols)   # 前の保存（布ごとの 1〜2 色）は、部位の並びに直す
+	for i in Outfit.cloth_count(kind):
 		var c = cols[i] if i < cols.size() else null
 		if c is String and String(c).is_valid_html_color():
 			c = Color(c)
 		out.append((c as Color).to_html(false) if c is Color else "")
 	return out
+
+
+## 染め代: cols（部位ごとの色）のうち、いまの色 old から別の色に染める部位の数で決まる。
+## もとの色に戻す（脱色。""）部位は数えない（2026-11-03 代表「脱色はただに」）
+static func dye_price(cols: Array, old: Array) -> int:
+	var n := 0
+	for i in cols.size():
+		if String(cols[i]) != "" and (i >= old.size() or cols[i] != old[i]):
+			n += 1
+	return DYE_PRICES[mini(n, DYE_PRICES.size() - 1)]
 
 
 func name_of(who: int) -> String:
@@ -754,9 +769,11 @@ func _apply(ev: Dictionary) -> bool:
 			var mine: Dictionary = outfits.get(who, {})
 			var old: Array = mine.get(k, dye_colors(k, []))
 			if ev.kind == "dye":
-				if cols == old or wallets[who] < DYE_PRICE:   # 同じ色のままなら染めない（染め代も取らない）
+				var cost := dye_price(cols, old)
+				if cols == old or wallets[who] < cost:   # 同じ色のままなら染めない（脱色だけなら染め代は 0）
 					return false
-				wallets[who] -= DYE_PRICE
+				wallets[who] -= cost
+				ev["price"] = cost
 			ev["colors"] = cols
 			if cols == dye_colors(k, []):
 				mine.erase(k)

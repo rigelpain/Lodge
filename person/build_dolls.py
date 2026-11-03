@@ -29,6 +29,7 @@ ap.add_argument("--prefix", default="/tmp/doll")
 ap.add_argument("--size", default="800x1000")
 ap.add_argument("--samples", type=int, default=96)
 ap.add_argument("--blend", default="")
+ap.add_argument("--dye-mask", default="", help="染める部位の塗り分けの絵を、このフォルダーの <doll>.glb の UV で作る（rig_export.dye_mask）")
 ap.add_argument("--export", default="", help="骨を入れ、質感を焼いて、このフォルダに <doll>.glb を書き出す（描画しない）")
 A = ap.parse_args(sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else [])
 
@@ -904,6 +905,11 @@ if A.export:
     sys.path.insert(0, HERE)
     import rig_export
     rig_export.export(A.doll, A.export)
+    sys.exit(0)
+if A.dye_mask:
+    sys.path.insert(0, HERE)
+    import rig_export
+    rig_export.dye_mask(A.doll, A.dye_mask)
     sys.exit(0)
 
 # 背景: 温かい灰色の布を曲げた撮影台（参照の写真の空気）

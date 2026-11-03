@@ -5,7 +5,10 @@ extends SceneTree
 ##   vat.png          染め桶の前（F の案内）
 ##   vat_near.png     染め桶を近くから（衣装掛けのとなり）
 ##   menu.png         F で開いた、服を染める画面（もとの色）
-##   menu_pick.png    色の輪で色を選んだところ（見本の人形が染まる。染め代の札が押せる）
+##   menu_part<n>.png 部位 n（1〜4）を選んで、その部位に色を入れたところ（人形のその部位が脈打つ。染め代が部位の数で上がる）
+##   menu_pick.png    4 部位とも色を選んだところ（見本の人形が染まる。染め代の札が押せる）
+##   menu_bleach.png  染めたあと、2 番目と 4 番目の部位の下の丸い布を押して脱色したところ（見本の人形のその部位がもとの色に）
+##   bleached_menu.png 脱色したあと（脱色はただ）
 ##   dyed_tp.png      染めたあと、三人称（うしろから、少し横に回って）。桶の液も同じ色に
 ##   dyed_fp.png      同じく一人称（袖と手も染まる）
 ##   dyed_vat.png     染めたあとの染め桶（液と縁の布が、染めた色に）
@@ -17,10 +20,12 @@ extends SceneTree
 const Doll := preload("res://doll.gd")
 const Bot := preload("res://bot.gd")
 
-## 人形ごとに染める色（布ごと）
+## 人形ごとに染める色（部位ごと 4 つ。outfit.gd の PARTS の順）
 const DYES := {
-	"kasa": ["c9603c", "d8a43e"], "origami": ["3f6b4a"], "news": ["7a4a6e"], "robo": ["d8a43e"],
-	"musha": ["3f6b4a", "d8a43e"], "ningyo": ["34477e"], "golem": ["c9603c", "3f6b4a"],
+	"kasa": ["c9603c", "6a4c93", "efe6d2", "2f6b4a"], "origami": ["3f6b4a", "d8a43e", "c97a8a", "34477e"],
+	"news": ["7a4a6e", "d8a43e", "34477e", "e0e0d0"], "robo": ["d8a43e", "6f8fb8", "c9603c", "3f6b4a"],
+	"musha": ["7a2e2a", "2f2f2f", "d8a43e", "d4b54a"], "ningyo": ["34477e", "f0d8e0", "c9603c", "3f6b4a"],
+	"golem": ["c9603c", "3f6b4a", "d8a43e", "6a4c93"],
 }
 
 var args := {}
@@ -94,15 +99,36 @@ func _run() -> void:
 	ui.open()
 	await _wait(1.0)
 	await _shot("menu")
-	ui._hsv = Vector3(0.03, 0.7, 0.75)   # 色の輪で、朱に寄せる
-	ui._set_from_hsv()
-	await _wait(0.6)
+	var mine: Array = DYES[p.doll.kind]
+	for i in 4:   # 部位を 1 つずつ選んで、色の輪で色を入れる
+		ui._cloth = i
+		ui._glow = ui.GLOW
+		var c := Color(mine[i])
+		ui._hsv = Vector3(c.h, c.s, c.v)
+		ui._set_from_hsv()
+		await _wait(0.45)
+		await _shot("menu_part%d" % (i + 1))
+	ui._glow = 0.0
+	await _wait(0.4)
 	await _shot("menu_pick")
 	var before: int = main.craft.wallet(p.id)
 	print("染める: ", _dye(p.id, p.doll.kind, main.craft.dye_colors(p.doll.kind, ui._pick)), " 財布 ", before, " → ", main.craft.wallet(p.id))
 	print("同じ色でもう一度（断られるはず）: ", _dye(p.id, p.doll.kind, main.craft.dye_colors(p.doll.kind, ui._pick)))
 	await _wait(1.5)
 	await _shot("dyed_menu")
+	ui.bleach(1)   # 2 番目と 4 番目を脱色（もとの色に戻す）
+	ui.bleach(3)
+	ui._glow = 0.0
+	await _wait(0.5)
+	await _shot("menu_bleach")
+	before = main.craft.wallet(p.id)
+	print("脱色（2 部位。ただのはず）: ", _dye(p.id, p.doll.kind, main.craft.dye_colors(p.doll.kind, ui._pick)), " 財布 ", before, " → ", main.craft.wallet(p.id),
+			" 服 ", main.craft.outfits[p.id].get(p.doll.kind))
+	await _wait(1.5)
+	await _shot("bleached_menu")
+	for i in 4:   # 次の 7 体の撮影のために、もう一度 4 部位とも染めた色に
+		ui._pick[i] = Color(DYES[p.doll.kind][i])
+	_dye(p.id, p.doll.kind, main.craft.dye_colors(p.doll.kind, ui._pick))
 	ui.close()
 	p.set_third(true)
 	p.rotation.y = v.global_rotation.y + PI * 0.8
@@ -130,6 +156,7 @@ func _run() -> void:
 	# 仲間の人形を染める（ほかの人が染めた出来事が届いたときと同じ）
 	var bots := main.get_children().filter(func(c): return c.get_script() == Bot)
 	for b in bots:
+		main.craft.wallets[b.id] = 500   # 4 部位ぶんの染め代
 		_dye(b.id, b.doll.kind, DYES[b.doll.kind])
 		print("仲間 ", b.id, ": ", b.doll.kind, " 服=", b.doll.outfit)
 	await _wait(1.0)

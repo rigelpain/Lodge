@@ -1,7 +1,8 @@
 extends SceneTree
 ## 服の色違いの人形を横に並べて撮る（outfit.gd の確かめ・代表に見せる絵）。
 ##   Godot --path game -s res://tools/outfit_shots.gd -- --out=/path/to.png --set=kasa:-,kasa:D2553A,kasa:D8A43E/EFE6D2
-## --set は「人形:布ごとの色」をカンマで並べる。布ごとの色は / で区切り、- はもとの色のまま（outfit.gd の CLOTH の順）
+## --set は「人形:部位ごとの色」をカンマで並べる。部位ごとの色は / で区切り、- はもとの色のまま（outfit.gd の PARTS の順）。
+## 後ろに :back を付けると、その人形は背中を向ける
 ## --rows=2 で何段に並べるか。--close で近くから
 
 const Look := preload("res://look.gd")
@@ -65,8 +66,9 @@ func _initialize() -> void:
 				cols.append(null if h == "-" else Color(h))
 		d.outfit = cols
 		host.add_child(d)
-		d.facing = Vector3(0.25, 0, 1)
-		d.gaze = host.position + Vector3(0, 1.2, 6)
+		var back := kv.size() > 2 and kv[2] == "back"
+		d.facing = Vector3(-0.25, 0, -1) if back else Vector3(0.25, 0, 1)
+		d.gaze = host.position + Vector3(0, 1.2, -6.0 if back else 6.0)
 	cam = Camera3D.new()
 	world.add_child(cam)
 	# 横の並びがちょうど収まる距離（縦の画角と画面の縦横比から、横の画角を出す）

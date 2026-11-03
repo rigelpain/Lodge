@@ -390,3 +390,190 @@ def export_static(name, folder, px=2048):
     path = os.path.abspath(os.path.join(folder, name + ".glb"))
     bpy.ops.export_scene.gltf(filepath=path, export_format="GLB", use_selection=True, export_yup=True, export_animations=False)
     print("wrote", path)
+
+
+# ================================================================ 染める部位（2 階の染め桶。game/outfit.gd の PARTS）
+# 人形ごとに、染められる部位を 4 つ（主の色・2 番目・3 番目・4 番目）。部品の名前の頭と素材の名前で決める。
+# 上から順に、名前の頭（None はどれでも）と素材（None はどれでも）の両方が合った最初のものの部位になる。どれにも合わない所は染めない
+# （2026-11-03 代表「ゴーレムの染色は腕の灰色のとこをセカンダリーカラーとしてほしい。サードカラー、フォースカラーでパッチの色も変えてほしい」
+#   「全キャラフォースカラーまで作ってほしい」。この分け方は、7 体を 4 色で塗り分けた絵で代表に確かめて決めた。person/renders/16-dye-parts.jpg）
+GOLEM_PATCH = ("body_patch", "arm_patch", "shoulder_patch", "leg_patch")
+DYE = {
+    "kasa": [
+        (0, None, ("p_lace", "p_teal")),         # ① 緑の着物（桜の千代紙）と、下の青緑の着物（青海波）
+        (1, None, ("p_blue",)),                  # ② 藍の着物（亀甲の片身と袖）
+        (2, ("kasa",), ("p_kasa",)),             # ③ 紙の笠
+        (3, ("obi",), None),                     # ④ 帯
+    ],
+    "origami": [
+        (0, None, ("p_blue",)),                  # ① 青いエプロン
+        (1, ("hood", "wrap"), None),             # ② 白い頭巾
+        (2, ("blouse", "arm", "apron"), ("p_white",)),   # ③ 白い上着と袖（エプロンの肩ひもも）
+        (3, ("skirt", "shoe"), None),            # ④ 下の裾と靴
+    ],
+    "news": [
+        (0, ("cape", "sleeve"), ("burlap_green",)),   # ① 麻布の上着と袖
+        (1, ("hood",), None),                    # ② 麻布の頭巾
+        (2, ("pack",), ("burlap_brown",)),       # ③ 背負い袋
+        (3, ("strap", "pack_flap"), None),       # ④ 革のひもと袋のふた
+    ],
+    "robo": [
+        (0, None, ("paint_teal",)),              # ① 青緑に塗った胴・肩・足
+        (1, None, ("card",)),                    # ② 段ボールの頭・腕・脚
+        (2, None, ("hemp",)),                    # ③ 腰の縄と、手首・膝・アンテナのひも
+        (3, ("antenna_ball", "chest_btn"), ("felt_obi", "button")),   # ④ アンテナの玉と胸のボタン
+    ],
+    "musha": [
+        (0, None, ("felt_indigo",)),             # ① 紺の兜・袖・草摺・袴
+        (1, None, ("felt_indigo2",)),            # ② もう 1 つの紺（胴・籠手・脛当て・眉庇）
+        (2, None, ("yarn_red",)),                # ③ 赤い縅の糸と帯
+        (3, ("maedate",), ("felt_tin",)),        # ④ 三日月
+    ],
+    "ningyo": [
+        (0, ("qun", "shoe_tip", "silk_flower"), ("silk_rose", "silk_emb_rose")),   # ① 茜の裙（髪の花・靴の先も）
+        (1, ("ru", "xiu"), ("silk_pale",)),      # ② 月白の上着と広袖
+        (2, None, ("silk_emb_indigo",)),         # ③ 藍の刺繍の襟・袖口・靴
+        (3, ("bow", "qun_tou", "pibo"), None),   # ④ 胸の結びと、肩の薄い披帛
+    ],
+    "golem": [
+        (0, None, ("felt_indigo2",)),            # ① 藍の肩当てと藍の継ぎ当て（いままでの 1 枚めの布）
+        (1, ("arm",), ("felt_grey",)),           # ② 腕の灰色のフェルト
+        (2, GOLEM_PATCH, ("felt_rust", "felt_mustard", "felt_plum", "felt_teal", "felt_denim", "felt_cream2", "felt_boot")),   # ③ 無地の継ぎ当て
+        (3, GOLEM_PATCH, ("check", "print", "stripe")),   # ④ 柄の継ぎ当て
+    ],
+}
+DYE_STEP = 60   # 塗り分けの絵の値: 部位 k（1〜4）を k × 60 で書く。0 は染めない所
+
+
+def dye_slot(doll, part, mat):
+    n = part.lower()
+    for slot, heads, mats in DYE.get(doll, []):
+        if (heads is None or n.startswith(heads)) and (mats is None or mat in mats):
+            return slot
+    return -1
+
+
+def dye_mask(doll, folder, px=2048, margin=8):
+    """染める部位の塗り分けの絵（<folder>/<doll>_dye.png）を作る。いまの glb の UV の上に、部位の番号を塗る。
+    glb は焼き直さない: 台本で組んだ部品を、glb の形の面ごとにいちばん近い所で引き当てる（形が同じなら距離はほぼ 0）。
+    人形を焼き直したら（export）、これも作り直す。"""
+    import numpy as np
+    from mathutils.bvhtree import BVHTree
+    sc = bpy.context.scene
+    for ob in list(sc.objects):
+        if ob.type in ("LIGHT", "CAMERA") or ob.name.startswith("Plane"):
+            bpy.data.objects.remove(ob)
+    parts = [realize(ob) for ob in list(sc.objects) if ob.type in ("MESH", "CURVE", "META")]
+    verts, polys, slots, fuzz = [], [], [], []
+    count = {}
+    for ob in parts:
+        me = ob.data
+        base = len(verts)
+        verts.extend(v.co.copy() for v in me.vertices)
+        for p in me.polygons:
+            mat = me.materials[p.material_index].name if me.materials and me.materials[p.material_index] else ""
+            s = dye_slot(doll, ob.name, mat)
+            polys.append([base + i for i in p.vertices])
+            slots.append(s)
+            fuzz.append("_fuzz" in ob.name)
+            count[(s, ob.name.split(".")[0], mat)] = count.get((s, ob.name.split(".")[0], mat), 0) + 1
+    for k in sorted(count, key=lambda k: (k[0], k[1])):
+        if k[0] >= 0:
+            print("dye part", k[0] + 1, k[1], k[2], count[k])
+    tree = BVHTree.FromPolygons(verts, polys)
+    for ob in parts:
+        bpy.data.objects.remove(ob)
+    # いまの glb の形（骨は休みの姿のまま）
+    glb = os.path.abspath(os.path.join(folder, doll + ".glb"))
+    bpy.ops.import_scene.gltf(filepath=glb)
+    mesh_ob = max((o for o in sc.objects if o.type == "MESH"), key=lambda o: len(o.data.polygons))
+    me = mesh_ob.data
+    mw = mesh_ob.matrix_world
+    uv = me.uv_layers.active.data
+    far = 0.0
+    off = {}   # 5 mm より離れた面の数（部位ごと）
+    tris = []   # (uv の 3 点, 部位)
+    me.calc_loop_triangles()
+    face_slot = {}
+    face_fuzz = {}
+    dist = []
+    for p in me.polygons:
+        c = mw @ p.center
+        hit = tree.find_nearest(c)
+        far = max(far, hit[3] if hit[0] is not None else 1.0)
+        face_slot[p.index] = slots[hit[2]] if hit[0] is not None else -1
+        face_fuzz[p.index] = hit[0] is not None and fuzz[hit[2]]
+        dist.append(hit[3] if hit[0] is not None else 1.0)
+        if hit[0] is None or hit[3] > 0.005:
+            off[face_slot[p.index]] = off.get(face_slot[p.index], 0) + 1
+    print("dye mask: farthest face %.5f m, faces over 5 mm by part %s of %d" % (far, off, len(me.polygons)))
+    print("dye mask: face distance percentiles 50/90/99 %s" % np.percentile(dist, [50, 90, 99]))
+    img = np.zeros((px, px), np.uint8)
+    core = np.zeros((px, px), bool)   # 毛羽の殻でない所（もとの色はここで測る）
+    for t in me.loop_triangles:
+        s = face_slot[t.polygon_index]
+        if s < 0:
+            continue
+        q = np.array([uv[li].uv[:] for li in t.loops]) * px
+        q[:, 1] = px - q[:, 1]   # 絵は上から
+        x0, y0 = np.floor(q.min(0)).astype(int)
+        x1, y1 = np.ceil(q.max(0)).astype(int)
+        x0, y0 = max(x0, 0), max(y0, 0)
+        x1, y1 = min(x1, px - 1), min(y1, px - 1)
+        if x1 < x0 or y1 < y0:
+            continue
+        xs, ys = np.meshgrid(np.arange(x0, x1 + 1) + 0.5, np.arange(y0, y1 + 1) + 0.5)
+        (ax, ay), (bx, by), (cx, cy) = q
+        d = (by - cy) * (ax - cx) + (cx - bx) * (ay - cy)
+        if abs(d) < 1e-12:
+            continue
+        l0 = ((by - cy) * (xs - cx) + (cx - bx) * (ys - cy)) / d
+        l1 = ((cy - ay) * (xs - cx) + (ax - cx) * (ys - cy)) / d
+        e = -0.5 / max(abs(d), 1.0) ** 0.5   # 細い三角も画素の中心を外さないよう、少し太らせる
+        inside = (l0 >= e) & (l1 >= e) & (1.0 - l0 - l1 >= e)
+        img[y0:y1 + 1, x0:x1 + 1][inside] = (s + 1) * DYE_STEP
+        if not face_fuzz[t.polygon_index]:
+            core[y0:y1 + 1, x0:x1 + 1][inside] = True
+    # 島の外へにじませる（色の絵の焼き込みの余白と同じだけ。縮めた絵の縁でも部位が切れない）
+    for _ in range(margin):
+        empty = img == 0
+        grown = img.copy()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            sh = np.roll(np.roll(img, dy, 0), dx, 1)
+            grown = np.where(empty & (grown == 0), sh, grown)
+        img = grown
+    out = bpy.data.images.new(doll + "_dye", px, px, alpha=False)
+    out.colorspace_settings.name = "Non-Color"
+    v = np.repeat((img[::-1].astype(np.float32) / 255.0)[:, :, None], 4, 2)
+    v[:, :, 3] = 1.0
+    out.pixels.foreach_set(v.ravel())
+    path = os.path.abspath(os.path.join(folder, doll + "_dye.png"))
+    out.filepath_raw = path
+    out.file_format = "PNG"
+    sc.render.image_settings.color_mode = "BW"
+    out.save()
+    # 部位ごとのもとの色（焼いた色の絵の、その部位の所の真ん中あたりの色。game/outfit.gd の PARTS に書く）
+    src = bpy.data.images.load(os.path.abspath(os.path.join(folder, "%s_%s_color.png" % (doll, doll))))
+    w, h = src.size
+    col = np.empty(w * h * 4, np.float32)
+    src.pixels.foreach_get(col)
+    col = col.reshape(h, w, 4)[::-1, :, :3]
+    m = img if w == px else img[:: px // w, :: px // w]
+    k = core if w == px else core[:: px // w, :: px // w]
+    for s in range(4):
+        sel = col[(m == (s + 1) * DYE_STEP) & k]
+        if len(sel) == 0:
+            print("dye base", s + 1, "none")
+            continue
+        # 毛羽の殻を除いた所の、いちばん光の当たる側（明るいほうの 3〜10%）の色を、その部位の色とする。
+        # ゲームの光の下では、布は焼いた絵の値よりずっと明るく見える。選んだ色が見た目の色になるよう、明るい側をもとの色にする。
+        # 柄を残す部位（outfit.gd の PARTS の 2 番め）は、鮮やかな所だけで測った色（sat）を使う
+        def band(px_):
+            lum = px_ @ np.array([0.299, 0.587, 0.114])
+            lo, hi = np.percentile(lum, [90, 97])
+            return np.median(px_[(lum >= lo) & (lum <= hi)], 0)
+        hexc = lambda c: "#%02x%02x%02x" % tuple(int(round(x * 255)) for x in c)
+        mx, mn = sel.max(1), sel.min(1)
+        vivid = sel[(mx - mn) / np.maximum(mx, 1e-4) > 0.25]
+        print("dye base", s + 1, hexc(band(sel)), "sat", hexc(band(vivid)) if len(vivid) > 20 else "-", "px", len(sel))
+    print("wrote", path)

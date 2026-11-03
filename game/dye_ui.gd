@@ -1,12 +1,15 @@
 extends CanvasLayer
 ## 服を染める画面（2 階の染め桶の前で F）。文字は使わない（2026-11-01 代表「服の色変えもできるようにしたい」）。
 ##   左: 紙の札の中で、いま着ている人形が 12 コマでゆっくり回る。選んでいる色がその場で服に染まる（見本。まだ払っていない）。
-##   右上: 服の布の見本（布が 2 つある人形は 2 枚）。押した布を染める。見本の右下の折り返しが、もとの色。
+##   右上: 染める部位の見本 4 枚（主の色・2 番目・3 番目・4 番目。outfit.gd の PARTS）。押した部位を染める。見本の右下の折り返しが、もとの色。
+##       見本を押す・見本に乗ると、札の中の人形のその部位が明るく脈打つ（どこを染めるかを、文字でなく人形の上で指す）
 ##   右: 色の輪（まわりで色合い、外ほど鮮やか）と、明るさの帯。色は自由に選べる（2026-11-01 代表「自由に選ぶ」）。
-##       輪の下の小さな布は「もとの色に戻す」。
-##   右下: 染める札（桶の絵と、染め代のボタン）。色ではなく 1 回ごとに染め代を払う（craft.gd の DYE_PRICE。何も変えていなければ押せない。
-##       足りなければ値段が赤い）。染めると、みんなの画面でその人の人形が染まる（craft.gd の出来事 dye）
-##   閉じるのは右上の × の縫い目か、F か Esc。Tab で布を替え、←→ で色合い、↑↓ で明るさ、Enter で染める
+##   見本の下の小さな丸い布は、その部位の「脱色」（もとの色に戻す）。もとの色の布に戻る矢印。染めてある部位だけ押せる
+##       （2026-11-03 代表「デフォルトカラーに戻す脱色を各部位でできるようにしてほしい」）。脱色はただ（代表「脱色はただに」）
+##   右下: 染める札（桶の絵と、染め代のボタン）。色ではなく 1 回ごとに染め代を払う。染め代は、別の色に染める部位の数で上がる（craft.gd の
+##       DYE_PRICES。脱色だけなら値段なし。桶の下に、変える部位の新しい色の小さな布が並ぶ）。何も変えていなければ押せない。足りなければ値段が赤い。
+##       染めると、みんなの画面でその人の人形が染まる（craft.gd の出来事 dye）
+##   閉じるのは右上の × の縫い目か、F か Esc。Tab で部位を替え、←→ で色合い、↑↓ で明るさ、Backspace で脱色、Enter で染める
 
 const Doll := preload("res://doll.gd")
 const Outfit := preload("res://outfit.gd")
@@ -17,6 +20,7 @@ const SHOT := Vector2i(300, 420)   # 札の中の絵の大きさ (px)
 const RINGS := 6             # 色の輪の、外へ向かう段の数
 const SEGS := 48             # 色の輪の、まわりの分け数
 const V_MIN := 0.12          # 明るさの帯のいちばん暗い所
+const GLOW := 1.6            # 部位を選んだあと、人形のその部位が脈打つ秒
 
 var main: Node3D
 var craft: Node
@@ -24,8 +28,9 @@ var player: Node3D
 var is_open := false
 var _view: Control
 var _kind := "kasa"
-var _pick: Array = []        # 布ごとの、選んでいる色（Color か null = もとの色）
-var _cloth := 0              # 染める布の番号
+var _pick: Array = []        # 部位ごとの、選んでいる色（Color か null = もとの色）
+var _cloth := 0              # 染める部位の番号
+var _glow := 0.0             # 選んだ部位が脈打つ残りの秒
 var _hsv := Vector3(0, 0.5, 0.5)   # いまの布の色（色合い・鮮やかさ・明るさ）
 var _drag := ""              # "wheel" か "value" を引いている
 var _shot: SubViewport
@@ -39,7 +44,7 @@ var _wheel_c := Vector2.ZERO
 var _wheel_r := 1.0
 var _value_rect := Rect2()
 var _swatches: Array[Rect2] = []
-var _undo_rect := Rect2()
+var _bleaches: Array[Rect2] = []   # 見本の下の、部位ごとの脱色の布
 var _dye_rect := Rect2()
 var _close_rect := Rect2()
 
@@ -70,6 +75,7 @@ func open() -> void:
 	_pick = craft.outfit_of(int(player.get("id")), _kind)
 	_pick.resize(Outfit.cloth_count(_kind))
 	_cloth = 0
+	_glow = GLOW
 	_take_hsv()
 	_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -116,18 +122,29 @@ func _show_pick() -> void:
 		Outfit.set_params(_mat, _kind, _pick)
 
 
-## 何か変えたか（変えていなければ染められない）
-func _changed() -> bool:
-	return craft.dye_colors(_kind, _pick) != craft.dye_colors(_kind, craft.outfit_of(int(player.get("id")), _kind))
+## いまの色から変える部位（番号の並び）。空なら染められない
+func _changed() -> Array:
+	var now: Array = craft.dye_colors(_kind, _pick)
+	var old: Array = craft.dye_colors(_kind, craft.outfit_of(int(player.get("id")), _kind))
+	var out := []
+	for i in now.size():
+		if now[i] != old[i]:
+			out.append(i)
+	return out
+
+
+## 染め代（別の色に染める部位の数で決まる。脱色だけなら 0）
+func _price() -> int:
+	return craft.dye_price(craft.dye_colors(_kind, _pick), craft.dye_colors(_kind, craft.outfit_of(int(player.get("id")), _kind)))
 
 
 func _can_pay() -> bool:
-	return craft.wallet(int(player.get("id"))) >= craft.DYE_PRICE
+	return craft.wallet(int(player.get("id"))) >= _price()
 
 
 ## 染める（出来事を送る。染まるのは配られてから）
 func dye() -> void:
-	if not _changed() or not _can_pay():
+	if _changed().is_empty() or not _can_pay():
 		return
 	if craft.send({"kind": "dye", "who": int(player.get("id")), "doll": _kind, "colors": craft.dye_colors(_kind, _pick)}):
 		_pop = 1.0
@@ -180,6 +197,13 @@ func _process(dt: float) -> void:
 	if not is_open:
 		return
 	_pop = maxf(0.0, _pop - dt * 2.5)
+	_glow = maxf(0.0, _glow - dt)
+	if _mat:   # 見本に乗っている部位か、選んだばかりの部位を、人形の上で光らせる
+		var on := _cloth if _glow > 0.0 else -1
+		for pre in ["swatch", "bleach"]:
+			if _hover.begins_with(pre):
+				on = int(_hover.trim_prefix(pre))
+		Outfit.glow(_mat, on)
 	var f := Doll.frame_index()
 	if f != _frame and _spin:   # 12 コマでゆっくり回す
 		_frame = f
@@ -204,28 +228,29 @@ func _draw_on(ci: Control) -> void:
 	Icons.paper_tag(ci, card, 18.0 * u, u)
 	if _shot:
 		ci.draw_texture_rect(_shot.get_texture(), card.grow(-10.0 * u), false)
-	# 右上: 布の見本
+	# 右上: 部位の見本
 	var rx := card.end.x + 48.0 * u
 	var n := _pick.size()
 	var sw := 74.0 * u
+	var bs := 30.0 * u
 	_swatches.clear()
+	_bleaches.clear()
 	for i in n:
-		var sr := Rect2(Vector2(rx + i * (sw + 26.0 * u), r.position.y + 40.0 * u), Vector2(sw, sw))
+		var sr := Rect2(Vector2(rx + i * (sw + 26.0 * u), r.position.y + 34.0 * u), Vector2(sw, sw))
 		_swatches.append(sr)
 		_swatch(ci, sr, i, u)
+		var br := Rect2(Vector2(sr.get_center().x - bs / 2.0, sr.end.y + 8.0 * u), Vector2(bs, bs))
+		_bleaches.append(br)
+		_bleach(ci, br, i, u)
 	# 右: 色の輪と明るさの帯
 	_wheel_r = minf(150.0 * u, (r.end.y - (r.position.y + 150.0 * u) - 40.0 * u) / 2.0)
 	_wheel_c = Vector2(rx + _wheel_r + 4.0 * u, r.position.y + 150.0 * u + _wheel_r)
 	_wheel(ci, u)
 	_value_rect = Rect2(Vector2(_wheel_c.x + _wheel_r + 34.0 * u, _wheel_c.y - _wheel_r), Vector2(30.0 * u, _wheel_r * 2.0))
 	_value(ci, u)
-	# 輪の左下: もとの色に戻す小さな布
-	var us := 44.0 * u
-	_undo_rect = Rect2(Vector2(_wheel_c.x - _wheel_r - 6.0 * u, _wheel_c.y + _wheel_r - us + 6.0 * u), Vector2(us, us))
-	_undo(ci, u)
 	# 右下: 染める札（桶の絵と染め代）
 	var dw := 150.0 * u
-	var dh := 170.0 * u
+	var dh := 200.0 * u
 	_dye_rect = Rect2(Vector2(r.end.x - dw - 40.0 * u, r.end.y - dh - 40.0 * u), Vector2(dw, dh))
 	_dye_card(ci, u)
 	# 右上: 閉じる（× の縫い目）
@@ -240,7 +265,7 @@ func _draw_on(ci: Control) -> void:
 	Icons.thread(ci, PackedVector2Array([Vector2(12, -12), Vector2(-12, 12)]), Icons.THREAD, 4.0, 1.0)
 
 
-## 布の見本: 選んだ色のフェルト。右下の角を折り返して、裏にもとの色。染める布は赤い糸で囲む
+## 部位の見本: 選んだ色のフェルト。右下の角を折り返して、裏にもとの色。染める部位は赤い糸で囲む
 func _swatch(ci: CanvasItem, sr: Rect2, i: int, u: float) -> void:
 	var base := Outfit.base_color(_kind, i)
 	var c: Color = _pick[i] if _pick[i] is Color else base
@@ -306,29 +331,46 @@ func _value(ci: CanvasItem, u: float) -> void:
 	ci.draw_circle(Vector2(r.end.x + 10.0 * u, y), 5.5 * u, Icons.RED)
 
 
-## もとの色に戻す: もとの色の小さな布と、戻る矢印
-func _undo(ci: CanvasItem, u: float) -> void:
-	var sr := _undo_rect
-	var a := 1.0 if _pick[_cloth] is Color else 0.4
+## 部位 i の脱色（もとの色に戻す）: もとの色の小さな丸い布と、戻る矢印。染めてある（選んでいる色がある）ときだけ濃い
+func _bleach(ci: CanvasItem, sr: Rect2, i: int, u: float) -> void:
+	var a := 1.0 if _pick[i] is Color else 0.3
 	Icons.screen()
-	var grow := 1.08 if _hover == "undo" and a > 0.5 else 1.0
+	var grow := 1.12 if _hover == "bleach%d" % i and a > 0.5 else 1.0
 	var c := sr.get_center()
-	Icons.patch(ci, Icons.circ(c, sr.size.x * 0.5 * grow, 20), Outfit.base_color(_kind, _cloth), a, true)
-	Icons.arc_arrow(ci, c, sr.size.x * 0.3, PI * 0.15, PI * 1.55, Icons.CAP, a, 3.0 * u)
+	Icons.patch(ci, Icons.circ(c, sr.size.x * 0.5 * grow, 18), Outfit.base_color(_kind, i), a, true)
+	Icons.arc_arrow(ci, c, sr.size.x * 0.3, PI * 0.15, PI * 1.55, Icons.CAP, a, 2.4 * u)
 
 
-## 染める札: 紙の札に、桶の絵（布はいま選んだ色）と染め代のボタン。押せないときは薄く、足りないときは値段が赤い
+## 部位 i を脱色する（もとの色に戻す。染めるのは桶の札を押してから）
+func bleach(i: int) -> void:
+	if i < 0 or i >= _pick.size():
+		return
+	_cloth = i
+	_glow = GLOW
+	_pick[i] = null
+	_take_hsv()
+	_show_pick()
+
+
+## 染める札: 紙の札に、桶の絵（布はいま選んだ色）と、変える部位の新しい色の小さな布の並び（数が多いほど染め代が上がる）と、
+## 染め代のボタン。押せないときは薄く、足りないときは値段が赤い
 func _dye_card(ci: CanvasItem, u: float) -> void:
-	var ok := _changed() and _can_pay()
+	var ch := _changed()
+	var ok := not ch.is_empty() and _can_pay()
 	var a := 1.0 if ok else 0.45
 	var r := _dye_rect
 	if _hover == "dye" and ok:
 		r = r.grow(4.0 * u)
 	Icons.paper_tag(ci, r, 14.0 * u, u)
 	var c: Color = _pick[_cloth] if _pick[_cloth] is Color else Outfit.base_color(_kind, _cloth)
-	Icons.icon(ci, "dye", r.position + Vector2(r.size.x / 2.0, r.size.y * 0.38), 86.0 * u, a, c)
+	Icons.icon(ci, "dye", r.position + Vector2(r.size.x / 2.0, r.size.y * 0.27), 74.0 * u, a, c)
 	Icons.screen()
-	CraftIcons.price(ci, r.position + Vector2(r.size.x / 2.0, r.size.y * 0.8), craft.DYE_PRICE, 11.0 * u, a,
+	var dot := 9.0 * u
+	for j in ch.size():   # 変える部位ごとに、新しい色の小さな丸い布（もとの色に戻す部位は、もとの色）
+		var i: int = ch[j]
+		var at := r.position + Vector2(r.size.x / 2.0 + (j - (ch.size() - 1) * 0.5) * dot * 2.6, r.size.y * 0.52)
+		Icons.patch(ci, Icons.circ(at, dot, 12), _pick[i] if _pick[i] is Color else Outfit.base_color(_kind, i), a, true)
+	CraftIcons.price(ci, r.position + Vector2(r.size.x / 2.0, r.size.y * 0.78), _price() if not ch.is_empty() else craft.DYE_PRICES[1], 10.0 * u, a,
 		Icons.RED if not _can_pay() else CraftIcons.COIN)
 	if ok:
 		Icons.dashes(ci, Icons.rr(r.position.x - 6.0 * u, r.position.y - 6.0 * u, r.size.x + 12.0 * u, r.size.y + 12.0 * u, 10.0 * u),
@@ -355,8 +397,9 @@ func _hit(p: Vector2) -> String:
 		return "close"
 	if _dye_rect.has_point(p):
 		return "dye"
-	if _undo_rect.has_point(p):
-		return "undo"
+	for i in _bleaches.size():
+		if _bleaches[i].grow(4.0).has_point(p):
+			return "bleach%d" % i
 	for i in _swatches.size():
 		if _swatches[i].has_point(p):
 			return "swatch%d" % i
@@ -389,6 +432,7 @@ func _input(e: InputEvent) -> void:
 			KEY_TAB:
 				if not e.echo and _pick.size() > 1:
 					_cloth = (_cloth + 1) % _pick.size()
+					_glow = GLOW
 					_take_hsv()
 			KEY_A, KEY_LEFT:
 				_hsv.x = fposmod(_hsv.x - 1.0 / SEGS, 1.0)
@@ -402,6 +446,9 @@ func _input(e: InputEvent) -> void:
 			KEY_S, KEY_DOWN:
 				_hsv.z = maxf(V_MIN, _hsv.z - 0.05)
 				_set_from_hsv()
+			KEY_BACKSPACE, KEY_DELETE:
+				if not e.echo:
+					bleach(_cloth)
 			KEY_ENTER, KEY_KP_ENTER, KEY_SPACE:
 				if not e.echo:
 					dye()
@@ -422,14 +469,13 @@ func _input(e: InputEvent) -> void:
 				close()
 			"dye":
 				dye()
-			"undo":
-				_pick[_cloth] = null
-				_take_hsv()
-				_show_pick()
 			"wheel", "value":
 				_drag = h
 				_drag_to(e.position)
 			_:
 				if h.begins_with("swatch"):
 					_cloth = int(h.trim_prefix("swatch"))
+					_glow = GLOW
 					_take_hsv()
+				elif h.begins_with("bleach"):
+					bleach(int(h.trim_prefix("bleach")))
