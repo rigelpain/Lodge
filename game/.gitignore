@@ -1,3 +1,7 @@
 .godot/
 *.import
+# 平らな絵（HUD・献立の絵・刺繍枠）と、色の値で部位を引く染めの塗り分けは、ロスなしのまま残す（project.godot の importer_defaults の例外）
+!props/hud/*.png.import
+!props/**/icons/*.png.import
+!person/*_dye.png.import
 shots/
