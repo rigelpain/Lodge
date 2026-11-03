@@ -16,7 +16,24 @@ static var _tex := {}
 static func make(path: String) -> Node3D:
 	var n: Node3D = (load(path) as PackedScene).instantiate()
 	dress(n)
+	if path.get_file().begins_with("tree_"):
+		_center_trunk(n)
 	return n
+
+
+## 木の glb は、Blender で 4 本を横に並べたまま書き出したので、形が原点から横に 1.5〜9.5 m ずれている（props/build_tree.py の LINE）。
+## 幹（*_wood）のまんなかが原点に来るよう、中の形をずらす（置いた所に木が立ち、その場の雪面の高さで根もとが埋まる）
+static func _center_trunk(n: Node3D) -> void:
+	for mi in n.find_children("*_wood", "MeshInstance3D", true, false):
+		var c: Vector3 = (mi as MeshInstance3D).get_aabb().get_center()
+		var p: Node = mi
+		while p != n:   # n から見た位置（まだ木の中に入っていないので、親をたどって足す）
+			c = (p as Node3D).transform * c
+			p = p.get_parent()
+		for child in n.get_children():
+			if child is Node3D:
+				(child as Node3D).position -= Vector3(c.x, 0.0, c.z)
+		return
 
 
 ## 下にある MeshInstance3D の素材を差し替える。灯りの目印（light*）には暖色の灯りをともす。

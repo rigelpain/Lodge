@@ -56,7 +56,7 @@ func _run() -> void:
 	sb.auto = false
 	sb.clear()
 	var sled: RigidBody3D = main.sled
-	var top := Vector3(Mountain.COURSE_X, 0, Mountain.section("頂上")[1] + 1.0)
+	var top := Vector3(Mountain.START.x, 0, Mountain.START.y)
 	var at := Vector3(top.x, main.height(top.x, top.z) + 0.6, top.z)
 	if args.get("sled", "") == "sack":
 		p.global_position = at + Vector3.UP * 0.2

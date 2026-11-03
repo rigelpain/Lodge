@@ -72,7 +72,7 @@ const SPARK_PX := 0.0016                 # またたきの星の、画面での�
 
 # ---- 出し方（調整する値）
 const MAX_BUTTONS := 14              # 斜面に同時に出ているボタンの数（丘）
-## 山ごと・標高ごとの降るボタン（2026-10-30 代表）。大きな山はコースの上に降る。高い所ほど、上の素材が出やすく、少し多く降る
+## 山ごと・標高ごとの降るボタン（2026-10-30 代表）。大きな山は北の斜面（滑る所）に降る。高い所ほど、上の素材が出やすく、少し多く降る
 const MAP_MAX := {"hill": MAX_BUTTONS, "mountain": 20}   # 同時に出ている数（山ごと）
 const MAP_RARE := {"hill": 1.0, "mountain": 1.3}   # 真鍮・白蝶貝・螺鈿の出やすさ（山ごと。TIERS の chance に掛ける）
 const RARE_ALT := 0.012              # 高さ 1 m ごとに、上の素材が +1.2% 出やすく（大きな山の頂上 75 m で ×1.9。山の 1.3 と合わせて ×2.5）
@@ -300,9 +300,9 @@ func _live(m := "") -> int:
 	return n
 
 
-## どの山か: "hill"（丘）か "mountain"（大きな山。上り返しの土手から北）
+## どの山か: "hill"（丘）か "mountain"（大きな山。麓の窪地から南）
 static func map_of(p: Vector3) -> String:
-	return "mountain" if p.z > Mountain.BERM_Z - Mountain.BERM_HALF else "hill"
+	return "mountain" if p.z > Mountain.FOOT_Z else "hill"
 
 
 ## 場所の倍率（山ごと × 標高ごと）。p の高さ（y）で数える
@@ -358,11 +358,11 @@ func _normal(p: Vector3) -> Vector3:
 	return Vector3(-hx / (2.0 * e), 1.0, -hz / (2.0 * e)).normalized()
 
 
-## 置いてよい所か: ロッジの近くでない、斜面の上（丘）かコースの上（大きな山）、ほかのボタンから離れている、木や小物に重ならない
+## 置いてよい所か: ロッジの近くでない、斜面の上（丘）か北の斜面（大きな山）、ほかのボタンから離れている、木や小物に重ならない
 func _free_spot(p: Vector3) -> bool:
 	var r := Vector2(p.x, p.z).length()
 	if map_of(p) == "mountain":
-		if absf(p.x - Mountain.COURSE_X) > Mountain.COURSE_W or not Mountain.on_course(p.x, p.z):
+		if not Mountain.on_face(p.x, p.z) or _normal(p).y < cos(deg_to_rad(30.0)):
 			return false
 	elif r < 4.0 or r > 60.0 or world.lodge_weight(p.x, p.z) < 1.0:
 		return false
@@ -396,8 +396,8 @@ func _pick_spot(m := "hill") -> Vector3:
 		var p: Vector3
 		var w: float
 		if m == "mountain":
-			# 大きな山: コースの上（頂上から流しの終わりまで）。高い所ほど置かれやすい
-			p = Vector3(Mountain.COURSE_X + _rng.randf_range(-1.0, 1.0) * (Mountain.COURSE_W - 1.0), 0,
+			# 大きな山: 北の斜面（滑る所）の上。高い所ほど置かれやすい
+			p = Vector3(Mountain.FACE_X + _rng.randf_range(-1.0, 1.0) * Mountain.FACE_W, 0,
 					_rng.randf_range(Mountain.BOTTOM_Z + 4.0, Mountain.top_z))
 			w = 1.0 + MT_SPOT_ALT * maxf(0.0, world.height(p.x, p.z))
 		else:

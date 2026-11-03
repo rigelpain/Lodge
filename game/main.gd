@@ -222,8 +222,6 @@ const PATH_X := -13.4      # 風除室の中心（audio.gd の VEST.x と同じ�
 const PATH_HALF := 1.6     # 道の半分の幅 (m)
 const SIGN_SLOPE_AT := Vector2(PATH_X + 3.0, 31.0)   # 丘への案内板（ロッジの座標）。道の脇、広場の段（z 24.9 まで）と届いたソリの先
 const PATH_TINT := Color(0.86, 0.88, 0.93)   # 踏み固めた雪の色（少し灰青に沈む）
-const COURSE_TINT := Color(0.92, 0.95, 1.0)  # 大きな山のコースの圧雪した雪の色（少し青い白）
-const LIP_TINT := Color(0.42, 0.55, 0.85)    # ジャンプ台の踏み切りの縁（藍に染めた帯）
 
 static func path_weight(x: float, z: float, margin := 0.0) -> float:
 	var a := lodge_to_world(Vector2(PATH_X, 17.0))
@@ -268,6 +266,50 @@ static func snow_lift(x: float, z: float) -> float:
 	var fx := x - x0
 	var fz := z - z0
 	return lerpf(lerpf(drift(x0, z0), drift(x0 + 1, z0), fx), lerpf(drift(x0, z0 + 1), drift(x0 + 1, z0 + 1), fx), fz)
+
+
+## 小物を雪に立てる高さ: 根もと（半径 r）のまんなかとまわり 8 か所で、見た目の雪面（吹きだまりを含む）がいちばん低い所。
+## 斜面でも根もとが雪から浮かない（上りの側は雪に埋まる）。地形を変えても、置く所の高さはここから取る
+static func foot_y(x: float, z: float, r := 0.3) -> float:
+	var low := height(x, z) + snow_lift(x, z)
+	for k in 8:
+		var a := TAU * k / 8.0
+		var px := x + cos(a) * r
+		var pz := z + sin(a) * r
+		low = minf(low, height(px, pz) + snow_lift(px, pz))
+	return low
+
+
+## 置いた小物（シーンに入れたあと）を、いちばん下の部分のどこも見た目の雪面から浮かないところまで下げる。
+## 岩や雪のかたまりのように、斜面に沿わせて寝かせた物の仕上げに使う。沈めるのは形の高さの半分まで
+func settle(n: Node3D) -> void:
+	var pts := PackedVector3Array()
+	for mi in n.find_children("*", "MeshInstance3D", true, false):
+		var m: MeshInstance3D = mi
+		if m.mesh == null:
+			continue
+		for sf in m.mesh.get_surface_count():
+			for v in m.mesh.surface_get_arrays(sf)[Mesh.ARRAY_VERTEX]:
+				pts.append(m.global_transform * v)
+	if pts.is_empty():
+		return
+	var low := INF
+	var high := -INF
+	for p in pts:
+		low = minf(low, p.y)
+		high = maxf(high, p.y)
+	var gap := 0.0
+	for p in pts:
+		if p.y < low + (high - low) * 0.25:   # 下の 4 分の 1 の頂点
+			gap = maxf(gap, p.y - (height(p.x, p.z) + snow_lift(p.x, p.z)))
+	n.position.y -= minf(gap + 0.03, (high - low) * 0.5)
+
+
+## 置く所の雪面の向き（上を向いた単位ベクトル）。岩や雪のかたまりを斜面に沿わせる用
+static func ground_normal(x: float, z: float, e := 1.0) -> Vector3:
+	var hx := height(x + e, z) - height(x - e, z)
+	var hz := height(x, z + e) - height(x, z - e)
+	return Vector3(-hx, 2.0 * e, -hz).normalized()
 
 
 func _ready() -> void:
@@ -1449,8 +1491,7 @@ func _make_ground() -> void:
 				var z := jr + z0
 				var c := (jr + 1) * g + i + 1
 				st.set_normal(Vector3(vs[c - 1] - vs[c + 1], 2.0, vs[c - g] - vs[c + g]).normalized())
-				var col := Color.WHITE.lerp(COURSE_TINT, Mountain.course_weight(x, z)).lerp(LIP_TINT, Mountain.lip_weight(x, z))
-				st.set_color(col.lerp(PATH_TINT, maxf(path_weight(x, z), Mountain.path_weight(x, z))))
+				st.set_color(Color.WHITE.lerp(PATH_TINT, maxf(path_weight(x, z), Mountain.path_weight(x, z))))
 				st.set_uv(Vector2(x, z) * 0.5)
 				st.add_vertex(Vector3(x, vs[c], z))
 		for j in n - 1:
@@ -1512,7 +1553,7 @@ func _make_hill_trees() -> void:
 		var h := rng.randf_range(4, 8)
 		var tree := Props.make(TREES[k % TREES.size()])
 		tree.scale = Vector3.ONE * h / 6.0
-		tree.position = p + Vector3(0, height(p.x, p.z) - 0.05, 0)
+		tree.position = p + Vector3(0, foot_y(p.x, p.z, 0.35 * h / 6.0) - 0.05, 0)
 		tree.rotation.y = rng.randf() * TAU
 		add_child(tree)
 	_make_slope_props()
@@ -1553,14 +1594,22 @@ func _make_slope_props() -> void:
 			continue
 		if lodge_weight(x, z) < 1.0 or path_weight(x, z, 1.0) > 0.0:
 			continue
-		_put_prop(LUMPS[k % LUMPS.size()], x, z, rng.randf() * TAU)
+		_put_prop(LUMPS[k % LUMPS.size()], x, z, rng.randf() * TAU, 0.0, true)
 
 
-func _put_prop(path: String, x: float, z: float, yaw: float) -> Node3D:
+## 小物を雪に立てる。r は根もとの半径（foot_y）。lay: 岩や雪のかたまりは斜面に沿わせて、まんなかの雪面へ少し沈める
+func _put_prop(path: String, x: float, z: float, yaw: float, r := 0.3, lay := false) -> Node3D:
 	var n := Props.make(path)
-	n.position = Vector3(x, height(x, z) - 0.05, z)
-	n.rotation.y = yaw
+	if lay:
+		var up := ground_normal(x, z, 1.5)
+		n.basis = Basis(Quaternion(Vector3.UP, up)) * Basis(Vector3.UP, yaw)
+		n.position = Vector3(x, height(x, z) + snow_lift(x, z) - 0.06, z)
+	else:
+		n.position = Vector3(x, foot_y(x, z, r) - 0.05, z)
+		n.rotation.y = yaw
 	add_child(n)
+	if lay:
+		settle(n)
 	return n
 
 

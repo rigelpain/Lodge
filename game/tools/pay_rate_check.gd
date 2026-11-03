@@ -118,13 +118,14 @@ func _start(q: Dictionary) -> void:
 		sb.auto = true
 		for m in sb._burst:   # 始まりにまとめて降る分は数えない（降り続けるときの 1 分あたり）
 			sb._burst[m] = 0
-		var p0 := Vector3(Mountain.COURSE_X, 0, Mountain.section("中腹")[1]) if _mountain() else Vector3(0, 0, 20.0)
+		var p0 := Vector3(Mountain.REST.x, 0, Mountain.REST.y) if _mountain() else Vector3(0, 0, 20.0)
 		_run = q.merged({"t": 0.0, "p": p0, "goal": -1, "wait": 0.0, "got": 0.0, "exp": 0.0, "n": 0})
 		return
 	var at := Vector3(0, 0, 3.0)
 	var fwd := Vector3(0, 0, 1)
 	if _mountain():
-		at = Vector3(Mountain.COURSE_X, 0, Mountain.section("中腹" if args.get("from", "top") == "mid" else "頂上")[1 if args.get("from", "top") != "mid" else 0] + (1.0 if args.get("from", "top") != "mid" else -1.0))
+		var from: Vector2 = Mountain.REST if args.get("from", "top") == "mid" else Mountain.START
+		at = Vector3(from.x, 0, from.y)
 		fwd = Vector3(0, 0, -1)
 	sb.clear()
 	if args.has("buttons"):
@@ -233,7 +234,7 @@ func _walk(dt: float) -> void:
 	if b == null or b.state != "rest":
 		r.goal = -1
 		var bd := INF
-		var mid_z: float = Mountain.section("中腹")[1]
+		var mid_z: float = Mountain.REST.y
 		for c in sb.buttons.values():
 			if c.state != "rest" or sb.map_of(c.at) != ("mountain" if _mountain() else "hill"):
 				continue
