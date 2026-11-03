@@ -401,7 +401,7 @@ def glass_wall(P, F, G, D, axis, fixed, sgn, posts, z0, z1, door_bay=None):
 def build_massing():
     m = M("massing_lodge", "log", "massing")
     m.box(X0, Y0, FL1, X1, Y1, CEIL1)
-    m.prism_x([(Y2_0, FL2), (Y2_1, FL2), (Y2_1, EAVE_N), (Y2_0, EAVE_S)], X0, X1)
+    m.prism_x([(Y2_0, FL2), (Y2_1, FL2), (Y2_1, EAVE_N), (Y2_0, EAVE_S)], X2_0, X2_1)
     m.box(VEST["x0"], Y0 - VEST["d"], FL1, VEST["x1"], Y0, VEST["h"])
     m.done()
     r = M("massing_rail", "log", "massing")
@@ -482,7 +482,7 @@ def build_roof(chim_cut):
     lift = RAFTER["h"] if PH >= 3 else 0.0
     tv = ROOF_T / math.cos(math.atan(ROOF_PITCH))
     zs, zn = roof_z(ys) + lift, roof_z(yn) + lift
-    xa, xb = X0 - VERGE_OUT, X1 + VERGE_OUT
+    xa, xb = X2_0 - VERGE_OUT, X1 + VERGE_OUT
     r = M("roof", "roof", "crown")
     r.prism_x([(ys, zs), (yn, zn), (yn, zn + tv), (ys, zs + tv)][::-1], xa, xb)
     ro = r.done(bevel=0.03 if PH >= 3 else 0, seg=2)
@@ -577,10 +577,10 @@ def build_walls():
     walls.append(("1F_E", "y", X1, 1, Y0 + POST / 2, Y1 + ext, FL1, CEIL1, LOG_H / 2, [], None))
     walls.append(("1F_SW", "x", Y0, -1, X0 + POST / 2, GLASS_S_X0 - POST / 2, FL1, CEIL1, 0.0,
                   [(DOOR_IN["x0"], DOOR_IN["x1"], FL1, FL1 + DOOR_IN["h"])], None))
-    walls.append(("2F_S", "x", Y2_0, -1, X0 - ext, X1 + ext, FL2, EAVE_S, 0.0, [], None))
-    walls.append(("2F_N", "x", Y1, 1, X0 - ext, X1 + ext, FL2, EAVE_N, 0.0, [(c["ux0"], c["ux1"], -1, 99)], None))
+    walls.append(("2F_S", "x", Y2_0, -1, X2_0 - ext, X1 + ext, FL2, EAVE_S, 0.0, [], None))
+    walls.append(("2F_N", "x", Y1, 1, X2_0 - ext, X1 + ext, FL2, EAVE_N, 0.0, [(c["ux0"], c["ux1"], -1, 99)], None))
     gable_top = lambda z: Y1 - (z - EAVE_N) / ROOF_PITCH if z > EAVE_N else 99   # noqa: E731
-    walls.append(("2F_W", "y", X0, -1, Y2_0 - ext, Y1 + ext, FL2, EAVE_S, LOG_H / 2, [], gable_top))
+    walls.append(("2F_W", "y", X2_0, -1, Y2_0 - ext, Y1 + ext, FL2, EAVE_S, LOG_H / 2, [], gable_top))   # 西の端はテラス
     walls.append(("2F_E", "y", X1, 1, Y2_0 - ext, Y1 + ext, FL2, EAVE_S, LOG_H / 2, [], gable_top))
     for key, axis, fixed, sgn, a0, a1, z0, z1, off, extra, top in walls:
         ops = holes_for(key, axis, z0, z1, off)
@@ -804,12 +804,19 @@ def build_rails_and_stair():
     rail_run(Rm, (X0 + 0.07, Y0 + 0.07, zt), (ESTAIR["x0"], Y0 + 0.07, zt), name="bal_terrace_sw")   # 外階段の所は空ける
     rail_run(Rm, (ESTAIR["x1"], Y0 + 0.07, zt), (X1 - 0.07, Y0 + 0.07, zt), name="bal_terrace_s")
     rail_run(Rm, (X1 - 0.07, Y0 + 0.07, zt), (X1 - 0.07, Y2_0 - R - 0.02, zt), name="bal_terrace_e")
-    rail_run(Rm, (X0 + 0.07, Y0 + 0.07, zt), (X0 + 0.07, Y2_0 - R - 0.02, zt), name="bal_terrace_w")
-    # テラスの床板
+    # テラスは南と西の端の L 字（2026-11-03 代表「外からの入口がつながってる木板床のスペースをごっそり外にしてテラス化」）。
+    # 西と北の縁にも手すり。北の手すりは 2 階の西の壁（X2_0）の外の面まで
+    rail_run(Rm, (X0 + 0.07, Y0 + 0.07, zt), (X0 + 0.07, Y1 - 0.07, zt), name="bal_terrace_w")
+    rail_run(Rm, (X0 + 0.07, Y1 - 0.07, zt), (X2_0 - R - 0.02, Y1 - 0.07, zt), name="bal_terrace_n")
+    # テラスの床板（南の帯は東西いっぱい、西の端は 2 階の西の壁の外の面まで）
     tb = M("terrace_boards", "deck", "crown")
     n = int((Y2_0 - R - Y0) / 0.15)
     tb.box(X0, Y0 - 0.02, FL2, X1, Y0 + 0.13, FL2 + 0.03)
     tb.done(bevel=0.008, array=(n, (0, 0.15, 0)))
+    y0w = Y0 + n * 0.15
+    tw_ = M("terrace_boards_w", "deck", "crown")
+    tw_.box(X0, y0w - 0.02, FL2, X2_0 - R, y0w + 0.13, FL2 + 0.03)
+    tw_.done(bevel=0.008, array=(int((Y1 + 0.09 - y0w) / 0.15), (0, 0.15, 0)))
     # 外階段: 玄関前の広場から北へまっすぐ上り、踊り場を挟んでテラスの南の縁に着く
     E = ESTAIR
     T = M("stair_treads", "tread", "crown")   # 段板・踊り場・ミニテラス（Godot では板が東西に通る）
@@ -874,6 +881,59 @@ def instance(src, name, loc, rot_z=0.0, group="interior"):
                 setattr(n, attr, getattr(md, attr))
     coll(group).objects.link(o)
     return o
+
+
+def build_terrace_set():
+    """2 階のテラスの卓と椅子（2026-11-03 代表「二階テラスにテーブルと椅子を配置してほしい」）。外に置く物なので、
+    木の卓と椅子に雪を少しかぶせる（天板の北の端と角、椅子の背の上の桟）。座布団はフェルト（素材 cushion。
+    game/seats.gd が 1 階の椅子と同じく席として見つけ、卓の当たり（col_furniture）で向きを決める）。
+    椅子の形と高さは 1 階の食堂の椅子にそろえる（座る姿勢は doll.gd の _sit_chair）。背は板 1 枚でなく横桟 2 本"""
+    T_, C_ = TERRACE_TABLE, TERRACE_CHAIR
+    w, d, h = T_["w"], T_["d"], T_["h"]
+    lx, ly = w / 2 - 0.10, d / 2 - 0.12          # 脚の芯
+    tm = M("terrace_table_src", "board", "interior")
+    tm.box(-w / 2, -d / 2, h - 0.06, w / 2, d / 2, h)                       # 厚い天板
+    for sx in (-1, 1):
+        for sy in (-1, 1):
+            tm.box(sx * lx - 0.045, sy * ly - 0.045, 0, sx * lx + 0.045, sy * ly + 0.045, h - 0.06)
+        tm.box(sx * lx - 0.02, -ly, h - 0.16, sx * lx + 0.02, ly, h - 0.06)   # 幕板（長い辺）
+        tm.box(sx * lx - 0.025, -ly, 0.12, sx * lx + 0.025, ly, 0.18)         # 貫（長い辺の下）
+    tm.box(-lx, -0.03, 0.12, lx, 0.03, 0.18)                                # 貫（真ん中を東西に）
+    tsrc = tm.done(bevel=0.012)
+    ts = M("terrace_table_snow_src", "snow", "interior")                   # 天板の北の端に積もった雪と、南の角のひとかたまり
+    ts.box(-w / 2 + 0.04, d / 2 - 0.58, h - 0.005, w / 2 - 0.03, d / 2 - 0.02, h + 0.035)
+    ts.box(-w / 2 + 0.06, -d / 2 + 0.05, h - 0.005, -w / 2 + 0.30, -d / 2 + 0.26, h + 0.03)
+    tssrc = ts.done(bevel=0.018, seg=3, smooth=True)
+    ch = M("terrace_chair_src", "board", "interior")                       # 正面は -y、背は +y
+    ch.box(-0.22, -0.21, 0.43, 0.22, 0.21, 0.47)                            # 座板
+    for sx in (-0.18, 0.18):
+        ch.box(sx - 0.022, -0.19, 0, sx + 0.022, -0.15, 0.43)              # 前の脚
+        ch.box(sx - 0.022, 0.16, 0, sx + 0.022, 0.205, 0.92)               # 後ろの脚（背の柱まで通す）
+    for z0, z1 in ((0.60, 0.68), (0.80, 0.88)):
+        ch.box(-0.20, 0.165, z0, 0.20, 0.200, z1)                           # 背の横桟
+    ch.box(-0.18, -0.02, 0.16, 0.18, 0.02, 0.20)                            # 貫
+    csrc = ch.done(bevel=0.008)
+    cu = M("terrace_cushion_src", "cushion", "interior")
+    cu.box(-0.20, -0.19, 0.47, 0.20, 0.15, 0.52)
+    usrc = cu.done(bevel=0.02, seg=3)
+    cs = M("terrace_chair_snow_src", "snow", "interior")                   # 背の上の桟と柱の頭に載った雪
+    cs.box(-0.215, 0.158, 0.875, 0.215, 0.208, 0.915)
+    cssrc = cs.done(bevel=0.012, seg=3, smooth=True)
+    z0 = FL2 + 0.03   # テラスの床板の上
+    for k, (cx, cy) in enumerate(TERRACE_TABLES):
+        instance(tsrc, "terrace_table_%d" % k, (cx, cy, z0))
+        instance(tssrc, "terrace_table_snow_%d" % k, (cx, cy, z0))
+        for side, rz in ((-1, math.pi / 2), (1, -math.pi / 2)):   # 西の椅子は東を向く（背が西）、東の椅子は西を向く
+            x = cx + side * (w / 2 + C_["gap"])
+            for j, dy in enumerate((-C_["along"], C_["along"])):
+                tag = "%d_%s%d" % (k, "w" if side < 0 else "e", j)
+                instance(csrc, "terrace_chair_" + tag, (x, cy + dy, z0), rz)
+                instance(usrc, "terrace_cushion_" + tag, (x, cy + dy, z0), rz)
+                instance(cssrc, "terrace_chair_snow_" + tag, (x, cy + dy, z0), rz)
+    for src in (tsrc, tssrc, csrc, usrc, cssrc):   # 元の形は書き出さない置き場へ
+        coll("interior").objects.unlink(src)
+        coll("sources").objects.link(src)
+        src.hide_render = True
 
 
 def build_interior():
@@ -1057,13 +1117,8 @@ def build_interior():
         e.empty_display_size = 0.4
         e.location = (x + KOTATSU_W / 2, ky0 + KOTATSU_D / 2, zt)
         coll("markers").objects.link(e)
+    build_terrace_set()
     b2 = M("bench2", "board", "interior")
-    x0, y0, x1, y1 = BENCH2
-    b2.box(x0, y0, FL2, x1, y1, FL2 + 0.42)
-    x0, y0, x1, y1 = TABLE2
-    b2.box(x0, y0, FL2 + 0.68, x1, y1, FL2 + 0.72)
-    for lx in (x0 + 0.1, x1 - 0.1):
-        b2.box(lx - 0.04, y0 + 0.1, FL2, lx + 0.04, y1 - 0.1, FL2 + 0.68)
     b2.box(INSTAIR["x0"] - 2.0, INSTAIR["hole_y0"] - 0.5, FL2, INSTAIR["x0"] - 0.5, INSTAIR["hole_y0"] - 0.15, FL2 + 0.9)   # 下足箱
     b2.done(bevel=0.012)
 
@@ -1239,7 +1294,7 @@ CAMS = {
     "aerial": ((-68, -84, 68), (0, -2, 4), 32),
     "close": ((-19, -42, 4.5), (-7, -13, 7.0), 30),
     "in1": ((gx(2.5), Y0 + 1.0, FL1 + 1.55), (gx(9.0), Y1 - 1.0, FL1 + 1.2), 20),
-    "in2": ((gx(0.5), gy(3.6), FL2 + 1.55), (gx(10.5), gy(2.4), FL2 + 0.55), 22),
+    "in2": ((X2_0 + 0.9, gy(4.4), FL2 + 1.55), (gx(10.5), gy(2.4), FL2 + 0.55), 22),   # 西の壁の内の板の通り道から
     "kotatsu": ((gx(5.3), gy(1.2), FL2 + TATAMI["h"] + 1.05), (gx(3.0), Y0 - 8, FL2 + 1.6), 24),
     "mini": ((ESTAIR["x1"] + 0.3, MINI["y0"] + 0.4, MINI["z"] + 1.6), (MINI["x0"], (MINI["y0"] + MINI["y1"]) / 2, MINI["z"] + 0.8), 26),
     "plaza": ((VEST["cx"] - 4, PLAZA["y0"] - 12, 4.5), (ESTAIR["x0"] + 1.5, ESTAIR["y_land0"] - 1, 2.0), 32),
@@ -1341,11 +1396,16 @@ def build_collision():
         h0 = cx + sgn * A_["r"]
         Wl.box(min(h0, h0 + sgn * A_["r"]), y0v - 0.14, FL1, max(h0, h0 + sgn * A_["r"]), y0v, A_["spring"])
     Rf.box(V["x0"] - V["roof_out"], y0v - V["roof_out"], V["h"], V["x1"] + V["roof_out"], Y0, V["h"] + 0.36)
-    # 2 階の壁（テラスへの戸を抜く）。妻は屋根の勾配まで
-    c2 = [c for c, k in OPENINGS["2F_S"] if k == "door2"][0]
-    wall(Wl, "x", Y2_0, X0, X1, FL2, EAVE_S, [(c2 - DOOR2["w"] / 2, c2 + DOOR2["w"] / 2, FL2 + DOOR2["h"])])
-    wall(Wl, "x", Y1, X0, X1, FL2, EAVE_N)
-    for x in (X0, X1):
+    # 2 階の壁（西の壁のテラスへの戸を抜く）。妻は屋根の勾配まで
+    c2 = [c for c, k in OPENINGS["2F_W"] if k == "door2"][0]
+    wall(Wl, "x", Y2_0, X2_0, X1, FL2, EAVE_S)
+    wall(Wl, "x", Y1, X2_0, X1, FL2, EAVE_N)
+    wall(Wl, "y", X2_0, Y2_0, Y1, FL2, EAVE_N, [(c2 - DOOR2["w"] / 2, c2 + DOOR2["w"] / 2, FL2 + DOOR2["h"])])
+    Wl.solid([(X2_0 - R, Y2_0, EAVE_N - 0.05), (X2_0 + R, Y2_0, EAVE_N - 0.05), (X2_0 + R, Y1, EAVE_N - 0.05),
+              (X2_0 - R, Y1, EAVE_N - 0.05)],
+             [(X2_0 - R, Y2_0, roof_z(Y2_0)), (X2_0 + R, Y2_0, roof_z(Y2_0)), (X2_0 + R, Y1, roof_z(Y1)),
+              (X2_0 - R, Y1, roof_z(Y1))])
+    for x in (X1,):
         Wl.solid([(x - R, Y2_0, FL2), (x + R, Y2_0, FL2), (x + R, Y1, FL2), (x - R, Y1, FL2)],
                  [(x - R, Y2_0, roof_z(Y2_0)), (x + R, Y2_0, roof_z(Y2_0)), (x + R, Y1, roof_z(Y1)), (x - R, Y1, roof_z(Y1))])
     for x, y in COLS:
@@ -1358,7 +1418,7 @@ def build_collision():
     ys, yn = Y2_0 - EAVE_OUT_S, Y2_1 + EAVE_OUT_N
     tv = (RAFTER["h"] + ROOF_T + SNOW_T) / math.cos(math.atan(ROOF_PITCH))
     Rf.prism_x([(ys, roof_z(ys)), (yn, roof_z(yn)), (yn, roof_z(yn) + tv), (ys, roof_z(ys) + tv)][::-1],
-               X0 - VERGE_OUT, X1 + VERGE_OUT)
+               X2_0 - VERGE_OUT, X1 + VERGE_OUT)
     L = LEAN
     Rf.prism_y([(L["x_out"], L["z_out"]), (X0, L["z_wall"]), (X0, L["z_wall"] + 0.4), (L["x_out"], L["z_out"] + 0.4)],
                L["y0"], L["y1"])
@@ -1367,7 +1427,7 @@ def build_collision():
     # 手すり（テラス・外階段・吹き抜け）
     for b in ((X0, Y0, FL2, ESTAIR["x0"], Y0 + 0.12, FL2 + RAIL_H), (ESTAIR["x1"], Y0, FL2, X1, Y0 + 0.12, FL2 + RAIL_H),
               (X1 - 0.12, Y0, FL2, X1, Y2_0, FL2 + RAIL_H),
-              (X0, Y0, FL2, X0 + 0.12, Y2_0, FL2 + RAIL_H),
+              (X0, Y0, FL2, X0 + 0.12, Y1, FL2 + RAIL_H), (X0, Y1 - 0.12, FL2, X2_0 - R, Y1, FL2 + RAIL_H),
               (hx - 0.1, hy, FL2, hx, Y1, FL2 + RAIL_H), (I["xm"], hy - 0.1, FL2, X1, hy, FL2 + RAIL_H)):
         Wl.box(*b)
     # 階段は坂にする（外階段 2 本と踊り場、内階段、デッキの東の段）
@@ -1408,8 +1468,10 @@ def build_collision():
     for x, ky in KOTATSU:   # こたつ: 天板と、穴へ垂れた布団（props の kotatsu_lodge）の外形
         Fu.box(x - KOTATSU_FLARE, ky - KOTATSU_FLARE, zt, x + KOTATSU_W + KOTATSU_FLARE, ky + KOTATSU_D + KOTATSU_FLARE,
                zt + KOTATSU_TOP)
-    Fu.box(*BENCH2[:2], FL2, *BENCH2[2:], FL2 + 0.42)
-    Fu.box(TABLE2[0], TABLE2[1], FL2, TABLE2[2], TABLE2[3], FL2 + 0.72)
+    zd = FL2 + 0.03   # テラスの卓（椅子は 1 階の椅子と同じく当たりなし。卓の当たりで game/seats.gd が椅子の向きを決める）
+    for cx, cy in TERRACE_TABLES:
+        T_ = TERRACE_TABLE
+        Fu.box(cx - T_["w"] / 2, cy - T_["d"] / 2, zd, cx + T_["w"] / 2, cy + T_["d"] / 2, zd + T_["h"])
     for m in groups.values():
         bmesh.ops.recalc_face_normals(m.bm, faces=m.bm.faces)
     return [m.done() for m in groups.values()]

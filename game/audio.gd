@@ -19,6 +19,12 @@ const POST_R := 95.0            # 柱を立てる半径 (m)。麓のずっと外
 const POST_A0 := 75.0           # 1 本目の柱の角度 (度)。60° おきに 6 本。ロッジ（約 110°）に重ならない向き
 const POST_H := 4.2
 const LODGE_HALF := Vector2(21.8, 12.7)   # ロッジ 1 階の半分の幅と奥行き（glb の座標）
+## 2 階の囲われた部屋（glb の座標）: 西の壁 x（dims.X2_0）、南の壁 z（-dims.Y2_0）。この床の高さより上では、ここだけが中。
+## 南と西の端はテラス（外。寒さ・湿り気・音も外。2026-11-03 代表「外からの入口がつながってる木板床のスペースをごっそり外にしてテラス化」）
+const ROOM2_X0 := -11.82
+const ROOM2_Z1 := 5.454
+const ROOM2_FLOOR := 5.95
+const DOOR_2F := Vector3(-11.82, 7.3, -3.27)   # 2 階の西の壁のテラスへの戸（dims の OPENINGS["2F_W"] の door2）
 const VEST := Vector3(-13.4, 0.0, 15.2)   # 風除室の中心（glb の座標。南＝+Z が正面）
 const VEST_HALF := Vector2(4.0, 2.5)
 const STRIDE := 2.0             # 一歩の長さ (m)
@@ -952,6 +958,8 @@ static func zone_at(lodge: Node3D, pos: Vector3) -> int:
 		return 0
 	var l := lodge.to_local(pos)
 	if absf(l.x) < LODGE_HALF.x and absf(l.z) < LODGE_HALF.y and l.y > -1.0 and l.y < 12.0:
+		if l.y > ROOM2_FLOOR and (l.x < ROOM2_X0 or l.z > ROOM2_Z1):
+			return 0   # 2 階のテラス
 		return 2
 	if absf(l.x - VEST.x) < VEST_HALF.x and absf(l.z - VEST.z) < VEST_HALF.y and l.y > -1.0 and l.y < 6.0:
 		return 1
@@ -982,7 +990,8 @@ func _set_zone(z: int) -> void:
 			_bus_db("Inside", 0.0, 0.4)
 	if not _launched:
 		_bus_db("Outdoor", _zone_outdoor_db(), 0.4)
-	if prev >= 0 and _door:   # 戸を通った
+	if prev >= 0 and _door:   # 戸を通った（2 階なら西の壁のテラスへの戸、1 階なら風除室で鳴らす）
+		_door.position = DOOR_2F if lodge.to_local(_listener()).y > ROOM2_FLOOR else _marker("light_vestibule", VEST)
 		_shot(_door, _wav("door_open"), -8.0)
 		var tw := create_tween()
 		tw.tween_interval(0.9)
