@@ -122,6 +122,7 @@ func _make_shots() -> void:
 		sun.light_energy = 1.3
 		vp.add_child(sun)
 		var spin := Node3D.new()
+		spin.rotation.y = PI   # 人形の体は -Z が前。開いたときは顔をカメラ（+Z）に向けてから回す
 		vp.add_child(spin)
 		var inst: Node3D = (load(Doll.SCENES[k]) as PackedScene).instantiate()
 		inst.scale = Vector3.ONE * float(Doll.SCALE[k])   # ゲームの中と同じ大きさ

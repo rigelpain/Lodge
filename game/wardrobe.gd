@@ -3,7 +3,8 @@ extends Node3D
 ## 前で F を押すと、人形を選び直す画面（wardrobe_ui.gd）が開く（2026-10-31 代表「キャラチェンジとほかキャラの実装も」。場所は 2 階の衣装掛け）。
 ## いま自分が着ている人形のハンガーは空になる（その人形を着て出ている、と竿を見ればわかる。文字は出さない）。
 ## 掛かった人形は、竿の下で 12 コマで少し揺れる。人形の glb は重いので、あなたが近づいて（NEAR_LOAD）から掛ける。
-## 置き方は main.gd の _put_wardrobe（ロッジの 2 階、内階段を上がった東の端の壁ぎわ）。この節の +Z が竿の正面
+## 置き方は main.gd の _put_wardrobe（ロッジの 2 階、内階段を上がった東の端の壁ぎわ）。この節の FRONT（+Z）が竿の正面。
+## 人形・敷物・F で開ける側は FRONT から決める（衣装掛けをどこへどう置いても、人形は選びに来た人の方を向く）
 
 const Doll := preload("res://doll.gd")
 const Look := preload("res://look.gd")
@@ -13,6 +14,7 @@ const RAIL_Y := 1.85         # 竿の高さ
 const HANG := 0.62           # 掛けた人形の背丈 (m)。人形ごとの背の違いはそろえる（遠くからでも同じ大きさの札に見える）
 const REACH := 2.3           # この距離 (m) の内で、竿の方を向いていれば F で開ける
 const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、人形を掛ける
+const FRONT := Vector3.BACK  # 竿の正面（この節の座標）。選びに来た人が立つ側
 
 var player: Node3D           # main.gd が入れる
 var _hangers := {}           # 人形 → [ハンガーの節（竿で揺れる）, 人形の節]
@@ -52,7 +54,7 @@ func _ready() -> void:
 	bm.size = Vector3(WIDTH + 0.6, 0.015, 1.5)
 	mat.mesh = bm
 	mat.material_override = Look.felt(Color(0.17, 0.21, 0.36), 1.5)
-	mat.position = Vector3(0, 0.008, 0.55)
+	mat.position = FRONT * 0.55 + Vector3(0, 0.008, 0)
 	add_child(mat)
 	# 当たり（竿の下はくぐれない）
 	var body := StaticBody3D.new()
@@ -124,7 +126,8 @@ func _load_dolls() -> void:
 		var top: float = Doll.TOP[k]
 		var s := HANG / top
 		var inst: Node3D = (load(Doll.SCENES[k]) as PackedScene).instantiate()
-		inst.scale = Vector3.ONE * s
+		# 人形の体は -Z が前（doll.gd の _yaw と同じ）。竿の正面（FRONT）へ向ける
+		inst.basis = Basis(Vector3.UP, atan2(-FRONT.x, -FRONT.z)).scaled(Vector3.ONE * s)
 		inst.position = Vector3(0, -0.1 - HANG, 0)   # 頭のてっぺんがハンガーの肩の下
 		(_hangers[k][0] as Node3D).add_child(inst)
 		_hangers[k][1] = inst
@@ -141,8 +144,10 @@ func _show_worn() -> void:
 			d.visible = k != worn
 
 
-## あなたが竿の前で、竿の方を向いているか
+## あなたが竿の前（FRONT の側）で、竿の方を向いているか
 func can_use(p: Node3D) -> bool:
+	if to_local(p.global_position).dot(FRONT) < 0.0:
+		return false
 	var d := global_position - p.global_position
 	if absf(d.y) > 1.5:
 		return false
