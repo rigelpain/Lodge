@@ -38,7 +38,22 @@
 - 出来事: 前と同じ `craft.gd` の `lantern_buy`・`equip`（提灯）と `pal_buy`・`pal_wear`（小物）。通信ではほかの人の画面でも、その人の物が替わる
 - 確かめ: `game/tools/paper_shop_shots.gd --part=look|ui|net`（`--spawn=paper_shop`）
 
+## 動き（2026-11-03）
+
+代表「紙細工屋さんは近づいたらおじぎしてほしい。雪だるまやパッチワークのようにお店アニメーションもほしい」。
+案の絵（[07-motion.jpg](../../person/ideas/kamizaiku/renders/07-motion.jpg)）を代表が見て決めた。人形と同じ 12 コマ／秒（コマの間は止める）。
+
+| 絵 | 動き |
+|---|---|
+| [08-motion-craft.gif](08-motion-craft.gif) | だれも近くにいないとき: 千代紙を三角に折って鶴にする（紙の音 `wrap_paper`）、次ははさみで紙を切る（`sew_snip`）。交互にくり返す |
+| [09-motion-bow.gif](09-motion-bow.gif) | 人が近づくと、顔を向けて腰から深くおじぎ。5 m より離れてからまた 3.2 m の内へ来ると、またおじぎ |
+| [10-motion-sale.gif](10-motion-sale.gif) | だれかが買うと: スタンドの方へ体を向けて左手で品物を取る → 買った人から飛んできたお代のボタンを受ける → 薄紙に包んで朱の紐 → 両手で差し出し、包みは買った人の手もとへ飛ぶ → 会釈 |
+
+- 婦人の glb は節を足した: `shoulder_r/l` → `elbow_r/l` → `hand_r/l`（手の目印）。姿勢は `game/props/paper_lady/lady_poses.json`（台本の `POSES` を書き出したもの）
+- 動きの並びと、手に持つ物を出すコマは `game/paper_lady.gd` の `SEQ`・`PROPS_IN`
+- 通信: おじぎは、それぞれの画面で、自分と通信の相手の体の位置から決める。売る動きは買い物の出来事（`pal_buy`・`lantern_buy`）で始めるので、だれの画面でも同じ順で動く
+- 確かめ: `game/tools/paper_shop_shots.gd --part=motion`（`--close` で胸から上の寄り）。動きの名前とコマを log.txt に書く
+
 ## まだのこと
 
-- 婦人の腕と手は動かない（重ねた手のまま）。動くのは腰から上の傾きと頭
 - `game/pal_stall.gd`・`game/pals_ui.gd` は、どこからも開かなくなった。山師の作業（ミニオンを山師へ移す）で使うかを見てから片付ける

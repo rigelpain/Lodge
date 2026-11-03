@@ -39,11 +39,17 @@
 - [06-tiers.jpg](renders/06-tiers.jpg): 代表「アフタヌーンティーみたいに何段にもなってるディスプレイ…バカでかくして」「ランタンの段とアクセサリの段で分けて」。
   下 2 段に提灯 10 種、上 3 段に小物 11 点を一つずつ（ゲームの glb をそのまま読んで並べた）
 
+## 動きの案（2026-11-03）
+
+[07-motion.jpg](renders/07-motion.jpg): 上の段 近づくとおじぎ、中の段 だれもいないときの紙細工（折る・切る）、下の段 買われたとき（取る → お代 → 包む → 渡す → 会釈）。
+`--motion` で、台本の `POSES` を節（`lady_rig`）に当てて描く
+
 ```bash
 /Applications/Blender.app/Contents/MacOS/Blender -b -P person/ideas/kamizaiku/roughs.py -- --size 3000x1100 --views front,quarter
 /Applications/Blender.app/Contents/MacOS/Blender -b -P person/ideas/kamizaiku/roughs.py -- --lineup --size 3400x950
 /Applications/Blender.app/Contents/MacOS/Blender -b -P person/ideas/kamizaiku/roughs.py -- --close --size 900x1100
 /Applications/Blender.app/Contents/MacOS/Blender -b -P person/ideas/kamizaiku/roughs.py -- --tiers --size 1300x1300
+/Applications/Blender.app/Contents/MacOS/Blender -b -P person/ideas/kamizaiku/roughs.py -- --motion --size 640x640
 /Applications/Blender.app/Contents/MacOS/Blender -b -P person/ideas/kamizaiku/roughs.py -- --export game/props/paper_lady --what lady
 /Applications/Blender.app/Contents/MacOS/Blender -b -P person/ideas/kamizaiku/roughs.py -- --export game/props/paper_lady --what stand
 ```

@@ -17,6 +17,7 @@
 寸法はラフの大きさ（背 1.3 m ほど）で組み、ゲームでは山男・おじいさんと同じく 1.3 倍にする。
 """
 import argparse
+import json
 import math
 import os
 import random
@@ -42,6 +43,7 @@ ap.add_argument("--lineup", action="store_true")
 ap.add_argument("--close", action="store_true", help="婦人の頭の寄り")
 ap.add_argument("--counter", action="store_true", help="婦人のカウンターの案")
 ap.add_argument("--tiers", action="store_true", help="大きな段のスタンドの売り場")
+ap.add_argument("--motion", action="store_true", help="婦人の動きの案（何コマかの絵）")
 ap.add_argument("--export", default="", help="ゲーム用の glb をこのフォルダーに書き出す（例: game/props/paper_lady）")
 ap.add_argument("--what", default="lady", choices=("lady", "stand"), help="--export で書き出す物（1 回に 1 つ）")
 ap.add_argument("--only", default="", help="A〜E のうち描く案（確かめ用）")
@@ -550,9 +552,13 @@ def flap(name, role, rel, span, top, corner, tip, crease=0.02, sy=LADY_SY):
     return part(name, role, b, smooth=False, solid=0.004)
 
 
+ARM = {"sh": (0.128, 0.0, 1.01), "el": (0.168, 0.01, 0.845), "wr": (0.07, 0.13, 0.72)}   # 右の腕の肩・肘・手首（左は x を返す）
+HAND_IN = 0.06   # 手首から手のまんなかまで（前腕の向きに）
 LADY_WAIST, LADY_NECK = 0.79, 1.06   # 腰と首の付け根の高さ（参考の寸法）
 LADY_TORSO, LADY_HEAD = 0.8, 0.8
 SKIRT_PARTS = ("underskirt", "front_panel", "flap_low", "flap_up")
+SHOULDER_PARTS = ("arm_up", "puff")
+ELBOW_PARTS = ("arm_lo", "cuff", "hand")
 HEAD_PARTS = ("face", "head", "bob")
 
 
@@ -650,15 +656,15 @@ def build_d(stall=True, seated=False):
     rope("brooch", "brass", [V(0, 0.047, 0.845), V(0, 0.05, 0.775)], r=0.008, sides=6)
     part("brooch_knot", "brass", lambda m: facet_ball(m, V(0, 0.054, 0.81), (0.014, 0.008, 0.012), 6, 4, 0.0, 47), smooth=False)
     # 袖: 立った袖山、細い腕、ベルの袖口。手は腰の前で重ねる
-    hands = V(0, 0.165, 0.685)
-    for s in (1, -1):
+    for s in (1, -1):   # 腕は肩から肘・肘から手首の 2 本に分け、手も左右に分ける（肩と肘で動かす。lady_rig）
         part("puff", "crepe", lambda m, s=s: facet_ball(m, V(0.128 * s, 0.0, 1.035), (0.042, 0.04, 0.056), 5, 4, 0.0, 48 + s), smooth=False)
-        sh, el, wr = V(0.128 * s, 0.0, 1.01), V(0.168 * s, 0.01, 0.845), V(0.07 * s, 0.13, 0.72)
-        part("arm", "crepe", lambda m, sh=sh, el=el, wr=wr: C.tube(m, [sh, el, wr], [0.028, 0.024, 0.022], sides=7), smooth=False)
+        sh, el, wr = (V(ARM[k][0] * s, ARM[k][1], ARM[k][2]) for k in ("sh", "el", "wr"))
+        part("arm_up", "crepe", lambda m, sh=sh, el=el: C.tube(m, [sh, el + (el - sh).normalized() * 0.012], [0.028, 0.024], sides=7), smooth=False)
+        part("arm_lo", "crepe", lambda m, el=el, wr=wr: C.tube(m, [el - (wr - el).normalized() * 0.012, wr], [0.025, 0.022], sides=7), smooth=False)
         d = (wr - el).normalized()
         part("cuff", "crepe", lambda m, wr=wr, d=d: C.tube(m, [wr - d * 0.03, wr + d * 0.01, wr + d * 0.045, wr + d * 0.07],
                                                              [0.024, 0.04, 0.06, 0.072], sides=9, caps=False), smooth=False, solid=0.004)
-    part("hands", "washi", lambda m: facet_ball(m, hands, (0.045, 0.03, 0.028), 6, 4, 0.0, 46), smooth=False)
+        part("hand", "washi", lambda m, wr=wr, d=d: facet_ball(m, wr + d * HAND_IN, (0.026, 0.028, 0.03), 6, 4, 0.0, 46 + s), smooth=False)
     shield_face()
     bob_hair()
     top = shrink_upper(set(bpy.data.objects) - before)
@@ -1126,6 +1132,59 @@ def _export_tree(K, top, subs, path, mat_name):
     C.export(objs, path, top)
 
 
+# 婦人の姿勢（2026-11-03 代表「近づいたらおじぎ」「お店アニメーションもほしい」）。節ごとの回転（Godot の向きのラジアン、XYZ）。
+# x: 正は腕を前へ上げる・体を後ろへ反らす（おじぎは負）。y: 正は体と頭を婦人の左（スタンドの側）へ向ける。z: 正は右腕を外へ、左腕を内へ。
+# game/props/paper_lady/lady_poses.json に書き出し、game/paper_lady.gd がコマの並びで使う
+POSES = {
+    "rest": {},
+    "bow_a": {"upper": [-0.2, 0, 0], "head": [-0.1, 0, 0]},
+    "bow_b": {"upper": [-0.5, 0, 0], "head": [-0.25, 0, 0]},
+    "fold_hold": {"sh_r": [0.3, 0, 0], "el_r": [0.7, 0, 0], "sh_l": [0.3, 0, 0], "el_l": [0.7, 0, 0], "head": [-0.32, 0, 0]},
+    "fold_open": {"sh_r": [0.3, 0, 0.12], "el_r": [0.75, 0, 0], "sh_l": [0.3, 0, -0.12], "el_l": [0.75, 0, 0], "head": [-0.32, 0, 0]},
+    "cut": {"sh_r": [0.38, 0, 0.1], "el_r": [0.85, 0, 0], "sh_l": [0.3, 0, -0.05], "el_l": [0.7, 0, 0], "head": [-0.32, 0.1, 0]},
+    "reach": {"upper": [0, 0.5, 0], "sh_l": [0.4, 0, -0.75], "el_l": [0.3, 0, 0], "head": [-0.12, 0.3, 0]},
+    "receive": {"sh_l": [0.55, 0, 0.05], "el_l": [0.45, 0, 0], "sh_r": [0.1, 0, 0], "head": [-0.12, 0, 0]},
+    "wrap": {"sh_r": [0.35, 0, 0], "el_r": [0.7, 0, 0], "sh_l": [0.35, 0, 0], "el_l": [0.7, 0, 0], "head": [-0.28, 0, 0]},
+    "give": {"upper": [-0.1, 0, 0], "sh_r": [0.9, 0, 0], "el_r": [0.2, 0, 0], "sh_l": [0.9, 0, 0], "el_l": [0.2, 0, 0], "head": [-0.05, 0, 0]},
+    "nod": {"upper": [-0.26, 0, 0], "head": [-0.24, 0, 0]},
+}
+
+
+def apply_pose(nodes, pose):
+    """POSES の姿勢を Blender の節に当てる（Godot の X・Y・Z → Blender の X・-Z・Y）"""
+    for key in ("upper", "head", "sh_r", "el_r", "sh_l", "el_l"):
+        g = POSES[pose].get(key, [0, 0, 0])
+        nodes[key].rotation_euler = (g[0], -g[2], g[1])
+    bpy.context.view_layer.update()
+
+
+def lady_rig(objs, k=1.0):
+    """婦人の部品を節に分ける: 根（裾）→ upper_body（腰）→ head_pivot（首）、upper_body → shoulder_r/l → elbow_r/l → hand_r/l（手の目印）。
+    部品は世界の位置のまま節に付ける。k はゲームの大きさの倍率（ラフのまま組むなら 1）。右（_r）は Blender の +X"""
+    def torso(z):
+        return LADY_WAIST + (z - LADY_WAIST) * LADY_TORSO
+    root = _node("paper_lady", None, V(0, 0, 0))
+    upper = _node("upper_body", root, V(0, 0, LADY_WAIST * k))
+    head = _node("head_pivot", upper, V(0, 0, torso(LADY_NECK) * k))
+    nodes = {"root": root, "upper": upper, "head": head}
+    for s, nm in ((1, "r"), (-1, "l")):
+        sh, el, wr = (V(ARM[q][0] * s, ARM[q][1], torso(ARM[q][2])) for q in ("sh", "el", "wr"))
+        hand = wr + (wr - el).normalized() * HAND_IN
+        nodes["sh_" + nm] = _node("shoulder_" + nm, upper, sh * k)
+        nodes["el_" + nm] = _node("elbow_" + nm, nodes["sh_" + nm], el * k)
+        nodes["hand_" + nm] = _node("hand_" + nm, nodes["el_" + nm], hand * k)
+    for o in objs:
+        if o.type != "MESH":
+            continue
+        base = o.name.split(".")[0]
+        side = "r" if sum((o.matrix_world @ v.co).x for v in o.data.vertices) > 0 else "l"
+        par = root if base in SKIRT_PARTS else head if base in HEAD_PARTS else \
+            nodes["sh_" + side] if base in SHOULDER_PARTS else nodes["el_" + side] if base in ELBOW_PARTS else upper
+        o.parent = par
+        o.matrix_parent_inverse = par.matrix_world.inverted()
+    return nodes
+
+
 def export_game(folder, what):
     """婦人（節: 腰から上 upper・頭 head。12 コマで動かす）か、大きなスタンドを、焼いた色と凹凸つきの glb に"""
     import kit as K
@@ -1139,18 +1198,14 @@ def export_game(folder, what):
         build_d(False)
         objs = list(set(bpy.data.objects) - before)
         _to_game_size(objs)
-        waist = LADY_WAIST * GAME_SCALE
-        neck = (LADY_WAIST + (LADY_NECK - LADY_WAIST) * LADY_TORSO) * GAME_SCALE
-        root = _node("paper_lady", None, V(0, 0, 0))
-        upper = _node("upper_body", root, V(0, 0, waist))
-        head = _node("head_pivot", upper, V(0, 0, neck))
-        root["tris"], upper["tris"], head["tris"] = 2600, 2600, 1400
-        for o in objs:
-            base = o.name.split(".")[0]
-            par = root if base in SKIRT_PARTS else head if base in HEAD_PARTS else upper
-            o.parent = par
-            o.matrix_parent_inverse = par.matrix_world.inverted()
-        _export_tree(K, root, [upper, head], os.path.join(folder, "paper_lady.glb"), "paper_doll")
+        n = lady_rig(objs, GAME_SCALE)
+        n["root"]["tris"], n["upper"]["tris"], n["head"]["tris"] = 2600, 2000, 1400
+        for q in ("sh_r", "sh_l", "el_r", "el_l"):
+            n[q]["tris"] = 300
+        _export_tree(K, n["root"], [n["upper"], n["head"], n["sh_r"], n["el_r"], n["sh_l"], n["el_l"]],
+                     os.path.join(folder, "paper_lady.glb"), "paper_doll")
+        with open(os.path.join(folder, "lady_poses.json"), "w", encoding="utf-8") as f:   # ゲームの paper_lady.gd が読む
+            json.dump(POSES, f, ensure_ascii=False, indent=1)
     else:
         giant_stand(V(0, 0, 0), False)
         objs = list(set(bpy.data.objects) - before)
@@ -1160,6 +1215,97 @@ def export_game(folder, what):
         for o in objs:
             o.parent = root
         _export_tree(K, root, [], os.path.join(folder, "tea_stand.glb"), "paper_stand")
+
+
+# ================================================================ 動きの案（何コマかの絵）
+def _prop(name, build, role, parent):
+    """手の目印 parent に付ける小物（世界の位置で作り、目印に付け替える）"""
+    o = part(name, role, build, smooth=False)
+    o.parent = parent
+    o.matrix_parent_inverse = parent.matrix_world.inverted()
+    return o
+
+
+def hand_props(nodes):
+    """手に持たせる小物: 色紙・三角に折った紙・鶴・はさみ・お代のボタン・包み・品物（糸巻きの提灯）。はじめはどれも隠す"""
+    import json as _j
+    out = {}
+    hr, hl = nodes["hand_r"], nodes["hand_l"]
+    c = (hr.matrix_world.translation + hl.matrix_world.translation) / 2 + V(0, 0.03, 0.03)
+
+    def sheet(m, pts):
+        vs = [m.bm.verts.new(p) for p in pts]
+        m.bm.faces.new(vs)
+    w = 0.075
+    out["paper_sq"] = _prop("paper_sq", lambda m: sheet(m, [c + V(-w, 0, -w * 0.2), c + V(w, 0, -w * 0.2), c + V(w, 0.02, w * 1.4), c + V(-w, 0.02, w * 1.4)]), "washi_red", hr)
+    out["paper_tri"] = _prop("paper_tri", lambda m: sheet(m, [c + V(-w, 0, 0), c + V(w, 0, 0), c + V(0, 0.02, w * 1.2)]), "washi_red", hr)
+    mats = _j.load(open(os.path.join(ROOT, "game", "pals", "mats.json"), encoding="utf-8"))
+    emp, objs = import_item(os.path.join(ROOT, "game", "pals", "perch_crane.glb"), mats=mats)
+    lo, hi = world_bounds(objs)
+    emp.scale = (0.16 / max(hi - lo),) * 3
+    lo, hi = world_bounds(objs)
+    emp.location += c + V(0, 0.01, 0.04) - V((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, lo.z)
+    bpy.context.view_layer.update()
+    mw = emp.matrix_world.copy()
+    emp.parent = hr
+    emp.matrix_world = mw
+    out["crane"] = emp
+    hp = hr.matrix_world.translation
+    out["scissors"] = _prop("scissors", lambda m: [C.tube(m, [hp + V(0.0, 0.01, 0.0), hp + V(-0.05 + 0.03 * k, 0.05, 0.07)], 0.004, sides=4) for k in (0, 1)], "brass", hr)
+    hlp = hl.matrix_world.translation
+    out["coin"] = _prop("coin", lambda m: C.tube(m, [hlp + V(0, 0.02, 0.025), hlp + V(0, 0.02, 0.031)], 0.022, sides=12), "button", hl)
+    out["parcel"] = _prop("parcel", lambda m: blob(m, c + V(0, 0.01, 0.03), (0.06, 0.045, 0.05), 2.6, 2.4), "washi_white", hr)
+    out["ribbon"] = _prop("ribbon", lambda m: [C.tube(m, [c + V(-0.062, 0.01, 0.03), c + V(0.062, 0.01, 0.03)], 0.005, sides=4),
+                                                C.tube(m, [c + V(0, 0.058, 0.03), c + V(0, -0.04, 0.03)], 0.005, sides=4)], "washi_red", hr)
+    emp, objs = import_item(os.path.join(ROOT, "game", "props", "lantern", "lantern_spool.glb"), glow="F0B65A")
+    lo, hi = world_bounds(objs)
+    emp.scale = (0.16 / max(hi - lo),) * 3
+    lo, hi = world_bounds(objs)
+    emp.location += hlp + V(0, 0.02, 0.0) - V((lo.x + hi.x) / 2, (lo.y + hi.y) / 2, lo.z)
+    bpy.context.view_layer.update()
+    mw = emp.matrix_world.copy()
+    emp.parent = hl
+    emp.matrix_world = mw
+    out["item"] = emp
+    return out
+
+
+def _show(props, keep):
+    for name, o in props.items():
+        for ob in [o] + list(o.children_recursive):
+            ob.hide_render = name not in keep
+
+
+MOTION_ROWS = [   # 段ごとの [（姿勢, 見せる小物）]
+    ("bow", [("rest", ()), ("bow_a", ()), ("bow_b", ()), ("bow_a", ()), ("rest", ())]),
+    ("idle", [("fold_hold", ("paper_sq",)), ("fold_open", ("paper_tri",)), ("fold_hold", ("crane",)), ("cut", ("paper_sq", "scissors")), ("rest", ())]),
+    ("sale", [("reach", ("item",)), ("receive", ("item", "coin")), ("wrap", ("parcel", "ribbon")), ("give", ("parcel", "ribbon")), ("nod", ())]),
+]
+
+
+def motion_sheet():
+    C.reset()
+    roles()
+    before = set(bpy.data.objects)
+    build_d(False)
+    objs = list(set(bpy.data.objects) - before)
+    nodes = lady_rig(objs, 1.0)
+    props = hand_props(nodes)
+    nodes["root"].scale = (GAME_SCALE,) * 3   # ゲームの大きさで（スタンドの品物はゲームの glb）
+    st, _ = group("stand", giant_stand, V(0, 0, 0), False)
+    st.scale = (GAME_SCALE,) * 3
+    st.location = V(-1.35, -0.3, 0)   # 婦人の左（ゲームの STAND_AT）
+    bpy.context.view_layer.update()
+    stock_stand(st.location)
+    stage(A.size)
+    os.makedirs(OUT, exist_ok=True)
+    tgt = V(-0.68, 0, 1.0)
+    for row, frames in MOTION_ROWS:
+        for i, (pose, keep) in enumerate(frames):
+            apply_pose(nodes, pose)
+            _show(props, keep)
+            a = math.radians(-28)
+            C.render(tgt + V(math.sin(a) * 5.4, math.cos(a) * 5.4, 0.35), tgt, 80, os.path.join(OUT, "07-%s-%d.png" % (row, i)))
 
 
 def tiers_scene():
@@ -1260,7 +1406,9 @@ def lineup():
     C.render(tgt + V(math.sin(a) * dist, math.cos(a) * dist, 1.3), tgt, 80, os.path.join(OUT, "01-lineup%s.png" % (("-" + A.only) if A.only else "")))
 
 
-if A.export:
+if A.motion:
+    motion_sheet()
+elif A.export:
     export_game(A.export, A.what)
 elif A.tiers:
     tiers_scene()
