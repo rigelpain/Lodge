@@ -1322,10 +1322,14 @@ def build_collision():
     F.box(P["x0"], P["y1"], 0, V["x0"], DECK["y0"], FL1)
     F.box(V["x1"], P["y1"], 0, P["x1"], DECK["y0"], FL1)
     run = P["steps"] * P["tread"]
-    ramp_y(St, P["x0"] - run, P["x1"] + run, P["y0"] - run, 0, P["y0"], FL1)
+    ramp_y(St, P["x0"], P["x1"], P["y0"] - run, 0, P["y0"], FL1)
     for xa_, xb_ in ((P["x0"] - run, P["x0"]), (P["x1"] + run, P["x1"])):
         prof = [(xa_, -0.25), (xb_, FL1 - 0.25), (xb_, FL1), (xa_, 0.0)]
-        St.prism_y(prof if xa_ < xb_ else prof[::-1], P["y0"] - run, DECK["y0"])
+        St.prism_y(prof if xa_ < xb_ else prof[::-1], P["y0"], DECK["y0"])
+        # 南の角: 見た目の段は角を回り込む（入れ子の箱）ので、角は南の坂と横の坂の低いほう。
+        # 前は南の坂を角まで延ばしていて、角に見えない背（最大 0.25 m）ができ、つまずいていた
+        corner = [(xb_, P["y0"], FL1), (xa_, P["y0"], 0.0), (xb_, P["y0"] - run, 0.0), (xa_, P["y0"] - run, 0.0)]
+        St.hull([(x, y, z) for x, y, z in corner] + [(x, y, z - 0.25) for x, y, z in corner])
     # 前のデッキの東の 2 段（0.30 m ずつ）も坂に。広場の段と同じく段鼻を通す（足音は坂の下の雪の帯を雪にする。game/audio.gd）
     xa_, xb_ = D_["x1"] + 0.90, D_["x1"]
     St.prism_y([(xa_, -0.25), (xb_, FL1 - 0.25), (xb_, FL1), (xa_, 0.0)][::-1], D_["y0"], D_["y1"])

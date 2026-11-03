@@ -215,6 +215,7 @@ static func lodge_to_world(l: Vector2) -> Vector2:
 ## 踏み固めた雪の帯（見た目の色と、吹きだまりのうねりがないこと）。道の上で 1、外で 0。margin だけ幅を広げて測れる
 const PATH_X := -13.4      # 風除室の中心（audio.gd の VEST.x と同じ）
 const PATH_HALF := 1.6     # 道の半分の幅 (m)
+const SIGN_SLOPE_AT := Vector2(PATH_X + 3.0, 31.0)   # 丘への案内板（ロッジの座標）。道の脇、広場の段（z 24.9 まで）と届いたソリの先
 const PATH_TINT := Color(0.86, 0.88, 0.93)   # 踏み固めた雪の色（少し灰青に沈む）
 const COURSE_TINT := Color(0.92, 0.95, 1.0)  # 大きな山のコースの圧雪した雪の色（少し青い白）
 const LIP_TINT := Color(0.42, 0.55, 0.85)    # ジャンプ台の踏み切りの縁（藍に染めた帯）
@@ -1498,11 +1499,12 @@ func _make_slope_props() -> void:
 		for x in [-9.0, 9.0]:
 			_put_prop("res://props/flag_%s.glb" % ("red" if i % 2 == 0 else "navy"), x, z, 0.4 if x < 0 else PI - 0.4)
 			i += 1
-	# 案内板: スタートにロッジへの矢印、ロッジの前（道の出だしの脇）に丘への矢印（文字なし）
-	_put_prop("res://props/sign_lodge.glb", 5.0, 41.0, PI)
-	var at := lodge_to_world(Vector2(PATH_X + 3.0, 24.0))
-	var to_lodge := LODGE_POS - at
-	_put_prop("res://props/sign_slope.glb", at.x, at.y, atan2(-to_lodge.x, -to_lodge.y))
+	# 案内板（文字なし）: スタートの横に、ロッジ（風除室の前）への矢印。表はスタートの側へ
+	var entrance := lodge_to_world(Vector2(PATH_X, 17.0))
+	_put_sign("res://props/sign_lodge.glb", Vector2(5.0, 41.0), entrance, Vector2(START.x, START.z))
+	# ロッジの前の道の脇に、丘（頂上）への矢印。表は道の側へ。前は広場の縁の段の上に立っていて、矢印も横を向いていた。
+	# 届いたソリが並ぶ所（DELIVER_Z の前後 2.4 m）より先に立てる
+	_put_sign("res://props/sign_slope.glb", lodge_to_world(SIGN_SLOPE_AT), Vector2.ZERO, lodge_to_world(Vector2(PATH_X, SIGN_SLOPE_AT.y)))
 	# 毛糸の安全ネット: 登り道の右の外れに 4 区間と、終わりの杭
 	for k in 5:
 		var net := _put_prop("res://props/net_span.glb", 13.0, 30.0 - 2.5 * k, PI / 2)
@@ -1532,6 +1534,17 @@ func _put_prop(path: String, x: float, z: float, yaw: float) -> Node3D:
 	n.position = Vector3(x, height(x, z) - 0.05, z)
 	n.rotation.y = yaw
 	add_child(n)
+	return n
+
+
+## 案内板を at（世界の x, z）に立てる。板の矢印（glb の +X）が target をまっすぐ指し、表（アップリケの面、glb の -Z）が
+## reader の側を向くように回す。表を reader へ向けると矢印が逆を向くときは、左右に映す（家とソリの絵も映るが、絵は矢印の向きにそろう）
+func _put_sign(path: String, at: Vector2, target: Vector2, reader: Vector2) -> Node3D:
+	var d := (target - at).normalized()
+	var mirror := Vector2(d.y, -d.x).dot(reader - at) < 0.0   # 映さないときの表の向きが reader と逆
+	var n := _put_prop(path, at.x, at.y, atan2(d.y, -d.x) if mirror else atan2(-d.y, d.x))
+	if mirror:
+		n.scale.x = -1.0
 	return n
 
 
