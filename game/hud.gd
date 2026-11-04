@@ -542,6 +542,9 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var mf = p.own_fire_near() if p.has_method("own_fire_near") and not p.shopping else null
 	if mf and fs.is_empty():
 		_hint("fire_out", ["F"], "fire_out", mf.global_position + Vector3.UP * 1.3)
+	# 入口の横の大きな鏡: 鏡の方を向いて F で、自分の人形が大きく映る（枠の中に人の形の絵）
+	if p.has_method("mirror_near") and p.mirror_near():
+		_hint("mirror", ["F"], "mirror", main.mirror.hint_at())
 	# 1 階の人台: 桶を見下ろして F で服を染める。人形の高さを見て F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
 	if p.has_method("dye_near") and p.dye_near() and not p.shopping:
 		_hint("dye", ["F"], "dye", main.dye_vat.hint_at(p))   # 染め桶: F で服を染める（桶と布の絵）

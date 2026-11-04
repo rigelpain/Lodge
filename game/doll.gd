@@ -328,6 +328,16 @@ func play(ev: Dictionary) -> void:
 	emote = ev
 
 
+## 立った姿のいちばん広い所の、体の軸からの広がり (m)。_measure_body の高さごとの太さ（笠のつば・着物の裾が入る）。大きな鏡（mirror.gd）が使う
+func body_half_width() -> float:
+	var c: Array = _body_cache.get(kind, [])
+	var w := 0.0
+	if not c.is_empty():
+		for r in c[0]:
+			w = maxf(w, float(r))
+	return w if w > 0.0 else height() * 0.3
+
+
 ## 乾燥機の胴の中の大きさ（m、人形の座標。dryer_flop.gd が胴の壁に当てる）: 胴の中の姿勢（_drum_sprawl）で
 ## x はいちばん低い骨（足）、y は頭のてっぺん、z は頭の高さでの体の軸からの広さ（笠のつば・頭巾。_measure_body の上 3 割の段の太さ）。
 ## 腕や裾の広さは入れない（腕は胴の中でぶらぶら振れる）。

@@ -12,13 +12,15 @@ extends Node3D
 ##   持ち主の右の少しうしろをついて歩き、止まると座り（SIT_T）、しばらくすると寝る（SLEEP_T）。座っているあいだは、指している所か
 ##   持ち主の顔を見上げる。持ち主がソリに乗ると、ソリの横を走ってついて滑る（速いと遅れ、離れすぎると追いつく。代表 2026-11-01）。
 ##   ロッジの中では暖炉の前（暖炉の前のラグの、暖炉の側。hearth_nook.gd の pet_spot）へ行って寝て待ち、持ち主が外へ出ると起きて、うしろから駆けてくる（代表 2026-11-01）。
-##   層は誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す
+##   大きな鏡（mirror.gd）に映しているあいだは、ロッジの中でも持ち主の足もとへ駆けてきて、鏡の方を向いて座る（この画面だけ。通信では送らない。代表 2026-11-04）。
+##   層は誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す。自分のミニオンは鏡（mirror.gd の層 11）にも映す
 ##
 ## 居場所（ミニオンの位置と向き）は毎フレームなめらか。姿勢（首・羽・脚・しっぽ・跳ねる）は人形と同じ 12 コマ／秒の時計で刻む。
 
 const Doll := preload("res://doll.gd")
 const Pals := preload("res://pals.gd")
 const Audio := preload("res://audio.gd")
+const Mirror := preload("res://mirror.gd")
 
 const HEEL := Vector3(0.75, 0.0, 0.25)   # ミニオンの立ち位置（持ち主の座標。右の少しうしろ）
 const HEAD_YAW := 1.2        # ミニオンの首が回る限り（これより横は体ごと向く）
@@ -32,6 +34,7 @@ const HOVER := 0.07          # ハチドリが肩の上に浮く高さ (m)
 
 var host: Node3D             # 持ち主（player.gd か bot.gd。doll と id を持つ）
 var craft: Node
+var mirror: Node3D           # 映している鏡（mirror.gd が入れる）。映していなければ null
 
 var _doll: Doll
 var _who := -1
@@ -232,7 +235,8 @@ func _make_pet(key: String) -> void:
 	if key == "" or not Pals.PET.has(key):
 		return
 	var node: Node3D = Pals.scene(key).instantiate()
-	Pals.paint(node, 1 | (1 << 5))   # 誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す
+	var own := _doll != null and is_instance_valid(_doll) and _doll.layers != 1   # 自分のミニオン（人形が自分の体の層にいる）だけ、鏡に映す
+	Pals.paint(node, 1 | (1 << 5) | (Mirror.LAYER if own else 0))   # 誰の画面にも映し、右下の自分の小窓（self_cam.gd の層 6）にも映す
 	add_child(node)
 	node.top_level = true
 	var poses := {}
@@ -304,10 +308,12 @@ func _hearth_spot() -> Vector3:
 	return _hearth
 
 
-## ミニオンが見る所: 指していればそこ、でなければ持ち主の顔
+## ミニオンが見る所: 指していればそこ、鏡に映っていれば鏡、でなければ持ち主の顔
 func _pet_target() -> Vector3:
 	if _doll.point != Vector3.INF:
 		return _doll.point
+	if mirror:
+		return mirror.look_point()   # 鏡を見る（鏡の絵の中で、こちらを向く）
 	return _doll.global_position + Vector3.UP * 1.2
 
 
@@ -324,6 +330,9 @@ func _move_pet(dt: float) -> void:
 		var p: Vector3 = _doll.sled.global_position + sb.x * RIDE_SIDE + sb.z * 0.6
 		want = Vector3(p.x, _ground(p), p.z)
 		cap = maxf(cap * 1.6, RUN_MAX)
+	elif mirror:
+		want = mirror.pet_spot(_doll)
+		want.y = _ground(want)
 	elif inside:
 		want = _hearth_spot()
 		if want == Vector3.INF:
@@ -360,7 +369,10 @@ func _move_pet(dt: float) -> void:
 		_still = 0.0
 	else:
 		_still += dt
-		if settle and d.length() < 0.5 and _lodge:   # 暖炉に体を向けて丸まる
+		if mirror:   # 鏡に体ごと向く
+			var t := _pet_target() - _pos
+			face = atan2(-t.x, -t.z)
+		elif settle and d.length() < 0.5 and _lodge:   # 暖炉に体を向けて丸まる
 			var mark := _lodge.find_child("light_fire", true, false) as Node3D
 			var t := (mark.global_position if mark else _pet_target()) - _pos
 			face = atan2(-t.x, -t.z)
@@ -373,6 +385,8 @@ func _move_pet(dt: float) -> void:
 	_yaw = lerp_angle(_yaw, face, 1.0 - exp(-dt * 8.0))
 	if spd > 0.35:
 		_want_pose = "walk"
+	elif mirror:
+		_want_pose = "sit"   # 鏡の前では寝ない
 	elif _still > (HEARTH_SLEEP_T if settle and d.length() < 0.5 else SLEEP_T) or _pose == "sleep" and spd < 0.35:
 		_want_pose = "sleep"
 	elif _still > SIT_T:
@@ -460,6 +474,39 @@ static func pose_parts(pet: Dictionary, pose: String, ph: float, frame: int, big
 				body.scale = Vector3(1.0 + 0.01 * sin(frame * 0.25), 1.0 + 0.03 * sin(frame * 0.25), 1.0)
 			if tail and frame % 60 < 3:
 				tail.rotation.y = 0.15
+
+
+## 頭・肩の小物が占める箱（世界）。鏡が全身の収まる距離を出すのに使う
+func worn_box() -> AABB:
+	var box := AABB()
+	for slot in _perch:
+		if not is_instance_valid(_perch[slot].node):   # 着替えの途中（前の体と一緒に消えた。_physics_process で付け直す）
+			continue
+		for mi in (_perch[slot].node as Node).find_children("*", "MeshInstance3D", true, false):
+			var m := mi as MeshInstance3D
+			if m.is_visible_in_tree():
+				var b := m.global_transform * m.get_aabb()
+				box = b if not box.has_volume() else box.merge(b)
+	return box
+
+
+## ミニオンのいる所（世界）
+func pet_at() -> Vector3:
+	return _pos
+
+
+## ミニオンの半径の目安 (m)。いなければ 0
+func pet_radius() -> float:
+	if _pet.is_empty():
+		return 0.0
+	if not _pet.has("radius"):
+		var box := AABB()
+		for mi in ((_pet.poses as Dictionary).get("sit") as Node).find_children("*", "MeshInstance3D", true, false):
+			var m := mi as MeshInstance3D
+			var b := (_pet.node as Node3D).global_transform.affine_inverse() * m.global_transform * m.get_aabb()
+			box = b if not box.has_volume() else box.merge(b)
+		_pet["radius"] = maxf(box.size.x, box.size.z) * 0.5
+	return float(_pet.radius)
 
 
 # ---------------------------------------------------------------- 時計

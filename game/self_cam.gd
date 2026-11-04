@@ -430,8 +430,7 @@ func _layout() -> void:
 
 
 ## 骨の所（世界）。骨がなければ INF
-func _bone(name: String) -> Vector3:
-	var doll = player.doll
+static func _bone(doll: Node3D, name: String) -> Vector3:
 	var i: int = doll._id(name)
 	if i < 0:
 		return Vector3.INF
@@ -440,18 +439,22 @@ func _bone(name: String) -> Vector3:
 
 ## 人形の上の端と下の端の高さ（世界）。笠のてっぺん・上げた手と、足もと（座っていればソリの上の足）
 func _extent() -> Vector2:
-	var doll = player.doll
+	return extent(player.doll)
+
+
+## 人形 doll の上の端と下の端（大きな鏡 mirror.gd も使う）
+static func extent(doll: Node3D) -> Vector2:
 	var h: float = doll.height()
-	var head := _bone("head")
+	var head := _bone(doll, "head")
 	var top: float = (head.y + 0.3 * h) if head != Vector3.INF else doll.global_position.y + h
 	var bottom: float = doll.global_position.y
 	for n in ["hand.L", "hand.R"]:
-		var p := _bone(n)
+		var p := _bone(doll, n)
 		if p != Vector3.INF:
 			top = maxf(top, p.y + 0.12)
 			bottom = minf(bottom, p.y - 0.08)
 	for n in ["foot.L", "foot.R"]:
-		var p := _bone(n)
+		var p := _bone(doll, n)
 		if p != Vector3.INF:
 			bottom = minf(bottom, p.y - 0.06)
 	return Vector2(top, bottom)

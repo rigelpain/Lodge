@@ -21,6 +21,7 @@ const Look := preload("res://look.gd")
 ##   --spawn=lanterns  おじいさんの番台の横のランタン掛けの前から始める（F でランタンを買って提げ替える）
 ##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
 ##   --spawn=wardrobe  1 階の人台の前から始める（F で人形を選び直す）
+##   --spawn=mirror    入口の横の大きな鏡の前から始める（F で自分の人形が映る）
 ##   --spawn=dye       2 階の染め桶の前から始める（F で服を染める）
 ##   --doll=人形   あなたの始めの人形（doll.gd の KINDS: kasa・origami・news・robo・musha・ningyo・golem）。保存した人形より勝つ
 ##   --bot-dolls=人形,人形…  ソリを押す仲間の人形（既定は右が origami、左が news）
@@ -101,6 +102,10 @@ const Start := preload("res://start.gd")
 ## 染めと着替えの人台（wardrobe.gd と子の dye_vat.gd）の真ん中（ロッジの座標 (x, y)）。1 階の南西の隅。もとはソリ屋（ミシン・番台・貸出の棚）のあった所。
 ## 正面は東（入口からの通り道）で、長い布は西のガラスの側。天井の輪があるので 1 階の天井の下にしか置けない
 const WARDROBE_AT := Vector2(-19.0, -9.6)
+const Mirror := preload("res://mirror.gd")
+## 大きな鏡（mirror.gd）の枠の真ん中の、壁の面の所（ロッジの座標 (x, y)）。1 階の南の壁の内の面（lodge/dims.py の Y0 + LOG_D / 2）。
+## 東は自動ドアの額縁（x -14.98）との間 0.17 m。幅 3.1 m で西の端は x -18.25（人台の裾に隠れすぎず、桶とのあいだを人が通れる）
+const MIRROR_AT := Vector2(-16.70, -12.546)
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
 ## 目印は西を向いている（lodge/dims.py の SLOTS。ソリ屋ごと外の下屋へ出した）ので、+x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
@@ -174,6 +179,7 @@ var sled_rack: Node3D         # ソリの立てかけ台（sled_rack.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 1 階の人台（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
+var mirror: Node3D            # 入口の横の大きな鏡（mirror.gd）
 var paper_lady: Node3D        # テントの紙細工屋さん（paper_lady.gd。婦人と大きなスタンド）
 var paper_shop_ui: CanvasLayer   # 提灯と頭・肩の小物を買って付け替える画面（paper_shop_ui.gd）
 var minion_ui: CanvasLayer    # 山師が育てているミニオンを買って連れ替える画面（pals_ui.gd の連れの段。山師の売り場の「連れ」の札から）
@@ -547,6 +553,8 @@ func _ready() -> void:
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if wardrobe:
 			wardrobe.player = player
+		if mirror:
+			mirror.player = player
 		wardrobe_ui = WardrobeUi.new()
 		wardrobe_ui.main = self
 		wardrobe_ui.craft = craft
@@ -582,6 +590,11 @@ func _ready() -> void:
 			var at := wardrobe.to_global(Vector3(0, 0.1, 2.6))
 			player.global_position = at
 			var to := wardrobe.global_position
+			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
+		if args.get("spawn", "") == "mirror" and mirror:   # --spawn=mirror: 大きな鏡の前から始める
+			var at := mirror.to_global(Vector3(0, 0.1, 3.2))
+			player.global_position = at
+			var to := mirror.global_position
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 		if args.get("spawn", "") == "shop" and shopkeeper:   # --spawn=shop: 売り子のおじさんの前から始める
 			var at := shopkeeper.to_global(Vector3(0, 0.1, -1.9))   # 番台の向こう（客の側）。話しかけられる距離（2.2 m）の内
@@ -1234,6 +1247,14 @@ func _furnish_lodge() -> void:
 	dye_vat.player = player
 	dye_vat.craft = craft
 	wardrobe.add_child(dye_vat)
+	# 入口の横の大きな鏡: 前で F を押すと、自分の人形が大きく映る
+	mirror = Mirror.new()
+	mirror.name = "Mirror"
+	mirror.player = player
+	mirror.main = self
+	mirror.position = Vector3(MIRROR_AT.x, LODGE_FLOOR, -MIRROR_AT.y)
+	mirror.rotation.y = PI   # 正面（+Z）を北（部屋の側）へ
+	lodge.add_child(mirror)
 	# 紙細工屋さん: テントの中で、提灯と頭・肩の小物を売る
 	paper_lady = PaperLady.new()
 	paper_lady.name = "PaperLady"
