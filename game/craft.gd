@@ -58,6 +58,9 @@ extends Node
 ##   peg       {slot, sled, at}  手のペグの束から 1 本を、ソリ（sled は main からのパス）の前の雪の at に刺し、引き紐の先を結ぶ。
 ##                             ソリはそこに留まる（sled.gd の peg_to）。束の本数が 0 になれば持ち物から消える。ev.color に玉の色
 ##   unpeg     {sled}            ソリのペグを抜く（誰でも。抜いたペグは使い切りで消える）。ソリはまた滑れる
+##   rack_in   {id, u}         自分のソリ（id）を立てかけ台（sled_rack.gd）へ戻す。乗っている・つかんでいる・紐を持っている・ペグで留めている間は断る。
+##                             ソリはその場で折り紙に畳まれて消え、台に現れる。u は台の置き場（ホストが決める）。名札のないソリは対象外
+##   rack_out  {id, at, yaw}   台の自分のソリを、前の雪の上へ持ち出す（ホストが空いた所を決める）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）。雪合戦の対決の払い（duel.gd）も、これで勝った人へ
 ##   stake     {n}             雪合戦の対決の掛金 n 個を、財布から預ける（duel.gd がホストとして出す。払いは earn）
@@ -93,12 +96,13 @@ const Peg := preload("res://peg.gd")
 ## （2026-11-03 代表「部位数ごとに値段を上げてほしい」）
 const DYE_PRICES := [0, 15, 25, 33, 40]
 const PATTERNS := ["sack", "small", "mid", "large"]
-## ロッジの中から外へ運び出せないソリ（tools/carry_out_check.gd で確かめた。大は西の通路の家具と壁に当たる）。
+## 大きすぎて、そのまま出すと動かしにくいソリ（ミシンが中にあった頃は運び出せなかった。ミシンは外の下屋へ移したが、届け方は変えていない）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
 const OUT_FRONT := ["large"]
 const SLOTS := 12              # 持ち物に入る数（手持ち HAND_SLOTS ＋ かばん）
 const HAND_SLOTS := 6          # 手持ち: 画面の下の列に並び、ホイールで持ち替える。残りはかばん（装備の画面で入れ替える）
                                # （2026-11-01 代表「手持ちが6で、かばんにもう6つはいってるようなイメージで、計12アイテムを持ち運べる」）
+const RACK_FOLD_SPEED := 2.0   # 立てかけ台へ呼ぶときの畳む動きの速回し（広げる長さの半分、約 1.3 秒で台に現れる）
 const FOLD_FRAMES := 30        # 畳む動きの長さ（コマ。12 コマで 1 秒）
 const UNFOLD_FRAMES := 30      # 広げる動きの長さ
 
@@ -108,6 +112,7 @@ var wallets := {}              # 人の番号 → ボタンの数
 var bags := {}                 # 人の番号 → 持ち物（SLOTS 個の場所の配列。空いた場所は {}。0〜5 が手持ち、6〜11 がかばん）
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
+var racked := {}               # ソリの番号 → 立てかけ台の置き場（sled_rack.gd の X）
 var _next_sled := 1
 var fires := {}                # 焚き火の番号 → 組んだ焚き火（campfire.gd）
 var _next_fire := 1
@@ -413,7 +418,10 @@ func snapshot() -> Dictionary:
 	for id in sleds:
 		var s: Node3D = sleds[id]
 		if is_instance_valid(s):
-			placed.append({"id": id, "kind": s.kind, "fabric": s.fabric, "at": s.global_transform, "tag": s.tag, "owner": s.owner_id})
+			var one := {"id": id, "kind": s.kind, "fabric": s.fabric, "at": s.global_transform, "tag": s.tag, "owner": s.owner_id}
+			if racked.has(id):
+				one["rack"] = racked[id]
+			placed.append(one)
 	var out := {}
 	for who in sack_out:
 		var gs := sack_sled(who)
@@ -443,11 +451,15 @@ func load_snapshot(d: Dictionary) -> void:
 		if is_instance_valid(s):
 			s.queue_free()
 	sleds.clear()
+	racked.clear()
 	for p in d.get("sleds", []):
 		_next_sled = int(p.id)
 		_place(p.kind, p.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, p.tag, false, int(p.owner))
 		var s: Node3D = sleds[int(p.id)]
 		s.global_transform = p.at
+		if p.has("rack"):
+			racked[int(p.id)] = float(p.rack)
+			s.rack_in.call_deferred(p.at)   # _ready のあとで（影と紐ができてから）
 	_next_sled = int(d.get("next_sled", _next_sled))
 	for who in d.get("sack_out", {}):
 		var spec: Dictionary = d.sack_out[who]
@@ -697,8 +709,8 @@ func _apply(ev: Dictionary) -> bool:
 			ev["design"] = d
 		"untag":
 			var s: Node3D = sleds.get(int(ev.get("id", -1)))
-			if s == null or not is_instance_valid(s) or int(s.owner_id) != who or s.kind == "sack" or not preload("res://sled_tags.gd").has_tag(s.tag):
-				return false
+			if s == null or not is_instance_valid(s) or int(s.owner_id) != who or s.kind == "sack" or not preload("res://sled_tags.gd").has_tag(s.tag) or s.racked:
+				return false   # 台のソリは名札を外せない（持ち主がいなくなると、だれも持ち出せない）
 			ev["design"] = s.tag
 			ev["at"] = s.tag_point()
 			loose_tags[who].append(s.tag)
@@ -823,7 +835,7 @@ func _apply(ev: Dictionary) -> bool:
 			var b: Array = bags[who]
 			var i := int(ev.get("slot", -1))
 			var s := _sled_at(String(ev.get("sled", "")))
-			if i < 0 or i >= b.size() or not Peg.is_item(b[i]) or int(b[i].get("n", 0)) <= 0 or s == null:
+			if i < 0 or i >= b.size() or not Peg.is_item(b[i]) or int(b[i].get("n", 0)) <= 0 or s == null or s.racked:
 				return false
 			if not replay and (s.peg != null or s.linear_velocity.length() > Peg.PLANT_SPEED or ev.at.distance_to(s.rope_root()) > s.ROPE_LEN):
 				return false   # もう留めてある・滑っている・紐が届かない
@@ -847,6 +859,39 @@ func _apply(ev: Dictionary) -> bool:
 			if int(ev.get("n", 0)) <= 0 or wallets[who] < int(ev.n):
 				return false
 			wallets[who] -= int(ev.n)
+		"rack_in":
+			var id := int(ev.get("id", -1))
+			var s: Node3D = sleds.get(id)
+			var rack: Node3D = world.get("sled_rack") if world else null
+			if s == null or not is_instance_valid(s) or rack == null or int(s.owner_id) != who or s.kind == "sack":
+				return false
+			if not replay:   # ホストが確かめる: だれも触っていない・台の前にいる・台に空きがある
+				if not rack_free(s) or racked.has(id) or not rack.in_reach(_person(who)):
+					return false
+				var u: float = rack.fit(s.kind, _rack_taken())
+				if is_nan(u):
+					return false
+				ev["u"] = u
+			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric}
+			_origami(ev, false, s.global_transform, true, RACK_FOLD_SPEED)   # その場で畳まれて、台の前の持ち主のほうへ飛ぶ
+			racked[id] = float(ev.u)
+			s.rack_in(rack.lean_at(s.kind, float(ev.u)), UNFOLD_FRAMES / RACK_FOLD_SPEED / 12.0)
+		"rack_out":
+			var id := int(ev.get("id", -1))
+			var s: Node3D = sleds.get(id)
+			var rack: Node3D = world.get("sled_rack") if world else null
+			if s == null or not is_instance_valid(s) or rack == null or int(s.owner_id) != who or not racked.has(id):
+				return false
+			if not replay:
+				if not rack.in_reach(_person(who)):
+					return false
+				var spot: Transform3D = rack.out_at(s.kind, float(racked[id]), world)
+				if spot.origin == Vector3.INF:
+					return false   # 前がふさがっている
+				ev["at"] = spot.origin
+				ev["yaw"] = spot.basis.get_euler().y
+			racked.erase(id)
+			s.rack_out(Transform3D(_basis(float(ev.yaw), Vector3.UP), ev.at + Vector3.UP * 0.08), _make_room.bind(s))
 		"fold":
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or free_slot(who) < 0 or not (_free(s) or replay):
@@ -925,9 +970,46 @@ func _origami(ev: Dictionary, unfolding: bool, at: Transform3D, from_who := true
 	(world if world else get_parent()).add_child(o)
 
 
-## 誰も乗っていない・つかんでいない・紐を持っていない・ペグで留めていないソリだけ畳める
+## 誰も乗っていない・つかんでいない・紐を持っていない・ペグで留めていないソリだけ畳める。台に立てかけてあるソリも畳めない
 func _free(s: Node3D) -> bool:
-	return s.riders.is_empty() and s.holders.is_empty() and s.rope_holder == null and s.peg == null
+	return rack_free(s) and not s.racked
+
+
+## 立てかけ台へ戻せるか: だれも触っていなくて、ペグで留めていない（2026-11-04 代表: ペグで留めたソリは呼べない）
+func rack_free(s: Node3D) -> bool:
+	return s.riders.is_empty() and s.holders.is_empty() and s.rope_holder == null and not is_instance_valid(s.peg)
+
+
+## 自分のソリのうち、台に立てかけてあるもの・台へ戻せるもの・いま触られていて戻せないもの {"on": [...], "free": [...], "busy": [...]}。
+## 名札のないソリ（持ち主なし）とロッジのソリは対象外
+func rack_list(who: int) -> Dictionary:
+	var out := {"on": [], "free": [], "busy": []}
+	for id in sleds:
+		var s: Node3D = sleds[id]
+		if not is_instance_valid(s) or s.is_queued_for_deletion() or int(s.owner_id) != who or s.kind == "sack":
+			continue
+		if racked.has(id):
+			out.on.append(s)
+		elif not s.racked:   # 台から降りている途中は数えない
+			out["free" if rack_free(s) else "busy"].append(s)
+	return out
+
+
+## 台に置いてある物 [[中心, 幅], ...]
+func _rack_taken() -> Array:
+	var out := []
+	for id in racked.keys():
+		var s: Node3D = sleds.get(id)
+		if s == null or not is_instance_valid(s):
+			racked.erase(id)
+			continue
+		out.append([racked[id], preload("res://sled_rack.gd").WIDTHS.get(s.kind, 2.4)])
+	return out
+
+
+func _person(who: int) -> Node3D:
+	var hub: Node = world.get_node_or_null("Emotes") if world else null
+	return hub.who_of(who) if hub else null
 
 
 ## 持ち物の中の、まだ 1 束（Peg.PACK 本）を足せるペグの束の場所（なければ -1）

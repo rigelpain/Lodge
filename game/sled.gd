@@ -79,6 +79,7 @@ const PEG_K := 5000.0          # 紐が張ったときに引き戻す力 (N/m。
 const PEG_DAMP := 6.0          # 張った紐の向きに動く速さを弱める力（重さ × これ, N per m/s）
 const PEG_PULL_MAX := 30000.0  # 引き戻す力の上限 (N)
 var peg: Node3D = null         # 刺さっているペグ（peg.gd。ソリの子で、世界に留まる）。なければ null
+var racked := false            # 立てかけ台（sled_rack.gd）に立てかけてある。動かず、つかめず、乗れない。出来事は craft.gd の rack_in・rack_out
 
 var kind := "mid"              # 置く前に決める（main.gd の --sled=sack|small|mid|large）
 ## メインカラー（ソリの主なフェルトと、滑りあとの糸の色）。透明（a = 0）なら KINDS の既定。
@@ -347,6 +348,8 @@ func grip_point_near(world_pos: Vector3) -> Array:
 
 
 func take_handle(who: Node3D, h: Vector3) -> bool:
+	if racked:
+		return false
 	for other in holders:
 		if other != who and holders[other].distance_to(h) < 0.7:
 			return false
@@ -379,7 +382,7 @@ func _downhill_fast(v: float) -> bool:
 
 
 func take_rope(who: Node3D) -> bool:
-	if peg or rope_holder != null and rope_holder != who:   # ペグに結んである紐は持てない
+	if racked or peg or rope_holder != null and rope_holder != who:   # ペグに結んである紐は持てない
 		return false
 	rope_holder = who
 	parked = false
@@ -409,7 +412,7 @@ func pull_rope(hand: Vector3, strength := 1.0) -> float:
 
 
 func mount(who: Node3D) -> Vector3:
-	if riders.size() >= SEATS.size() or who in riders:
+	if racked or riders.size() >= SEATS.size() or who in riders:
 		return Vector3.INF
 	var at := free_seat(who)
 	riders.append(who)
@@ -601,7 +604,8 @@ func tag_point() -> Vector3:
 	return to_global(rope._ties[1] + Vector3(0.02, -0.1, 0)) if rope else global_position
 
 
-func reset_to(pos: Vector3) -> void:
+## 乗っている人を降ろし、つかんでいる人と紐を持っている人の手を離させる
+func let_everyone_go() -> void:
 	for r in riders.duplicate():
 		if r.has_method("get_off"):
 			r.get_off()
@@ -610,6 +614,62 @@ func reset_to(pos: Vector3) -> void:
 			who.let_go()
 	if rope_holder and rope_holder.has_method("let_go"):
 		rope_holder.let_go()
+
+
+## 立てかけ台の姿 at へ移す。wait 秒のあいだは隠しておき（山で畳まれた包みが飛んでくる間）、ぽんと現れる
+func rack_in(at: Transform3D, wait := 0.0) -> void:
+	let_everyone_go()
+	unpeg(false)
+	racked = true
+	parked = true
+	freeze = true
+	linear_velocity = Vector3.ZERO
+	angular_velocity = Vector3.ZERO
+	global_transform = at
+	reset_physics_interpolation()
+	if _blob:
+		_blob.visible = false
+	if wait <= 0.0:
+		return
+	visible = false
+	await get_tree().create_timer(wait).timeout
+	if not is_instance_valid(self):
+		return
+	visible = true
+	if _body:
+		for k in [0.4, 1.08, 0.97, 1.0]:   # 12 コマ／秒で 4 コマ
+			_body.scale = Vector3.ONE * k
+			await get_tree().create_timer(1.0 / 12.0).timeout
+			if not is_instance_valid(self):
+				return
+
+
+## 立てかけ台から前の雪の上へ、コマ撮りで倒して置く（12 コマ／秒で 8 コマ）。降りたら landed を呼ぶ
+func rack_out(to: Transform3D, landed := Callable()) -> void:
+	var a := global_transform
+	var qa := a.basis.get_rotation_quaternion()
+	var qb := to.basis.get_rotation_quaternion()
+	const N := 8
+	for i in range(1, N + 1):
+		await get_tree().create_timer(1.0 / 12.0).timeout
+		if not is_instance_valid(self):
+			return
+		var t := float(i) / N
+		t = t * t * (3.0 - 2.0 * t)
+		global_transform = Transform3D(Basis(qa.slerp(qb, t)), a.origin.lerp(to.origin, t) + Vector3.UP * sin(t * PI) * 0.25)
+	global_transform = to
+	reset_physics_interpolation()
+	racked = false
+	freeze = false
+	parked = true
+	if _blob:
+		_blob.visible = true
+	if landed.is_valid():
+		landed.call()
+
+
+func reset_to(pos: Vector3) -> void:
+	let_everyone_go()
 	unpeg(false)   # ふもとへ戻すときは、刺さっていたペグもなくなる
 	linear_velocity = Vector3.ZERO
 	angular_velocity = Vector3.ZERO
@@ -1027,6 +1087,8 @@ func _catch_fall() -> void:
 func _physics_process(dt: float) -> void:
 	_catch_fall()
 	_update_shadow_and_trail(dt)
+	if racked:
+		return
 	pushers = _push_count
 	_push_count = 0
 	_pushed_by = _pushed_now

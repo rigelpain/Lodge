@@ -995,14 +995,14 @@ def build_interior():
     fb = M("floor1", "floor", "interior")
     fb.box(X0 + R, Y0 + 0.05, FL1, X1 - R, Y1 - R, FL1 + 0.02)
     fb.done()
-    # 厨房の奥の台（北の壁ぎわ）と貸出の棚（西のガラスの壁ぎわ）、厨房の前にメニュー板。
+    # 厨房の奥の台（北の壁ぎわ）と貸出の棚（西のガラスの壁の外、下屋）、厨房の前にメニュー板。
     # 間仕切りと前のカウンターは置かない（2026-10-29 代表「ミシンの前の塀を消し」、
     # 2026-10-31 代表「仕切りを無くしたい。ご飯の前の塀も消してほしい」）
     C = M("counters", "board", "interior")
     C.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
-    C.box(RENTAL["x0"], RENTAL["y0"], FL1, RENTAL["x1"], RENTAL["y1"], FL1 + RENTAL["h"])      # 貸出の棚
-    for z in (0.5, 1.0, 1.5):   # 棚板の縁（口は東）
-        C.box(RENTAL["x1"], RENTAL["y0"] - 0.02, FL1 + z, RENTAL["x1"] + 0.04, RENTAL["y1"] + 0.02, FL1 + z + 0.03)
+    C.box(RENTAL["x0"], RENTAL["y0"], 0, RENTAL["x1"], RENTAL["y1"], RENTAL["h"])      # 貸出の棚（外の下屋の雪の上）
+    for z in (0.5, 1.0, 1.5):   # 棚板の縁（口は西）
+        C.box(RENTAL["x0"] - 0.04, RENTAL["y0"] - 0.02, z, RENTAL["x0"], RENTAL["y1"] + 0.02, z + 0.03)
     C.done(bevel=0.012)
     mb = M("menu_board", "felt_green", "interior")   # 色あせたフェルトの案内板（ゲームでは隠し、装置ごとの品書きの板を吊る: game/menu_board.gd）
     mid = (BACK["x0"] + BACK["x1"]) / 2
@@ -1072,18 +1072,6 @@ def build_interior():
         coll("interior").objects.unlink(src)
         coll("sources").objects.link(src)
         src.hide_render = True
-    # スキー置場（中から外の下屋へ出した。2026-10-31 代表の並び）。下屋の雪の上に立てる
-    S = SKI_RACK
-    sk = M("ski_rack", "board", "setsue")
-    sk.box(S["x0"], S["y0"], 0, S["x1"], S["y1"], 0.12)
-    sk.box(S["x0"], S["y0"], 1.10, S["x1"], S["y1"], 1.16)
-    sk.done(bevel=0.01)
-    step = (S["y1"] - S["y0"]) / S["n"]
-    for i, role in enumerate(("felt_red", "felt_blue", "felt_green", "felt_yellow")):
-        sm = M("skis_in_%s" % role, role, "setsue")
-        y = S["y0"] + step * (i + 0.5)
-        sm.box((S["x0"] + S["x1"]) / 2 - 0.05, y - 0.03, 0.12, (S["x0"] + S["x1"]) / 2 + 0.05, y + 0.03, 1.75)
-        sm.done(bevel=0.02, seg=3, array=(math.ceil((S["n"] - i) / 4), (0, step * 4, 0)))
     # 内階段: 部屋の内側（西）を北へ上り、北の壁際の踊り場で折り返して、東の壁際を南へ上って 2 階に出る
     I = INSTAIR
     st = M("instair", "board", "interior")
@@ -1186,20 +1174,7 @@ def build_interior():
     b2.done(bevel=0.012)
     build_doormats()
 
-    # ---- 下屋: 貸出のスキー立てと腰掛け ----
-    L = LEAN
-    rk = M("rental_rack", "board", "setsue")
-    xr = L["x_post"] + L["post"] * 0.9 + 0.17   # 柱の台から 0.12 離す
-    rk.box(xr - 0.05, L["y0"] + 0.4, 0, xr + 0.05, L["y1"] - 0.4, 0.15)
-    rk.box(xr - 0.05, L["y0"] + 0.4, 1.20, xr + 0.05, L["y1"] - 0.4, 1.26)
-    rk.done(bevel=0.01)
-    span = (L["y1"] - 0.4) - (L["y0"] + 0.4)
-    n = int(span / 0.22)
-    for i, role in enumerate(("felt_red", "felt_blue", "felt_green", "felt_yellow")):
-        sm = M("skis_out_%s" % role, role, "setsue")
-        y = L["y0"] + 0.4 + 0.22 * (i + 0.5)
-        sm.box(xr - 0.05, y - 0.04, 0.15, xr + 0.05, y + 0.04, 1.80)
-        sm.done(bevel=0.025, seg=3, array=(math.ceil((n - i) / 4), (0, 0.88, 0)))
+    # ---- 下屋: 腰掛け（スキー立ては 2026-11-04 代表「邪魔だから全撤去」でなくした）----
     bn = M("rental_benches", "board", "setsue")
     for j in range(3):
         y0 = gy(6.7) + j * 0.4
@@ -1531,10 +1506,8 @@ def build_collision():
     Fu.box(BACK["x0"], BACK["y0"], FL1, BACK["x1"], BACK["y1"], FL1 + BACK["h"])
     Fu.box(WINDOW_BAR["x0"], WINDOW_BAR["y0"], FL1, WINDOW_BAR["x1"], WINDOW_BAR["y0"] + WINDOW_BAR["d"],
            FL1 + WINDOW_BAR["h"])
-    Fu.box(RENTAL["x0"], RENTAL["y0"], FL1, RENTAL["x1"], RENTAL["y1"], FL1 + RENTAL["h"])   # 貸出の棚（間仕切りはない）
+    Fu.box(RENTAL["x0"], RENTAL["y0"], 0, RENTAL["x1"], RENTAL["y1"], RENTAL["h"])   # 貸出の棚（外の下屋）
     # 暖炉とまわりの家具の当たりは、ゲーム（game/hearth_nook.gd）が品物に合わせて置く
-    S_ = SKI_RACK
-    Fu.box(S_["x0"], S_["y0"], 0, S_["x1"], S_["y1"], 1.75)   # 外の下屋
     zt = FL2 + TATAMI["h"]
     for x, ky in KOTATSU:   # こたつ: 天板と、穴へ垂れた布団（props の kotatsu_lodge）の外形
         Fu.box(x - KOTATSU_FLARE, ky - KOTATSU_FLARE, zt, x + KOTATSU_W + KOTATSU_FLARE, ky + KOTATSU_D + KOTATSU_FLARE,
