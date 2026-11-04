@@ -2,7 +2,6 @@ extends SceneTree
 ## 乗っているソリのまわりの地面の見え方を撮る（確かめ用）。ロッジの中と雪の上、止まっている所と滑っている所を、後ろからと一人称で。
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/sack_ground_shots.gd -- --bots=0 --no-sound --no-pip --no-selfcam --day=100000 --time=14 --dir=/path/shots [--sled=mid] [--probe]
 ## --sled= なしは米袋（N で出して乗る）。--sled=small|mid|large は、そのソリに乗る。--time= で昼と夜を切り替える
-## --probe: ロッジの中で止めたまま、足もとの影の板・人形の丸い影を順に隠して撮り、光っているのがどれかを確かめる
 
 var args := {}
 var main: Node3D
@@ -84,17 +83,6 @@ func _run() -> void:
 	await _wait(1.0)
 	await _shot("lodge_still")
 	await _shot("lodge_still_fp", "fp")
-	if args.has("probe"):
-		var blob: Node3D = follow.get("_blob")
-		blob.visible = false
-		await _shot("probe_no_blob")
-		blob.visible = true
-		var shade: Node3D = p.doll.get("_foot_shade")
-		shade.visible = false
-		await _shot("probe_no_foot_shade")
-		shade.visible = true
-		quit()
-		return
 	follow.freeze = false
 	# ロッジの中: 滑っている
 	_place(inside + Vector3.UP * 0.1, yaw)
