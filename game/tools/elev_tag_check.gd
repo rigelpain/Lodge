@@ -11,7 +11,7 @@ const SPOTS := [
 	["hill_top", 0.0, 1.5, "hill"], ["hill_mid", 0.0, 28.0, "hill"], ["hill_foot", 0.0, 60.0, "hill"], ["hill_east", 55.0, -10.0, "hill"],
 	["lodge_front", -20.0, 74.0, "lodge"], ["lodge_south", -35.0, 150.0, "lodge"],
 	["slope_foot", -5.0, 200.0, "slope"], ["slope_mid", -12.0, 372.0, "slope"], ["slope_side", 80.0, 372.0, "slope"], ["slope_top", -6.0, 482.0, "slope"],
-	["peak_foot", 170.0, 32.0, "peak"], ["peak_bench", 505.0, 32.0, "peak"], ["peak_top", 700.0, 32.0, "peak"],
+	["peak_foot", 170.0, 32.0, "peak"], ["peak_bench", 505.0, 32.0, "peak"], ["peak_side", 505.0, 180.0, "peak"], ["peak_top", 700.0, 32.0, "peak"],
 ]
 
 var args := {}
@@ -101,7 +101,8 @@ func _run() -> void:
 		var mid: Vector2 = main.lodge_to_world(Vector2(main.PATH_X - 6.0, 24.0))
 		var views := [["map_from_door", Vector3(door.x, 0, door.y), Vector3(board.x, 3.0, board.y)], ["map_close", Vector3(mid.x, 0, mid.y), Vector3(board.x, 3.0, board.y)],
 			["flag_hill_from_lodge", Vector3(-30, 0, 76), Vector3(-30, 3, 48)], ["flag_hill_top", Vector3(12, 0, 14), Vector3(4, 3, -4)],
-			["flag_slope_from_foot", Vector3(-15, 0, 190), Vector3(-15, 4, 226)], ["flag_slope_top", Vector3(10, 0, 460), Vector3(2, 70, 487)]]
+			["flag_slope_from_foot", Vector3(-15, 0, 190), Vector3(-15, 4, 226)], ["flag_slope_top", Vector3(10, 0, 460), Vector3(2, 70, 487)],
+			["flag_peak_from_foot", Vector3(120, 0, 32), Vector3(156, 4, 32)], ["flag_peak_top", Vector3(660, 0, 50), Vector3(704, 0, 42)]]
 		for v in views:
 			var at: Vector3 = v[1]
 			p.global_position = Vector3(at.x, main.height(at.x, at.z) + 0.2, at.z)

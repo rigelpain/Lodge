@@ -6,6 +6,7 @@ extends RefCounted
 ## 新しい山を足すときは、AREAS に 1 行足し、ORDER に名前を足す。絵と色は elev_card.gd の COLORS と cloth()、旗は area_flags.gd。
 
 const Mountain := preload("res://mountain.gd")
+const Grand := preload("res://grand_mountain.gd")
 
 ## どの範囲にも入らない所（ロッジのまわり）の札
 const NONE := "lodge"
@@ -16,8 +17,8 @@ const NONE := "lodge"
 const AREAS := {
 	"hill": {"top": Vector2(0, 0), "dir": Vector2(0, 1), "rx": 68.0, "rn": 68.0, "rs": 68.0, "back": 56.0, "foot": 76.0, "tall": 0.58},
 	"slope": {"top": Vector2(Mountain.SX, Mountain.SZ), "dir": Vector2(0, -1), "rx": 170.0, "rn": 312.0, "rs": 135.0, "back": 100.0, "foot": 310.0, "tall": 0.82},
-	# 大山（grand_mountain.gd）。頂上 (710, 32)、ロッジの側（西）へ長い。範囲の手前の縁が地面の継ぎ目（FOOT_X = 128）
-	"peak": {"top": Vector2(710, 32), "dir": Vector2(-1, 0), "rx": 260.0, "rn": 582.0, "rs": 270.0, "back": 250.0, "foot": 582.0, "tall": 1.0},
+	# 大山（grand_mountain.gd）。ロッジの側（西）へ長い。範囲の手前の縁が地面の継ぎ目（FOOT_X = 128）
+	"peak": {"top": Vector2(Grand.SX, Grand.SZ), "dir": Vector2(-1, 0), "rx": Grand.AZ + 20.0, "rn": Grand.SX - Grand.FOOT_X, "rs": Grand.AXE + 20.0, "back": 250.0, "foot": Grand.SX - Grand.FOOT_X, "tall": 1.0},
 	# ロッジのまわり: 丘の裾から山の麓までの高台。rx を大きくして、奥行きだけで断面に移す
 	"lodge": {"top": Vector2(-35, 134), "dir": Vector2(0, -1), "rx": 100000.0, "rn": 66.0, "rs": 66.0, "back": 66.0, "foot": 66.0, "tall": 0.0},
 }

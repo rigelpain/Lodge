@@ -1,4 +1,4 @@
-extends Node3D
+extends "res://mountain_deco.gd"
 ## 大きな山（2026-10-30 に作り、2026-11-03 に形を直した）。ロッジの南に、高台から高さ約 70 m。
 ## 2026-11-03 代表「大きい山のほうが変に凹ませてあってコースっぽく見えるのが嫌だ。あと大きな段差があるが、押して登る前提なのだから
 ## そんな横長に段差作ったら迂回が大変でしょう。ジャンプ台になる段差は幅小さく作ってほしい。あとジャンプちゃんとできるように射出する角度を作ってほしい。」
@@ -11,9 +11,6 @@ extends Node3D
 ## 地面の高さは静的な関数（lift）で、main.gd の ground() が足す（当たり判定と見た目の雪面の両方に効く）。
 ## 形は 2 m おきの表に一度だけ焼いて、あいだは直線でつなぐ（起伏はいちばん細かくても 14 m の波なので、2 m おきで足りる。焼く時間を短く）。
 ## このノードは、ジャンプ台・尾根の道しるべ・手すり・木と岩を置く
-
-const Props := preload("res://props.gd")
-const Look := preload("res://look.gd")
 
 ## 山の地肌: 頂上 (SX, SZ)、高さ H。楕円の半径（東西・北・南）。POW が大きいほど上が急で麓がなだらか。CAP は頂上の丸み
 const SX := -5.0
@@ -61,11 +58,6 @@ const KICKERS := [
 	[-16.0, 298.0, 7.0],   # 下のこぶの先
 	[-58.0, 335.0, 7.0],   # 西のこぶの先
 ]
-const KICK_W := 4.4          # 台の幅 (m)。大きいソリ 2 台分
-const KICK_L := 4.5          # 踏み切りの坂の長さ（水平, m）。5.5 m だと台が 1.6 m まで高くなり、遅い小のソリが縁の手前で止まった
-const KICK_TOP := 0.6        # 縁の先の平らな所 (m)
-const KICK_BURY := 0.06      # 坂の出だしは雪にもぐらせる (m)。地面との継ぎ目に段を作らない
-const KICK_CLEAR := 26.0     # 台の手前と先の、木を置かない長さ (m)
 
 const FOOT_Z := 182.0        # ここから南が大きな山（窪地を含む）
 const BOTTOM_Z := 225.0      # 北の斜面の下の端（ここから北は窪地と高台）
@@ -77,7 +69,6 @@ const FACE_X := -14.0        # 北の斜面（滑る所）のまんなかの x
 const FACE_W := 34.0         # 北の斜面の、ボタンを置く広がりの半分 (m)
 const RAIL_X := -6.0         # 手すりの x（下の斜面のまんなか寄り。10° のまっすぐに近い雪面で、横に傾いていない。棒が雪に埋もれない）
 const RAIL_Z := Vector2(258.0, 241.0)   # 手すりの上の端と下の端の z
-const RAIL_H := 0.35         # 手すりの下の端の上面の、雪からの高さ（上の端は雪とほぼ同じ高さで、乗り入れやすい）
 
 const GX0 := -128.0          # 焼いた表の範囲
 const GZ0 := 150.0
@@ -333,156 +324,15 @@ static func on_face(x: float, z: float) -> bool:
 	return absf(x - FACE_X) < FACE_W and z > BOTTOM_Z + 4.0 and z < top_z - 4.0
 
 
-# ---------------------------------------------------------------- 飾りとジャンプ台と手すり
-
-var world: Node3D
-
+# ---------------------------------------------------------------- 飾り（ジャンプ台と手すりの作りは mountain_deco.gd）
 
 func _ready() -> void:
 	_build()
 	for i in KICKERS.size():
-		_make_kicker(i)
+		_make_kicker(i, kicker(i))
 	_markers()
-	_rail()
+	_rail(Vector2(RAIL_X, RAIL_Z.x), Vector2(RAIL_X, RAIL_Z.y))
 	_trees()
-
-
-func _y(x: float, z: float) -> float:
-	return world.height(x, z)
-
-
-## 小物を雪に立てる。根もと（半径 r）のまわりで、見た目の雪面がいちばん低い所に合わせる（main.gd の foot_y）
-func _put(path: String, x: float, z: float, yaw: float, r := 0.3) -> Node3D:
-	var n := Props.make(path)
-	n.position = Vector3(x, world.foot_y(x, z, r) - 0.05, z)
-	n.rotation.y = yaw
-	add_child(n)
-	return n
-
-
-## ジャンプ台: 雪を固めた台（踏み切りの坂・縁の先の平ら・後ろと脇の斜め）。形は雪面の上に、その場の高さに沿って作る。
-## 縁には藍に染めたリボンを渡して白い糸で留め、坂の両肩は赤い糸で縫い、縁の両脇に赤と藍の旗を立てる。
-## 当たりは、見た目と同じ面と、その下の中身の詰まった芯（ソリが坂を上がって縁から飛ぶ。台の中へ抜けない）
-func _make_kicker(idx: int) -> void:
-	var k := kicker(idx)
-	var lip: Vector2 = k.lip
-	var f: Vector2 = k.f
-	var q := Vector2(-f.y, f.x)   # 台の横
-	var hl: float = k.hl
-	var half := KICK_W * 0.5
-	var at := func(s: float, w: float) -> Vector2: return lip + f * (s - KICK_L) + q * w
-	# 雪面からの高さ: 坂は二次の曲線、縁の先は平ら
-	var rise := func(s: float) -> float: return hl * pow(minf(s, KICK_L) / KICK_L, 2.0)
-	var rows: Array[float] = []
-	for i in 13:
-		rows.append(KICK_L * i / 12.0)
-	rows.append(KICK_L + KICK_TOP)
-	var cols: Array[float] = [-1.0, -0.66, -0.33, 0.0, 0.33, 0.66, 1.0]
-	var pts: Array[PackedVector3Array] = []
-	for s in rows + [KICK_L + KICK_TOP + hl * 0.9]:
-		var e: float = rise.call(minf(s, KICK_L + KICK_TOP))
-		var back: bool = s > KICK_L + KICK_TOP + 0.01
-		var row := PackedVector3Array()
-		var side := maxf(e, 0.15) * 0.8
-		for c in [-1.0] + cols + [1.0]:
-			var outer: bool = (c == -1.0 and row.is_empty()) or (c == 1.0 and row.size() == cols.size() + 1)
-			var w: float = c * half + (signf(c) * side if outer else 0.0)
-			var p: Vector2 = at.call(s, w)
-			var y := _y(p.x, p.y) + (-0.1 if outer or back else e - KICK_BURY)
-			row.append(Vector3(p.x, y, p.y))
-		pts.append(row)
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for r in pts.size() - 1:
-		for c in pts[r].size() - 1:
-			var a: Vector3 = pts[r][c]
-			var b: Vector3 = pts[r][c + 1]
-			var d: Vector3 = pts[r + 1][c]
-			var e: Vector3 = pts[r + 1][c + 1]
-			for v in [a, d, b, b, d, e]:
-				st.set_uv(Vector2(v.x, v.z) * 0.5)
-				st.add_vertex(v)
-	st.generate_normals()
-	var mesh := st.commit()
-	var mi := MeshInstance3D.new()
-	mi.name = "Kicker%d" % idx
-	mi.mesh = mesh
-	var snow := Look.snow()
-	snow.albedo_color = Color(0.90, 0.93, 0.99)   # 固めた雪は、まわりより少し青い
-	mi.material_override = snow
-	add_child(mi)
-	# 当たり: 見た目と同じなめらかな三角の面と、その 0.12 m 下に、坂の帯（行と行のあいだ）ごとの中身の詰まった凸の芯。
-	# 面だけだと、速く斜めに当たったソリの角が面を抜けて台の中へ入り、中で止まった（大に 1 人、12 m/s）。芯がそれを外へ押し戻す。
-	# 芯だけにすると、塊の継ぎ目でソリが少し引っかかり、縁での速さが落ちた
-	var body := StaticBody3D.new()
-	body.name = "KickerBody%d" % idx
-	var skin := CollisionShape3D.new()
-	skin.shape = mesh.create_trimesh_shape()
-	body.add_child(skin)
-	for r in pts.size() - 1:
-		var hull := PackedVector3Array()
-		for v in pts[r] + pts[r + 1]:
-			hull.append(v - Vector3(0, 0.12, 0))
-			hull.append(v - Vector3(0, 0.9, 0))
-		var col := CollisionShape3D.new()
-		var cs := ConvexPolygonShape3D.new()
-		cs.points = hull
-		col.shape = cs
-		body.add_child(col)
-	add_child(body)
-	# 縁の向き（坂に沿って上を向く）
-	var lip_y: float = _y(lip.x, lip.y) + hl - KICK_BURY
-	var up_dir := Vector3(f.x, tan(deg_to_rad(k.launch)), f.y).normalized()
-	var fwd3 := Vector3(f.x, 0, f.y)
-	var side3 := Vector3(q.x, 0, q.y)
-	var nrm := up_dir.cross(side3).normalized()
-	if nrm.y < 0.0:
-		nrm = -nrm
-	var lip_basis := Basis(side3, nrm, -up_dir).orthonormalized()
-	# リボン: 縁に渡した藍のフェルトの帯
-	var ribbon := MeshInstance3D.new()
-	var rb := BoxMesh.new()
-	rb.size = Vector3(KICK_W + 0.1, 0.03, 0.42)
-	ribbon.mesh = rb
-	ribbon.material_override = Look.felt(Color(0.20, 0.30, 0.62), 1.5)
-	ribbon.transform = Transform3D(lip_basis, Vector3(lip.x, lip_y, lip.y) - up_dir * 0.2 + nrm * 0.03)
-	add_child(ribbon)
-	# 糸の目: リボンを留める白い目と、坂の両肩を縫う赤い目
-	var thread_w := Look.felt(Color(0.96, 0.95, 0.90), 3.0)
-	var thread_r := Look.felt(Color(0.78, 0.18, 0.16), 3.0)
-	for i in 9:
-		var w := -half + 0.25 + (KICK_W - 0.5) * i / 8.0
-		var p := Vector3(lip.x, lip_y, lip.y) + side3 * w - up_dir * 0.2 + nrm * 0.05
-		_stitch(p, lip_basis * Basis(Vector3.RIGHT, PI / 2), 0.34, thread_w)
-	for sgn in [-1.0, 1.0]:
-		var s := 1.2
-		while s < KICK_L - 0.3:
-			var p0: Vector2 = at.call(s, sgn * (half - 0.3))
-			var p1: Vector2 = at.call(s + 0.3, sgn * (half - 0.3))
-			var a := Vector3(p0.x, _y(p0.x, p0.y) + rise.call(s) - KICK_BURY + 0.02, p0.y)
-			var b := Vector3(p1.x, _y(p1.x, p1.y) + rise.call(s + 0.3) - KICK_BURY + 0.02, p1.y)
-			_stitch((a + b) * 0.5, Basis.looking_at(b - a, Vector3.UP) * Basis(Vector3.RIGHT, PI / 2), a.distance_to(b), thread_r)
-			s += 0.55
-	# 旗: 縁の両脇の雪に
-	for sgn in [-1.0, 1.0]:
-		var p: Vector2 = at.call(KICK_L, sgn * (half + 1.1))
-		var flag := _put("res://props/flag_%s.glb" % ("red" if sgn < 0.0 else "navy"), p.x, p.y, atan2(f.x, f.y) + PI / 2 * sgn)
-		flag.scale = Vector3.ONE * 0.85
-
-
-## 糸の 1 目（細い円柱）。basis の y が糸の向き
-func _stitch(at: Vector3, basis: Basis, len: float, mat: Material) -> void:
-	var m := MeshInstance3D.new()
-	var c := CylinderMesh.new()
-	c.top_radius = 0.028
-	c.bottom_radius = 0.028
-	c.height = len
-	c.radial_segments = 6
-	c.rings = 1
-	m.mesh = c
-	m.material_override = mat
-	m.transform = Transform3D(basis, at)
-	add_child(m)
 
 
 ## 東の尾根の道しるべ: 背の脇に、藍の小さな旗を 36 m おきに左右かわるがわる（押して登る人が、なだらかな背を見つけられるように）
@@ -497,89 +347,6 @@ func _markers() -> void:
 		flag.scale = Vector3.ONE * 0.75
 		i += 1
 		s += 36.0
-
-
-## 手すり: 下の斜面のまんなか寄りに、毛糸を巻いた木の棒を 2 本並べた長いレール。上の端は雪とほぼ同じ高さで、下へ行くほど雪から浮く
-## （乗り口で立ち上がると、ソリが勢いをなくして止まる）。
-## 当たりは 2 本の棒にまたがる平らな板（細い棒 1 本だとソリが釣り合わず落ちる）。滑り木がよく滑るよう摩擦はほぼ 0
-const RAIL_W := 0.9          # 当たりの板の幅 (m)
-const RAIL_GAP := 0.36       # 2 本の棒の、まんなかからの距離 (m)
-
-func _rail() -> void:
-	var z0: float = RAIL_Z.x      # 上の端（乗り入れ）
-	var z1: float = RAIL_Z.y      # 下の端
-	var a := Vector3(RAIL_X, _y(RAIL_X, z0) - 0.06, z0)   # 雪にもぐって始まる（段に引っかからない）
-	var b := Vector3(RAIL_X, _y(RAIL_X, z1) + RAIL_H, z1)
-	var body := StaticBody3D.new()
-	body.name = "MountainRail"
-	var pm := PhysicsMaterial.new()
-	pm.friction = 0.02
-	body.physics_material_override = pm
-	add_child(body)
-	var wood := Look.wood(Color(0.55, 0.38, 0.24))
-	var yarns := [Look.felt(Color(0.80, 0.22, 0.18), 1.5), Look.felt(Color(0.95, 0.93, 0.86), 1.5), Look.felt(Color(0.20, 0.30, 0.55), 1.5)]
-	for seg in [[a, b]]:
-		var p: Vector3 = seg[0]
-		var q: Vector3 = seg[1]
-		var mid := (p + q) * 0.5
-		var len := p.distance_to(q)
-		var basis := Basis.looking_at((q - p).normalized(), Vector3.UP)
-		var col := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = Vector3(RAIL_W, 0.2, len + 0.1)
-		col.shape = box
-		col.transform = Transform3D(basis, mid - basis.y * 0.1)
-		body.add_child(col)
-		var bar_basis := basis * Basis(Vector3.RIGHT, PI / 2)
-		for side in [-1.0, 1.0]:
-			var off: Vector3 = basis.x * RAIL_GAP * side - basis.y * 0.1
-			var bar := MeshInstance3D.new()
-			var cyl := CylinderMesh.new()
-			cyl.top_radius = 0.1
-			cyl.bottom_radius = 0.1
-			cyl.height = len
-			cyl.radial_segments = 12
-			bar.mesh = cyl
-			bar.material_override = wood
-			bar.transform = Transform3D(bar_basis, mid + off)
-			add_child(bar)
-			# 毛糸の巻き: 0.5 m おきに 3 色を順に（2 本でずらす）
-			var steps := int(len / 0.5)
-			for k in steps:
-				var ring := MeshInstance3D.new()
-				var rc := CylinderMesh.new()
-				rc.top_radius = 0.115
-				rc.bottom_radius = 0.115
-				rc.height = 0.18
-				rc.radial_segments = 12
-				ring.mesh = rc
-				ring.material_override = yarns[(k + (1 if side > 0.0 else 0)) % yarns.size()]
-				ring.transform = Transform3D(bar_basis, p.lerp(q, (k + 0.5) / steps) + off)
-				add_child(ring)
-	# 支柱と、2 本をつなぐ横木: 3 m おき
-	var z := z0 - 3.0
-	while z > z1 - 0.1:
-		var top := a.lerp(b, (z0 - z) / (z0 - z1))
-		var ground := _y(RAIL_X, z)
-		for side in [-1.0, 1.0]:
-			var post := MeshInstance3D.new()
-			var pc := CylinderMesh.new()
-			pc.top_radius = 0.06
-			pc.bottom_radius = 0.07
-			pc.height = top.y - ground + 0.2
-			post.mesh = pc
-			post.material_override = wood
-			post.position = Vector3(RAIL_X + RAIL_GAP * side, (top.y - 0.1 + ground - 0.2) * 0.5, z)
-			add_child(post)
-		var tie := MeshInstance3D.new()
-		var tb := BoxMesh.new()
-		tb.size = Vector3(RAIL_GAP * 2.0 + 0.2, 0.08, 0.12)
-		tie.mesh = tb
-		tie.material_override = wood
-		tie.position = Vector3(RAIL_X, top.y - 0.22, z)
-		add_child(tie)
-		z -= 3.0
-
 
 
 ## 山の地肌の木: 沢の脇と山の脇に多く、北の斜面（滑る所）のまんなかはまばらに。尾根の背・ジャンプ台の手前と先・手すりは空ける。
