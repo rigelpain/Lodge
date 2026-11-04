@@ -312,6 +312,9 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"back": _back(ci, a)
 		"untag": _tag_move(ci, a, true)
 		"tag_on": _tag_move(ci, a, false)
+		"rack_in": _rack(ci, a, 1)
+		"rack_out": _rack(ci, a, -1)
+		"rack_busy": _rack(ci, a, 0)
 		"wardrobe": _wardrobe(ci, a, tint)
 		"pals": _pals(ci, a, tint, "all")
 		"pal_head": _pals(ci, a, tint, "head")
@@ -915,6 +918,21 @@ static func _tag_move(ci: CanvasItem, a: float, off: bool) -> void:
 		arc_arrow(ci, Vector2(-4, 6), 18.0, -PI * 0.75, -PI * 0.15, RED, a, 2.2)
 	else:
 		arc_arrow(ci, Vector2(4, 4), 18.0, PI * 0.35, -PI * 0.55, RED, a, 2.2)
+
+
+## ソリの立てかけ台: 斜めに立てかけたソリと物差し。dir 1 は台へ戻す（矢印が台へ）、-1 は持ち出す（矢印が手前へ）、0 はいま呼べない（赤い×）
+static func _rack(ci: CanvasItem, a: float, dir: int) -> void:
+	thread(ci, PackedVector2Array([Vector2(-30, 22), Vector2(18, 22)]), WOOD, 3.2, a)    # 足もとの板
+	thread(ci, PackedVector2Array([Vector2(8, 22), Vector2(8, -4)]), WOOD, 3.0, a)       # 物差しの柱
+	patch(ci, xf(rr(-3, -3, 6, 6, 2), 0.0, Vector2(8, -6)), Color(0.72, 0.56, 0.30), a, false)
+	sled_side(ci, Vector2(-2, 2), 0.9, a, -PI / 3.0)
+	if dir > 0:
+		arc_arrow(ci, Vector2(-14, 8), 20.0, PI * 0.95, PI * 1.55, RED, a, 2.4)
+	elif dir < 0:
+		arc_arrow(ci, Vector2(-14, 8), 20.0, PI * 1.55, PI * 0.95, RED, a, 2.4)
+	else:
+		for s: float in [-1.0, 1.0]:
+			thread(ci, PackedVector2Array([Vector2(-26, -8 - s * 8), Vector2(-10, -8 + s * 8)]), RED, 3.2, a)
 
 
 ## 名札の束（めくる）: 少しずつずらした 3 枚の札と、めくる弧

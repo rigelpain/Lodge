@@ -503,6 +503,14 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var si: int = p.seat_near()
 	if si >= 0 and not p.rooted():
 		_hint("sit", ["F"], "sit", p.seats.seat(si).pos + Vector3.UP * 0.85)
+	# ソリの立てかけ台: F で自分のソリを戻す（山から呼ぶ）・持ち出す。触られていて呼べないときは、F なしで「いまは呼べない」の絵
+	if p.has_method("rack_target") and not p.rooted():
+		var rt: Array = p.rack_target()
+		if not rt.is_empty():
+			var at: Vector3 = rt[0].global_position + Vector3.UP * 0.5 if rt[1] == "rack_out" else p.global_position + (-p.global_basis.z) * 2.2 + Vector3.UP * 1.2
+			_hint(rt[1], ["F"], rt[1], at)
+		elif p.rack_refused():
+			_hint("rack_busy", [], "rack_busy", p.global_position + (-p.global_basis.z) * 2.2 + Vector3.UP * 1.2)
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)

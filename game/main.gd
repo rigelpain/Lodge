@@ -106,10 +106,10 @@ const WARDROBE_FLOOR := 6.1   # 2 階の床（dims.FL2）
 const DYE_VAT_AT := Vector3(-2.45, 0.0, 0.35)
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
-## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
-## （2026-10-31 代表の並び: design/lodge-layout/layout-daihyo.json）
-const SHOP_AT := Vector3(-3.3, 0, -0.1)   # ミシンを南へ 2 m 寄せた（2026-11-02）ので、番台の後ろの立つ所は変えず、目印から南へ 5.3 → 3.3 m
-const SHOP_YAW := PI          # 真東（番台の向こうの客）を向く
+## 目印は西を向いている（lodge/dims.py の SLOTS。ソリ屋ごと外の下屋へ出した）ので、+x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
+## （2026-10-31 代表の並びを、外へ出すときに東西に裏返した）
+const SHOP_AT := Vector3(3.3, 0, -0.1)
+const SHOP_YAW := PI          # 真西（番台の向こうの客）を向く
 ## ご飯係の雪だるまの冷蔵庫の立つ所（厨房の目印 slot_food_kitchen の座標。厨房の奥の並びのいちばん西＝炉の右。
 ## 厨房の装置は props/build_scenes.py）と大きさ（ミシンと同じくらいの高さ 3.7 m）。当たり判定の箱は倍率 1 の幅・高さ・奥行き
 const SNOWMAN_AT := Vector3(-4.6, 0, 0.5)
@@ -140,7 +140,7 @@ const KOTATSU_LAMP_TOP := 3.2
 ## [カウンター, レジ, お皿に盛る物, ロッジの座標 (x, y), 正面（客の側）の向き（度。0 = 南、90 = 東。lodge/dims.py の SLOTS と同じ）]。
 ## おじいさんは真東を向いて番台の後ろに立ち、雪だるまは冷蔵庫の中から番台ごしに食堂を向く。置き方は design/lodge-layout/
 const BANDAI := [
-	["counter_patch", "register", "buttons", Vector2(-17.55, -8.7), 90.0],
+	["counter_patch", "register", "buttons", Vector2(-26.05, -8.07), 270.0],   # 外の下屋（床は雪の上。_put_bandai）
 	["counter_indigo", "register_navy", "snowballs", Vector2(-1.6, 7.95), 0.0],
 ]
 ## カウンターは 2 倍で書き出してあるので、人の大きさに戻す。高さは店番のおじいさんの胸の下（0.84 m）まで低くする
@@ -173,6 +173,7 @@ var mountain_man: Node3D      # 山の道具の売り子（mountain_man.gd）。
 var mountain_ui: CanvasLayer  # 山男の売り場（mountain_ui.gd）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
+var sled_rack: Node3D         # ソリの立てかけ台（sled_rack.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
@@ -1144,6 +1145,12 @@ func _furnish_lodge() -> void:
 				(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for b in BANDAI:
 		_put_bandai(lodge, b)
+	# ソリ屋の北どなりの、ソリの立てかけ台（前で F を押して、自分のソリを戻す・持ち出す。sled_rack.gd）
+	var rack_slot := lodge.find_child("slot_sled_rack", true, false) as Node3D
+	if rack_slot:
+		sled_rack = preload("res://sled_rack.gd").new()
+		sled_rack.name = "SledRack"
+		rack_slot.add_child(sled_rack)
 	# 2 階の衣装掛け: 前で F を押すと人形を選び直す
 	wardrobe = Wardrobe.new()
 	wardrobe.name = "Wardrobe"
@@ -1219,7 +1226,7 @@ func _put_bandai(lodge: Node3D, b: Array) -> void:
 	var at: Vector2 = b[3]
 	var root := Node3D.new()
 	root.name = "Bandai_" + String(b[0])
-	root.position = Vector3(at.x, LODGE_FLOOR, -at.y)
+	root.position = Vector3(at.x, 0.0 if b[2] == "buttons" else LODGE_FLOOR, -at.y)   # おじいさんの番台は外の下屋の雪の上
 	root.rotation.y = deg_to_rad(b[4]) + PI   # 模型の正面は -Z
 	lodge.add_child(root)
 	var counter: Node3D
@@ -1414,17 +1421,18 @@ func _make_snowfall(follow: Node3D) -> void:
 ## 雪よけ: ロッジの建物を見えない箱（GPUParticlesCollisionBox3D）で包み、舞う雪の粒が当たったら消す
 ## （2026-11-02 代表「ロッジの中もゆきふっちゃってる」）。中にいるあいだ雪を止めるのではなく、建物の形で雪を止めるので、
 ## 窓や開いた戸の外では今までどおり降り、戸口を出入りしても雪がぱっと消えたり出たりしない。
-## 箱はロッジの座標（glb: x 東、y 上、z 南。lodge/dims.py の x, 高さ, -y）。外の下屋・デッキ・テラスは箱に入れない
+## 箱はロッジの座標（glb: x 東、y 上、z 南。lodge/dims.py の x, 高さ, -y）。デッキ・テラスは箱に入れない
 const SHELTER_1F := AABB(Vector3(-22.1, -1.0, -13.0), Vector3(44.2, 7.0, 26.0))     # 1 階: 外の壁から 0.3 m 外まで、テラスの床（FL2 6.1）の下まで
 ## 2 階: 西の壁（dims.X2_0 = -11.82。西の端はテラス）から東の壁の 0.3 m 外まで、北の軒（1 m）から南の軒（2 m）まで、北の屋根の下（10.3）まで
 const SHELTER_2F := AABB(Vector3(-12.12, 6.0, -13.73), Vector3(34.22, 4.3, 21.18))
+const SHELTER_LEAN := AABB(Vector3(-30.2, -1.0, -12.9), Vector3(8.1, 4.8, 25.8))     # 外の下屋（ソリ屋と立てかけ台の上。dims.LEAN の屋根の外の端の高さ 3.6 m より少し上まで）
 const SHELTER_VEST := AABB(Vector3(-17.8, -1.0, 12.7), Vector3(8.8, 7.4, 5.2))      # 風除室: 両脇の丸太の端まで、前はアーチ戸の外面まで
 const ROOF_N := Vector2(-13.73, 10.72)    # 2 階の屋根（雪を載せた上面）の北の軒先 (z, 高さ)
 const ROOF_S := Vector2(7.45, 13.96)      # 南の軒先。片流れなので、2 階の箱の上に屋根なりに傾けた板を重ねる
 const ROOF_SLAB := 4.0                    # 傾けた板の厚み。南の端で 2 階の箱の上端より下まで届く
 
 func _shelter_snow(lodge: Node3D) -> void:
-	for b in [SHELTER_1F, SHELTER_2F, SHELTER_VEST]:
+	for b in [SHELTER_1F, SHELTER_2F, SHELTER_VEST, SHELTER_LEAN]:
 		var c := GPUParticlesCollisionBox3D.new()
 		c.size = b.size
 		c.position = b.get_center()

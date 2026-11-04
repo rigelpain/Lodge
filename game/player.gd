@@ -413,6 +413,10 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
 					return
+				var rt := rack_target()
+				if not rt.is_empty():   # ソリの立てかけ台: 自分のソリを戻す・持ち出す
+					craft.send({"kind": rt[1], "who": id, "id": craft.sled_id(rt[0])})
+					return
 				if mode == Mode.WALK and mountain_near():
 					get_parent().mountain_ui.open()   # 玄関の外の山男: 山の道具（焚き火セット・ペグ）を買う
 					return
@@ -2020,13 +2024,13 @@ func cycle_hand(step: int) -> void:
 
 ## いちばん近いソリを、押す・乗る・畳む相手にする（歩いているときだけ。つかむ・乗るあいだは替えない）
 func _pick_sled() -> void:
-	var best: RigidBody3D = sled if is_instance_valid(sled) and sled.visible and not sled.is_queued_for_deletion() else null
+	var best: RigidBody3D = sled if is_instance_valid(sled) and sled.visible and not sled.is_queued_for_deletion() and not sled.racked else null
 	var best_d := INF
 	if best:
 		best_d = global_position.distance_to(best.global_position) - SLED_SWITCH
 	for s in get_tree().get_nodes_in_group("sleds"):
 		var rb := s as RigidBody3D
-		if rb == null or rb == best or not rb.visible or rb.is_queued_for_deletion():
+		if rb == null or rb == best or not rb.visible or rb.is_queued_for_deletion() or rb.racked:   # 立てかけ台のソリはつかめない
 			continue
 		var d := global_position.distance_to(rb.global_position)
 		if d < best_d:
@@ -2044,6 +2048,55 @@ func shop_near() -> bool:
 	var d: Vector3 = sk.global_position - global_position
 	d.y = 0
 	return d.length() < 0.6 or (-global_basis.z).dot(d.normalized()) > 0.4
+
+
+## 立てかけ台の前で F を押すと何が起きるか: [ソリ, "rack_out" か "rack_in"]。何もなければ []。
+## 台の自分のソリの方を見ていれば持ち出す。でなければ、触られていない自分のソリのうち、いちばん遠いものを台へ戻す。
+## 戻す物がなければ、台にある自分のソリのうち、いちばん向いているものを持ち出す
+const RACK_LOOK := 0.92   # 台のソリの方を見ている（見ている向きとソリの方向の合い具合）
+
+func rack_target() -> Array:
+	var r = get_parent().get("sled_rack")
+	if r == null or craft == null or mode != Mode.WALK or menu_open or shopping or not r.can_use(self):
+		return []
+	var l: Dictionary = craft.rack_list(id)
+	var best: Node3D = null
+	var best_f := -2.0
+	for s in l.on:
+		var f := _facing((s as Node3D).global_position)
+		if f > best_f:
+			best = s
+			best_f = f
+	if best and best_f > RACK_LOOK:
+		return [best, "rack_out"]
+	if _sled_in_reach():
+		return []   # 手の届くソリがあれば、F はつかむほう（持ち出したソリをつかもうとして、台へ戻してしまわないように）
+	var far: Node3D = null
+	var far_d := -1.0
+	for s in l.free:
+		var d: float = (s as Node3D).global_position.distance_to(global_position)
+		if d > far_d:
+			far = s
+			far_d = d
+	if far:
+		return [far, "rack_in"]
+	return [best, "rack_out"] if best else []
+
+
+## 立てかけ台の前で、自分のソリがみな触られていて（ペグで留めてあって）戻せず、持ち出せる物もないか（F の代わりに「いまは呼べない」の絵を出す）
+func rack_refused() -> bool:
+	var r = get_parent().get("sled_rack")
+	if r == null or craft == null or mode != Mode.WALK or menu_open or shopping or not r.can_use(self):
+		return false
+	var l: Dictionary = craft.rack_list(id)
+	return l.on.is_empty() and l.free.is_empty() and not l.busy.is_empty() and not _sled_in_reach()
+
+
+## F でつかめる（紐の先か、つかむ所に手が届く）ソリがそばにあるか
+func _sled_in_reach() -> bool:
+	if not is_instance_valid(sled) or sled.racked:
+		return false
+	return _rope_end_near() or global_position.distance_to(sled.to_global(sled.grip_point_near(global_position)[0])) <= GRAB_REACH
 
 
 ## 山男に話しかけられる所で、山男の方を向いているか
@@ -2398,7 +2451,7 @@ func tag_target() -> Array:
 	var best: Array = []
 	var near := TAG_REACH
 	for s in get_tree().get_nodes_in_group("sleds"):
-		if not is_instance_valid(s) or not s.visible or s.kind == "sack" or craft.sled_id(s) < 0:
+		if not is_instance_valid(s) or not s.visible or s.kind == "sack" or craft.sled_id(s) < 0 or s.racked:
 			continue
 		var d: float = s.tag_point().distance_to(global_position + Vector3.UP * 0.9)
 		if d >= near:

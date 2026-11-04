@@ -116,9 +116,8 @@ def game_items():
     add("seller", "売り子", "person", mx + dx, my + dy, 0.9, 0.9, "sled")
     add("rental_shelf", "貸出の棚", "box", (RENTAL["x0"] + RENTAL["x1"]) / 2, (RENTAL["y0"] + RENTAL["y1"]) / 2,
         RENTAL["y1"] - RENTAL["y0"], RENTAL["x1"] - RENTAL["x0"], "sled", 90)
-    SR = SKI_RACK
-    add("ski_rack", "スキー置場", "rack", (SR["x0"] + SR["x1"]) / 2, (SR["y0"] + SR["y1"]) / 2,
-        SR["x1"] - SR["x0"], SR["y1"] - SR["y0"], "sled")
+    rx, ry, _, _ = SLOTS["slot_sled_rack"]
+    add("sled_rack", "ソリの立てかけ台", "rack", rx + 1.0, ry, 2.2, 12.8, "sled")
     kx, ky, _, _ = SLOTS["slot_food_kitchen"]
     fx, _, fz = _gd_vec("SNOWMAN_AT")
     add("fridge", "雪だるまの冷蔵庫", "fridge", kx + fx, ky - fz, 2.0, 1.6, "food")
