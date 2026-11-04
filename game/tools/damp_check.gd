@@ -3,7 +3,7 @@ extends SceneTree
 ##   Godot --headless --fixed-fps 60 --path game -s res://tools/damp_check.gd -- --no-sound
 ## あなたを順に置いて、水・段・歩く速さ・押す力・人形の見た目・姿勢のコマの間隔・バッジを出す:
 ##   外（ふもと）に 60 秒立つ → 雪玉が 3 回当たる → 水 60 から暖炉のそば（1.5 m）に 30 秒 → 外に 180 秒 →
-##   乾燥機の前に 3 秒立つ（乾かない）→ F で乾燥機に入る（1 秒・2 秒・4 秒・ひとりでに出たとき）→ ロッジの中（暖炉から離れた所）に 150 秒 → 風除室に 30 秒
+##   乾燥機の前に 3 秒立つ（乾かない）→ F で乾燥機に入る（1.5 秒・3 秒・ひとりでに出たとき）→ ロッジの中（暖炉から離れた所）に 150 秒 → 風除室に 30 秒
 ## 仲間（押す係）は止めずに動かし、ソリを押して登るあいだの値も出す
 
 const Doll := preload("res://doll.gd")
@@ -94,14 +94,12 @@ func _run() -> void:
 		_row("水 60 から乾燥機の前に立って 3 秒")
 		print("入れる: ", p.dryer_near() == dryer)
 		dryer.ride(p)
-		await _wait(1.0)
-		_row("乾燥機に入って 1 秒（とび込み 0.5 秒）")
-		await _wait(1.0)
-		_row("乾燥機に入って 2 秒")
-		await _wait(2.0)
-		_row("乾燥機に入って 4 秒")
-		var t := 4.0
-		while p.mode == p.Mode.DRUM and t < 15.0:
+		await _wait(1.5)
+		_row("乾燥機に入って 1.5 秒（とび込み 0.5 秒）")
+		await _wait(1.5)
+		_row("乾燥機に入って 3 秒")
+		var t := 3.0
+		while p.mode == p.Mode.DRUM and t < 40.0:
 			await _wait(0.1)
 			t += 0.1
 		_row("乾燥機からひとりでに出た（入って %.1f 秒）" % t)
