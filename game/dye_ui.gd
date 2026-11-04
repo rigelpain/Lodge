@@ -21,9 +21,10 @@ const SHOT := Vector2i(300, 420)   # 札の中の絵の大きさ (px)
 const RINGS := 6             # 色の輪の、外へ向かう段の数
 const SEGS := 48             # 色の輪の、まわりの分け数
 const V_MIN := 0.12          # 明るさの帯のいちばん暗い所
-const BLINK := 1.3           # 部位の光が 1 回点滅する秒。動きはなめらか（art-concept: 12 コマは人の姿勢だけ）
+const BLINK := 1.3           # 輪郭の内側の微光が 1 回点滅する秒。動きはなめらか（art-concept: 12 コマは人の姿勢だけ）
 const RING_CORE := 2.6       # 輪郭の芯（生成りの糸）の太さ (u)
 const RING_EDGE := 1.5       # 芯の外側の、墨の縁の太さ (u)
+const GLOW_R := 26.0         # 微光が輪郭から内側へ届く幅 (u)
 
 var main: Node3D
 var craft: Node
@@ -69,7 +70,7 @@ class View:
 			ui._draw_on(self)
 
 
-## 札の中の見本の絵。RING_SHADER を通して、部位の輪郭と光を重ねる（板や札の絵は View が先に描く）
+## 札の中の見本の絵。RING_SHADER を通して、部位の輪郭と微光を重ねる（板や札の絵は View が先に描く）
 class Ring:
 	extends Control
 	var ui
@@ -257,7 +258,6 @@ func _make_part_shot(cam: Camera3D) -> void:
 	_part_shot.add_child(c)
 	c.global_transform = cam.global_transform
 	_ring.material.set_shader_parameter("shape_tex", _shape_pass(_shape_pass(_part_shot, true), false).get_texture())
-	_ring.material.set_shader_parameter("part_tex", _part_shot.get_texture())
 
 
 func _process(dt: float) -> void:
@@ -297,7 +297,7 @@ func _shape_pass(from: SubViewport, grow: bool) -> SubViewport:
 	return vp
 
 
-## 選んでいる部位か、見本に乗っている部位に、輪郭と光を出す。替わったら光の強い所から始める
+## 選んでいる部位か、見本に乗っている部位に、輪郭と微光を出す。替わったら光の強い所から始める
 func _show_part() -> void:
 	var on := _cloth
 	for pre in ["swatch", "bleach"]:
@@ -330,6 +330,7 @@ func _draw_on(ci: Control) -> void:
 	_ring.material.set_shader_parameter("px", Vector2.ONE / _shot_rect.size)
 	_ring.material.set_shader_parameter("core", RING_CORE * maxf(u, 0.75))
 	_ring.material.set_shader_parameter("edge", RING_EDGE * maxf(u, 0.75))
+	_ring.material.set_shader_parameter("glow_r", GLOW_R * maxf(u, 0.75))
 	# 右上: 部位の見本
 	var rx := card.end.x + 48.0 * u
 	var n := _pick.size()
@@ -580,7 +581,7 @@ func _input(e: InputEvent) -> void:
 					bleach(int(h.trim_prefix("bleach")))
 
 
-# ---------------------------------------------------------------- 輪郭と光
+# ---------------------------------------------------------------- 輪郭と微光
 
 ## 部位の型紙の、細かい所をひとかたまりにする。musha の縅の糸のように、細い線が狭いすき間で並ぶ所を 1 本ずつ縁取ると針金のようになるので、
 ## 広げてから同じだけ削り戻して、狭いすき間だけを埋める（大きな布の縁はずれず、離れた細い部位は細いまま）
@@ -606,22 +607,23 @@ void fragment() {
 }
 """
 
-## 見本の絵に、部位の型紙から輪郭と光を重ねる。外から順に: 墨の縁（生成りの札の上で読める）、生成りの糸の芯（濃い布の上で読める）、部位。
-## 輪郭は部位の外側に出すので、部位の色を塗りつぶさない。光は、暗い布は色合いのまま少し明るく（灯りの色を混ぜると灰色に褪せて見える）、
-## もう明るくできない白い布は、陰を残したまま灯りの色に少し染める（白い布でも点滅が読める）
+## 見本の絵に、部位の型紙から輪郭と微光を重ねる。外から順に: 墨の縁（生成りの札の上で読める）、生成りの糸の芯（濃い布の上で読める）、輪郭の内側。
+## 輪郭は外側に出して点滅させず、内側だけを微光で点滅させる。微光は輪郭のすぐ内側で強く、中へ行くほど薄い（範囲じゅう同じ強さにすると、布の色が替わったように見える）。
+## 暗い布は色合いのまま明るく（灯りの色を混ぜると灰色に褪せて見える）、もう明るくできない白い布は、陰を残したまま灯りの色に少し染める
 const RING_SHADER := """
 shader_type canvas_item;
 
-uniform sampler2D part_tex : filter_linear, repeat_disable;    // 部位そのもの（光る所）
-uniform sampler2D shape_tex : filter_linear, repeat_disable;   // 細かい所をひとかたまりにした部位（輪郭の内側）
+uniform sampler2D shape_tex : filter_linear, repeat_disable;   // 細かい所をひとかたまりにした部位（輪郭の内側。微光もここに出す）
 uniform vec2 px = vec2(0.003);    // 画面の 1 px が、絵の UV でいくつか
 uniform float core = 2.6;         // 芯の太さ (px)
 uniform float edge = 1.5;         // 墨の縁の太さ (px)
 uniform float pulse = 0.0;        // 光の強さ 0〜1
+uniform float glow_r = 26.0;      // 縁の光が中へ届く幅 (px)
 
 const vec3 CORE_COL = vec3(0.98, 0.96, 0.92);
 const vec3 EDGE_COL = vec3(0.10, 0.08, 0.16);
 const vec3 LIGHT_COL = vec3(1.0, 0.86, 0.60);
+const float GLOW_MID = 0.35;      // 範囲のまん中の光（縁を 1 として）
 
 // 半径 r の円の中に部位があるか（0〜1）
 float near(vec2 uv, float r) {
@@ -635,23 +637,38 @@ float near(vec2 uv, float r) {
 	return m;
 }
 
-vec3 lit(vec3 c) {
+// 輪郭のすぐ内側で強く、中へ行くほど薄くなる光の量（0〜1）。まわりに範囲の外が多いほど、縁に近い
+float veil(vec2 uv, float shape) {
+	float cover = 0.0;
+	for (int i = 0; i < 32; i++) {   // 円の中をむらなく見る（ひまわりの種の並び）
+		float a = float(i) * 2.3999632;
+		cover += texture(shape_tex, uv + vec2(cos(a), sin(a)) * px * glow_r * sqrt((float(i) + 0.5) / 32.0)).r;
+	}
+	float near_edge = smoothstep(0.0, 0.5, 1.0 - cover / 32.0);
+	return shape * mix(GLOW_MID, 1.0, near_edge);
+}
+
+// 暗い布は色合いのまま明るく、もう明るくできない白い布は陰を残したまま灯りの色に染める
+vec3 lit(vec3 c, float g) {
 	float l = dot(c, vec3(0.299, 0.587, 0.114));
-	vec3 up = min(c * (1.0 + 0.15 * pulse), vec3(1.0));
-	up += (vec3(1.0) - up) * LIGHT_COL * 0.10 * pulse;
-	return up * mix(vec3(1.0), LIGHT_COL, 0.35 * pulse * smoothstep(0.62, 0.92, l));
+	float white = smoothstep(0.62, 0.92, l);
+	vec3 up = min(c * (1.0 + 0.30 * g * (1.0 - white)), vec3(1.0));
+	vec3 tone = mix(LIGHT_COL, c / max(max(c.r, max(c.g, c.b)), 0.05), 0.6);   // 足す光は布の色寄りに（紺が灰色に褪せない）
+	up += (vec3(1.0) - up) * tone * 0.20 * g;
+	return up * mix(vec3(1.0), LIGHT_COL, 0.45 * g * white);
 }
 
 void fragment() {
 	vec4 c = texture(TEXTURE, UV);
-	vec4 p = texture(part_tex, UV);
-	float inside = smoothstep(0.35, 0.65, p.r * p.a);
 	float shape = smoothstep(0.35, 0.65, texture(shape_tex, UV).r);
 	float a_core = smoothstep(0.35, 0.65, near(UV, core)) * (1.0 - shape);
 	float a_edge = smoothstep(0.35, 0.65, near(UV, core + edge)) * (1.0 - shape);
+	float g = veil(UV, shape) * pulse;
 	vec3 col = mix(c.rgb, EDGE_COL, a_edge);
 	col = mix(col, CORE_COL, a_core);
-	col = mix(col, lit(c.rgb), inside);
-	COLOR = vec4(col, max(c.a, a_edge));
+	// 範囲の中: 布の上は lit、布のない狭いすき間には灯りだけが薄くかかる
+	float gap = 0.30 * g * (1.0 - c.a);
+	col = mix(col, mix(LIGHT_COL, lit(c.rgb, g), step(0.001, c.a)), shape);
+	COLOR = vec4(col, max(max(c.a, a_edge), gap));
 }
 """
