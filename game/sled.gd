@@ -686,6 +686,15 @@ func place_lift() -> float:
 
 ## 足元の影（やわらかい楕円）と、滑り木の跡のステッチ（毛糸の雪に残る針目）
 func _make_shadow_and_trail() -> void:
+	_make_blob()
+	_make_trail()
+
+
+## 足元の影の板。光を受けない青い塗りなので、暗い床や夜の雪の上では、まわりより明るく光って見える。
+## 大きさは大きなソリに合わせた 1 枚なので、小さな米袋には作らない（2026-11-04 代表「米袋に乗った時に地面が青く発光するのやめれる？」）
+func _make_blob() -> void:
+	if kind == "sack":
+		return
 	var img := Image.create(128, 128, false, Image.FORMAT_RGBA8)
 	for y in 128:
 		for x in 128:
@@ -710,6 +719,8 @@ func _make_shadow_and_trail() -> void:
 	_blob.top_level = true
 	add_child(_blob)
 
+
+func _make_trail() -> void:
 	_stitch_name = stitch_kind()
 	_st = STITCHES[_stitch_name]
 	_trail_n = TRAIL_N * int(_st.per)
@@ -771,7 +782,7 @@ func _trail_slot() -> int:
 
 
 func _update_shadow_and_trail(dt: float) -> void:
-	if _blob == null:
+	if _stitch == null:
 		return
 	_trail_now += dt
 	Look.stitch_set_time(_stitch, _trail_now)
@@ -779,7 +790,7 @@ func _update_shadow_and_trail(dt: float) -> void:
 		if _trails[c].visible and _chunk_end[c] <= _trail_now:
 			_trails[c].visible = false
 	var hit := _ground_hit(global_position + Vector3.UP * 0.5)
-	if hit:
+	if hit and _blob:
 		var n: Vector3 = hit.normal
 		var fwd: Vector3 = -global_basis.z
 		fwd = (fwd - n * fwd.dot(n)).normalized()
