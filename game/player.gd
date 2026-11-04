@@ -75,6 +75,7 @@ var pushing := false
 var pulling := false
 var push_world := Vector3.ZERO  # このコマ押した向き（世界、水平）。通信でほかの画面のあなたの体が同じ向きに押す（net.gd）
 var prompt := ""             # 画面に出す一言（main.gd が読む）
+const MIRROR_GAZE_Y := 0.2    # 大きな鏡に映っているあいだの、上下の見る向きの効き
 var base_fov := 75.0         # 一人称の視野角（設定からだけ変える）
 var third := false           # C で三人称
 var cam_dist := 3.4          # 三人称: 頭の後ろからカメラまでの距離 (m)。ピンチ・設定
@@ -421,6 +422,8 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.WALK and mountain_near():
 					get_parent().mountain_ui.open()   # 玄関の外の山男: 山の道具（焚き火セット・ペグ）を買う
 					return
+				if mode == Mode.WALK and _mirror_f():
+					return   # 入口の横の大きな鏡: 自分の人形を映す・消す
 				if mode == Mode.WALK and dye_near():
 					get_parent().dye_ui.open()   # 人台の桶を見下ろす: 服を染める
 					return
@@ -861,6 +864,10 @@ func _pose_doll() -> void:
 	# 三人称でカメラから測ると、カメラが 6 m 後ろなら見る先が頭そのものに、9 m なら頭の 3 m 後ろになり、首がねじれていた
 	var from := _gaze_from if third and _gaze_from != Vector3.INF else cam.global_position
 	doll.gaze = from - cam.global_basis.z * 6.0
+	var mir = get_parent().get("mirror")
+	if mir != null and mir.shown:
+		# 大きな鏡を見上げても、鏡の中の顔が上を向きすぎないように（高い所の顔を見ると、自分の顔がのけぞって見えなくなる）。自分の画面だけ
+		doll.gaze.y = from.y + (doll.gaze.y - from.y) * MIRROR_GAZE_Y
 	doll.rope_hand = _hand_world() if mode == Mode.ROPE else Vector3.INF
 	doll.lean = Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_W) - _key(KEY_S)) if mode == Mode.RIDE else Vector2.ZERO
 	doll.point_sides = Palm.sides_of(hand)
@@ -2135,6 +2142,31 @@ func station_near() -> Node:
 func wardrobe_near() -> bool:
 	var w = get_parent().get("wardrobe")
 	return w != null and get_parent().get("wardrobe_ui") != null and not menu_open and w.can_use(self)
+
+
+## 入口の横の大きな鏡の前で、鏡の方を向いているか（映っているあいだは案内を出さない）
+func mirror_near() -> bool:
+	var m = get_parent().get("mirror")
+	return m != null and not m.shown and not menu_open and not shopping and mode == Mode.WALK and m.can_use(self)
+
+
+## F: 映っていれば消す（ただし鏡を見ながら人台や紙細工屋さんを向いていれば、そちらを開く）。映っていなければ、鏡の方を向いているときに映す
+func _mirror_f() -> bool:
+	var m = get_parent().get("mirror")
+	if m == null or menu_open:
+		return false
+	if m.shown:
+		if dye_near() or paper_shop_near() or wardrobe_near():
+			return false
+		m.set_shown(false)
+		return true
+	if not m.can_use(self):
+		return false
+	m.set_shown(true)
+	var hud = get_parent().get("hud")
+	if hud:
+		hud.learn("mirror")   # 映したら、F の案内はもう出さない
+	return true
 
 
 ## テントの紙細工屋さん（paper_lady.gd）の前で、婦人かスタンドの方を向いているか

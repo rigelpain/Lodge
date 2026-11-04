@@ -153,6 +153,8 @@ static func glow(m: ShaderMaterial, i: int) -> void:
 static func put(body: Node3D, tex: Texture2D) -> void:
 	for m in body.find_children("*", "MeshInstance3D", true, false):
 		var mi := m as MeshInstance3D
+		if _on_bone(mi, body):   # 骨に付けた物（頭・肩の小物、手に持った物）は人形の服ではない。人形の色の絵を貼らない
+			continue
 		for s in mi.mesh.get_surface_count():
 			var mat := mi.get_active_material(s)
 			if mat is ShaderMaterial:
@@ -163,6 +165,16 @@ static func put(body: Node3D, tex: Texture2D) -> void:
 					mat = mat.duplicate()
 					mi.set_surface_override_material(s, mat)
 				(mat as StandardMaterial3D).albedo_texture = tex
+
+
+## 骨に付けた物（BoneAttachment3D の下）か
+static func _on_bone(n: Node, body: Node) -> bool:
+	var p := n.get_parent()
+	while p != null and p != body:
+		if p is BoneAttachment3D:
+			return true
+		p = p.get_parent()
+	return false
 
 
 ## glb の人形 body のいまの色の絵

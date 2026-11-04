@@ -316,6 +316,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"rack_out": _rack(ci, a, -1)
 		"rack_busy": _rack(ci, a, 0)
 		"wardrobe": _wardrobe(ci, a, tint)
+		"mirror": _mirror(ci, a, tint)
 		"pals": _pals(ci, a, tint, "all")
 		"pal_head": _pals(ci, a, tint, "head")
 		"pal_shoulder": _pals(ci, a, tint, "shoulder")
@@ -792,6 +793,26 @@ static func _wardrobe(ci: CanvasItem, a: float, col: Color) -> void:
 	doll(ci, Vector2(-4, 24), col, "stand", a, 0.8)
 	arc_arrow(ci, Vector2(-4, 6), 25.0, -0.35, 0.9, THREAD, a, 2.2)
 	arc_arrow(ci, Vector2(-4, 6), 25.0, PI - 0.35, PI + 0.9, THREAD, a, 2.2)
+
+
+## 大きな鏡: 縦長の刺繍枠（木の輪と真鍮のねじ）の中に、銀の布に映った大きな人の形
+static func _mirror(ci: CanvasItem, a: float, col: Color) -> void:
+	var o := _o
+	var s := _s
+	var ring := PackedVector2Array()
+	for i in 40:   # 角の丸い長方形
+		var t := TAU * i / 40.0
+		var c := Vector2(signf(cos(t)) * pow(absf(cos(t)), 0.55) * 21.0, signf(sin(t)) * pow(absf(sin(t)), 0.55) * 29.0)
+		ring.append(c + Vector2(0, 3))
+	patch(ci, ring, WOOD, a, true)
+	var inner := PackedVector2Array()
+	for p in ring:
+		inner.append((p - Vector2(0, 3)) * 0.8 + Vector2(0, 3))
+	patch(ci, inner, Color(0.80, 0.82, 0.86), a, false)
+	doll(ci, Vector2(0, 25), col, "stand", a, 0.92)
+	var brass := Color(0.82, 0.66, 0.30)
+	ci.draw_line(o + Vector2(-9, -30) * s, o + Vector2(9, -30) * s, Color(brass, a), 2.6 * s, true)
+	ci.draw_circle(o + Vector2(11, -30) * s, 3.0 * s, Color(brass, a), true, -1.0, true)
 
 
 ## 頭・肩の小物とミニオン（pals.gd）: 人の形の頭や肩に小鳥、足もとに子狐。which は all（売り台の案内）・head・shoulder・pet（売り台の画面の札の段）
