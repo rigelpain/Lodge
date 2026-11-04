@@ -106,6 +106,10 @@ func _wav(name: String) -> AudioStreamWAV:
 	if not FileAccess.file_exists(path):
 		path = ProjectSettings.globalize_path("res://sound/wav/%s.wav" % name)
 	var s: AudioStreamWAV = AudioStreamWAV.load_from_file(path) if FileAccess.file_exists(path) else null
+	# 書き出したゲームには外の sound/wav がないので、build_release.sh が中に入れた音（そのままの wav）から読む
+	var packed := "res://sound/wav/%s.wav" % name
+	if s == null and FileAccess.file_exists(packed):
+		s = AudioStreamWAV.load_from_buffer(FileAccess.get_file_as_bytes(packed))
 	if s == null:
 		push_warning("音が見つからない: " + name)
 	elif name.ends_with("_loop"):

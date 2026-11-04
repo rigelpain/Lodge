@@ -90,23 +90,18 @@ Tailscale を使うと、家のルーターの設定をいじらずに、友達�
 
 ## 作る人向け: 書き出しと配り方
 
-Godot 4.6.3 と、その書き出し用の雛形（エディタの「エクスポートテンプレートを管理」、または公式の `Godot_v4.6.3-stable_export_templates.tpz`）が要ります。
+Godot 4.6.3 と、その書き出し用の雛形（エディタの「エクスポートテンプレートを管理」、または公式の `Godot_v4.6.3-stable_export_templates.tpz`）が要ります。書きかけが混ざらないよう、まっさらな作業場で動かします。
 
 ```bash
-cd game
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path . --export-release "Windows Desktop" ../build/windows/Lodge.exe
-/Applications/Godot.app/Contents/MacOS/Godot --headless --path . --export-release "macOS" ../build/mac/Lodge.zip
+git worktree add ../Lodge-release origin/main
+cd ../Lodge-release && ./build_release.sh
 ```
 
-- Windows は `Lodge.exe` ひとつにまとまります（中身を exe に埋め込む）。フォルダごと zip にして `Lodge-windows.zip` で配ります。
-- Mac は Apple シリコン専用の版で、Apple の公証はしていません（その場しのぎの署名だけ）。Godot の雛形は Intel と Apple の両方入りしかないので、書き出したあとに Intel の分を抜いて、署名し直します（両方入りのままだと、本体が約 2 倍、zip が約 90 MB 大きくなります。Intel の Mac に配るときは、この手順を飛ばします）。
+`build_release.sh` は次をまとめてします。できた zip は `build/<日付>-<コミット>/` に置きます。
 
-```bash
-cd ../build/mac && unzip -q Lodge.zip && rm Lodge.zip
-lipo Lodge.app/Contents/MacOS/Lodge -thin arm64 -output Lodge.arm64 && mv Lodge.arm64 Lodge.app/Contents/MacOS/Lodge
-codesign --force --deep -s - Lodge.app
-ditto -c -k --keepParent Lodge.app Lodge-mac.zip
-```
+- 音（`sound/wav`）をゲームの中に入れる。音はふだんゲームの外から読むので、入れないと書き出したゲームは鳴りません。
+- Windows は `Lodge.exe` ひとつにまとめ（中身を exe に埋め込む）、フォルダごと `Lodge-windows.zip` にする。
+- Mac は Apple シリコン専用にする。Godot の雛形は Intel と Apple の両方入りしかないので、書き出したあとに Intel の分を抜いて、署名し直す（両方入りのままだと、本体が約 2 倍、zip が約 90 MB 大きくなります。Intel の Mac に配るときは、スクリプトの 5 の `lipo` を飛ばします）。Apple の公証はしていません（その場しのぎの署名だけ）。
 
 - `build/` は git に入れません。zip は Google ドライブなどで渡します。itch.io の限定公開（リンクを知っている人だけ）でも配れます。
 - 書き出しの設定は `game/export_presets.cfg`。`tools/` と `shots/` は入れません。
