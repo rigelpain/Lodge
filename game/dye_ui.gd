@@ -2,7 +2,8 @@ extends CanvasLayer
 ## 服を染める画面（1 階の人台の桶を見下ろして F）。文字は使わない（2026-11-01 代表「服の色変えもできるようにしたい」）。
 ##   左: 紙の札の中で、いま着ている人形が 12 コマでゆっくり回る。選んでいる色がその場で服に染まる（見本。まだ払っていない）。
 ##   右上: 染める部位の見本 4 枚（主の色・2 番目・3 番目・4 番目。outfit.gd の PARTS）。押した部位を染める。見本の右下の折り返しが、もとの色。
-##       見本を押す・見本に乗ると、札の中の人形のその部位が明るく脈打つ（どこを染めるかを、文字でなく人形の上で指す）
+##       選んでいる部位（見本に乗っている間はその部位）は、札の中の人形の上で輪郭を縁取り、少し光らせて点滅させる。ほかの部位はもとの色のまま
+##       （どこを染めるかを、文字でなく人形の上で指す。2026-11-04 代表「他の部位の色を褪せさせるんじゃなくて、輪郭を表示して少し光で点滅させる」）
 ##   右: 色の輪（まわりで色合い、外ほど鮮やか）と、明るさの帯。色は自由に選べる（2026-11-01 代表「自由に選ぶ」）。
 ##   見本の下の小さな丸い布は、その部位の「脱色」（もとの色に戻す）。もとの色の布に戻る矢印。染めてある部位だけ押せる
 ##       （2026-11-03 代表「デフォルトカラーに戻す脱色を各部位でできるようにしてほしい」）。脱色はただ（代表「脱色はただに」）
@@ -20,7 +21,9 @@ const SHOT := Vector2i(300, 420)   # 札の中の絵の大きさ (px)
 const RINGS := 6             # 色の輪の、外へ向かう段の数
 const SEGS := 48             # 色の輪の、まわりの分け数
 const V_MIN := 0.12          # 明るさの帯のいちばん暗い所
-const GLOW := 1.6            # 部位を選んだあと、人形のその部位が脈打つ秒
+const BLINK := 1.3           # 部位の光が 1 回点滅する秒。動きはなめらか（art-concept: 12 コマは人の姿勢だけ）
+const RING_CORE := 2.6       # 輪郭の芯（生成りの糸）の太さ (u)
+const RING_EDGE := 1.5       # 芯の外側の、墨の縁の太さ (u)
 
 var main: Node3D
 var craft: Node
@@ -30,12 +33,19 @@ var _view: Control
 var _kind := "kasa"
 var _pick: Array = []        # 部位ごとの、選んでいる色（Color か null = もとの色）
 var _cloth := 0              # 染める部位の番号
-var _glow := 0.0             # 選んだ部位が脈打つ残りの秒
+var _on := 0                 # 輪郭と光を出している部位
+var _blink := 0.0            # 点滅の時計（秒。0 が光のいちばん強い所）
 var _hsv := Vector3(0, 0.5, 0.5)   # いまの布の色（色合い・鮮やかさ・明るさ）
 var _drag := ""              # "wheel" か "value" を引いている
 var _shot: SubViewport
 var _spin: Node3D
 var _mat: ShaderMaterial
+var _part_shot: SubViewport  # 部位の型紙を撮る（見本と同じ形・同じカメラ。outfit.gd の part_material）
+var _part_spin: Node3D
+var _part_mat: ShaderMaterial
+var _shape_shader: Shader
+var _shape_shots: Array[SubViewport] = []   # 型紙の、糸のように細かい所をひとかたまりにする 2 段（広げて、削り戻す）。輪郭は後の絵の外まわり
+var _ring: Ring              # 見本の絵に輪郭と光を重ねて描く
 var _frame := -1
 var _pop := 0.0              # 染めたときに札が跳ねる
 var _hover := ""
@@ -47,6 +57,7 @@ var _swatches: Array[Rect2] = []
 var _bleaches: Array[Rect2] = []   # 見本の下の、部位ごとの脱色の布
 var _dye_rect := Rect2()
 var _close_rect := Rect2()
+var _shot_rect := Rect2()
 
 
 class View:
@@ -58,6 +69,16 @@ class View:
 			ui._draw_on(self)
 
 
+## 札の中の見本の絵。RING_SHADER を通して、部位の輪郭と光を重ねる（板や札の絵は View が先に描く）
+class Ring:
+	extends Control
+	var ui
+
+	func _draw() -> void:
+		if ui.is_open and ui._shot:
+			draw_texture_rect(ui._shot.get_texture(), ui._shot_rect, false)
+
+
 func _ready() -> void:
 	layer = 4
 	_view = View.new()
@@ -65,6 +86,17 @@ func _ready() -> void:
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_view)
+	_ring = Ring.new()
+	_ring.ui = self
+	_ring.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_ring.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var sm := ShaderMaterial.new()
+	sm.shader = Shader.new()
+	sm.shader.code = RING_SHADER
+	_ring.material = sm
+	_view.add_child(_ring)
+	_shape_shader = Shader.new()
+	_shape_shader.code = SHAPE_SHADER
 
 
 func open() -> void:
@@ -75,7 +107,8 @@ func open() -> void:
 	_pick = craft.outfit_of(int(player.get("id")), _kind)
 	_pick.resize(Outfit.cloth_count(_kind))
 	_cloth = 0
-	_glow = GLOW
+	_on = 0
+	_blink = 0.0
 	_take_hsv()
 	_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -102,7 +135,15 @@ func close() -> void:
 		_shot.queue_free()
 		_shot = null
 		_mat = null
+		Outfit.strip(_part_spin)
+		_part_shot.queue_free()
+		_part_shot = null
+		_part_mat = null
+		for v in _shape_shots:
+			v.queue_free()
+		_shape_shots.clear()
 	_view.queue_redraw()
+	_ring.queue_redraw()
 
 
 ## いま選んでいる布の色を、輪と帯の所に読む（もとの色なら、もとの色の所）
@@ -191,24 +232,83 @@ func _make_shot() -> void:
 	cam.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF   # 札の中のカメラは動かない
 	_shot.add_child(cam)
 	cam.look_at_from_position(Vector3(0, h * 0.5, 6.0), Vector3(0, h * 0.5, 0))
+	_make_part_shot(cam)
+
+
+## 部位の型紙を撮る: 同じ人形をもう 1 体、同じカメラの位置から撮る。前にある部位の陰になる所は、輪郭も出ない
+func _make_part_shot(cam: Camera3D) -> void:
+	_part_shot = SubViewport.new()
+	_part_shot.size = SHOT * 2   # 札いっぱいに引き伸ばしても輪郭がギザギザにならないように
+	_part_shot.transparent_bg = true
+	_part_shot.own_world_3d = true
+	_part_shot.msaa_3d = Viewport.MSAA_4X
+	_part_shot.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(_part_shot)
+	_part_spin = Node3D.new()
+	_part_shot.add_child(_part_spin)
+	var inst: Node3D = (load(Doll.SCENES[_kind]) as PackedScene).instantiate()
+	_part_spin.add_child(inst)
+	_part_mat = Outfit.part_material(inst, _kind)
+	var c := Camera3D.new()
+	c.projection = cam.projection
+	c.size = cam.size
+	c.keep_aspect = cam.keep_aspect
+	c.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+	_part_shot.add_child(c)
+	c.global_transform = cam.global_transform
+	_ring.material.set_shader_parameter("shape_tex", _shape_pass(_shape_pass(_part_shot, true), false).get_texture())
+	_ring.material.set_shader_parameter("part_tex", _part_shot.get_texture())
 
 
 func _process(dt: float) -> void:
 	if not is_open:
 		return
 	_pop = maxf(0.0, _pop - dt * 2.5)
-	_glow = maxf(0.0, _glow - dt)
-	if _mat:   # 見本に乗っている部位か、選んだばかりの部位を、人形の上で光らせる
-		var on := _cloth if _glow > 0.0 else -1
-		for pre in ["swatch", "bleach"]:
-			if _hover.begins_with(pre):
-				on = int(_hover.trim_prefix(pre))
-		Outfit.glow(_mat, on)
+	_blink += dt
+	_show_part()
 	var f := Doll.frame_index()
 	if f != _frame and _spin:   # 12 コマでゆっくり回す
 		_frame = f
 		_spin.rotation.y += 0.05
+	if _part_spin:
+		_part_spin.rotation.y = _spin.rotation.y
 	_view.queue_redraw()
+	_ring.queue_redraw()
+
+
+## 型紙を 1 段、広げるか（grow）削るかした絵を撮る
+func _shape_pass(from: SubViewport, grow: bool) -> SubViewport:
+	var vp := SubViewport.new()
+	vp.size = SHOT   # 型紙の半分の大きさで見る（ちりのように細かい点は消え、見る手間も 4 分の 1）
+	vp.disable_3d = true
+	vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	add_child(vp)
+	_shape_shots.append(vp)
+	var rect := TextureRect.new()
+	rect.texture = from.get_texture()
+	rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	rect.size = SHOT
+	var sm := ShaderMaterial.new()
+	sm.shader = _shape_shader
+	sm.set_shader_parameter("grow", grow)
+	sm.set_shader_parameter("px", Vector2.ONE / Vector2(SHOT))
+	rect.material = sm
+	vp.add_child(rect)
+	return vp
+
+
+## 選んでいる部位か、見本に乗っている部位に、輪郭と光を出す。替わったら光の強い所から始める
+func _show_part() -> void:
+	var on := _cloth
+	for pre in ["swatch", "bleach"]:
+		if _hover.begins_with(pre):
+			on = int(_hover.trim_prefix(pre))
+	if on != _on:
+		_on = on
+		_blink = 0.0
+	if _part_mat:
+		_part_mat.set_shader_parameter("part", _on)
+	_ring.material.set_shader_parameter("pulse", 0.5 + 0.5 * cos(_blink * TAU / BLINK))
 
 
 # ---------------------------------------------------------------- 描く
@@ -226,8 +326,10 @@ func _draw_on(ci: Control) -> void:
 	var cw := ch * float(SHOT.x) / SHOT.y
 	var card := Rect2(r.position + Vector2(36.0 * u, 36.0 * u - lift), Vector2(cw, ch))
 	Icons.paper_tag(ci, card, 18.0 * u, u)
-	if _shot:
-		ci.draw_texture_rect(_shot.get_texture(), card.grow(-10.0 * u), false)
+	_shot_rect = card.grow(-10.0 * u)   # 見本の絵は _ring が描く
+	_ring.material.set_shader_parameter("px", Vector2.ONE / _shot_rect.size)
+	_ring.material.set_shader_parameter("core", RING_CORE * maxf(u, 0.75))
+	_ring.material.set_shader_parameter("edge", RING_EDGE * maxf(u, 0.75))
 	# 右上: 部位の見本
 	var rx := card.end.x + 48.0 * u
 	var n := _pick.size()
@@ -346,7 +448,6 @@ func bleach(i: int) -> void:
 	if i < 0 or i >= _pick.size():
 		return
 	_cloth = i
-	_glow = GLOW
 	_pick[i] = null
 	_take_hsv()
 	_show_pick()
@@ -432,7 +533,6 @@ func _input(e: InputEvent) -> void:
 			KEY_TAB:
 				if not e.echo and _pick.size() > 1:
 					_cloth = (_cloth + 1) % _pick.size()
-					_glow = GLOW
 					_take_hsv()
 			KEY_A, KEY_LEFT:
 				_hsv.x = fposmod(_hsv.x - 1.0 / SEGS, 1.0)
@@ -475,7 +575,83 @@ func _input(e: InputEvent) -> void:
 			_:
 				if h.begins_with("swatch"):
 					_cloth = int(h.trim_prefix("swatch"))
-					_glow = GLOW
 					_take_hsv()
 				elif h.begins_with("bleach"):
 					bleach(int(h.trim_prefix("bleach")))
+
+
+# ---------------------------------------------------------------- 輪郭と光
+
+## 部位の型紙の、細かい所をひとかたまりにする。musha の縅の糸のように、細い線が狭いすき間で並ぶ所を 1 本ずつ縁取ると針金のようになるので、
+## 広げてから同じだけ削り戻して、狭いすき間だけを埋める（大きな布の縁はずれず、離れた細い部位は細いまま）
+const SHAPE_SHADER := """
+shader_type canvas_item;
+render_mode blend_disabled;
+
+uniform bool grow = true;
+uniform vec2 px = vec2(0.003);   // SHOT の 1 px が、絵の UV でいくつか
+const float R = 8.0;       // 広げる・削る幅（SHOT の px）。これの 2 倍より狭いすき間が埋まる
+
+void fragment() {
+	vec4 t = texture(TEXTURE, UV);
+	float m = t.r * t.a;
+	float dir = grow ? 1.0 : -1.0;   // 削るときは逆向きに見る（削り戻しても、もとの形より小さくならない）
+	for (int i = 0; i < 64; i++) {   // 円の中をむらなく見る（ひまわりの種の並び）。輪だけを見ると、細い糸のまわりに小さな輪が残る
+		float a = float(i) * 2.3999632;
+		float r = R * sqrt((float(i) + 0.5) / 64.0);
+		vec4 s = texture(TEXTURE, UV + dir * vec2(cos(a), sin(a)) * r * px);
+		m = grow ? max(m, s.r * s.a) : min(m, s.r * s.a);
+	}
+	COLOR = vec4(vec3(m), 1.0);
+}
+"""
+
+## 見本の絵に、部位の型紙から輪郭と光を重ねる。外から順に: 墨の縁（生成りの札の上で読める）、生成りの糸の芯（濃い布の上で読める）、部位。
+## 輪郭は部位の外側に出すので、部位の色を塗りつぶさない。光は、暗い布は色合いのまま少し明るく（灯りの色を混ぜると灰色に褪せて見える）、
+## もう明るくできない白い布は、陰を残したまま灯りの色に少し染める（白い布でも点滅が読める）
+const RING_SHADER := """
+shader_type canvas_item;
+
+uniform sampler2D part_tex : filter_linear, repeat_disable;    // 部位そのもの（光る所）
+uniform sampler2D shape_tex : filter_linear, repeat_disable;   // 細かい所をひとかたまりにした部位（輪郭の内側）
+uniform vec2 px = vec2(0.003);    // 画面の 1 px が、絵の UV でいくつか
+uniform float core = 2.6;         // 芯の太さ (px)
+uniform float edge = 1.5;         // 墨の縁の太さ (px)
+uniform float pulse = 0.0;        // 光の強さ 0〜1
+
+const vec3 CORE_COL = vec3(0.98, 0.96, 0.92);
+const vec3 EDGE_COL = vec3(0.10, 0.08, 0.16);
+const vec3 LIGHT_COL = vec3(1.0, 0.86, 0.60);
+
+// 半径 r の円の中に部位があるか（0〜1）
+float near(vec2 uv, float r) {
+	float m = texture(shape_tex, uv).r;
+	for (int i = 0; i < 16; i++) {
+		float a = float(i) * 0.3926991;
+		vec2 d = vec2(cos(a), sin(a)) * px * r;
+		m = max(m, texture(shape_tex, uv + d).r);
+		m = max(m, texture(shape_tex, uv + d * 0.5).r);
+	}
+	return m;
+}
+
+vec3 lit(vec3 c) {
+	float l = dot(c, vec3(0.299, 0.587, 0.114));
+	vec3 up = min(c * (1.0 + 0.15 * pulse), vec3(1.0));
+	up += (vec3(1.0) - up) * LIGHT_COL * 0.10 * pulse;
+	return up * mix(vec3(1.0), LIGHT_COL, 0.35 * pulse * smoothstep(0.62, 0.92, l));
+}
+
+void fragment() {
+	vec4 c = texture(TEXTURE, UV);
+	vec4 p = texture(part_tex, UV);
+	float inside = smoothstep(0.35, 0.65, p.r * p.a);
+	float shape = smoothstep(0.35, 0.65, texture(shape_tex, UV).r);
+	float a_core = smoothstep(0.35, 0.65, near(UV, core)) * (1.0 - shape);
+	float a_edge = smoothstep(0.35, 0.65, near(UV, core + edge)) * (1.0 - shape);
+	vec3 col = mix(c.rgb, EDGE_COL, a_edge);
+	col = mix(col, CORE_COL, a_core);
+	col = mix(col, lit(c.rgb), inside);
+	COLOR = vec4(col, max(c.a, a_edge));
+}
+"""

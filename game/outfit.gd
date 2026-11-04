@@ -6,7 +6,8 @@ extends RefCounted
 ## 柄のある部位（千代紙・絣・継ぎ当ての柄）は、鮮やかな所だけを塗り直し、白い花や生成りの柄は残す（PARTS の 2 番め）。
 ## 染めた色は 1 階の人台の桶（dye_vat.gd・dye_ui.gd）で選び、craft.gd の出来事 dye でみんなに配る。
 ## 着ている人形は、塗り直した絵を GPU で 1 度描いて画像にし、(人形, 色) ごとに取っておく（染めたとき・着替えたときに 1 度だけ）。
-## 染め桶の画面の見本は、色を動かすたびに描き直さず、材質（preview_material）で毎フレーム塗り直す
+## 染め桶の画面の見本は、色を動かすたびに描き直さず、材質（preview_material）で毎フレーム塗り直す。
+## 見本の上で部位を指す輪郭と光は、部位の型紙（part_material）をもとに dye_ui.gd が画面の絵に重ねる。人形の材質は光らせない
 
 ## 人形ごとの、染められる部位 4 つ [もとの色, 柄を残すか]。0 番が主の色、1〜3 番が 2〜4 番目の色
 ## （2026-11-03 代表「部位ごとに染めたい」「全キャラフォースカラーまで」。部位の決め方は person/rig_export.py の DYE）
@@ -143,11 +144,6 @@ static func set_params(m: ShaderMaterial, kind: String, cols: Array) -> void:
 	m.set_shader_parameter("min_sat", MIN_SAT)
 
 
-## 見本の材質で、部位 i を光らせる（染める画面で、いま染める部位を指す）。-1 で消す
-static func glow(m: ShaderMaterial, i: int) -> void:
-	m.set_shader_parameter("glow", i)
-
-
 ## glb の人形 body の、色の絵を差し替える。glb の材質は同じ人形のみんなで分け合っているので、写してから替える。
 ## 材質を置き換えたもの（湿り気の紙の材質など、albedo_tex を持つもの）は、その値を替える
 static func put(body: Node3D, tex: Texture2D) -> void:
@@ -200,6 +196,19 @@ static func preview_material(body: Node3D) -> ShaderMaterial:
 	if src:
 		sm.set_shader_parameter("albedo_tex", src.albedo_texture)
 		sm.set_shader_parameter("normal_tex", src.normal_texture)
+	for m in body.find_children("*", "MeshInstance3D", true, false):
+		var mi := m as MeshInstance3D
+		for s in mi.mesh.get_surface_count():
+			mi.set_surface_override_material(s, sm)
+	return sm
+
+
+## 染め桶の画面の、部位の型紙: glb の人形 body を、部位 part のうち見えている所だけ白く、ほかを黒く塗る材質に替える。
+## 同じカメラで別に撮り、dye_ui.gd がこの絵から輪郭と光を重ねる。返した材質の part に部位の番号を入れる
+static func part_material(body: Node3D, kind: String) -> ShaderMaterial:
+	var sm := ShaderMaterial.new()
+	sm.shader = _shader("part", PART_SHADER)
+	sm.set_shader_parameter("dye_mask", mask(kind))
 	for m in body.find_children("*", "MeshInstance3D", true, false):
 		var mi := m as MeshInstance3D
 		for s in mi.mesh.get_surface_count():
@@ -308,30 +317,31 @@ void fragment() {
 }
 """
 
-## 染め桶の画面の見本（焼いた人形の材質と同じ: 粗さ 0.9・両面。色の絵は sRGB のまま読んで塗り直し、明るさの空間に直す）。
-## glow の部位は明るく脈打ち、ほかの所はくすんで沈む（いま染める部位を指す）
+## 染め桶の画面の見本（焼いた人形の材質と同じ: 粗さ 0.9・両面。色の絵は sRGB のまま読んで塗り直し、明るさの空間に直す）
 const PREVIEW_SHADER := """
 shader_type spatial;
 render_mode cull_disabled;
 
 uniform sampler2D albedo_tex : filter_linear_mipmap, repeat_enable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
-uniform int glow = -1;
 #SWAP
 void fragment() {
-	int k = part_at(UV);
-	vec3 c = dye(texture(albedo_tex, UV).rgb, k);
+	vec3 c = dye(texture(albedo_tex, UV).rgb, part_at(UV));
 	ALBEDO = pow(c, vec3(2.2));
-	if (glow >= 0) {
-		float p = 0.5 + 0.5 * sin(TIME * 5.0);
-		if (k == glow) {   // 指す部位は、色はそのままに、ふわっと明るく脈打つ
-			EMISSION = ALBEDO * (0.15 + 0.3 * p);
-		} else {           // ほかの所は、くすませて沈める
-			ALBEDO = mix(ALBEDO, vec3(dot(ALBEDO, vec3(0.3, 0.59, 0.11))), 0.6) * 0.45;
-		}
-	}
 	NORMAL_MAP = texture(normal_tex, UV).rgb;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.2;
+}
+"""
+
+## 部位の型紙（part_material）。光を受けず、部位 part の所が白、ほかが黒
+const PART_SHADER := """
+shader_type spatial;
+render_mode unshaded, cull_disabled;
+
+uniform int part = 0;
+#SWAP
+void fragment() {
+	ALBEDO = vec3(part_at(UV) == part ? 1.0 : 0.0);
 }
 """
