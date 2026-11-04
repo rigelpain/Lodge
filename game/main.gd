@@ -775,8 +775,21 @@ var pip_mode := 0
 ## 右上の 360° 映像は場面を 6 回描くので、小物・連れの動物・スピーカーの柱・遠景は層 4 にして映さない
 ## （描画回数が 7 倍になるのを防ぐ）。地面・木・ロッジの建物・ソリ・人は映す。本体のカメラは層 4 も映す
 const PIP_SKIP_WORDS := ["prop", "kitchen", "companion", "pet", "speaker", "mound", "furnish", "machine", "vending"]
+## ロッジの中身（床・階段・家具・灯りの道具）は、カメラがロッジの箱の中にいるときだけ映す。外から映す数は増やさないので、外の見え方も重さも変わらない。
+## 1 階の床も中身の 1 つなので、映さないと床の下の雪が見えていた（2026-11-04 代表「ロッジの内側が魚眼カメラで描画されていません」）
+const PIP_INSIDE_LAYER := 1 << 9
+const PIP_INSIDE_MIN := 0.5   # これより小さい物（対角の長さ, m）は映さない。160 px の面では見えず、数だけ多い
+var _pip_lodge_box := AABB()  # ロッジの建物（デッキとテラスも）の箱（ロッジの座標）。まだなければ大きさ 0
+var _pip_inside := false      # カメラがロッジの箱の中にいるか
 
 func _split_pip_layers() -> void:
+	var lodge: Node3D = get_node_or_null("Lodge")
+	var lodge_inv := Transform3D.IDENTITY
+	if lodge:
+		lodge_inv = lodge.global_transform.affine_inverse()
+		var body: Node = lodge.find_child("lodge_body", true, false)
+		if body is VisualInstance3D:
+			_pip_lodge_box = lodge_inv * (body as VisualInstance3D).global_transform * (body as VisualInstance3D).get_aabb()
 	for m in find_children("*", "VisualInstance3D", true, false):
 		if m == ground_mesh or m is Camera3D or m is Light3D:
 			continue
@@ -795,9 +808,30 @@ func _split_pip_layers() -> void:
 				if nm.contains(w):
 					skip = true
 		if top.name == "Lodge" and not m.name.to_lower().contains("lodge_body") and not m.name.to_lower().contains("door"):
-			skip = true   # ロッジは建物だけ映し、中の小物は映さない
+			skip = true   # ロッジの外からは建物だけ映す。中身は箱の中にいるときだけ（下の PIP_INSIDE_LAYER）
 		if skip:
 			m.layers = 1 << 3
+			if top == lodge:
+				var box: AABB = lodge_inv * m.global_transform * m.get_aabb()
+				if box.size.length() >= PIP_INSIDE_MIN and _in_pip_lodge_box(box.get_center()):
+					m.layers |= PIP_INSIDE_LAYER
+
+
+## ロッジの座標の点が、ロッジの箱の中か（高さは見ない）
+func _in_pip_lodge_box(at: Vector3) -> bool:
+	var b := _pip_lodge_box
+	return b.has_volume() and at.x >= b.position.x and at.x <= b.end.x and at.z >= b.position.z and at.z <= b.end.z
+
+
+## カメラがロッジの箱に出入りしたら、6 面に映す層を替える
+func _sync_pip_inside() -> void:
+	var lodge: Node3D = get_node_or_null("Lodge")
+	var inside := lodge != null and _in_pip_lodge_box(lodge.to_local(player.global_position))
+	if inside == _pip_inside:
+		return
+	_pip_inside = inside
+	for cam in pip_cams:
+		cam.cull_mask = (cam.cull_mask | PIP_INSIDE_LAYER) if inside else (cam.cull_mask & ~PIP_INSIDE_LAYER)
 
 
 func _make_pip() -> void:
@@ -949,6 +983,7 @@ func _process(_dt: float) -> void:
 	if pip_hidden:
 		_pip_due = 0.0
 	else:
+		_sync_pip_inside()
 		_pip_env.ambient_light_energy = env.ambient_light_energy   # 時刻で変わる分（daycycle.gd）
 		_pip_env.fog_light_color = env.fog_light_color
 		_pip_sun.global_transform = sun_light.global_transform   # 時刻で変わる分（daycycle.gd）
