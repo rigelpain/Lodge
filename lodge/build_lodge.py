@@ -1540,7 +1540,7 @@ def lighten(objs):
     bpy.ops.object.convert(target="MESH")      # 面取り・配列・切り抜きを形にする
     moving = [o for o in meshes if o.name.startswith(("autodoor", "swingdoor"))]   # 動く戸は 1 つにまとめない
     # 中の家具と小物（卓・椅子・腰掛け・灯り・自販機・マット…）は別の 1 つ（lodge_props_interior）に。
-    # ゲームの 360° 映像は名前に prop を含む物を映さない
+    # ゲームの 360° 映像は、名前に prop を含む物をロッジの中にいるときだけ映す（game/main.gd の PIP_INSIDE_LAYER）
     inner = set(o.name for o in bpy.data.collections["interior"].objects) if bpy.data.collections.get("interior") else set()
     props = [o for o in meshes if o not in moving and o.name in inner]
     rest = [o for o in meshes if o not in moving and o not in props]
