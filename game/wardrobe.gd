@@ -1,20 +1,25 @@
 extends Node3D
-## 2 階の衣装掛け: 木の竿に、選べる人形（doll.gd の KINDS）が小さくなって 1 体ずつハンガーに掛かっている。
-## 前で F を押すと、人形を選び直す画面（wardrobe_ui.gd）が開く（2026-10-31 代表「キャラチェンジとほかキャラの実装も」。場所は 2 階の衣装掛け）。
-## いま自分が着ている人形のハンガーは空になる（その人形を着て出ている、と竿を見ればわかる。文字は出さない）。
-## 掛かった人形は、竿の下で 12 コマで少し揺れる。人形の glb は重いので、あなたが近づいて（NEAR_LOAD）から掛ける。
-## 置き方は main.gd の _put_wardrobe（ロッジの 2 階、内階段を上がった東の端の壁ぎわ）。この節の FRONT（+Z）が竿の正面。
-## 人形・敷物・F で開ける側は FRONT から決める（衣装掛けをどこへどう置いても、人形は選びに来た人の方を向く）
+## 1 階の染めと着替えの施設: 大きな人台。人台の裾が布のスカートになって桶に浸かり、腰の輪に、選べる人形（doll.gd の KINDS）が
+## 小さくなって 1 体ずつハンガーで掛かる。天井の輪から長い布が後ろを囲んで桶へ落ちる（2026-11-04 代表「染め桶と衣装掛けは一つの施設に」。
+## 案の絵と形の台本は design/dye-wardrobe/）。人形の高さを見て F で人形を選び直す画面（wardrobe_ui.gd）、桶を見下ろして F で服を染める画面（dye_vat.gd）。
+## いま自分が着ている人形のハンガーは空になる（その人形を着て出ている、と輪を見ればわかる。文字は出さない）。
+## 掛かった人形は、輪の下で 12 コマで少し揺れる。人形の glb は重いので、あなたが近づいて（NEAR_LOAD）から掛ける。
+## 置き方は main.gd（ロッジの 1 階の南西の隅、紙細工屋さんのテントの南どなり）。この節の FRONT（+Z）が人台の正面。後ろは長い布
 
 const Doll := preload("res://doll.gd")
 const Look := preload("res://look.gd")
+const Props := preload("res://props.gd")
 
-const WIDTH := 3.7           # 竿の長さ (m)
-const RAIL_Y := 1.85         # 竿の高さ
+const BODY_GLB := "res://props/dress_form/dress_form.glb"
+const HOOP_R := 1.5          # 腰の輪の半径 (m)。design/dye-wardrobe/ideas.py と同じ
+const TUB_R := 1.86          # 桶の外の半径
+const ARC_STEP := PI / 5.0   # 人形の間の角度（36°）
+const RAIL_Y := 3.12         # 腰の輪の高さ。胴のくびれ（design/dye-wardrobe/ideas.py の WAIST_Z）
 const HANG := 0.62           # 掛けた人形の背丈 (m)。人形ごとの背の違いはそろえる（遠くからでも同じ大きさの札に見える）
-const REACH := 2.3           # この距離 (m) の内で、竿の方を向いていれば F で開ける
+const REACH := 3.5           # 人台の真ん中からこの距離 (m) の内で、人台の方を向いていれば F で開ける
+const BACK_LIMIT := -0.8     # 人台の前からの位置がこれより後ろ（長い布の側）では、使えない
 const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、人形を掛ける
-const FRONT := Vector3.BACK  # 竿の正面（この節の座標）。選びに来た人が立つ側
+const FRONT := Vector3.BACK  # 人台の正面（この節の座標）。ハンガーの節の +Z は、それぞれ外向き
 
 var player: Node3D           # main.gd が入れる
 var _hangers := {}           # 人形 → [ハンガーの節（竿で揺れる）, 人形の節]
@@ -24,66 +29,42 @@ var _check_t := 0.0
 
 
 func _ready() -> void:
-	var wood := Look.wood(Color(0.50, 0.33, 0.20))
-	var dark := Look.wood(Color(0.36, 0.24, 0.15))
-	# 柱 2 本と、床に寝かせた脚。竿は丸棒
-	for s in [-1.0, 1.0]:
-		_box(Vector3(0.09, RAIL_Y + 0.08, 0.09), Vector3(s * (WIDTH / 2.0 + 0.04), (RAIL_Y + 0.08) / 2.0, 0), wood)
-		_box(Vector3(0.12, 0.08, 0.7), Vector3(s * (WIDTH / 2.0 + 0.04), 0.04, 0), dark)
-		var knob := MeshInstance3D.new()   # 柱の頭の丸い飾り
-		var sm := SphereMesh.new()
-		sm.radius = 0.07
-		sm.height = 0.12
-		knob.mesh = sm
-		knob.material_override = dark
-		knob.position = Vector3(s * (WIDTH / 2.0 + 0.04), RAIL_Y + 0.13, 0)
-		add_child(knob)
-	var rail := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 0.028
-	cm.bottom_radius = 0.028
-	cm.height = WIDTH + 0.1
-	rail.mesh = cm
-	rail.material_override = wood
-	rail.rotation.z = PI / 2.0
-	rail.position.y = RAIL_Y
-	add_child(rail)
-	# 足もとの藍のフェルトの敷物（ここで着替える所、と遠くからわかる）
-	var mat := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = Vector3(WIDTH + 0.6, 0.015, 1.5)
-	mat.mesh = bm
-	mat.material_override = Look.felt(Color(0.17, 0.21, 0.36), 1.5)
-	mat.position = FRONT * 0.55 + Vector3(0, 0.008, 0)
-	add_child(mat)
-	# 当たり（竿の下はくぐれない）
-	var body := StaticBody3D.new()
-	var col := CollisionShape3D.new()
-	var box := BoxShape3D.new()
-	box.size = Vector3(WIDTH + 0.2, RAIL_Y + 0.2, 0.45)
-	col.shape = box
-	col.position.y = (RAIL_Y + 0.2) / 2.0
-	body.add_child(col)
+	var body := Props.make(BODY_GLB)
+	body.rotation.y = PI   # glb の正面（Blender の +Y＝Godot の -Z）を、この節の正面 +Z へ
 	add_child(body)
-	# ハンガー（木の三角と、針金のかぎ）。人形は近づいてから掛ける
+	# 長い布と裾は 1 枚の面なので、裏からも見えるように
+	for mi in body.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		for i in m.mesh.get_surface_count():
+			var mat := m.get_active_material(i)
+			if mat is BaseMaterial3D:
+				var both: BaseMaterial3D = mat.duplicate()
+				both.cull_mode = BaseMaterial3D.CULL_DISABLED
+				m.set_surface_override_material(i, both)
+	# 当たり（桶の中へは入れない。縁に跳び乗れないよう、高めの円柱）
+	var solid := StaticBody3D.new()
+	var col := CollisionShape3D.new()
+	var cyl := CylinderShape3D.new()
+	cyl.radius = TUB_R
+	cyl.height = 3.0
+	col.shape = cyl
+	col.position.y = 1.5
+	solid.add_child(col)
+	add_child(solid)
+	# ハンガー（木の三角と、針金のかぎ）。腰の輪の前の側に並べ、外を向ける。人形は近づいてから掛ける
+	var wood := Look.wood(Color(0.50, 0.33, 0.20))
 	var n := Doll.KINDS.size()
 	for i in n:
 		var k: String = Doll.KINDS[i]
+		var a := (i - (n - 1) * 0.5) * ARC_STEP
+		var holder := Node3D.new()
+		holder.position = Vector3(sin(a), 0, cos(a)) * HOOP_R + Vector3.UP * RAIL_Y
+		holder.rotation.y = a
+		add_child(holder)
 		var pivot := Node3D.new()
-		pivot.position = Vector3((i - (n - 1) * 0.5) * WIDTH / n, RAIL_Y, 0)
-		add_child(pivot)
+		holder.add_child(pivot)
 		_hanger(pivot, wood)
 		_hangers[k] = [pivot, null]
-
-
-func _box(size: Vector3, at: Vector3, m: Material) -> void:
-	var mi := MeshInstance3D.new()
-	var bm := BoxMesh.new()
-	bm.size = size
-	mi.mesh = bm
-	mi.material_override = m
-	mi.position = at
-	add_child(mi)
 
 
 func _hanger(pivot: Node3D, wood: Material) -> void:
@@ -126,7 +107,7 @@ func _load_dolls() -> void:
 		var top: float = Doll.TOP[k]
 		var s := HANG / top
 		var inst: Node3D = (load(Doll.SCENES[k]) as PackedScene).instantiate()
-		# 人形の体は -Z が前（doll.gd の _yaw と同じ）。竿の正面（FRONT）へ向ける
+		# 人形の体は -Z が前（doll.gd の _yaw と同じ）。ハンガーの節の外向き（+Z）へ向ける
 		inst.basis = Basis(Vector3.UP, atan2(-FRONT.x, -FRONT.z)).scaled(Vector3.ONE * s)
 		inst.position = Vector3(0, -0.1 - HANG, 0)   # 頭のてっぺんがハンガーの肩の下
 		(_hangers[k][0] as Node3D).add_child(inst)
@@ -144,17 +125,27 @@ func _show_worn() -> void:
 			d.visible = k != worn
 
 
-## あなたが竿の前（FRONT の側）で、竿の方を向いているか
+## あなたが人台の前で、人形の高さを見ているか（桶を見下ろしていれば、染め桶のほう。dye_vat.gd）
 func can_use(p: Node3D) -> bool:
-	if to_local(p.global_position).dot(FRONT) < 0.0:
+	return not p.looks_down() and near_and_facing(p)
+
+
+## 人台の前の側で手が届く所にいて、人台の方を向いているか（dye_vat.gd も使う）。長い布の側とガラスの向こうからは使えない
+func near_and_facing(p: Node3D) -> bool:
+	if to_local(p.global_position).dot(FRONT) < BACK_LIMIT:
 		return false
 	var d := global_position - p.global_position
 	if absf(d.y) > 1.5:
 		return false
 	d.y = 0
-	if d.length() > REACH:
-		return false
-	return (-p.global_basis.z).dot(d.normalized()) > 0.35 or d.length() < 0.8
+	return d.length() <= REACH and (-p.global_basis.z).dot(d.normalized()) > 0.5
+
+
+## 案内の絵を出す所: あなたの側の腰の輪の上
+func hint_at(p: Node3D) -> Vector3:
+	var d := p.global_position - global_position
+	d.y = 0
+	return global_position + d.normalized() * HOOP_R + Vector3.UP * (RAIL_Y + 0.45)
 
 
 func _process(dt: float) -> void:

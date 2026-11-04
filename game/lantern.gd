@@ -8,7 +8,7 @@ extends Node3D
 ## 見た目だけ。通信には乗せない（誰が点けたかは craft.gd の lamp の出来事、どの形かは equip・lantern_buy の出来事）。
 ##
 ## 形違い（2026-11-01 代表「ランタンのバリエーションも増やして売って欲しい」。絵 design/lantern-variety/01-sheet.jpg の L1〜L10）。
-## 木の手提げと和紙の提灯ははじめから持つ。ほかの 8 つは、2 階の衣装掛けの横の紙細工屋さん（paper_lady.gd・paper_shop_ui.gd）で売る。
+## 木の手提げと和紙の提灯ははじめから持つ。ほかの 8 つは、1 階のテントの紙細工屋さん（paper_lady.gd・paper_shop_ui.gd）で売る。
 ## 形ごとに、光の色（灯りと光る紙）と揺らぎ方（STYLE）が違う。値段は木のボタンの何個分。標準は素朴で丈夫、凝ったものほど高い
 
 const Props := preload("res://props.gd")

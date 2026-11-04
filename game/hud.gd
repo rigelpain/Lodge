@@ -514,7 +514,7 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
-	# 衣装掛けの横の紙細工屋さん: F で提灯と頭・肩の小物を買って付け替える（帯のランタンの絵。婦人の頭の上に）
+	# テントの紙細工屋さん: F で提灯と頭・肩の小物を買って付け替える（帯のランタンの絵。婦人の頭の上に）
 	if p.has_method("paper_shop_near") and p.paper_shop_near() and not p.shopping:
 		_hint("paper_shop", ["F"], "lamp", main.paper_lady.global_position + Vector3.UP * 2.0)
 	# 玄関の外の山男: F で山の道具を買う（焚き火の絵とボタン）
@@ -538,11 +538,11 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var mf = p.own_fire_near() if p.has_method("own_fire_near") and not p.shopping else null
 	if mf and fs.is_empty():
 		_hint("fire_out", ["F"], "fire_out", mf.global_position + Vector3.UP * 1.3)
-	# 2 階の衣装掛け: F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
+	# 1 階の人台: 桶を見下ろして F で服を染める。人形の高さを見て F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
 	if p.has_method("dye_near") and p.dye_near() and not p.shopping:
-		_hint("dye", ["F"], "dye", main.dye_vat.global_position + Vector3.UP * 1.3)   # 染め桶: F で服を染める（桶と布の絵）
+		_hint("dye", ["F"], "dye", main.dye_vat.hint_at(p))   # 染め桶: F で服を染める（桶と布の絵）
 	elif p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:
-		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.global_position + Vector3.UP * 2.3)
+		_hint("wardrobe", ["F"], "wardrobe", main.wardrobe.hint_at(p))
 
 	# ペグ（peg.gd）: 手にペグを持ってソリの前の雪に立てば、左クリックで刺す所に。刺さったペグのそばでは、F で抜く
 	if p.has_method("peg_target") and not p.rooted():
