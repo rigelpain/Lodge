@@ -8,6 +8,7 @@
   E  人台と天井の輪      天井から吊った大きな輪から、長い布が人台の後ろを囲んで桶へ落ちる。ロッジの天井があって成り立つ
 
 代表は E を選び、裾は白に（2026-11-04 代表「トルソーのスカート的部分の布の色は白がいいです」）。
+腰の輪と裾の始まりは、胴のくびれの高さへ（同日 代表「人形もうちょっと高いほうが良い」「トルソーの腰のクビレの位置に持っていったら今の意味不明なスカート始まり位置も良くなる」）。
 ゲーム用の glb は game/wardrobe.gd が読む。染め液・ハンガー・人形はゲームが足す:
     /Applications/Blender.app/Contents/MacOS/Blender -b -P design/dye-wardrobe/ideas.py -- --what E --export game/props/dress_form
 
@@ -38,6 +39,7 @@ C.HEX.update({"felt_indigo": "2B3D68", "felt_rust": "A8532E", "felt_mustard": "C
 EX = bool(A.export)
 DOLLS = ["kasa", "origami", "news", "robo", "musha", "ningyo", "golem"]
 RAIL_Y = 1.85
+WAIST_Z = 3.12   # 胴のくびれの高さ（SECS）
 HANG = 0.62
 
 
@@ -237,6 +239,9 @@ def long_cloth(P, what):
 
 def make_b(what="B"):
     P = K.Parts("dress_form" if EX else "b")
+    waist = what == "E"          # E は腰の輪と裾の始まりがくびれの高さ
+    hz = WAIST_Z if waist else RAIL_Y
+    in_r, in_z = (0.62, WAIST_Z + 0.03) if waist else (0.72, 2.28)
     tub(P, 1.8, 0.74)
     if not EX:   # 染め液はゲームが足す（染めた色に変わるので）
         K.disc(P, "dye_indigo", (0, 0, 0.62), 1.76, 0.02, segs=72)
@@ -246,12 +251,12 @@ def make_b(what="B"):
         arc = [math.radians(-40 + 260 * j / 80) for j in range(81)]
         K.tube(P, "wood_dark", [(1.5 * math.cos(a), 1.5 * math.sin(a), RAIL_Y) for a in arc], 0.035)
     else:
-        K.ring(P, "wood_dark", (0, 0, RAIL_Y), 1.5, 0.035, n=120)
-    K.ring(P, "wood_dark", (0, 0, 2.28), 0.72, 0.024, n=72)
+        K.ring(P, "wood_dark", (0, 0, hz), 1.5, 0.035, n=120)
+    K.ring(P, "wood_dark", (0, 0, in_z), in_r, 0.024, n=72)
     spokes = [math.radians(-40 + 260 * j / 5) for j in range(6)] if what == "D" else [math.tau * (i + 0.5) / 7 + math.pi / 2 for i in range(7)]
     for a in spokes:
-        K.dowel(P, "wood_dark", (0.72 * math.cos(a), 0.72 * math.sin(a), 2.28),
-                (1.5 * math.cos(a), 1.5 * math.sin(a), RAIL_Y), 0.022)
+        K.dowel(P, "wood_dark", (in_r * math.cos(a), in_r * math.sin(a), in_z),
+                (1.5 * math.cos(a), 1.5 * math.sin(a), hz), 0.022)
     # 胴: 布を張った人台
     m = P.m("felt_cream")
     n, rows = 64, []
@@ -273,7 +278,10 @@ def make_b(what="B"):
     # 首の木のふたと真鍮のつまみ、腰のふち
     K.disc(P, "wood_dark", (0, 0, 4.52), 0.2, 0.05)
     K.lathe(P, "brass", [(0.0, 0.0), (0.05, 0.0), (0.03, 0.05), (0.055, 0.1), (0.0, 0.15)], (0, 0, 4.54), 20, False)
-    K.ring(P, "hemp", (0, 0, 2.44), 0.68, 0.02, n=72)
+    if waist:   # くびれに巻いた麻の帯
+        K.tube(P, "hemp", [_body_pt(math.tau * j / 72, WAIST_Z + 0.04, off=0.012) for j in range(73)], 0.02)
+    else:
+        K.ring(P, "hemp", (0, 0, 2.44), 0.68, 0.02, n=72)
     # 巻き尺を首に掛ける
     pts = [_body_pt(math.tau * j / 24 + math.pi / 2, 4.27, off=0.022) for j in range(25)]
     K.tube(P, "felt_mustard", pts, 0.03, ry=0.006, sides=8)
@@ -289,13 +297,17 @@ def make_b(what="B"):
         rows2 = []
         for j in range(19):
             t = j / 18
-            z = 2.46 + (0.6 - 2.46) * t
+            z = (WAIST_Z if waist else 2.46) + (0.6 - (WAIST_Z if waist else 2.46)) * t
             row = []
             for i in range(13):
                 u = i / 12
                 a = a0 + (a1 - a0) * u
-                r = 0.62 + (1.32 - 0.62) * (t ** 0.85) + 0.035 * (0.3 + t) * math.sin(u * math.tau * 1.5)
-                rx, ry = r, r * (0.8 + 0.2 * t)
+                if waist:   # くびれの楕円から腰をよけて広がり、桶で丸くなる
+                    r = 0.51 + (1.32 - 0.51) * (t ** 0.6) + 0.035 * (0.1 + t) * math.sin(u * math.tau * 1.5)
+                    rx, ry = r, r * (0.76 + 0.24 * t ** 0.6)
+                else:
+                    r = 0.62 + (1.32 - 0.62) * (t ** 0.85) + 0.035 * (0.3 + t) * math.sin(u * math.tau * 1.5)
+                    rx, ry = r, r * (0.8 + 0.2 * t)
                 row.append(rm.bm.verts.new((rx * math.cos(a), ry * math.sin(a), z)))
             rows2.append(row)
         for a, b in zip(rows2, rows2[1:]):
@@ -306,7 +318,7 @@ def make_b(what="B"):
     long_cloth(P, what)
     for i, nm in enumerate([] if EX else DOLLS):
         a = math.pi / 2 + (math.radians(36) * (i - 3) if what in "DE" else math.tau * (i - 3) / 7)
-        hang(P, nm, (1.5 * math.cos(a), 1.5 * math.sin(a), RAIL_Y), a - math.pi / 2)
+        hang(P, nm, (1.5 * math.cos(a), 1.5 * math.sin(a), hz), a - math.pi / 2)
     P.finish(fuzz=0.008)
 
 
