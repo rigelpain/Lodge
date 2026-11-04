@@ -3,6 +3,7 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 -s res://tools/kotatsu_shots.gd -- --no-sound --dir=/path/shots [--tag=after]
 ##     [--sets=patch,indigo,...（8 卓の柄を差し替える）] [--pendant=drum|lantern|cone（吊り灯りの形を差し替える）] [--sit]
 ##     [--hours=13,22] [--views=wide,near,row,lamp] [--kinds=musha,robo,...（--sit で座らせる人形。席の順に）]
+##     [--sit-seats=6,7（--sit で座らせる席。その卓の席の並びの番号: 0〜2 北の列、3 西、4 東、5〜7 南の列、どれも西から）]
 ## --sit: 南の列の西から 2 卓目のこたつの座布団に、7 体の人形を座らせる。
 ## 三角形の数は本体の画面だけ（360 の小窓は止める）。場所はロッジの座標（lodge/dims.py の x 東, y 北, 高さ。Godot ではロッジの (x, 高さ, -y)）。2 階の畳の面は 6.5
 
@@ -23,6 +24,14 @@ const VIEWS := [
 	["lap", Vector3(-2.4, -2.3, ZT + 1.2), Vector3(-0.36, 0.0, ZT + 0.15), 38.0],     # 南の列の座布団（--sit の人形の膝）を西から
 	["lap_e", Vector3(1.7, -2.3, ZT + 1.2), Vector3(-0.36, 0.0, ZT + 0.15), 38.0],    # 同じく東から
 	["lap_sw", Vector3(-2.0, -1.0, ZT + 0.8), Vector3(-1.0, 0.2, ZT + 0.2), 40.0],    # 南の列の西の席の膝を、南西から近くで
+	# 辺ごとの布団の並びを正面から（どの席がめくれているか）
+	["hem_s", Vector3(-0.36, -2.0, ZT + 1.25), Vector3(-0.36, 0.1, ZT + 0.2), 42.0],
+	["hem_n", Vector3(-0.36, 4.0, ZT + 1.25), Vector3(-0.36, 1.9, ZT + 0.2), 42.0],
+	["hem_e", Vector3(3.2, 1.0, ZT + 1.25), Vector3(1.0, 1.0, ZT + 0.2), 42.0],
+	["over_s", Vector3(-0.1, 1.5, ZT + 1.5), Vector3(-0.1, -0.1, ZT + 0.2), 50.0],     # 卓の上から南の列の布団を見下ろす（隣どうしのあいだ）
+	# 南の列のまんなかの席の、めくれた布の左右の端を近くから
+	["fold_w", Vector3(-1.5, -0.75, ZT + 0.75), Vector3(-0.5, 0.25, ZT + 0.2), 40.0],
+	["fold_e", Vector3(0.8, -0.75, ZT + 0.75), Vector3(-0.2, 0.25, ZT + 0.2), 40.0],
 ]
 const SIT_AT := Vector2(-0.363, 1.0)   # 座らせるこたつ（南の列の西から 2 卓目）のまんなか
 
@@ -158,6 +167,8 @@ func _sit_dolls() -> void:
 		var st: Dictionary = seats.seat(i)
 		if st.kind == "zabuton" and st.pos.distance_to(center) < 3.0:
 			mine.append(i)
+	if args.has("sit-seats"):
+		mine = Array(String(args["sit-seats"]).split(",")).map(func(j): return mine[int(j)])
 	var k := 0
 	var kinds: Array = Array(String(args.kinds).split(",")) if args.has("kinds") else Doll.KINDS
 	for i in mine:

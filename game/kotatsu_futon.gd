@@ -9,8 +9,10 @@ const Props := preload("res://props.gd")
 ## 天板の縁（中心から x と z）と、天板の下の面の高さ（props/build_room.py の kotatsu_lodge を 2 倍したあと。組の座標）
 const PLATE := Vector3(1.1688, 0.363, 0.714)
 const HANG := 0.64      # 天板の下から、垂れた布団の裾まで (m)
-const HALF_W := 0.46    # めくる幅の半分（席のまんなかから辺に沿って。座布団の幅は 0.58）。まんなかの半分はそっくり、外へ向かってもとの垂れた形へ
-const NEAR := 0.9       # 席の目印から人形までがこれより近ければ、その席に座っている
+## めくる幅の半分（席のまんなかから辺に沿って）。長い辺の席の間（0.73）の半分まで: 隣の席の前は垂れたまま（2026-11-04 代表「自分が座った両隣もめくれ上がっている」）。
+## 隣どうしで座っても、席のあいだで 0 になるので、体の大きさが違っても布団が裂けない。まんなかの 6 割はそっくり、外へ向かってもとの垂れた形へ
+const HALF_W := 0.36
+const NEAR := 0.3       # 席の目印から人形までがこれより近ければ、その席に座っている（座った人形は目印から 0.03。隣の席までは 0.73）
 const FPS := 12.0
 const SEATS := 8
 
@@ -117,10 +119,11 @@ static func _shader() -> Shader:
 
 ## 見た目は props.gd の material_for（焼いた色・凹凸、写真の細部を 3 方向から、ふちの毛羽）と同じ。
 ## 頂点: 席ごとに、その辺の外へ垂れた布団の頂点を、天板の下から垂れた長さ（u）で、天板の縁 → 膝の上 → お腹の前の曲線に移す。
-## 布の厚み（辺から外への離れ）は曲線の外向きへ。席のまんなかから辺に沿って離れるほど、もとの垂れた形に戻す
+## 布の厚み（辺から外への離れ）は曲線の外向きへ。席のまんなかから辺に沿って離れるほど、もとの垂れた形に戻す。
+## しわの所は曲げると面が裏返るので、両面を描く（片面だと裏返った面が消えて、穴の底が透ける）
 const SHADER := """
 shader_type spatial;
-render_mode cull_back, diffuse_burley, specular_schlick_ggx;
+render_mode cull_disabled, diffuse_burley, specular_schlick_ggx;
 
 uniform sampler2D albedo_tex : source_color, filter_linear_mipmap, repeat_enable;
 uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
@@ -134,7 +137,7 @@ uniform vec4 seat_lap[8];    // x: 辺に沿った席のまんなか, y: 天板�
 uniform vec4 seat_side[8];   // xy: 辺の外向き（xz）, z: 中心から天板の縁まで
 uniform float plate_y = 0.363;
 uniform float hang = 0.64;
-uniform float half_w = 0.46;
+uniform float half_w = 0.36;
 
 varying vec3 v_tri_w;
 varying vec3 v_tri_p;
@@ -163,7 +166,7 @@ void vertex() {
 		if (d < -0.05 || d > 0.2 || v0.y > plate_y + 0.005 || v0.y < -0.35) {
 			continue;
 		}
-		float wgt = L.w * (1.0 - smoothstep(half_w * 0.45, half_w, abs(a))) * smoothstep(-0.05, 0.0, d)
+		float wgt = L.w * (1.0 - smoothstep(half_w * 0.6, half_w, abs(a))) * smoothstep(-0.05, 0.0, d)
 				* (1.0 - smoothstep(0.14, 0.2, d)) * smoothstep(-0.35, -0.3, v0.y);
 		if (wgt <= best) {
 			continue;
