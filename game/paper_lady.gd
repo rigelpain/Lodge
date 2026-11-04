@@ -14,18 +14,22 @@ extends Node3D
 ##            両手で薄紙に包み朱の紐をかける → 両手で差し出し、包みは買った人の手もとへ飛ぶ → 会釈。付け替えだけなら小さくうなずく
 ## 売る動きは craft.gd の出来事（通信ではみんなに配られる）で始めるので、だれの画面でも同じ順で動く。おじぎは、それぞれの画面で人の位置から決める
 ## スタンドの品物は、あなたが近づいて（NEAR_LOAD）から置く。置き方は main.gd の _put_wardrobe（衣装掛けの横）。この節の +Z が正面
+## 婦人とスタンドはテント（paper_tent.gd）の中。だれも近くにいないと幕が閉じていて、おじぎは幕が開いてから
 
 const Doll := preload("res://doll.gd")
 const Props := preload("res://props.gd")
 const Look := preload("res://look.gd")
 const Lantern := preload("res://lantern.gd")
 const Pals := preload("res://pals.gd")
+const PaperTent := preload("res://paper_tent.gd")
 
 const LADY_GLB := "res://props/paper_lady/paper_lady.glb"
 const POSES_JSON := "res://props/paper_lady/lady_poses.json"
 const STAND_GLB := "res://props/paper_lady/tea_stand.glb"
 ## スタンドの所（この節の座標。+X は婦人の左手の側）
 const STAND_AT := Vector3(1.35, 0.0, -0.3)
+## テントの真ん中（この節の座標）。婦人とスタンドの両方が楕円の内に入る所
+const TENT_AT := Vector3(0.85, 0.0, -0.085)
 ## スタンドの皿（半径, 皿の高さ, m）。person/ideas/kamizaiku/roughs.py の TIERS をゲームの大きさ（1.3 倍）にしたもの
 const TIERS := [[0.728, 0.416], [0.611, 0.858], [0.494, 1.274], [0.377, 1.664], [0.26, 2.015]]
 const LIFT := 0.016          # 皿の上に置く高さ
@@ -62,6 +66,7 @@ var craft: Node              # main.gd が入れる（買う・付け替える�
 var ui: CanvasLayer          # 開いているあいだ客を見る（main.gd が入れる）
 var lady: Node3D
 var stand: Node3D
+var tent: Node3D             # 婦人とスタンドを囲むテント（paper_tent.gd）
 var _joints := {}            # 節の名前（JOINTS）→ 節
 var _hand_r: Node3D
 var _hand_l: Node3D
@@ -120,6 +125,11 @@ func _ready() -> void:
 		col.shape = cy
 		col.position = (c[0] as Vector3) + Vector3.UP * float(c[2]) / 2.0
 		body.add_child(col)
+	tent = PaperTent.new()
+	tent.name = "PaperTent"
+	tent.lady = self
+	tent.position = TENT_AT
+	add_child(tent)
 	if craft:
 		craft.happened.connect(_on_craft)
 
@@ -287,7 +297,7 @@ func _step() -> void:
 		if d < best:
 			best = d
 			nearest = p
-		if d < NOTICE_R and not _greeted.has(id) and _act != "sale" and _act != "bow":
+		if d < NOTICE_R and not _greeted.has(id) and _act != "sale" and _act != "bow" and tent.bow_ready():   # 幕が開いてからおじぎ
 			bow_to = p
 			_greeted[id] = true
 		elif d > LEAVE_R:

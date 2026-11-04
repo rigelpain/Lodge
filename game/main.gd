@@ -90,8 +90,8 @@ const Badges := preload("res://badges.gd")
 const Companions := preload("res://companions.gd")
 const Pals := preload("res://pals.gd")
 ## 紙細工屋さん（paper_lady.gd。黒い折り紙の婦人と大きなスタンド）の立つ所（衣装掛けの座標, m。+X は竿の右＝南、+Z は正面＝西）。
-## 婦人の左（+X）にスタンド（paper_lady.gd の STAND_AT）。南の壁と東の壁に当たらない所
-const PAPER_LADY_AT := Vector3(2.55, 0.0, 0.75)
+## 婦人の左（+X）にスタンド（paper_lady.gd の STAND_AT）。まわりのテント（paper_tent.gd）が東の壁と竿の下のじゅうたんに当たらない所
+const PAPER_LADY_AT := Vector3(3.15, 0.0, 1.35)
 const DyeVat := preload("res://dye_vat.gd")
 const DyeUi := preload("res://dye_ui.gd")
 const Net := preload("res://net.gd")
