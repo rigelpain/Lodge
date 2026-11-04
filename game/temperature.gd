@@ -13,7 +13,7 @@ const Audio := preload("res://audio.gd")
 
 const DAY_PEAK := -2.0       # 外の、昼（14 時）の気温 (°C)
 const NIGHT_LOW := -11.0     # 外の、明け方（4 時）の気温
-const LAPSE := 0.25          # 高さ 1 m で下がる気温 (°C)。本物（0.0065）よりずっと強く: 丘の頂上（18 m）で 4.5 °C 寒い
+const LAPSE := 0.25          # 高さ 1 m で下がる気温 (°C)。本物（0.0065）よりずっと強く: 丘の頂上（18 m）で 4.5 °C、大山の頂上（144 m）で 36 °C 寒い
 const INDOOR := 18.0         # ロッジの中
 const VESTIBULE := 6.0       # 風除室
 const FIRE_WARM := 8.0       # 暖炉のすぐそばで、これだけ暖かい

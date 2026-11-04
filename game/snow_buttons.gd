@@ -53,6 +53,7 @@ const Look := preload("res://look.gd")
 const Props := preload("res://props.gd")
 const Rope := preload("res://sled_rope.gd")
 const Mountain := preload("res://mountain.gd")
+const Grand := preload("res://grand_mountain.gd")
 
 const GLB_DIR := "res://props/snow_button/"
 const R := 0.25                # 木のボタンの半径 (m。glb)
@@ -73,16 +74,16 @@ const SPARK_PX := 0.0016                 # またたきの星の、画面での�
 # ---- 出し方（調整する値）
 const MAX_BUTTONS := 14              # 斜面に同時に出ているボタンの数（丘）
 ## 山ごと・標高ごとの降るボタン（2026-10-30 代表）。大きな山は北の斜面（滑る所）に降る。高い所ほど、上の素材が出やすく、少し多く降る
-const MAP_MAX := {"hill": MAX_BUTTONS, "mountain": 20}   # 同時に出ている数（山ごと）
-const MAP_RARE := {"hill": 1.0, "mountain": 1.3}   # 真鍮・白蝶貝・螺鈿の出やすさ（山ごと。TIERS の chance に掛ける）
+const MAP_MAX := {"hill": MAX_BUTTONS, "mountain": 20, "grand": 20}   # 同時に出ている数（山ごと）
+const MAP_RARE := {"hill": 1.0, "mountain": 1.3, "grand": 1.3}   # 真鍮・白蝶貝・螺鈿の出やすさ（山ごと。TIERS の chance に掛ける）
 const RARE_ALT := 0.012              # 高さ 1 m ごとに、上の素材が +1.2% 出やすく（大きな山の頂上 75 m で ×1.9。山の 1.3 と合わせて ×2.5）
 const MT_SPOT_ALT := 0.02            # 大きな山では、高さ 1 m ごとに置かれやすさ +2%（頂上はふもとの 2.5 倍ほど）
 const FIRST_DROP := 1.5              # 始まってから最初のボタンが降るまで (s)
 const FIRST_BURST := 6               # 始まってすぐ、続けて降らせる数
 ## 次のボタンが降るまで (s。山ごと)。歩いて切って回ると、降る数をほとんど取れてしまうので、降る数を絞り、そのぶん長く残す
 ## （MAP_LIFE）。ソリで滑ると、残っているボタンのうち通り道のものを拾う。歩きの 1 分あたりがソリより少なくなるように（design/snow-buttons）
-const MAP_DROP_EVERY := {"hill": Vector2(12.0, 24.0), "mountain": Vector2(20.0, 40.0)}
-const MAP_LIFE := {"hill": 1.5, "mountain": 3.0}   # 埋もれきるまでの時間（LIFE）に掛ける
+const MAP_DROP_EVERY := {"hill": Vector2(12.0, 24.0), "mountain": Vector2(20.0, 40.0), "grand": Vector2(20.0, 40.0)}
+const MAP_LIFE := {"hill": 1.5, "mountain": 3.0, "grand": 3.0}   # 埋もれきるまでの時間（LIFE）に掛ける
 const AWAY := 3.0                    # ほかのボタンから、これより離して置く (m)
 const SPOT_R := Vector2(7.0, 45.0)   # 置く、頂上からの距離 (m)
 const COLORS := ["B8402E", "34477E", "D9A53C", "5E8A4E", "C2577E", "2F7F86"]   # 糸の色（赤・藍・からし・緑・桃・青緑）。一つずつ選ぶ
@@ -131,7 +132,7 @@ const RIDE_COMBO_KEEP := 1.5   # 2026-10-31 に 3 m/s から下げた（一人�
 const RIDE_RATE := {"sack": 1.0, "small": 2.3, "mid": 3.3, "large": 5.3}
 ## 場所の倍率（2026-10-30 代表「山ごと＆標高ごとに倍率と降ってくるボタンを変えましょう」）。ソリで滑った分と拾ったボタンに掛ける（place_rate）。
 ## 歩いて取るのには掛けない（×1.0 のまま）
-const MAP_RATE := {"hill": 1.0, "mountain": 1.5}   # 山ごと: 大きな山は丘より上
+const MAP_RATE := {"hill": 1.0, "mountain": 1.5, "grand": 1.5}   # 山ごと: 大きな山は丘より上。大山は大きな山と同じ（高い分は標高で上がる）
 ## 標高ごと: 高さ 1 m ごとに +3%（丘の頂上 18 m で ×1.54、大きな山の中腹 45 m で ×2.35、頂上 75 m で ×3.25）。滑った分は、木 1 の分を
 ## 滑った区間のまんなかの高さ（真鍮は速さを超えた所の高さ）、斜面のボタンは拾った所の高さで数える。
 ## 大きな山の頂上まで押し上げる時間は、中腹までの倍ほど。上の区間の分がそれを上回るように（design/snow-buttons の 1 分あたりの表）
@@ -176,8 +177,8 @@ var stats := {"snip": 0, "value": 0}   # 確かめ用の数（切った数と、
 var _shears: Array = []         # 動いている裁ちばさみ {node, a, b, btn, who, f0}
 var _cuts: Array = []           # ホスト: はさみで切る予定 {id, who, at}
 var _next_id := 1
-var _drop_t := {"hill": FIRST_DROP, "mountain": FIRST_DROP}   # 山ごと
-var _burst := {"hill": FIRST_BURST, "mountain": FIRST_BURST}
+var _drop_t := {"hill": FIRST_DROP, "mountain": FIRST_DROP, "grand": FIRST_DROP}   # 山ごと
+var _burst := {"hill": FIRST_BURST, "mountain": FIRST_BURST, "grand": FIRST_BURST}
 var _rng := RandomNumberGenerator.new()
 var _noise := FastNoiseLite.new()   # 風
 var _life_noise := FastNoiseLite.new()
@@ -300,8 +301,10 @@ func _live(m := "") -> int:
 	return n
 
 
-## どの山か: "hill"（丘）か "mountain"（大きな山。麓の窪地から南）
+## どの山か: "hill"（丘）か "mountain"（大きな山。麓の窪地から南）か "grand"（大山。東の地面の継ぎ目から東）
 static func map_of(p: Vector3) -> String:
+	if Grand.on_ground(p.x, p.z):
+		return "grand"
 	return "mountain" if p.z > Mountain.FOOT_Z else "hill"
 
 
@@ -361,8 +364,10 @@ func _normal(p: Vector3) -> Vector3:
 ## 置いてよい所か: ロッジの近くでない、斜面の上（丘）か北の斜面（大きな山）、ほかのボタンから離れている、木や小物に重ならない
 func _free_spot(p: Vector3) -> bool:
 	var r := Vector2(p.x, p.z).length()
-	if map_of(p) == "mountain":
-		if not Mountain.on_face(p.x, p.z) or _normal(p).y < cos(deg_to_rad(30.0)):
+	var m := map_of(p)
+	if m == "mountain" or m == "grand":
+		var face: bool = Mountain.on_face(p.x, p.z) if m == "mountain" else Grand.on_face(p.x, p.z)
+		if not face or _normal(p).y < cos(deg_to_rad(30.0)):
 			return false
 	elif r < 4.0 or r > 60.0 or world.lodge_weight(p.x, p.z) < 1.0:
 		return false
@@ -391,14 +396,18 @@ func _free_spot(p: Vector3) -> bool:
 func _pick_spot(m := "hill") -> Vector3:
 	var cands := []
 	var total := 0.0
-	Mountain._build()
 	for i in 40:
 		var p: Vector3
 		var w: float
 		if m == "mountain":
 			# 大きな山: 北の斜面（滑る所）の上。高い所ほど置かれやすい
+			Mountain._build()
 			p = Vector3(Mountain.FACE_X + _rng.randf_range(-1.0, 1.0) * Mountain.FACE_W, 0,
 					_rng.randf_range(Mountain.BOTTOM_Z + 4.0, Mountain.top_z))
+			w = 1.0 + MT_SPOT_ALT * maxf(0.0, world.height(p.x, p.z))
+		elif m == "grand":
+			# 大山: 西の斜面の上。置かれやすさは大きな山と同じ
+			p = Vector3(_rng.randf_range(Grand.BOTTOM_X + 4.0, Grand.SX),  0, Grand.FACE_Z + _rng.randf_range(-1.0, 1.0) * Grand.FACE_W)
 			w = 1.0 + MT_SPOT_ALT * maxf(0.0, world.height(p.x, p.z))
 		else:
 			var a := _rng.randf() * TAU
