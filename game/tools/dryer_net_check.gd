@@ -3,9 +3,10 @@ extends SceneTree
 ##   Godot --headless --path game -s res://tools/dryer_net_check.gd -- --host --port=24733 --bots=0 --no-sound
 ##   Godot --headless --path game -s res://tools/dryer_net_check.gd -- --join=127.0.0.1 --port=24733 --bots=0 --no-sound
 ## つながってから:
-##   A（1 秒〜）  つなぐ側が乾燥機に入る。ホストは 0.5 秒あとに入ろうとして断られるか、相手の体が胴の真ん中で回っているかを出す
-##   B（7 秒〜）  ホストが入る。つなぐ側が同じことを出す
-##   C（13 秒〜） ホストがラーメンのペレットを買って乾燥機で調理する。つなぐ側は入ろうとして断られ、仕上がったあとは入れるか
+##   A（1 秒〜）  つなぐ側が乾燥機に入る。ホストは 3 秒あとに入ろうとして断られるか、相手の体が胴の真ん中で回っているかを出す
+##   B（9 秒〜）  ホストが入る。つなぐ側が同じことを出す
+##   C（17 秒〜） ホストがラーメンのペレットを買って乾燥機で調理する。つなぐ側は入ろうとして断られ、仕上がったあとは入れるか
+## A・B の終わりに、入ってから出きるまでのコマと秒を出す（どちらの画面でも同じなら、相手も同じ長さに見える）
 
 const Doll := preload("res://doll.gd")
 const Food := preload("res://food.gd")
@@ -53,6 +54,20 @@ func _watch(n: int) -> void:
 		await _wait(0.5)
 
 
+## 中の人が出きるまで待って、入ってから出きるまでのコマを出す（乾ききって出るまで 6 秒ほど）
+func _measure(what: String) -> void:
+	var t := 0.0
+	var who: int = st.rider
+	var in_f: int = st._ride_f
+	var out_f: int = st._out_f
+	while st.rider >= 0 and t < 40.0:
+		out_f = st._out_f
+		await _wait(0.1)
+		t += 0.1
+	var n: int = out_f + st.RIDE_OUT - in_f
+	_say("%s: 中の人 %d 入ってから出きるまで %d コマ（%.1f 秒） 水 %.0f" % [what, who, n, n / 12.0, main.damp.water_of(who)])
+
+
 func _run() -> void:
 	await _wait(0.5)
 	var t := 0.0
@@ -79,10 +94,11 @@ func _run() -> void:
 			await _wait(0.5)
 			_say("自分のモード %d 水 %.0f 中の人 %d" % [p.mode, main.damp.water_of(p.id), st.rider])
 	else:
-		await _wait(0.5)
+		await _wait(3.0)   # 読み込みが遅いと、つなぐ側が入る前にホストが入ってしまう
 		_say("相手が中にいるときに入る: %s（入れないはず）" % st.ride(p))
 		await _watch(7)
-	await _wait(2.5 if host else 2.0)
+	await _measure("A つなぐ側が入った")
+	await _wait(1.0)
 	_front(-1.0 if host else 1.0)
 	# B: ホストが入る
 	if host:
@@ -94,7 +110,8 @@ func _run() -> void:
 		await _wait(1.5)   # 時計は画面ごとに少しずれるので、ホストが先に入るまで待つ
 		_say("相手が中にいるときに入る: %s（入れないはず）" % st.ride(p))
 		await _watch(5)
-	await _wait(8.0)   # B で入った人が乾ききって出るまで（#106 で、乾くまで 4 秒ほどになった）
+	await _measure("B ホストが入った")
+	await _wait(1.0)
 	_front(-1.0 if host else 1.0)
 	# C: ホストが乾燥機で調理する
 	if host:
