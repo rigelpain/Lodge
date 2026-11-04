@@ -199,7 +199,6 @@ var trail_fade := TRAIL_FADE          # 置く前に変えてよい（main.gd �
 const TRAIL_SCAN := 48                # 空いた目を探すとき、先へ見る数（多いほど正確、重い）
 const TRAIL_CHUNK := 100              # 歩みをこの数ずつの塊に分けて描く（塊の目の数は × per）。画面の外の塊は描かない
 const TRAIL_SEE := 45.0               # これより遠い塊は描かない (m)。糸は細いので、その先はほとんど見えない
-var _blob: MeshInstance3D
 var _stitch: ArrayMesh                        # 1 目の形（塊どうしで共有。色と時計はここに入れる。粗い形は Look.stitch_mesh）
 var _trails: Array[MultiMeshInstance3D] = []  # 目の塊
 var _trail_i := 0
@@ -263,7 +262,7 @@ func _ready() -> void:
 	add_child(rope)
 	retag(tag)
 
-	_make_shadow_and_trail()
+	_make_trail()
 
 ## 見た目: フェルトの座布団を曲げ木の滑り木に載せたソリ（props/build_sled.py の glb）。寸法はこの物理に合わせてある。
 ## 焼いてある主なフェルトの色（KINDS の color）を、メインカラーに差し替える（props.gd の recolor）。
@@ -627,8 +626,6 @@ func rack_in(at: Transform3D, wait := 0.0) -> void:
 	angular_velocity = Vector3.ZERO
 	global_transform = at
 	reset_physics_interpolation()
-	if _blob:
-		_blob.visible = false
 	if wait <= 0.0:
 		return
 	visible = false
@@ -662,8 +659,6 @@ func rack_out(to: Transform3D, landed := Callable()) -> void:
 	racked = false
 	freeze = false
 	parked = true
-	if _blob:
-		_blob.visible = true
 	if landed.is_valid():
 		landed.call()
 
@@ -684,32 +679,8 @@ func place_lift() -> float:
 	return maxf(0.0, k.box.z * 0.5 * 0.45 - 0.3)
 
 
-## 足元の影（やわらかい楕円）と、滑り木の跡のステッチ（毛糸の雪に残る針目）
-func _make_shadow_and_trail() -> void:
-	var img := Image.create(128, 128, false, Image.FORMAT_RGBA8)
-	for y in 128:
-		for x in 128:
-			var dx := (x - 63.5) / 63.5
-			var dy := (y - 63.5) / 63.5
-			var r := sqrt(dx * dx + dy * dy)
-			var a: float = (1.0 - smoothstep(0.3, 1.0, r)) * 0.42
-			img.set_pixel(x, y, Color(0.20, 0.26, 0.46, a))
-	var tex := ImageTexture.create_from_image(img)
-	_blob = MeshInstance3D.new()
-	var q := QuadMesh.new()
-	q.size = Vector2(2.2, 3.4)
-	q.orientation = PlaneMesh.FACE_Y
-	_blob.mesh = q
-	var m := StandardMaterial3D.new()
-	m.albedo_texture = tex
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	m.render_priority = -1
-	_blob.material_override = m
-	_blob.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	_blob.top_level = true
-	add_child(_blob)
-
+## 滑り木の跡のステッチ（毛糸の雪に残る針目）
+func _make_trail() -> void:
 	_stitch_name = stitch_kind()
 	_st = STITCHES[_stitch_name]
 	_trail_n = TRAIL_N * int(_st.per)
@@ -770,20 +741,14 @@ func _trail_slot() -> int:
 	return best
 
 
-func _update_shadow_and_trail(dt: float) -> void:
-	if _blob == null:
+func _update_trail(dt: float) -> void:
+	if _stitch == null:
 		return
 	_trail_now += dt
 	Look.stitch_set_time(_stitch, _trail_now)
 	for c in _trails.size():
 		if _trails[c].visible and _chunk_end[c] <= _trail_now:
 			_trails[c].visible = false
-	var hit := _ground_hit(global_position + Vector3.UP * 0.5)
-	if hit:
-		var n: Vector3 = hit.normal
-		var fwd: Vector3 = -global_basis.z
-		fwd = (fwd - n * fwd.dot(n)).normalized()
-		_blob.global_transform = Transform3D(Basis(n.cross(-fwd).normalized(), n, -fwd), hit.position + n * 0.03)
 	# ステッチ: 動いている間、1 歩（TRAIL_STEP）ごとに左右の滑り木の後ろ端で雪面を探し、
 	# 前の歩みからそこまでを、ソリの縫い目（なみ縫い・くさり縫い・サドルステッチ…）で縫う
 	var v := Vector3(linear_velocity.x, 0, linear_velocity.z)
@@ -1086,7 +1051,7 @@ func _catch_fall() -> void:
 
 func _physics_process(dt: float) -> void:
 	_catch_fall()
-	_update_shadow_and_trail(dt)
+	_update_trail(dt)
 	if racked:
 		return
 	pushers = _push_count
