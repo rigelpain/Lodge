@@ -264,7 +264,7 @@ def pendant(name, kind, cord=1.0):
             prof.append((0.06 + 0.16 * math.sin(math.pi * t) ** 0.7, z))
         K.lathe(P, "paper", prof, segs=32, closed=False)
         for j in range(1, 16, 2):   # 骨: 細い木の輪
-            K.ring(P, "wood_dark", (0, 0, prof[j][1]), prof[j][0] + 0.002, 0.0025, n=40)
+            K.ring(P, "wood_dark", (0, 0, prof[j][1]), prof[j][0] + 0.0055, 0.0033, n=40)   # 紙の面の角から出るように（低いと途切れて見える）
         for z in (-0.405, 0.0):
             K.disc(P, "wood_dark", (0, 0, z), 0.065, 0.025, segs=20)
     else:
