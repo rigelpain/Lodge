@@ -20,7 +20,7 @@ const Look := preload("res://look.gd")
 ##   --bot-lanterns=形,形…  仲間の帯に提げるランタン（lantern.gd の LOOKS。ソリを押す仲間、ロッジの仲間の順に。確かめ用）
 ##   --spawn=lanterns  おじいさんの番台の横のランタン掛けの前から始める（F でランタンを買って提げ替える）
 ##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
-##   --spawn=wardrobe  2 階の衣装掛けの前から始める（F で人形を選び直す）
+##   --spawn=wardrobe  1 階の人台の前から始める（F で人形を選び直す）
 ##   --spawn=dye       2 階の染め桶の前から始める（F で服を染める）
 ##   --doll=人形   あなたの始めの人形（doll.gd の KINDS: kasa・origami・news・robo・musha・ningyo・golem）。保存した人形より勝つ
 ##   --bot-dolls=人形,人形…  ソリを押す仲間の人形（既定は右が origami、左が news）
@@ -89,21 +89,17 @@ const Damp := preload("res://damp.gd")
 const Badges := preload("res://badges.gd")
 const Companions := preload("res://companions.gd")
 const Pals := preload("res://pals.gd")
-## 紙細工屋さん（paper_lady.gd。黒い折り紙の婦人と大きなスタンド）の立つ所（衣装掛けの座標, m。+X は竿の右＝南、+Z は正面＝西）。
-## 婦人の左（+X）にスタンド（paper_lady.gd の STAND_AT）。まわりのテント（paper_tent.gd）が東の壁と竿の下のじゅうたんに当たらない所
-const PAPER_LADY_AT := Vector3(3.15, 0.0, 1.35)
+## 紙細工屋さん（paper_lady.gd。黒い折り紙の婦人と大きなスタンド）の立つ所（ロッジの座標 (x, y)。lodge/dims.py と同じ）。
+## 1 階の東、人台（WARDROBE_AT）の西どなり（2026-11-04 代表「紙細工士さんはこの染台の横に配置する感じで勝手口の前は開けて」）。正面は南。
+## テント（paper_tent.gd）の真ん中は婦人から東へ 0.85 m で、西の縁は x 12.87。勝手口の前（x 12.7 まで）はまっすぐ南まであき、人台とのあいだも人が通れる
+const PAPER_LADY_AT := Vector2(13.7, 3.2)
 const DyeVat := preload("res://dye_vat.gd")
 const DyeUi := preload("res://dye_ui.gd")
 const Net := preload("res://net.gd")
 const Start := preload("res://start.gd")
-## 2 階の衣装掛け（wardrobe.gd）の所（ロッジの座標 (x, y)。lodge/dims.py と同じ）と高さ。内階段を上がった東の端の、東の壁ぎわ。
-## 竿は南北に長く、正面は西（畳の小上がりの側）。階段の穴（y 6.2〜12.5）より南、小上がり（x 15.5 まで）より東。
-## 内階段は東の壁ぎわを南へ上って y 6.2 に着くので、着いた正面に染め桶が来ないよう、染め桶・紙細工屋さんごと 1 m 南へ（2026-11-03）
-const WARDROBE_AT := Vector2(21.25, 1.2)
-const WARDROBE_FLOOR := 6.1   # 2 階の床（dims.FL2）
-## 染め桶（dye_vat.gd）の所（衣装掛けの座標。+X が竿の右の端のほう、+Z が正面）。竿の右の端の横には紙細工屋さん
-## （PAPER_LADY_AT）がいるので、桶は竿の左の端の横
-const DYE_VAT_AT := Vector3(-2.45, 0.0, 0.35)
+## 染めと着替えの人台（wardrobe.gd と子の dye_vat.gd）の真ん中（ロッジの座標 (x, y)）。1 階の東、内階段の手前の空き（x 11〜21、y -1〜6）。
+## 正面は南（食堂の側）で、長い布は北。東の壁の自販機（y 3.5）の前は、人台の北から回って使える。天井の輪があるので 1 階の天井の下にしか置けない
+const WARDROBE_AT := Vector2(19.0, 1.7)
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
 ## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
@@ -174,12 +170,12 @@ var mountain_ui: CanvasLayer  # 山男の売り場（mountain_ui.gd）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
-var wardrobe: Node3D          # 2 階の衣装掛け（wardrobe.gd）
+var wardrobe: Node3D          # 1 階の人台（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
-var paper_lady: Node3D        # 衣装掛けの横の紙細工屋さん（paper_lady.gd。婦人と大きなスタンド）
+var paper_lady: Node3D        # テントの紙細工屋さん（paper_lady.gd。婦人と大きなスタンド）
 var paper_shop_ui: CanvasLayer   # 提灯と頭・肩の小物を買って付け替える画面（paper_shop_ui.gd）
 var minion_ui: CanvasLayer    # 山師が育てているミニオンを買って連れ替える画面（pals_ui.gd の連れの段。山師の売り場の「連れ」の札から）
-var dye_vat: Node3D           # 衣装掛けのとなりの染め桶（dye_vat.gd）
+var dye_vat: Node3D           # 人台の桶の染め液（dye_vat.gd）
 var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
 var damp: Damp                # 紙の人形の「よれ」（湿り気）の配り役（damp.gd）。人より先に置く。人が名前（"Damp"）で探す
@@ -563,13 +559,14 @@ func _ready() -> void:
 		dye_ui.craft = craft
 		dye_ui.player = player
 		add_child(dye_ui)
-		if args.get("spawn", "") == "dye" and dye_vat:   # --spawn=dye: 2 階の染め桶の前から始める
-			var at := dye_vat.to_global(Vector3(0, 0.1, 1.3))
+		if args.get("spawn", "") == "dye" and dye_vat:   # --spawn=dye: 人台の桶を見下ろして始める
+			var at := dye_vat.to_global(Vector3(0, 0.1, 2.6))
 			player.global_position = at
 			var to := dye_vat.global_position
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
-		if args.get("spawn", "") == "wardrobe" and wardrobe:   # --spawn=wardrobe: 2 階の衣装掛けの前から始める
-			var at := wardrobe.to_global(Vector3(0, 0.1, 1.6))
+			player._pitch = -0.6
+		if args.get("spawn", "") == "wardrobe" and wardrobe:   # --spawn=wardrobe: 人台の前から始める
+			var at := wardrobe.to_global(Vector3(0, 0.1, 2.6))
 			player.global_position = at
 			var to := wardrobe.global_position
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
@@ -1144,29 +1141,25 @@ func _furnish_lodge() -> void:
 				(g as GeometryInstance3D).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for b in BANDAI:
 		_put_bandai(lodge, b)
-	# 2 階の衣装掛け: 前で F を押すと人形を選び直す
+	# 1 階の人台: 人形の高さを見て F で人形を選び直す。桶を見下ろして F で服を染める
 	wardrobe = Wardrobe.new()
 	wardrobe.name = "Wardrobe"
 	wardrobe.player = player
-	wardrobe.position = Vector3(WARDROBE_AT.x, WARDROBE_FLOOR, -WARDROBE_AT.y)
-	wardrobe.rotation.y = -PI / 2.0   # 竿の正面（+Z）を西へ
-	lodge.add_child(wardrobe)
-	# その横に、紙細工屋さん: 黒い折り紙の婦人と、提灯と頭・肩の小物を並べた大きなスタンド（同じ壁ぎわ、正面は同じく西）
+	wardrobe.position = Vector3(WARDROBE_AT.x, LODGE_FLOOR, -WARDROBE_AT.y)
+	lodge.add_child(wardrobe)   # 正面（+Z）は南
+	dye_vat = DyeVat.new()
+	dye_vat.name = "DyeVat"
+	dye_vat.player = player
+	dye_vat.craft = craft
+	wardrobe.add_child(dye_vat)
+	# 紙細工屋さん: テントの中で、提灯と頭・肩の小物を売る
 	paper_lady = PaperLady.new()
 	paper_lady.name = "PaperLady"
 	paper_lady.player = player
 	paper_lady.craft = craft
 	paper_lady.main = self
-	paper_lady.transform = wardrobe.transform * Transform3D(Basis(), PAPER_LADY_AT)
+	paper_lady.position = Vector3(PAPER_LADY_AT.x, LODGE_FLOOR, -PAPER_LADY_AT.y)   # 正面（+Z）は南
 	lodge.add_child(paper_lady)
-	# そのとなりの染め桶: 前で F を押すと服を染める（竿の左の端の少し前。正面は竿と同じ西）
-	dye_vat = DyeVat.new()
-	dye_vat.name = "DyeVat"
-	dye_vat.player = player
-	dye_vat.craft = craft
-	dye_vat.position = wardrobe.position + wardrobe.basis * DYE_VAT_AT
-	dye_vat.rotation.y = wardrobe.rotation.y
-	lodge.add_child(dye_vat)
 
 
 ## 天井の目印 hook から、cord（m）のコードの先に吊り灯り（形は kind）を提げる

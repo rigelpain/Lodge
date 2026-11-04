@@ -777,7 +777,7 @@ static func _needle(ci: CanvasItem, a: float) -> void:
 	thread(ci, th, RED, 1.8, a)
 
 
-## 衣装掛け（2 階）: 木のハンガーに掛けた人形と、入れ替わる矢印。F で人形を選び直す
+## 人台の衣装掛け（1 階）: 木のハンガーに掛けた人形と、入れ替わる矢印。F で人形を選び直す
 static func _wardrobe(ci: CanvasItem, a: float, col: Color) -> void:
 	var hook := PackedVector2Array()   # ハンガーのかぎ
 	for i in 9:

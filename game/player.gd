@@ -108,6 +108,7 @@ var ride_fov := 0.0           # いま足している視野角 (°)
 var mouse_sens := 1.0        # 設定: マウスの感度
 var menu_open := false       # 設定画面が開いている間は、クリックでマウスをつかまない
 var _pitch := 0.0
+const LOOK_DOWN := -0.3   # これより下を見ていれば、見下ろしている（約 17°）
 var _col: CollisionShape3D
 var _t := 0.0
 var _snap := 0.0             # 吸い付きの途中（0→1）
@@ -417,10 +418,10 @@ func _unhandled_input(e: InputEvent) -> void:
 					get_parent().mountain_ui.open()   # 玄関の外の山男: 山の道具（焚き火セット・ペグ）を買う
 					return
 				if mode == Mode.WALK and dye_near():
-					get_parent().dye_ui.open()   # 衣装掛けのとなりの染め桶: 服を染める（衣装掛けより近くで向いていれば、こちら）
+					get_parent().dye_ui.open()   # 人台の桶を見下ろす: 服を染める
 					return
-				if mode == Mode.WALK and paper_shop_near() and (not wardrobe_near() or _facing(get_parent().paper_lady.global_position) > _facing(get_parent().wardrobe.global_position)):
-					get_parent().paper_shop_ui.open()   # 衣装掛けの横の紙細工屋さん: 提灯と頭・肩の小物を買って付け替える
+				if mode == Mode.WALK and paper_shop_near():
+					get_parent().paper_shop_ui.open()   # テントの紙細工屋さん: 提灯と頭・肩の小物を買って付け替える
 					return
 				var dr := dryer_near()
 				if mode == Mode.WALK and dr and dr.ride(self):   # 厨房の乾燥機: 手にペレットを持っていなければ、中に入って乾く
@@ -432,7 +433,7 @@ func _unhandled_input(e: InputEvent) -> void:
 					get_parent().food_ui.open()   # 雪だるまの番台: ペレットを雪玉で買う
 					return
 				if mode == Mode.WALK and wardrobe_near():
-					get_parent().wardrobe_ui.open()   # 2 階の衣装掛け: 人形を選び直す
+					get_parent().wardrobe_ui.open()   # 人台の人形の高さを見る: 人形を選び直す
 					return
 				var sb = get_parent().get("snow_buttons")
 				if mode == Mode.WALK and sb and sb.reachable(self) != null and sb.request_cut(id):
@@ -2077,23 +2078,25 @@ func station_near() -> Node:
 	return best
 
 
-## 2 階の衣装掛けの前で、竿の方を向いているか
+## 1 階の人台の前で、人形の高さを見ているか
 func wardrobe_near() -> bool:
 	var w = get_parent().get("wardrobe")
 	return w != null and get_parent().get("wardrobe_ui") != null and not menu_open and w.can_use(self)
 
 
-## 衣装掛けの横の紙細工屋さん（paper_lady.gd）の前で、婦人かスタンドの方を向いているか
+## テントの紙細工屋さん（paper_lady.gd）の前で、婦人かスタンドの方を向いているか
 func paper_shop_near() -> bool:
 	var pl = get_parent().get("paper_lady")
 	return pl != null and get_parent().get("paper_shop_ui") != null and not menu_open and pl.can_use(self)
-## 2 階の染め桶の前で、桶の方を向いているか（衣装掛けにも届くときは、向いている方）
+## 1 階の人台の桶を見下ろしているか
 func dye_near() -> bool:
 	var v = get_parent().get("dye_vat")
-	if v == null or get_parent().get("dye_ui") == null or menu_open or not v.can_use(self):
-		return false
-	var w = get_parent().get("wardrobe")
-	return w == null or not w.can_use(self) or _facing(v.global_position) >= _facing(w.global_position)
+	return v != null and get_parent().get("dye_ui") != null and not menu_open and v.can_use(self)
+
+
+## 視線が下を向いているか（人台で、桶を見ているか人形を見ているかを分ける）
+func looks_down() -> bool:
+	return _pitch < LOOK_DOWN
 
 
 ## ミシンの前（立つ所のそば）で、ミシンの方を向いていて、縫い始められるか
