@@ -21,6 +21,8 @@ const Icons := preload("res://hud_icons.gd")
 const Speedo := preload("res://speedo.gd")
 const RideWind := preload("res://ride_wind.gd")
 const Plates := preload("res://hud_plates.gd")
+const Areas := preload("res://areas.gd")
+const ElevCard := preload("res://elev_card.gd")
 const SledTags := preload("res://sled_tags.gd")
 const PersonIcon := preload("res://person_icon.gd")
 const Player := preload("res://player.gd")
@@ -30,7 +32,6 @@ const LEARNED := 3            # この回数したら、その案内はもう出
 const TAG_NEAR := 30.0        # ソリからこの距離より近いと札を出す (m)
 const MEET_R := 5.0           # ほかの人がこの距離に来たら身ぶりの案内
 const MEET_SHOW := 6.0        # 身ぶりの案内を出す長さ (s)
-const PROFILE_R := 62.0       # 札の丘の断面の右端（頂上からの水平の距離, m）
 
 var main: Node3D
 var debug_on := false
@@ -126,6 +127,8 @@ var _damp_w := 0.0            # 水のゲージに出している値（damp.gd �
 var _badge_pop := {}          # バッジの名前 → 跳ねの残り（1→0）
 var _badge_seen := {}         # バッジの名前 → 最後に見た [向き, 段]（変わったら跳ねる）
 var _tag_item := {}           # 畳んで持っていれば、その持ち物（_tag_sled は null）
+var _areas := {}              # 札ごとの、いまの範囲（areas.gd）
+var _area_shown := ""         # 前に見えている札に描く範囲（範囲が替わると、札をめくった半分で替わる）
 
 # 何も操作しないで IDLE_T 秒たったら、HUD を画面の外へ引っこめて景色だけにする（2026-11-01 代表「無操作状態で5秒経つとHUDを
 # 画面外に撤収させて景色だけを堪能させるようにしてほしい」）。キー・マウス・ゲームパッドのどれかに触れたら、すぐ戻す。
@@ -220,6 +223,7 @@ func _process(dt: float) -> void:
 	var cur: Dictionary = shown_card()
 	_tag_sled = cur.get("sled") if cur.get("sled") != null and is_instance_valid(cur.get("sled")) else null
 	_tag_item = cur.get("item", {})
+	_update_area(p)
 
 	_update_people(dt, _tag_sled, p)
 	# 名札はいつも出しておく（2026-10-29 代表「タグは消えないようにしてほしい」）。ソリから離れていても、その札のソリの丘と印を出す
@@ -942,6 +946,25 @@ func _select(i: int, manual: bool) -> void:
 	_flip = 1.0
 
 
+## 札のソリ（畳んで持っていれば持っている人、ソリがなければ自分）がいる範囲を更新する。
+## 範囲が替わったら札をめくり、めくりの半分で新しい範囲の絵にする（札を替えたときの絵は、札のめくりの半分で替わる）
+func _update_area(p: CharacterBody3D) -> void:
+	var at: Vector3 = _tag_sled.global_position if _tag_sled else (p.global_position if p else Vector3.ZERO)
+	var known := _areas.has(_shown_key)
+	var id := Areas.of(Vector2(at.x, at.z), _areas.get(_shown_key, ""))
+	_areas[_shown_key] = id
+	if known and _flip <= 0.0 and id != _area_shown:
+		_flip = 1.0
+		_flip_dir = 1
+	if not known or _flip < 0.5:
+		_area_shown = id
+
+
+## 前の札に描く範囲
+func shown_area() -> String:
+	return _area_shown if _area_shown != "" else Areas.NONE
+
+
 ## 前に見えている札（めくっている途中は、半分まで前の札）
 func shown_card() -> Dictionary:
 	var i := _index_of(_shown_key)
@@ -1013,7 +1036,7 @@ func _view_stamp() -> Array:
 ## 風の揺れ・めくり・引っこめは入れ物ごと動かすので描き直さない。中の絵（回るソリの図・丘の上のソリの印）は、live なら
 ## 人形と同じ 12 コマ／秒で進める（回る図はもともと 12 コマの刻み）。薄さは 0.05 刻みで、出る・消える途中も描き直す
 func _tag_stamp(live: bool) -> Array:
-	var s := [_view.size, snappedf(_tag_a, 0.05), _card, cards.hash(), _tag_sled, _tag_item.hash()]
+	var s := [_view.size, snappedf(_tag_a, 0.05), _card, cards.hash(), _tag_sled, _tag_item.hash(), shown_area()]
 	if live:
 		s.append(Doll.frame_index())
 	return s
@@ -1169,6 +1192,9 @@ class View extends Control:
 	func tag_rect(u: float) -> Rect2:
 		var w := 262.0 * u * TAG_K
 		var h := 146.0 * u * TAG_K
+		if size.x < size.y:   # スマホの縦画面: 下は刺繍枠と持ち物の列でふさがるので、左上へ。幅が足りなければ縮める（窓の中の絵も一緒に縮む）
+			var k := minf(1.0, (size.x - 36.0 * u) / w)
+			return Rect2(18.0 * u, 18.0 * u, w * k, h * k)
 		return Rect2(18.0 * u, size.y - h - 18.0 * u, w, h)
 
 	## 束の後ろの k 枚目の札（右上へずらし、少し傾ける）
@@ -1209,56 +1235,25 @@ class View extends Control:
 	## 窓の地はいつも明るいので、線は濃く、印には白い縁
 	func _draw_tag_info(u: float, a: float, fw: float, fh: float, sled: RigidBody3D, item: Dictionary) -> void:
 		var main: Node3D = hud.main
-		# 丘の断面（頂上から PROFILE_R までの右半分と、頂上の向こうを少し）
-		var x0 := 6.0 * u
-		var x1 := fw - 6.0 * u
-		var yb := 40.0 * u
-		var yt := 6.0 * u
-		var rmin := -14.0
-		var to_x := func(rr: float) -> float: return lerpf(x0, x1, (rr - rmin) / (PROFILE_R - rmin))
-		var to_y := func(hh: float) -> float: return lerpf(yb, yt, hh / main.HILL_H)
-		var prof := PackedVector2Array()
-		for i in 33:
-			var rr := lerpf(rmin, PROFILE_R, i / 32.0)
-			prof.append(Vector2(to_x.call(rr), to_y.call(main.hill(rr, 0.0))))
-		var mound := prof.duplicate()
-		mound.append(Vector2(x1, yb + 3.0 * u))
-		mound.append(Vector2(x0, yb + 3.0 * u))
-		Icons.screen()
-		Icons.patch(self, mound, Color(0.74, 0.83, 0.95), a, false)
-		Icons.thread(self, prof, Icons.THREAD, 1.4 * u, a)
-		# 頂上の旗とふもとのロッジ
-		var top := Vector2(to_x.call(0.0), to_y.call(main.HILL_H))
-		Icons.thread(self, PackedVector2Array([top, top - Vector2(0, 12) * u]), Icons.WOOD.darkened(0.2), 1.4 * u, a)
-		Icons.patch(self, PackedVector2Array([top - Vector2(0, 12) * u, top + Vector2(8.5, -9.5) * u, top - Vector2(0, 7) * u]), Icons.RED, a, false)
-		var lodge := Vector2(x1 - 5.0 * u, yb)
-		Icons.patch(self, PackedVector2Array([lodge + Vector2(-5.5, 0) * u, lodge + Vector2(5.5, 0) * u, lodge + Vector2(5.5, -6) * u,
-			lodge + Vector2(0, -11) * u, lodge + Vector2(-5.5, -6) * u]), Icons.WOOD, a, false)
-		draw_rect(Rect2(lodge + Vector2(-1.7, -5) * u, Vector2(3.4, 3.0) * u), Color(1.0, 0.72, 0.30, a))
 		var lodge_sled: bool = sled != null and hud.tag_owner() < 0 and SledTags.has_tag(sled.get("tag"))
 		var tw := Rect2(Vector2(4.0, 46.0) * u, Vector2(fw / u - 8.0 if lodge_sled else 150.0, 71.0) * u)   # 回る図の窓
-		if hud.shown_card().get("empty", false):   # 自分のソリがまだない: 空の丘と、空の窓だけ
+		# 標高の札（範囲ごとに布の地と断面が替わる。elev_card.gd）。ソリの印は断面の上の、その位置（畳んでいれば、持っている人の所）
+		var empty: bool = hud.shown_card().get("empty", false)
+		var sp: Vector3 = sled.global_position if sled else (main.player.global_position if main.player else Vector3.ZERO)
+		var area: String = hud.shown_area()
+		var mark_at := func(mc: Vector2, slope: float, ks: float) -> void:
+			draw_circle(mc, 8.5 * u * ks, Color(1, 1, 1, 0.8 * a))   # 印の白い縁（丘の線や雪から浮かせる）
+			Icons._o = mc
+			Icons._s = 0.4 * u * ks
+			if sled:
+				Icons.sled_side(self, Vector2.ZERO, 1.0, a, slope, true)   # 前は左（頂上）
+			else:   # 畳んだ包み
+				Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
+		ElevCard.draw(self, area, u, a, fw, Callable(main, "height"), NAN if empty else Areas.locate(area, Vector2(sp.x, sp.z)), mark_at)
+		if empty:   # 自分のソリがまだない: 空の山と、空の窓だけ
 			Icons.screen()
 			Icons.dashes(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Icons.PAPER_EDGE, 1.4 * u, 5.0 * u, 3.5 * u, a, true)
 			return
-		# ソリの印と、ふもとからソリまでの赤い糸（畳んでいれば、持っている人の所）
-		var sp: Vector3 = sled.global_position if sled else (main.player.global_position if main.player else Vector3.ZERO)
-		var sr := clampf(Vector2(sp.x, sp.z).length(), 0.0, PROFILE_R)
-		var climbed := PackedVector2Array()
-		for i in 25:
-			var rr := lerpf(PROFILE_R, sr, i / 24.0)
-			climbed.append(Vector2(to_x.call(rr), to_y.call(main.hill(rr, 0.0)) - 1.0 * u))
-		Icons.thread(self, climbed, Icons.RED, 2.0 * u, a)
-		var mark := Vector2(to_x.call(sr), to_y.call(main.hill(sr, 0.0)))
-		var slope := atan2(to_y.call(main.hill(sr + 1.0, 0.0)) - to_y.call(main.hill(sr - 1.0, 0.0)), to_x.call(sr + 1.0) - to_x.call(sr - 1.0))
-		var mc := mark + Vector2(0, -5.0 * u).rotated(slope)
-		draw_circle(mc, 8.5 * u, Color(1, 1, 1, 0.8 * a))   # 印の白い縁（丘の線や雪から浮かせる）
-		Icons._o = mc
-		Icons._s = 0.4 * u
-		if sled:
-			Icons.sled_side(self, Vector2.ZERO, 1.0, a, slope, true)   # 前は左（頂上）
-		else:   # 畳んだ包み
-			Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
 		_draw_turn(u, a, tw, sled, item)
 		if not lodge_sled:
 			_draw_owner(u, a, Rect2(Vector2(158.0, 46.0) * u, Vector2(fw - 160.0 * u, 71.0 * u)), sled)

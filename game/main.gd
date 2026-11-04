@@ -1560,6 +1560,10 @@ func _make_hill_trees() -> void:
 		tree.rotation.y = rng.randf() * TAU
 		add_child(tree)
 	_make_slope_props()
+	var flags := preload("res://area_flags.gd").new()   # 山の目印の大きな旗（標高の札と同じ布）
+	flags.name = "AreaFlags"
+	flags.main = self
+	add_child(flags)
 
 
 ## 斜面の小物（props/build_slope.py・build_snow.py の glb）。当たり判定はまだない（見た目だけ）
