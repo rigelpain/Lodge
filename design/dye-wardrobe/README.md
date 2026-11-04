@@ -16,7 +16,7 @@
 | [00-proposals.jpg](00-proposals.jpg) | はじめの 3 案 |
 | [01-torso-long-cloth.jpg](01-torso-long-cloth.jpg) | 人台に長い布を足した 2 通り（右の E を採用） |
 | [02-white-skirt.jpg](02-white-skirt.jpg) | 裾を白にした E |
-| [03-in-game.jpg](03-in-game.jpg) | ゲームの中で、ミシンと売り子をのけて撮った（左上から入口のマット、食堂、人台の前で染めたあと、入口の案内）。番台と貸出の棚はソリ屋の作業でなくなる |
+| [03-in-game.jpg](03-in-game.jpg) | ゲームの中で、ソリ屋を外へ移す PR #162 と合わせて撮った（左上から入口のマット、食堂、人台の前で染めたあと、山師の前から南）|
 
 ## 作り
 
