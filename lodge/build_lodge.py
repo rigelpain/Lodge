@@ -1430,13 +1430,9 @@ def build_collision():
     wall(Wl, "x", Y1, X0, X1, FL1, CEIL1, [(c1 - dw / 2, c1 + dw / 2, FL1 + DOOR1["h"])])
     wall(Wl, "y", X1, Y0, Y1, FL1, CEIL1)
     wall(Wl, "x", Y0, X0, GLASS_S_X0, FL1, CEIL1, [(DOOR_IN["x0"], DOOR_IN["x1"], FL1 + DOOR_IN["h"])])
-    wall(Wl, "x", Y0, GLASS_S_X0, X1, FL1, CEIL1, t=GLASS_T)
+    wall(Wl, "x", Y0, GLASS_S_X0, X1, FL1, CEIL1, t=POST)
     wp = sorted(GLASS_W_POSTS)
-    wall(Wl, "y", X0, Y0, Y1, FL1, CEIL1, [(wp[GLASS_W_DOOR_BAY] + POST / 2, wp[GLASS_W_DOOR_BAY + 1] - POST / 2, TRANSOM)], t=GLASS_T)
-    for u in GLASS_S_POSTS:                                                  # ガラスの壁の柱は壁より太い
-        Wl.box(u - POST / 2, Y0 - POST / 2, FL1, u + POST / 2, Y0 + POST / 2, CEIL1)
-    for u in GLASS_W_POSTS:
-        Wl.box(X0 - POST / 2, u - POST / 2, FL1, X0 + POST / 2, u + POST / 2, CEIL1)
+    wall(Wl, "y", X0, Y0, Y1, FL1, CEIL1, [(wp[GLASS_W_DOOR_BAY] + POST / 2, wp[GLASS_W_DOOR_BAY + 1] - POST / 2, TRANSOM)], t=POST)
     V, A_ = VEST, ARCH
     y0v, cx = Y0 - V["d"], V["cx"]
     F.box(V["x0"], y0v, 0, V["x1"], Y0, FL1)
