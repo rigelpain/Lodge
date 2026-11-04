@@ -1182,6 +1182,11 @@ func _furnish_lodge() -> void:
 		sled_rack = preload("res://sled_rack.gd").new()
 		sled_rack.name = "SledRack"
 		rack_slot.add_child(sled_rack)
+	if not args.has("no-lean-lights"):   # 下屋の吊り灯り（ソリ屋と立てかけ台の上。lean_lights.gd）
+		var lean_lights: Node3D = preload("res://lean_lights.gd").new()
+		lean_lights.name = "LeanLights"
+		lean_lights.kind = String(args.get("lean-light", lean_lights.KIND_DEFAULT))
+		lodge.add_child(lean_lights)
 	# 1 階の人台: 人形の高さを見て F で人形を選び直す。桶を見下ろして F で服を染める
 	wardrobe = Wardrobe.new()
 	wardrobe.name = "Wardrobe"
