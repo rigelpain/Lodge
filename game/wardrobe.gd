@@ -4,7 +4,7 @@ extends Node3D
 ## 案の絵と形の台本は design/dye-wardrobe/）。人形の高さを見て F で人形を選び直す画面（wardrobe_ui.gd）、桶を見下ろして F で服を染める画面（dye_vat.gd）。
 ## いま自分が着ている人形のハンガーは空になる（その人形を着て出ている、と輪を見ればわかる。文字は出さない）。
 ## 掛かった人形は、輪の下で 12 コマで少し揺れる。人形の glb は重いので、あなたが近づいて（NEAR_LOAD）から掛ける。
-## 置き方は main.gd（ロッジの 1 階の東、紙細工屋さんのテントの東どなり）。この節の FRONT（+Z）が人台の正面。後ろは長い布
+## 置き方は main.gd（ロッジの 1 階の南西の隅、紙細工屋さんのテントの南どなり）。この節の FRONT（+Z）が人台の正面。後ろは長い布
 
 const Doll := preload("res://doll.gd")
 const Look := preload("res://look.gd")
@@ -17,7 +17,7 @@ const ARC_STEP := PI / 5.0   # 人形の間の角度（36°）
 const RAIL_Y := 1.85         # 腰の輪の高さ
 const HANG := 0.62           # 掛けた人形の背丈 (m)。人形ごとの背の違いはそろえる（遠くからでも同じ大きさの札に見える）
 const REACH := 3.5           # 人台の真ん中からこの距離 (m) の内で、人台の方を向いていれば F で開ける
-const BACK_LIMIT := -0.8     # 人台の前からの位置がこれより後ろ（長い布の側）では、人形は選べない
+const BACK_LIMIT := -0.8     # 人台の前からの位置がこれより後ろ（長い布の側）では、使えない
 const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、人形を掛ける
 const FRONT := Vector3.BACK  # 人台の正面（この節の座標）。ハンガーの節の +Z は、それぞれ外向き
 
@@ -125,15 +125,15 @@ func _show_worn() -> void:
 			d.visible = k != worn
 
 
-## あなたが人台の前の側にいて、人形の高さを見ているか（桶を見下ろしていれば、染め桶のほう。dye_vat.gd）
+## あなたが人台の前で、人形の高さを見ているか（桶を見下ろしていれば、染め桶のほう。dye_vat.gd）
 func can_use(p: Node3D) -> bool:
-	if to_local(p.global_position).dot(FRONT) < BACK_LIMIT or p.looks_down():
-		return false
-	return near_and_facing(p)
+	return not p.looks_down() and near_and_facing(p)
 
 
-## 人台に手が届く所で、人台の方を向いているか（dye_vat.gd も使う）
+## 人台の前の側で手が届く所にいて、人台の方を向いているか（dye_vat.gd も使う）。長い布の側とガラスの向こうからは使えない
 func near_and_facing(p: Node3D) -> bool:
+	if to_local(p.global_position).dot(FRONT) < BACK_LIMIT:
+		return false
 	var d := global_position - p.global_position
 	if absf(d.y) > 1.5:
 		return false

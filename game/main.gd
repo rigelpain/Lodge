@@ -90,16 +90,16 @@ const Badges := preload("res://badges.gd")
 const Companions := preload("res://companions.gd")
 const Pals := preload("res://pals.gd")
 ## 紙細工屋さん（paper_lady.gd。黒い折り紙の婦人と大きなスタンド）の立つ所（ロッジの座標 (x, y)。lodge/dims.py と同じ）。
-## 1 階の東、人台（WARDROBE_AT）の西どなり（2026-11-04 代表「紙細工士さんはこの染台の横に配置する感じで勝手口の前は開けて」）。正面は南。
-## テント（paper_tent.gd）の真ん中は婦人から東へ 0.85 m で、西の縁は x 12.87。勝手口の前（x 12.7 まで）はまっすぐ南まであき、人台とのあいだも人が通れる
-const PAPER_LADY_AT := Vector2(13.7, 3.2)
+## 1 階の南西の隅、人台（WARDROBE_AT）の北どなり（2026-11-04 代表「染台と紙細工士さんは今のソリ屋が外に行って開いた場所に」）。正面は東（入口からの通り道）。
+## テント（paper_tent.gd）の真ん中は、婦人の左手（北）へ 0.85 m、西へ 0.085 m
+const PAPER_LADY_AT := Vector2(-19.5, -5.85)
 const DyeVat := preload("res://dye_vat.gd")
 const DyeUi := preload("res://dye_ui.gd")
 const Net := preload("res://net.gd")
 const Start := preload("res://start.gd")
-## 染めと着替えの人台（wardrobe.gd と子の dye_vat.gd）の真ん中（ロッジの座標 (x, y)）。1 階の東、内階段の手前の空き（x 11〜21、y -1〜6）。
-## 正面は南（食堂の側）で、長い布は北。東の壁の自販機（y 3.5）の前は、人台の北から回って使える。天井の輪があるので 1 階の天井の下にしか置けない
-const WARDROBE_AT := Vector2(19.0, 1.7)
+## 染めと着替えの人台（wardrobe.gd と子の dye_vat.gd）の真ん中（ロッジの座標 (x, y)）。1 階の南西の隅。もとはソリ屋（ミシン・番台・貸出の棚）のあった所。
+## 正面は東（入口からの通り道）で、長い布は西のガラスの側。天井の輪があるので 1 階の天井の下にしか置けない
+const WARDROBE_AT := Vector2(-19.0, -9.6)
 
 ## 売り子のおじさんの立つ所（ミシンの置き場の目印 slot_craft_rental の座標。+z がミシンの正面の側）と向き。
 ## 目印は東を向いている（lodge/dims.py の SLOTS）ので、-x がロッジの南。売り子はミシンの南、貸出の棚の前に立つ
@@ -1146,7 +1146,8 @@ func _furnish_lodge() -> void:
 	wardrobe.name = "Wardrobe"
 	wardrobe.player = player
 	wardrobe.position = Vector3(WARDROBE_AT.x, LODGE_FLOOR, -WARDROBE_AT.y)
-	lodge.add_child(wardrobe)   # 正面（+Z）は南
+	wardrobe.rotation.y = PI / 2.0   # 正面（+Z）を東へ
+	lodge.add_child(wardrobe)
 	dye_vat = DyeVat.new()
 	dye_vat.name = "DyeVat"
 	dye_vat.player = player
@@ -1158,7 +1159,8 @@ func _furnish_lodge() -> void:
 	paper_lady.player = player
 	paper_lady.craft = craft
 	paper_lady.main = self
-	paper_lady.position = Vector3(PAPER_LADY_AT.x, LODGE_FLOOR, -PAPER_LADY_AT.y)   # 正面（+Z）は南
+	paper_lady.position = Vector3(PAPER_LADY_AT.x, LODGE_FLOOR, -PAPER_LADY_AT.y)
+	paper_lady.rotation.y = PI / 2.0   # 正面（+Z）を東へ
 	lodge.add_child(paper_lady)
 
 

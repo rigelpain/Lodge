@@ -2,7 +2,7 @@ extends SceneTree
 ## 1 階の人台と紙細工屋さんのテントの並びを確かめて撮る。
 ##   Godot --path game --resolution 1280x720 -s res://tools/dress_form_shots.gd -- --spawn=wardrobe --bots=0 --no-sound --no-pip --dir=/path/shots
 ## 数字: 視線の高さで F の行き先が分かれるか（人形の高さ → 着替える、見下ろす → 染める）。勝手口から南と、人台のまわりの通り道に当たりがないか。
-## 絵: hint_wardrobe・hint_dye（一人称の案内）、hall（食堂の通り道から）、front（卓の側から）、door（勝手口の中から南）、stairs（内階段の登り口から南）、near（人台の前。染めたあとの桶）
+## 絵: hint_wardrobe・hint_dye（案内）、door（入口のマットから）、hall（食堂から）、near（人台の前。染めたあとの桶）、back（山師の前から南）
 
 var args := {}
 var main: Node3D
@@ -50,14 +50,20 @@ func _clear(a: Vector2, b: Vector2) -> bool:
 
 
 func _run() -> void:
-	await create_timer(5.0).timeout
+	await create_timer(6.0).timeout
 	var p: CharacterBody3D = main.player
+	# --no-shop: ソリ屋が外へ移る前に、その跡に置いた形で確かめる（ミシンと売り子をのける）
+	for n in [] if not args.has("no-shop") else [main.sewing.machine if main.sewing else null, main.shopkeeper, main.find_child("counter_patch", true, false), main.find_child("Curtain", true, false)]:
+		if n:
+			(n as Node).queue_free()
+	await create_timer(0.3).timeout
 	var dc := root.get_node_or_null("DayCycle")
 	if dc:
 		dc.hour = 13.0
 		dc.day_seconds = 1.0e9
 	p._pitch = 0.0
 	await create_timer(0.3).timeout
+	print("人台の座標で立つ所 ", main.wardrobe.to_local(p.global_position), " 向きの合い ", (-p.global_basis.z).dot((main.wardrobe.global_position - p.global_position).normalized()))
 	print("人形の高さを見る: 着替える ", p.wardrobe_near(), " 染める ", p.dye_near())
 	await _save("hint_wardrobe")
 	p._pitch = -0.6
@@ -70,13 +76,11 @@ func _run() -> void:
 	p.look_at(main.wardrobe.global_position * Vector3(1, 0, 1) + Vector3.UP * p.global_position.y)
 	await create_timer(0.2).timeout
 	print("長い布の側で人形の高さを見る: 着替える ", p.wardrobe_near())
-	print("真ん中を通す（当たるはず）: ", _clear(Vector2(19.0, 3.0), Vector2(19.0, 1.0)))
-	print("勝手口から南へ (11.9, 11) → (11.9, 0): ", _clear(Vector2(11.9, 11.0), Vector2(11.9, 0.0)))
-	print("テントと人台のあいだ (16.68, 5) → (16.68, -0.8): ", _clear(Vector2(16.68, 5.0), Vector2(16.68, -0.8)))
-	print("テントの前 東西 (12, 0.3) → (16.9, 0.3): ", _clear(Vector2(12.0, 0.3), Vector2(16.9, 0.3)))
-	print("人台の前 東西 (16.9, -0.8) → (20.9, -0.8): ", _clear(Vector2(16.9, -0.8), Vector2(20.9, -0.8)))
-	print("階段の登り口から人台の北 (18, 6) → (20, 4): ", _clear(Vector2(18.0, 6.0), Vector2(20.0, 4.0)))
-	print("自販機の前 (19.8, 4.0): ", _clear(Vector2(19.8, 4.0), Vector2(19.8, 4.0)))
+	print("真ん中を通す（当たるはず）: ", _clear(Vector2(-19.0, -8.6), Vector2(-19.0, -10.6)))
+	print("入口のマットから北へ (-13.4, -11) → (-13.4, 3): ", _clear(Vector2(-13.4, -11.0), Vector2(-13.4, 3.0)))
+	print("人台の前 南北 (-16.4, -11.8) → (-16.4, -3): ", _clear(Vector2(-16.4, -11.8), Vector2(-16.4, -3.0)))
+	print("テントと人台のあいだ 東西 (-16.4, -7.2) → (-20.6, -7.2): ", _clear(Vector2(-16.4, -7.2), Vector2(-20.6, -7.2)))
+	print("テントと山師のあいだ 東西 (-16.4, -2.9) → (-20.6, -2.9): ", _clear(Vector2(-16.4, -2.9), Vector2(-20.6, -2.9)))
 	main.dye_vat._on_craft({"kind": "dye", "colors": ["c9603c"]})   # 染めると、桶の液と縁の布の色が変わる
 	await create_timer(1.6).timeout
 	for n in root.find_children("*", "CanvasLayer", true, false):
@@ -87,8 +91,8 @@ func _run() -> void:
 	cam.near = 0.05
 	cam.fov = 60.0
 	cam.make_current()
-	for v in [["hall", _at(5.0, 2.2, 1.0), _at(17.0, 2.0, 2.0)], ["front", _at(17.0, 2.2, -6.0), _at(17.0, 2.2, 2.5)],
-			["door", _at(11.9, 2.2, 11.0), _at(12.5, 1.2, 0.0)], ["stairs", _at(18.0, 2.2, 6.2), _at(18.5, 1.8, 0.0)], ["near", _at(18.2, 2.0, -1.2), _at(19.0, 1.5, 1.7)]]:
+	for v in [["door", _at(-13.4, 2.2, -10.5), _at(-19.0, 1.9, -7.0)], ["hall", _at(-9.0, 2.4, -3.0), _at(-19.0, 2.0, -7.0)],
+			["near", _at(-15.8, 2.0, -9.2), _at(-19.0, 1.5, -9.6)], ["back", _at(-20.8, 2.2, -1.5), _at(-19.0, 1.6, -9.0)]]:
 		cam.look_at_from_position(v[1], v[2], Vector3.UP)
 		await _save(v[0])
 	quit()

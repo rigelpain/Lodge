@@ -27,6 +27,7 @@ const OPEN_FRAMES := 9       # 開くのにかかるコマ（12 コマ／秒で 
 const CLOSE_FRAMES := 14     # 閉じるのにかかるコマ
 const SENSE_IN := 4.6        # テントの真ん中からこの距離に人が入ると開く (m)。婦人が気づく距離（paper_lady.gd の NOTICE_R）より広い
 const SENSE_OUT := 5.2       # この距離より離れると閉じる
+const WALL_Z := -2.0         # この先は西のガラスの向こう（下屋）。壁越しには開かない
 const SENSE_Y := 2.0         # 高さの差がこれより大きい人は数えない（2 階の人）
 const BOW_OPEN := 0.7        # 幕がここまで開いたら、婦人がおじぎをしてよい
 const GLOW := 0.45           # 和紙が中の灯りで光る強さ
@@ -172,7 +173,7 @@ func _someone_near() -> bool:
 		if not is_instance_valid(who):
 			continue
 		var l := to_local((who as Node3D).global_position)
-		if absf(l.y) < SENSE_Y and Vector2(l.x, l.z).length() < r:
+		if absf(l.y) < SENSE_Y and l.z > WALL_Z and Vector2(l.x, l.z).length() < r:
 			return true
 	return false
 
