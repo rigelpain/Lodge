@@ -51,6 +51,7 @@ const WHIFF_REACH := 1.0     # 片方だけが向かってこの中まで寄る�
 const FIVE_HIT := 3          # high_five の何コマ目に手が合うか（その前の 3 コマが、引くため）
 const MAKE_READY := 16       # 雪玉ができて手に持つコマ（make_ball の中で）
 const EXHALE_MAX := 5.0      # 息が続く長さ (s)
+const CATCH_BURST_FAR := 2.0  # 雪合戦の対決の紙吹雪・星の大きさ。その人自身の画面は 1、ほかの人の画面はこれ（5 m 先でも読める）
 const BALL_MAX := 5          # 持てる雪玉の数（右手に 1 つ、残りは左の袖に縫い付けたストック）
 
 var balls := {}              # 番号 → 持っている雪玉の数
@@ -200,11 +201,14 @@ func _apply(ev: Dictionary) -> void:
 func _emit(ev: Dictionary) -> void:
 	if ev.kind == "hit":
 		_making.erase(ev.who)   # びっくりして、丸めていた雪玉は崩れる
+		if ev.get("star", false):
+			Palm.star(self, _hit_star_at(ev), _seen_size(int(ev.who)))   # 雪合戦の対決で雪玉が当たった: 紙の星（2026-11-05 代表）
 	if ev.kind == "catch":   # 取られた雪玉は、どの画面でも消える
 		var b := ball(int(ev.get("ball", -1)))
 		if b:
 			b.caught()
-		Snowball.splat_at(self, ev.get("point", Vector3.ZERO), Vector3.UP, true)
+		# ハイタッチと同じ紙吹雪: 取られた人にも分かる（2026-11-05 代表）。星は当たったように見えるので出さない
+		_burst_at(ev.get("point", Vector3.ZERO), int(ev.frame), _seen_size(int(ev.who)), false)
 	if ev.kind == "splat":
 		_show_splat(ev)
 	elif ev.kind == "high_five" and ev.who < ev.with:
@@ -370,14 +374,27 @@ func _lower(id: int, frame: int) -> void:
 	_emit({"kind": "hands", "who": id, "hands": "", "frame": frame, "auto": true})
 
 
+## 雪合戦の対決の紙吹雪・星の大きさ。その人自身の画面は 1（目の前）、ほかの人の画面は CATCH_BURST_FAR（離れて見る）
+func _seen_size(who: int) -> float:
+	return 1.0 if who_of(who) == get_parent().get("player") else CATCH_BURST_FAR
+
+
+## 当たったときの星の場所。雪玉が来た側へ少し出す（体に埋もれない）。当てられた本人の一人称では自分の体が画面に入らないので、目の前に
+func _hit_star_at(ev: Dictionary) -> Vector3:
+	var me: Node3D = get_parent().get("player")
+	if me != null and who_of(int(ev.who)) == me and not me.third:
+		return me.cam.global_transform * Vector3(0, -0.12, -1.0)
+	return (ev.point as Vector3) - (ev.dir as Vector3) * 0.3
+
+
 ## 手が合うコマに、紙吹雪と紙の星と綿の粉（どの画面でも、出来事から作る）
-func _burst_at(point: Vector3, frame: int) -> void:
+func _burst_at(point: Vector3, frame: int, size := 1.0, with_star := true) -> void:
 	var tps := Engine.physics_ticks_per_second
 	var wait := float(frame * tps / Doll.FPS - Engine.get_physics_frames()) / tps
 	if wait > 0.0:
 		await get_tree().create_timer(wait, true, true).timeout
 	var before := get_child_count()
-	Palm.burst(self, point)
+	Palm.burst(self, point, size, with_star)
 	Snowball.splat_at(self, point, Vector3.UP, true)
 	for i in range(before, get_child_count()):   # 右下の自分の小窓（self_cam.gd の層 6）にも映す
 		for g in get_child(i).find_children("*", "GeometryInstance3D", true, false) + [get_child(i)]:
@@ -450,7 +467,10 @@ func ball_hit_person(ball: Node3D, id: int, point: Vector3, dir: Vector3) -> voi
 
 ## 人に当てる（のけぞりと、崩れた雪）。by は投げた人
 func hit_person(by: int, id: int, point: Vector3, dir: Vector3) -> void:
-	_emit({"kind": "hit", "who": id, "by": by, "frame": Doll.frame_index() + 1, "point": point, "dir": dir})
+	# 星を出すかはホストがここで決めて配る（決着の一発は、つなぐ側には「戦いが終わった」が先に届くので、向こうでは決められない）
+	var duel := get_parent().get_node_or_null("Duel")
+	var star: bool = duel != null and not duel.fighting(id).is_empty()
+	_emit({"kind": "hit", "who": id, "by": by, "frame": Doll.frame_index() + 1, "point": point, "dir": dir, "star": star})
 	_emit({"kind": "splat", "frame": Doll.frame_index(), "point": point, "normal": -dir, "on_person": id})
 
 

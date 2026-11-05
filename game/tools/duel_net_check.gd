@@ -1,9 +1,10 @@
 extends SceneTree
 ## 通信の確かめ: 雪合戦の対決が、ホストとつなぐ側の画面で同じになるか（数字だけ出す）。ホストを先に起動する。
-##   Godot --headless --fixed-fps 60 --path game -s res://tools/duel_net_check.gd -- --host --port=24731 --no-sound --bots=0 --lodge-bots=0
-##   Godot --headless --fixed-fps 60 --path game -s res://tools/duel_net_check.gd -- --join=127.0.0.1 --port=24731 --no-sound --bots=0 --lodge-bots=0
+## 段取りは実時間で進めるので、--fixed-fps は付けない（ゲームの時間が先へ進んで、インターバルや制限時間が合わなくなる）。
+##   Godot --headless --path game -s res://tools/duel_net_check.gd -- --host --port=24731 --no-sound --bots=0 --lodge-bots=0
+##   Godot --headless --path game -s res://tools/duel_net_check.gd -- --join=127.0.0.1 --port=24731 --no-sound --bots=0 --lodge-bots=0
 ## 握手 → つなぐ側が掛金 20 を出し、ホストが受ける → 戦い: つなぐ側が 1 発（続けて投げても 2 発目は出ない）、ホストが 2 発当てる → ホストの雪玉をつなぐ側が取る →
-## ホストが 3 発目 → 2 人で握手して払う。1 秒ごとに両方の画面の対決（段・当てた数・残りの秒・雪玉・財布）を出す
+## （両方の画面に紙吹雪）→ ホストが 3 発目 → 2 人で握手して払う。1 秒ごとに両方の画面の対決（段・当てた数・残りの秒・雪玉・財布）を出す
 
 const Snowball := preload("res://snowball.gd")
 const Duel := preload("res://duel.gd")
@@ -121,6 +122,14 @@ func _run() -> void:
 	_fight_t = Time.get_ticks_msec()
 	_line("始まった")
 	_log_loop()
+	hub.happened.connect(func(ev):
+		if ev.kind == "catch":
+			await _wait(0.15)
+			var n: int = hub.get_children().filter(func(c): return c is CPUParticles3D and c.amount == 20).size()
+			_say("%s 取った: この画面の紙吹雪 %d" % ["○" if n == 1 else "×", n])
+		elif ev.kind == "hit":
+			var n: int = hub.get_children().filter(func(c): return c is MeshInstance3D and c.material_override is StandardMaterial3D and c.material_override.billboard_mode == BaseMaterial3D.BILLBOARD_ENABLED).size()
+			_say("%s 当たった: この画面の星 %d" % ["○" if n == 1 else "×", n]))
 	if _host():
 		_place(p, AT + Vector3(0, 0, -2), AT + Vector3(0, 0, 3))
 	else:

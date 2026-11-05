@@ -4,6 +4,8 @@ extends SceneTree
 ## 相手の胸を見て立っているとき、飛んでくる雪玉に F が効くのは何秒か。投げる速さと距離ごとに、それから仲間の投げ方（ずれあり）で。
 ## 距離と照準の組み合わせの表は --grid で（CATCH_READY・CATCH_AIM を決めるときに）。
 ## そのあと、F で取る・近すぎて間に合わない・投げたあとのインターバル・よけてから雪玉を作る間を、遊ぶ人の操作で確かめる。
+## キャッチの紙吹雪と、当たったときの星の絵（当人の画面・相手の画面）は --dir で。窓を出す:
+##   Godot --fixed-fps 60 --path game --resolution 1280x720 -s res://tools/duel_catch_check.gd -- --no-sound --bots=1 --lodge-bots=0 --no-pip --hud-idle=0 --dir=/path/shots
 
 const Duel := preload("res://duel.gd")
 const AT := Vector3(14, 0, 16)
@@ -141,6 +143,10 @@ func _run() -> void:
 	duel._apply({"kind": "ok", "who": foe.id})
 	await _wait(0.5)
 	_ok(not duel.fighting(p.id).is_empty(), "戦いが始まった")
+	if args.has("dir"):
+		await _shots()
+		quit(fails)
+		return
 	_say("--- ずれなし")
 	for row in [[5.0, 10.0], [5.0, 16.0], [5.0, 7.0], [3.0, 10.0], [3.0, 7.0], [2.0, 7.0]]:
 		_place(foe, AT + Vector3(0, 0, -row[0] * 0.5), AT)
@@ -261,6 +267,8 @@ func _check_catch() -> void:
 	hub.happened.connect(note)
 	await _press_f_after(5.0, 10.0, 0.25)
 	hub.happened.disconnect(note)
+	await _check_thrower_side(5.0)
+	await _check_hit_star()
 	_ok(where[0] >= 0.0 and where[0] <= duel.CATCH_REACH + 0.2, "玉は手の届く所まで飛んできてから取れる: 胸から %.2f m" % where[0])
 
 
@@ -336,3 +344,156 @@ func _check_make_after_dodge() -> void:
 	_say("  投げられてから: 雪玉ができた %.2f 秒、立てる %.2f 秒、相手が次を投げられる %.2f 秒" % [made, free, ready])
 	_ok(made >= 0.0 and made <= ready, "相手が次を投げられる前に雪玉ができた")
 	_ok(free >= 0.0 and free <= ready + 0.38, "振りかぶらない次の玉が 3 m から届く（%.2f 秒）前に立てた" % (ready + 0.38))
+
+
+## いま出ている紙吹雪の数（palm.gd の burst）
+func _confetti() -> int:
+	return hub.get_children().filter(func(c): return c is CPUParticles3D and c.amount == 20).size()
+
+
+## p が投げた玉を仲間が取る（仲間が取るときと同じ reach_for）。取ったら true
+func _foe_catches(dist: float) -> bool:
+	_place(foe, AT + Vector3(0, 0, -dist * 0.5), AT)
+	_place(p, AT + Vector3(0, 0, dist * 0.5), AT)
+	foe.doll.process_mode = Node.PROCESS_MODE_ALWAYS
+	await _wait(0.4)
+	_reset()
+	_look_at_foe()
+	await _wait(0.1)
+	var origin: Vector3 = p.global_position + Vector3.UP * p.doll.height() * 0.85 + (foe.global_position - p.global_position).normalized() * 0.45
+	var target: Vector3 = foe.global_position + Vector3.UP * foe.doll.height() * 0.6
+	var flat := target - origin
+	flat.y = 0
+	var t := flat.length() / 10.0
+	hub.send({"kind": "throw", "who": p.id, "origin": origin, "velocity": flat.normalized() * 10.0 + Vector3.UP * ((target.y - origin.y + 4.9 * t * t) / t)})
+	hub._set_balls(foe.id, 3)   # _reset の 5 つは上限で、取っても増えない
+	var balls0: int = hub.balls_of(foe.id)
+	var id := _last_ball
+	while duel.reach_for(foe, id):
+		await physics_frame
+	await physics_frame
+	return hub.balls_of(foe.id) == balls0 + 1
+
+
+func _check_thrower_side(dist: float) -> void:
+	var n0 := _confetti()
+	var caught: bool = await _foe_catches(dist)
+	await _wait(0.15)
+	_ok(caught and _confetti() > n0, "仲間が取ると、投げた人の画面にも紙吹雪: 取った %s 紙吹雪 %d" % [caught, _confetti()])
+	_ok(_stars() == 0, "キャッチに星は出ない: %d" % _stars())
+	await _wait(1.6)
+
+
+## 当たると星が出る（紙吹雪は出ない）
+func _check_hit_star() -> void:
+	_place(foe, AT + Vector3(0, 0, -2.5), AT)
+	_place(p, AT + Vector3(0, 0, 2.5), AT)
+	await _wait(0.4)
+	_reset()
+	_look_at_foe()
+	await _wait(0.1)
+	var hit := [false]
+	var note := func(ev):
+		if ev.kind == "hit":
+			hit[0] = true
+	hub.happened.connect(note)
+	_throw_straight(10.0)
+	while not hit[0]:
+		await physics_frame
+	hub.happened.disconnect(note)
+	await physics_frame
+	_ok(_stars() == 1 and _confetti() == 0, "当たると星が出る: 星 %d 紙吹雪 %d" % [_stars(), _confetti()])
+	await _wait(1.6)
+
+
+## いま出ている紙の星の数（palm.gd の star）
+func _stars() -> int:
+	return hub.get_children().filter(func(c): return c is MeshInstance3D and c.material_override is StandardMaterial3D and c.material_override.billboard_mode == BaseMaterial3D.BILLBOARD_ENABLED).size()
+
+
+func _shot(sheet: Array, name: String) -> void:
+	await process_frame
+	await process_frame
+	var img := root.get_texture().get_image()
+	img.save_png(String(args.dir).path_join(name + ".png"))
+	sheet.append(img)
+
+
+## キャッチ: 取った側（遊ぶ人が F）と投げた側（仲間が取る）。ヒット: 当てられた側と当てた側。5 m で 3 コマずつ撮って、1 枚にまとめる
+func _shots() -> void:
+	DirAccess.make_dir_recursive_absolute(String(args.dir))
+	var sheet := []
+	var caught := [false]
+	hub.happened.connect(func(ev):
+		if ev.kind == "catch":
+			caught[0] = true)
+	# 取った側: 仲間の玉を 5 m から
+	_place(foe, AT + Vector3(0, 0, -2.5), AT)
+	_place(p, AT + Vector3(0, 0, 2.5), AT)
+	foe.doll.process_mode = Node.PROCESS_MODE_ALWAYS
+	await _wait(0.4)
+	_reset()
+	_look_at_foe()
+	await _wait(0.1)
+	_throw_straight(10.0)
+	await _wait(0.25)
+	_key(KEY_F, true)
+	_key(KEY_F, false)
+	while not caught[0]:
+		await physics_frame
+	for k in [[0.1, "1"], [0.15, "2"], [0.3, "3"]]:
+		await _wait(k[0])
+		await _shot(sheet, "取った側_" + k[1])
+	await _wait(1.6)
+	# 投げた側
+	caught[0] = false
+	_ok(await _foe_catches(5.0), "仲間が取った（5 m）")
+	for k in [[0.1, "1"], [0.15, "2"], [0.3, "3"]]:
+		await _wait(k[0])
+		await _shot(sheet, "投げた側_" + k[1])
+	await _wait(1.6)
+	# 当てられた側
+	var hit := [false]
+	hub.happened.connect(func(ev):
+		if ev.kind == "hit":
+			hit[0] = true)
+	_place(foe, AT + Vector3(0, 0, -2.5), AT)
+	_place(p, AT + Vector3(0, 0, 2.5), AT)
+	await _wait(0.4)
+	_reset()
+	_look_at_foe()
+	await _wait(0.1)
+	_throw_straight(10.0)
+	while not hit[0]:
+		await physics_frame
+	for k in [[0.0, "1"], [0.08, "2"], [0.12, "3"]]:
+		await _wait(maxf(k[0], 0.01))
+		await _shot(sheet, "当てられた側_" + k[1])
+	await _wait(1.8)
+	# 当てた側
+	hit[0] = false
+	_reset()
+	_look_at_foe()
+	await _wait(0.1)
+	var origin: Vector3 = p.global_position + Vector3.UP * p.doll.height() * 0.85 + (foe.global_position - p.global_position).normalized() * 0.45
+	var target: Vector3 = foe.global_position + Vector3.UP * foe.doll.height() * 0.6
+	var flat := target - origin
+	flat.y = 0
+	var t := flat.length() / 10.0
+	hub.send({"kind": "throw", "who": p.id, "origin": origin, "velocity": flat.normalized() * 10.0 + Vector3.UP * ((target.y - origin.y + 4.9 * t * t) / t)})
+	while not hit[0]:
+		await physics_frame
+	for k in [[0.0, "1"], [0.08, "2"], [0.12, "3"]]:
+		await _wait(maxf(k[0], 0.01))
+		await _shot(sheet, "当てた側_" + k[1])
+	var w := 640
+	var h := 360
+	var all := Image.create(w * 3, h * 4, false, Image.FORMAT_RGBA8)
+	for i in sheet.size():
+		var im: Image = sheet[i]
+		im.convert(Image.FORMAT_RGBA8)
+		im.resize(w, h, Image.INTERPOLATE_BILINEAR)
+		all.blit_rect(im, Rect2i(0, 0, w, h), Vector2i(i % 3 * w, i / 3 * h))
+	all.save_png(String(args.dir).path_join("catch_confetti_sheet.png"))
+	_say("撮った: %d 枚" % sheet.size())
+
