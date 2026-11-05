@@ -2264,7 +2264,8 @@ func _face_held_fp() -> void:
 
 
 ## 手に持った物の小さな形（一人称の右手と、確かめ用）
-static func held_shape(it: Dictionary) -> Node3D:
+## fp: 一人称の手に持つ形（目の前で見るので大きく持つ）。人形の手に持たせるとき（小窓・鏡）は false
+static func held_shape(it: Dictionary, fp := true) -> Node3D:
 	if it.get("kind") == "campfire":   # 焚き火セット: 毛糸で縛った薪の束（campfire.gd）
 		return Campfire.kit_shape()
 	if it.get("kind") == "peg":   # ペグの束: 待ち針の形を、束の本数だけ扇に並べる（peg.gd）
@@ -2287,7 +2288,7 @@ static func held_shape(it: Dictionary) -> Node3D:
 		f.scale = Vector3.ONE * (0.75 if done else 1.0) * (Vector3(1.3, 0.6, 1.3) if int(it.get("step", 0)) > 0 and not done else Vector3.ONE)   # 食べても器の大きさは変えない（中身の量は途中の形が持つ）
 		if done:   # 手に持つ向き: 形の正面（glb の -Z）を自分へ
 			var hold: Dictionary = FoodMenu.HOLD.get(it.dish, FoodMenu.HOLD_DRINK if it.dish in FoodMenu.DRINKS else FoodMenu.HOLD_DEFAULT)
-			var k: Vector3 = f.scale * float(hold.scale)
+			var k: Vector3 = f.scale * (float(hold.scale) if fp else 1.0)
 			f.basis = Basis.from_euler(hold.rot * PI / 180.0, EULER_ORDER_YXZ) * Basis(Vector3.UP, deg_to_rad(float(hold.get("yaw", 0.0))))
 			f.scale = k
 			f.position = hold.pos
