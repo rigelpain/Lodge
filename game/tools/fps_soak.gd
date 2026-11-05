@@ -28,6 +28,7 @@ var _phase_t := 0.0
 var _walk_turn := 0.0
 var _recovering := false
 var _w_down := false
+var _vsync_set := false
 
 
 func _initialize() -> void:
@@ -40,12 +41,9 @@ func _initialize() -> void:
 	_out.store_line("secs,fps,avg_ms,max_ms,slow,cpu_vp_ms,gpu_vp_ms,process_ms,physics_ms,nodes,objects,resources,orphans,draw_calls,primitives,objs_in_frame,vram_mb,tex_mb,buf_mb,static_mb,phys_active,phys_pairs,phys_islands,tweens,hour,phase,y,mode,scale3d,x,z,cam_x,cam_y,cam_z")
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
-	current_scene = main   # これがないと一日の巡り（daycycle.gd）が太陽を見つけられず、時刻が進まない
+	current_scene = main   # これがないと一日の巡り（daycycle.gd）が太陽を見つけられず、時刻が進まない。コマの出し方も遊ぶときと同じになる
 	AudioServer.set_bus_mute(0, true)   # 音の仕組みは動かしたまま、スピーカーからは鳴らさない
 	_vp_rid = root.get_viewport_rid()
-	main.use_game_pacing()   # ふつうに遊ぶときと同じコマの出し方にする
-	if args.has("vsync"):   # --vsync=off|on で縦同期を比べる
-		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED if args["vsync"] == "off" else DisplayServer.VSYNC_ENABLED)
 	print("窓 %s 画面 %s" % [str(root.size), str(DisplayServer.screen_get_size())])
 	RenderingServer.viewport_set_measure_render_time(_vp_rid, true)
 
@@ -53,6 +51,9 @@ func _initialize() -> void:
 func _process(dt: float) -> bool:
 	t += dt
 	Engine.max_fps = int(args.get("cap", str(main.GAME_FPS)))   # 窓が裏に回っても落とさない（main.gd の BACKGROUND_FPS）
+	if args.has("vsync") and not _vsync_set:   # --vsync=off|on で縦同期を比べる
+		_vsync_set = true
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED if args["vsync"] == "off" else DisplayServer.VSYNC_ENABLED)
 	if t < 1.0:
 		return false
 	_frames += 1

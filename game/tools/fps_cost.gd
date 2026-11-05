@@ -64,6 +64,7 @@ func _bots(on: bool) -> void:
 
 
 func _process(dt: float) -> bool:
+	Engine.max_fps = 0   # main.gd の 60 の頭打ちを外して、本当の重さを測る
 	if main.get("settings") and main.settings:
 		main.settings.set_open(false)
 	var p = main.get("player")
