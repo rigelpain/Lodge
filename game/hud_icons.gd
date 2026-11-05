@@ -53,6 +53,45 @@ static func tuck_off(r: Rect2, vs: Vector2) -> Vector2:
 	return best * tuck
 
 
+## 綿の雪玉: ちぎった綿を丸めた、角のある毛玉。下側に雪の影の青、縁から繊維がほつれて出る（3D の雪玉と同じ形の考え）
+static func cotton(ci: CanvasItem, c: Vector2, r: float, seed: int, a := 1.0) -> void:
+	var pts := PackedVector2Array()
+	var m := 13
+	for k in m:
+		var t := TAU * k / m + seed * 0.7
+		var w := 1.0 + 0.06 * sin(seed * 12.9898 + k * 78.233) + 0.03 * cos(seed * 4.1 + k * 2.3)
+		pts.append(c + Vector2(cos(t), sin(t)) * r * w)
+	var sh := PackedVector2Array()
+	for q in pts:
+		sh.append(q + Vector2(1.2, 2.2) * r / 12.0)
+	ci.draw_colored_polygon(sh, Color(SHADOW, 0.35 * a))
+	var uv := PackedVector2Array()
+	for q in pts:
+		uv.append((q - c) / (r * 1.6) + Vector2(seed * 0.37, seed * 0.21))
+	ci.draw_colored_polygon(pts, Color(0.98, 0.98, 0.96, a), uv, felt())
+	# 下の陰（雪の影の青）
+	var low := PackedVector2Array()
+	for k in m:
+		if pts[k].y > c.y - r * 0.15:
+			low.append(pts[k])
+	if low.size() >= 3:
+		var crescent := low.duplicate()
+		for k in range(low.size() - 1, -1, -1):
+			crescent.append(c + (low[k] - c) * Vector2(0.9, 0.5) + Vector2(-r * 0.08, r * 0.05))
+		if Geometry2D.triangulate_polygon(crescent).size() > 0:
+			ci.draw_colored_polygon(crescent, Color(0.66, 0.74, 0.90, 0.75 * a))
+	var edge := pts.duplicate()
+	edge.append(pts[0])
+	ci.draw_polyline(edge, Color(0.55, 0.62, 0.78, 0.7 * a), maxf(0.9, r / 11.0), true)
+	# ほつれた繊維
+	for k in 7:
+		var t := TAU * k / 7.0 + seed * 1.3 + 0.3 * sin(k * 3.1)
+		var d := Vector2(cos(t), sin(t))
+		var p0 := c + d * r * 0.95
+		var p1 := p0 + d.rotated(0.9 * sin(k + seed)) * r * (0.08 + 0.08 * absf(sin(k * 1.7 + seed)))
+		ci.draw_line(p0, p1, Color(0.97, 0.97, 0.95, 0.7 * a), maxf(0.7, r / 18.0), true)
+
+
 ## 風の揺れの時計: コマ撮りなら 12 コマ／秒に刻んだ時間
 static func _wt() -> float:
 	return floorf(wind_t * 12.0) / 12.0 if wind_stepped else wind_t

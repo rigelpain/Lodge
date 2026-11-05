@@ -167,6 +167,8 @@ func _run() -> void:
 	var bots: Array = main.get_children().filter(func(c): return c.get_script() == main.Bot and not c.lounge)
 	_ok(bots.size() >= 1, "ふつうの起動で、ソリの仲間がいる: %d 人" % bots.size())
 	foe = bots[0]
+	_ok(craft.name_of(foe.id) == "ゆき" and craft.name_of(p.id) != "ゆき", "仲間の名前は %s、遊ぶ人のはじめの名前は %s" % [craft.name_of(foe.id), craft.name_of(p.id)])
+	_ok(craft.wallet(foe.id) == foe.DUEL_BUTTONS, "仲間の財布は金 5 枚: %d" % craft.wallet(foe.id))
 	p.set_third(false)
 	hub.happened.connect(_note)
 	# しばらくソリを押してもらう（ふだんの遊びの途中から）
@@ -287,6 +289,7 @@ func _run() -> void:
 		await _wait(0.5)
 		if hub.balls_of(p.id) < 1:
 			await _make_ball()
+		craft.wallets[foe.id] = 5   # 掛金で減った（次の握手で金 5 枚に戻るのを見る）
 		began = await _offer()
 		_ok(began, "%d 戦目: また握手で掛金の画面へ" % (round_i + 2))
 		if not began:
@@ -295,6 +298,7 @@ func _run() -> void:
 		await _wait(0.2)
 		w0 = craft.wallet(p.id)
 		f0 = craft.wallet(foe.id)
+		_ok(f0 == foe.DUEL_BUTTONS, "%d 戦目: 財布が 5 だった仲間が、握手で金 5 枚に戻った: %d" % [round_i + 2, f0])
 		main.duel_hud.nudge(5, 1)
 		fighting = await _until(func(): return not duel.fighting(p.id).is_empty(), foe.BET_WAIT + 2.0)
 		_ok(fighting, "%d 戦目: 掛金 5 で始まった" % (round_i + 2))

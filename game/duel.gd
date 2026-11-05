@@ -41,6 +41,7 @@ const CATCH_AIM := 0.2       # 照準（画面のまんなか）と雪玉のず�
 const THROW_GAP := 2.4       # 投げてから、次を振りかぶれるまで (s)。雪玉づくりは押してから、できるまで 1.43 秒・立てるまで 1.92 秒。
                              # 相手の玉をよけて（0.8 秒）から作っても、次が投げられる（2.35 秒）前に雪玉ができ（2.20 秒）、
                              # 振りかぶらない次の玉が 3 m から届く（2.73 秒）前に立てる（2.68 秒）。測り方は tools/duel_catch_check.gd
+const GAP_FRAMES := int(THROW_GAP * Doll.FPS)   # THROW_GAP を人形のコマで（どの画面でも同じ長さ）
 const WALL := 0.3            # 見えない壁: 縁からこれだけ内側で止まる (m)
 const RUN_OVER_SPEED := 3.0  # これより速いソリに触れると轢かれる (m/s)
 const RUN_OVER_WAIT := 1.5   # 一度轢かれてから、次に轢かれるまで (s)
@@ -113,7 +114,14 @@ func can_hit(thrower: int, target: int) -> bool:
 
 ## 次を投げられるか（戦っているあいだは、投げてから THROW_GAP たつまで投げられない。ふだんの雪合戦は縛らない）
 func can_throw(who: int) -> bool:
-	return fighting(who).is_empty() or int(_gap_until.get(who, -1)) <= Doll.frame_index()
+	return throw_wait(who) <= 0
+
+
+## 次を投げられるまでの残りのコマ（投げられるなら 0）。can_throw と画面の糸の輪（duel_hud.gd の _draw_gap）の元
+func throw_wait(who: int) -> int:
+	if fighting(who).is_empty():
+		return 0
+	return maxi(0, int(_gap_until.get(who, -1)) - Doll.frame_index())
 
 
 ## 当てられたばかりで、相手の雪玉が当たらないあいだか
@@ -239,7 +247,7 @@ func _apply(ev: Dictionary) -> void:
 
 func _on_emote(ev: Dictionary) -> void:
 	if ev.kind == "throw" and not fighting(int(ev.who)).is_empty():
-		_gap_until[int(ev.who)] = int(ev.frame) + int(THROW_GAP * Doll.FPS)
+		_gap_until[int(ev.who)] = int(ev.frame) + GAP_FRAMES
 	if _client():
 		return
 	match ev.kind:

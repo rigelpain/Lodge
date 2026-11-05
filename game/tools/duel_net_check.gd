@@ -67,9 +67,9 @@ func _line(tag: String) -> void:
 		return
 	var ha: int = int(d.hits_a) if int(d.a) == host_id else int(d.hits_b)
 	var hj: int = int(d.hits_b) if int(d.a) == host_id else int(d.hits_a)
-	_say("%s 段 %s 当てた ホスト %d つなぐ %d 残りの秒 %d 掛金 %d 勝ち %d 雪玉 ホスト %d つなぐ %d 財布 ホスト %d つなぐ %d 円 %s 投げられる ホスト %s つなぐ %s" % [tag, d.phase, ha, hj,
+	_say("%s 段 %s 当てた ホスト %d つなぐ %d 残りの秒 %d 掛金 %d 勝ち %d 雪玉 ホスト %d つなぐ %d 財布 ホスト %d つなぐ %d 円 %s 投げの間の残りのコマ ホスト %d つなぐ %d" % [tag, d.phase, ha, hj,
 		int(Duel.left_s(d)), int(d.stake), int(d.winner), main.emotes.balls_of(host_id), main.emotes.balls_of(join_id),
-		main.craft.wallet(host_id), main.craft.wallet(join_id), main.duel._rings.size(), main.emotes.can_throw(host_id), main.emotes.can_throw(join_id)])
+		main.craft.wallet(host_id), main.craft.wallet(join_id), main.duel._rings.size(), main.duel.throw_wait(host_id), main.duel.throw_wait(join_id)])
 
 
 func _since() -> float:
