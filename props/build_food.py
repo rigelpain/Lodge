@@ -23,40 +23,89 @@ from mathutils import Matrix, Vector
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import common as C  # noqa: E402
 import kit as K  # noqa: E402
+import food_bite as B  # noqa: E402
 
 A = C.parse([("--only", dict(default="", help="書き出す品物の名前（カンマで）")),
               ("--icons", dict(default="", help="この場所に、品物ごとのアイコン（背景を透かした絵）を描く"))])
 K.setup(A, fiber=4.0, scale=1.5, tris=1200)
 EX = K.S["export"]
+K.BAKE.update(ao_local=True, ao_dist=0.025)   # くぼみの陰は品物の大きさで。軽い形が陰を落として、白い品がまだらに暗くなるのを防ぐ
+K.BAKE["density"] = 3000   # 手に持って目の前で見る物なので、絵を細かく（1 品 512 px ほど。元の 160 では 64 px で、米粒も縫い目も潰れる）
+WANT = set(A.only.split(",")) if A.only else None
+C.HEX.update({"thread_rice": "FFFDF6", "felt_rice_in": "EFE9D8", "felt_salmon": "E2714E", "thread_salmon": "F6B092", "felt_ume": "B22A32", "felt_konbu": "3E2C22",
+              "felt_bun_in": "F6F0E0", "thread_pore": "DDD2B8", "felt_niku": "7E5240", "thread_niku": "A5745A", "thread_negi": "6C8E4A", "thread_take": "D8BE84",
+              "felt_batter": "F0D48E", "felt_anko": "4A2028", "thread_azuki": "6E323C",
+              "felt_cocoa": "5C3522", "thread_foam": "C9A583", "felt_liner": "F2EBDA", "felt_yolk": "EFA52A", "felt_chashu": "B57F62", "felt_broth": "96602F", "thread_fat": "EBD9B8"})
+
+
+def want(*names):
+    return WANT is None or any(n in WANT for n in names)
+
+
+def nm(base, bites):
+    """食べている途中の形の名前（1 口目 _b1、2 口目 _b2）"""
+    return base if not bites else "%s_b%d" % (base, bites)
 
 
 # ---------------------------------------------------------------- 中華まん
-def bun(name, role, mark=None, mark_role=None):
-    """ふっくらした生地のてっぺんに、ひだが渦を巻いて集まる。下に包み紙"""
-    P = K.Parts(name, kind="food")
+# 肉まん（調べた物: design/food-look/README.md）。丸くふくらみ、てっぺんへ向かって細いひだが集まる。底に薄い紙。
+# 羊毛フェルトの肉まんは、白くなめらかで、ひだの筋だけが見える。かじると厚い白い皮の中に、茶色の肉あん（たけのこ・ねぎの粒）
+# 切り口を手前の上へ向ける: 大きな丸を手前の上の外に置き、肩をそぎ取る（輪郭も欠ける）
+BUN_BITES = [B.mouth(0.046, 0.09, 0.07, cy=0.05, ys=1.0, a0=math.radians(165), a1=math.radians(285), lobes=6),
+             B.mouth(-0.034, 0.088, 0.072, cy=0.05, ys=1.0, a0=math.radians(-85), a1=math.radians(15), lobes=6)]
+
+
+def bun(name, role, mark=None, mark_role=None, bites=0, filling=None):
+    P = K.Parts(name, kind="food", tris=2400)
+    rnd = random.Random(31 + bites)
     m = P.m(role)
-    R, Hh = 0.052, 0.04
-    n0 = len(m.bm.verts)
-    C.superellipsoid(m, (0, 0, 0), (R, R, Hh), n_xy=2.0, n_z=2.3, cuts=K.cuts(12, 6))
-    for v in C.new_verts(m, n0):
-        x, y, z = v.co
-        rr = math.hypot(x, y) / R
-        if z > 0:
-            th = math.atan2(y, x)
-            pleat = 0.006 * math.cos(14 * th + 7.0 * rr) * (1 - rr) ** 0.5
-            v.co.z = z + pleat + 0.012 * (1 - rr) ** 3      # てっぺんのつまみ
-            v.co.x *= 1 + pleat * 3
-            v.co.y *= 1 + pleat * 3
-        else:
-            v.co.z = max(z, -Hh * 0.55)                      # 底は平ら
-        v.co.z += Hh * 0.55
+    R, H = 0.053, 0.066
+    nr, ns = K.cuts(36, 30), K.cuts(112, 96)
+    bm = m.bm
+    top = bm.verts.new((0, 0, H + 0.004))
+    rows = []
+    for i in range(1, nr):
+        t = i / nr
+        ph = t * math.pi * 0.74                      # 肩から胴の下まで
+        rr = R * math.sin(ph) ** 0.8 * (1 + 0.04 * math.sin(ph) ** 8)
+        zz = H * 0.5 * (1 + math.cos(ph))
+        row = []
+        for j in range(ns):
+            th = 2 * math.pi * j / ns
+            k = rr / R
+            fold = max(0.0, 1.0 - k / 0.82) ** 0.7                 # ひだはてっぺんに近いほど深い
+            g = abs(math.cos(8 * th + 5.0 * k)) ** 0.5             # 16 本のひだ。少し渦を巻く
+            z = zz - 0.0065 * fold * (1 - g)
+            rad = rr * (1 - 0.1 * fold * (1 - g))
+            row.append(bm.verts.new((rad * math.cos(th), rad * math.sin(th), z)))
+        rows.append(row)
+    base = bm.verts.new((0, 0, 0.0))
+    for j in range(ns):
+        j2 = (j + 1) % ns
+        bm.faces.new((top, rows[0][j], rows[0][j2]))
+        for i in range(len(rows) - 1):
+            bm.faces.new((rows[i][j], rows[i + 1][j], rows[i + 1][j2], rows[i][j2]))
+        bm.faces.new((rows[-1][j], base, rows[-1][j2]))
+    for v in list(bm.verts):
+        v.co.z = max(v.co.z, 0.0)
     if mark == "dot":   # あんまんの赤い点
-        K.pbox(P, mark_role, (0, 0, Hh * 0.55 + Hh + 0.012), (0.008, 0.008, 0.002), n=2.0, c=4)
-    elif mark == "line":   # カレーまんの焼き印のような 2 本線
+        K.pbox(P, mark_role, (0, 0, H + 0.004), (0.008, 0.008, 0.002), n=2.0, c=4)
+    elif mark == "line":
         for dx in (-0.006, 0.006):
-            K.box(P, mark_role, (dx, 0.0, Hh * 0.55 + Hh + 0.006), (0.003, 0.024, 0.002))
-    K.extrude(P, "paper_white", K.round_rect(0.1, 0.1, 0.01), 0.0, 0.002)
-    P.finish(fuzz=0.0015)
+            K.box(P, mark_role, (dx, 0.0, H + 0.002), (0.003, 0.024, 0.002))
+    # 底の薄い紙（角を丸めた四角）
+    K.extrude(P, "paper_white", K.circle_poly(0.055, 28), 0.0, 0.0015)
+    cutters = [c for bite in BUN_BITES[:bites] for c in bite]
+    if cutters:
+        B.lumps(P, "felt_niku", (0.0, 0.004, 0.032), (0.031, 0.031, 0.021), 9, 0.42, rnd)
+        _o, cav = B.carve(P, role, cutters, "felt_bun_in")
+        _o, fill = B.carve(P, "felt_niku", cutters, shrink=0.0012)
+        # 皮の切り口: 蒸しパンの細かい穴。あん: ひき肉のかけらと、たけのこ・ねぎの粒
+        B.scatter(P, "thread_pore", cav, 220, (0.0011, 0.0009, 0.0002), rnd)
+        B.scatter(P, "thread_niku", fill, 90, (0.0028, 0.002, 0.001), rnd)
+        B.scatter(P, "thread_take", fill, 14, (0.0032, 0.0018, 0.001), rnd)
+        B.scatter(P, "thread_negi", fill, 12, (0.0024, 0.0016, 0.0009), rnd)
+    P.finish(fuzz=0.0012)
 
 
 def bun_case(name="bun_case"):
@@ -155,90 +204,193 @@ def icon_leaf(role="felt_green"):
 
 
 # ---------------------------------------------------------------- ラーメン
-def ramen(name, bowl, broth, rim, toppings, seed=0):
-    P = K.Parts(name, kind="food")
-    rnd = random.Random(seed)
+# ラーメン（調べた物: design/food-look/README.md）。手前に麺をそろえて見せ、奥に具を立てかける。麺は太い毛糸で、縮れの波を付けて平行に流す。
+# 食べるほど具と麺が減り、汁が下がる。内側は白く、汁の跡の輪が残る
+def ramen(name, bowl, broth, rim, toppings, seed=0, bites=0):
+    P = K.Parts(name, kind="food", tris=7000)
+    rnd = random.Random(seed * 10 + bites)
     Rt, H = 0.1, 0.085
-    seg = K.cuts(48, 24)
-    K.lathe(P, bowl, [(0.0, 0.0), (0.042, 0.0), (0.045, 0.008), (0.06, 0.02), (0.09, 0.055), (Rt, H),
-                      (Rt - 0.006, H + 0.002), (Rt - 0.01, H - 0.006), (0.084, 0.055), (0.05, 0.022), (0.0, 0.018)],
-            segs=seg)
+    seg = K.cuts(64, 40)
+    prof = [(0.0, 0.0235), (0.05, 0.0235), (0.084, 0.056), (Rt - 0.0085, H - 0.001)]
+    K.lathe(P, bowl, [(0.0, 0.0), (0.042, 0.0), (0.045, 0.008), (0.06, 0.02), (0.09, 0.055), (Rt, H), (Rt - 0.003, H + 0.002), (Rt - 0.0065, H + 0.0012)]
+            + [(r, z) for r, z in reversed(prof)], segs=seg)
+    # 内の縁の雷紋: 赤い糸の角ばった波を一周
+    rz = []
+    for k in range(121):
+        a = 2 * math.pi * k / 120
+        rr = Rt - 0.0115 + (0.0028 if k % 4 < 2 else 0.0)
+        rz.append((rr * math.cos(a), rr * math.sin(a), H - 0.0065 - (0.0028 if k % 4 < 2 else 0.0)))
+    K.tube(P, "thread_red", rz, 0.0014, sides=4)
+    K.stitch_ring(P, "thread_red", (0, 0, H + 0.0012), Rt - 0.0035, r=0.0012, dash=0.006)
+
+    def r_in(z):
+        for (r0, z0), (r1, z1) in zip(prof[1:], prof[2:]):
+            if z <= z1:
+                return r0 + (r1 - r0) * (z - z0) / (z1 - z0)
+        return prof[-1][0]
+
     # 器の外: 縁の下に雷紋のようなジグザグの縫い目
     zz = []
     for k in range(97):
         a = 2 * math.pi * k / 96
         rr = Rt - 0.004 + 0.0012
-        z = H - 0.012 - (0.006 if k % 2 else 0.0)
-        zz.append((rr * math.cos(a), rr * math.sin(a), z))
-    K.tube(P, rim, zz, 0.0013, sides=4)
-    # 汁
-    K.disc(P, broth, (0, 0, H - 0.014), Rt - 0.012, 0.004, segs=seg)
-    # 麺: 毛糸が波打って重なる
-    for k in range(18 if not EX else 10):
-        a0 = rnd.uniform(0, 2 * math.pi)
+        zz.append((rr * math.cos(a), rr * math.sin(a), H - 0.012 - (0.006 if k % 2 else 0.0)))
+    K.tube(P, "thread_red", zz, 0.0013, sides=4)
+    level = [H - 0.014, H - 0.022, H - 0.041][bites]
+    Rs = r_in(level) + 0.0005
+    K.disc(P, broth, (0, 0, level), Rs, 0.003, segs=seg)
+    for b_ in range(bites):
+        z = [H - 0.014, H - 0.022][b_]
+        K.ring(P, broth, (0, 0, z + 0.0015), r_in(z) + 0.0002, 0.0012, n=seg)
+    # 麺: 太い毛糸を、縮れの波を付けて平行に流す。手前（+Y）に寄せて見せる
+    strands = [15, 9, 4][bites]
+    for k in range(strands):
+        f = (k + 0.5) / max(strands, 1)
+        y0 = (-0.012 + 0.065 * f) if bites < 2 else (0.012 + 0.03 * f)
+        half = math.sqrt(max(Rs * Rs - y0 * y0, 1e-5)) - 0.002
+        tilt = 0.12 * math.sin(k * 1.7)
         pts = []
-        for i in range(24):
-            t = i / 23
-            ang = a0 + t * rnd.uniform(1.5, 3.0)
-            r = 0.02 + 0.055 * t
-            pts.append((r * math.cos(ang) + 0.004 * math.sin(t * 40 + k), r * math.sin(ang) + 0.004 * math.cos(t * 37 + k),
-                        H - 0.01 + 0.006 * (1 - t) + 0.002 * math.sin(t * 25 + k)))
-        K.tube(P, "yarn_noodle", pts, 0.0032, sides=5)
-    top = H - 0.004
-    if "chashu" in toppings:   # 焼き豚: 茶色の円板に明るい縁
-        for i, (x, y, tilt) in enumerate(((0.035, -0.02, 0.25), (0.048, 0.012, 0.3))):
-            K.disc(P, "felt_brown", (x, y, top + 0.004), 0.028, 0.005, segs=24)
-            K.ring(P, "felt_tan", (x, y, top + 0.0045), 0.026, 0.0028)
-    if "naruto" in toppings:   # なると: 白い円板に桃色の渦
-        K.disc(P, "felt_rice", (-0.035, 0.03, top + 0.005), 0.016, 0.004, segs=24)
-        sp = [(-0.035 + 0.013 * (t / 3) * math.cos(t * 2 * math.pi), 0.03 + 0.013 * (t / 3) * math.sin(t * 2 * math.pi),
-               top + 0.0075) for t in [i / 30 * 3 for i in range(31)]]
-        K.tube(P, "felt_pink", sp, 0.0016, sides=4)
-    if "egg" in toppings:   # 半分の卵
-        K.pbox(P, "felt_rice", (-0.02, -0.04, top + 0.006), (0.018, 0.013, 0.008), n=2.0, nz=2.0, c=6)
-        K.disc(P, "felt_yellow", (-0.02, -0.04, top + 0.013), 0.009, 0.003, segs=16)
-    if "nori" in toppings:   # のり: 後ろに立てる
-        K.box(P, "felt_nori", (0.0, 0.07, top + 0.025), (0.05, 0.003, 0.055), rot=(0.25, "X"))
-    if "negi" in toppings:   # ねぎの小口切り
-        for k in range(14):
+        n = K.cuts(30, 24)
+        for i in range(n):
+            t = i / (n - 1)
+            x = -half + 2 * half * t
+            w = math.sin(t * 34 + k * 1.3)
+            bump = math.sin(t * math.pi) ** 0.5
+            z = level + 0.0015 + 0.0085 * bump + 0.0022 * math.sin(t * 17 + k * 2.1) + (0.004 if k % 3 == 0 else 0.0) * bump
+            if bites == 2:
+                z = level + 0.0015 + 0.004 * bump + 0.0012 * math.sin(t * 17 + k)
+            pts.append((x, y0 + tilt * x + 0.0028 * w, z))
+        K.tube(P, "yarn_noodle", pts, 0.0034, sides=5)
+    top = level + 0.012 if bites < 2 else level + 0.006
+
+    def laid(role, fn, at, tilt_x=0.0, tilt_y=0.0, yaw=0.0):
+        """原点に組んだ具を、傾けて置く"""
+        m = P.m(role)
+        n0 = len(m.bm.verts)
+        fn()
+        C.place(m, n0, Matrix.Translation(at) @ Matrix.Rotation(yaw, 4, "Z") @ Matrix.Rotation(tilt_y, 4, "Y") @ Matrix.Rotation(tilt_x, 4, "X"))
+
+    def chashu(at, yaw, tilt):   # 焼き豚: 桃がかった薄切りに、焼いた茶色の縁と、脂の白い筋
+        laid("felt_chashu", lambda: K.disc(P, "felt_chashu", (0, 0, 0), 0.03, 0.0055, segs=K.cuts(28, 20)), at, tilt, 0.1, yaw)
+        laid("felt_brown", lambda: K.ring(P, "felt_brown", (0, 0, 0.0), 0.0295, 0.0034, n=K.cuts(28, 20)), at, tilt, 0.1, yaw)
+        for off in (-0.012, 0.002, 0.014):
+            pts = [(-0.021 + 0.042 * (t / 12), off + 0.0024 * math.sin(t * 1.1 + off * 300), 0.0031) for t in range(13)]
+            laid("thread_fat", lambda: K.tube(P, "thread_fat", pts, 0.001, sides=4), at, tilt, 0.1, yaw)
+
+    def naruto(at, tilt):   # なると: 波の縁の白い丸に、桃色の渦
+        wavy = [((0.0185 + 0.0016 * math.cos(10 * a)) * math.cos(a), (0.0185 + 0.0016 * math.cos(10 * a)) * math.sin(a)) for a in [2 * math.pi * k / 40 for k in range(40)]]
+        laid("felt_rice", lambda: K.extrude(P, "felt_rice", wavy, -0.0028, 0.0028), at, tilt)
+        sp = [(0.015 * (t / 30) * math.cos(t / 30 * 3 * 2 * math.pi), 0.015 * (t / 30) * math.sin(t / 30 * 3 * 2 * math.pi), 0.0032) for t in range(2, 31)]
+        laid("felt_pink", lambda: K.tube(P, "felt_pink", sp, 0.0016, sides=4), at, tilt)
+
+    def egg(at, tilt, yaw):   # 半分に切った煮卵: 切り口を上に、濃い黄身
+        laid("felt_tan", lambda: K.pbox(P, "felt_tan", (0, 0, -0.005), (0.023, 0.017, 0.012), n=2.0, nz=2.0, c=K.cuts(6, 5)), at, tilt, 0.0, yaw)
+        laid("felt_rice", lambda: K.pbox(P, "felt_rice", (0, 0, 0.0035), (0.0215, 0.0158, 0.0024), n=2.0, nz=2.6, c=K.cuts(6, 5)), at, tilt, 0.0, yaw)
+        laid("felt_yolk", lambda: K.pbox(P, "felt_yolk", (0, 0, 0.0052), (0.0115, 0.0098, 0.0017), n=2.0, nz=2.6, c=K.cuts(5, 4)), at, tilt, 0.0, yaw)
+
+    if "nori" in toppings and bites == 0:   # のり: 奥の縁に立てかける
+        K.box(P, "felt_nori", (0.024, -0.078, level + 0.024), (0.05, 0.0028, 0.066), rot=(0.42, "X"))
+        K.stitch_line(P, "thread", [(0.002, -0.0815 + 0.0016, level + 0.046), (0.046, -0.0815 + 0.0016, level + 0.046)], r=0.0008, dash=0.005)
+    if "chashu" in toppings:
+        if bites < 2:
+            chashu((0.032, -0.03, top), 0.4, 0.34)
+        if bites == 0:
+            chashu((0.052, -0.012, top + 0.004), -0.3, 0.3)
+    if "naruto" in toppings and bites == 0:
+        naruto((-0.035, -0.012, top + 0.002), 0.2)
+    if "egg" in toppings and bites < 2:
+        egg((-0.042, -0.038 if bites == 0 else -0.015, top + 0.006), 0.38, -0.2)
+    if "negi" in toppings:
+        for k in range([30, 12, 4][bites]):   # ねぎの小口切り: 具のそばの麺の上に、ひとかたまり
             a = rnd.uniform(0, 2 * math.pi)
-            r = rnd.uniform(0.0, 0.05)
-            K.ring(P, "felt_green", (r * math.cos(a), r * math.sin(a), top + 0.006), 0.004, 0.0015, n=10)
+            r = rnd.uniform(0.0, 0.024 if bites < 2 else 0.05)
+            K.ring(P, "felt_green", (r * math.cos(a) - 0.006, r * math.sin(a) + 0.012, top + 0.0035), 0.0044, 0.0017, n=10)
     if "corn" in toppings:
-        for k in range(16):
+        for k in range([16, 7, 2][bites]):
             a = rnd.uniform(-1.0, 0.6)
             r = rnd.uniform(0.02, 0.05)
-            K.pbox(P, "felt_yellow", (r * math.cos(a) - 0.03, r * math.sin(a) + 0.01, top + 0.006), (0.004, 0.004, 0.003),
-                   n=2.0, c=3)
-    if "butter" in toppings:
-        K.pbox(P, "felt_cream", (0.0, 0.0, top + 0.012), (0.012, 0.012, 0.008), n=6.0, c=4)
-    if "menma" in toppings:
-        for k in range(5):
-            K.box(P, "felt_tan", (0.04 + 0.006 * k, -0.045 + 0.004 * k, top + 0.005), (0.005, 0.028, 0.004), rot=(0.4, "Z"))
-    # 箸: 器の縁に渡す
-    for dx in (-0.006, 0.006):
-        K.tube(P, "wood_light", [(-0.13 + dx, -0.03, H + 0.004), (0.12 + dx, 0.05, H + 0.004)], [0.0035, 0.002], sides=6)
-    K.steam(P, (0.0, 0.0, H + 0.01), 0.07, 0.009, seed=seed)
+            K.pbox(P, "felt_yellow", (r * math.cos(a) - 0.03, r * math.sin(a) + 0.01, top), (0.004, 0.004, 0.003), n=2.0, c=3)
+    if "butter" in toppings and bites == 0:
+        K.pbox(P, "felt_cream", (0.0, 0.0, top + 0.006), (0.012, 0.012, 0.008), n=6.0, c=4)
+    if "menma" in toppings and bites < 2:
+        for k in range([5, 2][bites]):
+            K.box(P, "felt_tan", (-0.012 + 0.0065 * k, -0.05 + 0.003 * k, top - 0.001), (0.0058, 0.03, 0.0042), rot=(0.25, "Z"))
+    K.steam(P, (0.0, -0.05, H + 0.005), [0.045, 0.035, 0.025][bites], 0.005, seed=seed)
     P.finish(fuzz=0.0012)
 
 
 # ---------------------------------------------------------------- そのほかの食べ物
-def onigiri(name, filling):
-    P = K.Parts(name, kind="food")
-    m = P.m("felt_rice")
-    n0 = len(m.bm.verts)
-    C.superellipsoid(m, (0, 0, 0), (0.042, 0.018, 0.04), n_xy=2.4, n_z=2.4, cuts=K.cuts(10, 5))
-    for v in C.new_verts(m, n0):   # 三角に: 上ほど細く
-        t = (v.co.z + 0.04) / 0.08
-        v.co.x *= 1.15 - 0.75 * t
-        v.co.z += 0.04
-    K.box(P, "felt_nori", (0, 0, 0.018), (0.05, 0.04, 0.03))   # のり: 下に巻く
-    if filling == "ume":
-        K.pbox(P, "felt_red", (0, 0.019, 0.05), (0.007, 0.002, 0.007), n=2.0, c=4)
-    elif filling == "salmon":
-        K.pbox(P, "felt_orange", (0, 0.019, 0.05), (0.01, 0.002, 0.006), n=3.0, c=4)
-    elif filling == "konbu":
-        K.pbox(P, "felt_brown", (0, 0.019, 0.05), (0.009, 0.002, 0.006), n=3.0, c=4)
+# おにぎり（調べた物: design/food-look/README.md）。角の丸い三角で、厚みは幅の半分ほどの 2 枚合わせ。海苔は底から前へ巻く幅の狭い帯で、両脇と上に米粒が見える。
+# 具は包んだ姿では見せない（かじって初めて見える）。切り口はご飯の中に具のかたまり
+ONI_POLY = B.rounded_poly([(-0.025, 0.017), (0.025, 0.017), (0.0, 0.056)], 0.017)
+ONI_BITES = [B.mouth(0.021, 0.07, 0.031, cy=0.012, ys=1.5, a0=math.radians(150), a1=math.radians(300)),
+             B.mouth(-0.02, 0.06, 0.035, cy=0.012, ys=1.5, a0=math.radians(-70), a1=math.radians(70))]
+
+
+def onigiri(name, filling, bites=0):
+    P = K.Parts(name, kind="food", tris=2600)
+    rnd = random.Random(11 + bites)
+    cx, cz, T = 0.0, 0.031, 0.021
+    r_of = B.radial_of(ONI_POLY, cx, cz)
+    surf = B.pillow(P.m("felt_rice"), cx, cz, r_of, T)
+    cutters = [c for bite in ONI_BITES[:bites] for c in bite]
+    # 海苔の帯: 正面の上の縁から底をまわって背中へ
+    nw, ntop = 0.021, 0.041
+
+    def z_edge(x):   # 底の輪郭の高さ
+        lo, hi = -0.01, cz
+        for _ in range(24):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if math.hypot(x - cx, mid - cz) > r_of(math.atan2(mid - cz, x - cx)) else (lo, mid)
+        return hi
+
+    def push(x, y, z, d):
+        v = Vector((x - cx, y, z - cz))
+        v = v * (1 + d / max(v.length, 1e-4))
+        return (v.x + cx, v.y, v.z + cz)
+
+    outer, inner = [], []
+    nu, nv = K.cuts(20, 12), K.cuts(12, 8)
+    for i in range(nu + 1):
+        x = -nw + 2 * nw * i / nu
+        top = ntop - 0.0035 * (abs(x) / nw) ** 8 + 0.0012 * math.sin(x * 90)   # 角が少し丸く、手で切った縁
+        ze = z_edge(x)
+        col = [(1, top + (ze - top) * (j / nv) ** 0.65) for j in range(nv)] + [(0, ze)]
+        col += [(-1, top + (ze - top) * (j / nv) ** 0.65) for j in range(nv - 1, -1, -1)]
+        outer.append([push(x, sd * surf(x, z), z, 0.0016) for sd, z in col])
+        inner.append([push(x, sd * surf(x, z), z, -0.0014) for sd, z in col])
+    B.solid_grid(P.m("felt_nori"), outer, inner)
+
+    def under_nori(p):
+        return abs(p.x) < nw + 0.001 and p.z < ntop + 0.002
+
+    if cutters:   # 切り口: ご飯（少し濃い白に米粒）。具は切り口より少し盛り上げる
+        fill_role = {"salmon": "felt_salmon", "ume": "felt_ume", "konbu": "felt_konbu"}[filling]
+        B.lumps(P, fill_role, (0.0, 0.0, 0.035), (0.02, 0.0135, 0.018), 7, 0.42, rnd)
+        out_t, cav_t = B.carve(P, "felt_rice", cutters, "felt_rice_in")
+        B.carve(P, "felt_nori", cutters)
+        _o, fill_t = B.carve(P, fill_role, cutters, shrink=0.0012)
+        if filling == "salmon":   # ほぐした鮭の身: 薄い色のかけら
+            B.scatter(P, "thread_salmon", fill_t, 70, (0.0028, 0.0012, 0.0008), rnd)
+        B.scatter(P, "thread_rice", cav_t, 180, (0.0036, 0.0016, 0.0012), rnd, keep=lambda p: (p - Vector((0, 0, 0.035))).length > 0.016)
+    else:
+        out_t = B.surface(P, "felt_rice")
+    # 米粒: 外の白に細長い粒をびっしり（海苔の下には置かない）
+    B.scatter(P, "thread_rice", out_t, 620, (0.0038, 0.0017, 0.0013), rnd, keep=lambda p: not under_nori(p))
+    # 海苔の縁のなみ縫いと、2 枚合わせの縫い目
+    st = []
+    for i in range(25):
+        x = -nw + 0.003 + (2 * nw - 0.006) * i / 24
+        st.append(push(x, surf(x, ntop - 0.0032), ntop - 0.0032, 0.0022))
+    B.stitch_runs(P, "thread", st, cutters)
+    ring = []
+    for j in range(97):
+        th = 2 * math.pi * j / 96
+        r = r_of(th) + 0.0008
+        q = (cx + r * math.cos(th), 0.0, cz + r * math.sin(th))
+        if not under_nori(Vector(q)):
+            ring.append(q)
+    B.stitch_runs(P, "thread", ring, cutters)
     P.finish(fuzz=0.001)
 
 
@@ -295,12 +447,17 @@ def _outline_info(poly, x, z):
 
 def _tai_thick(x, d):
     """表の面の高さ（片側）: 胴はふっくら 14 mm、尾とひれは薄く。縁へ丸く落ちる"""
-    body = 0.011 if x > -0.024 else (0.0035 if x < -0.042 else 0.0035 + 0.0075 * (x + 0.042) / 0.018)
-    k = min(d / 0.011, 1.0)
-    return body * math.sqrt(max(0.0, 1.0 - (1.0 - k) ** 3))   # 上は平たく、縁できりっと落ちる
+    body = 0.0155 if x > -0.024 else (0.0035 if x < -0.042 else 0.0035 + 0.012 * (x + 0.042) / 0.018)   # 羊毛フェルトのたい焼きのように、ふっくら厚く
+    k = min(d / 0.021, 1.0)
+    return body * math.sqrt(max(0.0, 1.0 - (1.0 - k) ** 2))   # 2 枚合わせのふくらみ: 縁から胴へなだらかに
 
 
-def taiyaki(name):
+# 寝かせると -Y が上になるので、切り口が上を向くよう丸の中心を -Y の外に置く
+TAI_BITES = [B.mouth(0.076, 0.002, 0.05, cy=-0.03, ys=1.0, a0=math.radians(115), a1=math.radians(245)),
+             B.mouth(0.04, 0.002, 0.056, cy=-0.03, ys=1.0, a0=math.radians(110), a1=math.radians(250))]
+
+
+def taiyaki(name, bites=0):
     """たい焼き: きつね色のフェルト 2 枚を縁で縫い合わせた鯛。盛り上がった線（えら・うろこ・ひれの筋・目の輪）は、
     焼き色のフェルトのひもを縫い付けて表す。寝かせて置く（片面が上）。長さ 13 cm、高さ 8 cm、厚さ 2.2 cm"""
     P = K.Parts(name, kind="food", tris=2600)
@@ -334,7 +491,7 @@ def taiyaki(name):
                 if not any(info[c][0] for c in corners):
                     continue
                 cx, cz = xs[i] + step / 2, zs[j] + step / 2
-                toast = cx < -0.041 or abs(cz) > 0.034
+                toast = cx < -0.041
                 role = "felt_toast" if toast else "felt_taiyaki"
                 vs = [v(c[0], c[1], role) for c in corners]
                 if len({id(q) for q in vs}) < 3:
@@ -394,8 +551,18 @@ def taiyaki(name):
     ring = poly + [poly[0]]
     K.tube(P, "felt_toast", [(x, 0.0, z) for x, z in ring], 0.0022, sides=6)
     K.stitch_line(P, "thread_dark", [(x * 1.0, 0.0024, z * 1.0) for x, z in ring], r=0.0007, dash=0.004)
+    cutters = [c for bite in TAI_BITES[:bites] for c in bite]
+    if cutters:   # 切り口: 薄い皮の内は生地の黄色。その中に、粒の残ったあんこ
+        rnd = random.Random(41 + bites)
+        B.lumps(P, "felt_anko", (0.012, 0.0, 0.002), (0.05, 0.0118, 0.025), 8, 0.32, rnd)
+        for role in ("felt_taiyaki", "felt_toast"):
+            B.carve(P, role, cutters, "felt_batter")
+        _o, an = B.carve(P, "felt_anko", cutters, shrink=0.0014)
+        B.scatter(P, "thread_azuki", an, 60, (0.0028, 0.0021, 0.0012), rnd)
+        for role in ("felt_curry", "felt_brown", "thread_dark"):
+            B.cull(P, role, cutters, 0.0008)
     # 寝かせる: 表（+Y）を上へ
-    P.transform(Matrix.Translation((0, 0, 0.0115)) @ Matrix.Rotation(-math.pi / 2, 4, "X"))
+    P.transform(Matrix.Translation((0, 0, 0.016)) @ Matrix.Rotation(-math.pi / 2, 4, "X"))
     P.finish(fuzz=0.0004)   # 皮はぱりっと: 毛羽は控えめ
 
 
@@ -451,35 +618,48 @@ def curry(name):
     P.finish(fuzz=0.001)
 
 
-def mug(name, body, drink, topping=None):
-    """マグ: ふっくらしたフェルトの器に取っ手、縁をかがる。中の飲み物と、上の飾り（綿のマシュマロ・ゆずの輪切り）"""
-    P = K.Parts(name, kind="drink")
+def mug(name, body, drink, topping=None, bites=0, stain=None):
+    """マグ: ふっくらしたフェルトの器に取っ手、縁をかがる。飲むほど中身が下がり、内側に飲んだ跡の輪が残る。
+    上の飾り（綿のマシュマロ・ゆずの輪切り）も飲むほど減る"""
+    P = K.Parts(name, kind="drink", tris=2000)
     R, H = 0.042, 0.095
-    K.lathe(P, body, [(0.0, 0.0), (R * 0.9, 0.0), (R, 0.01), (R * 1.04, H * 0.6), (R, H), (R * 0.88, H), (R * 0.86, 0.012),
-                      (0.0, 0.012)], segs=K.cuts(36, 20))
-    K.ring(P, "thread", (0, 0, H - 0.002), R * 0.98, 0.0022, n=36)
-    K.tube(P, body, [(R * 0.95, 0, H * 0.78), (R + 0.03, 0, H * 0.72), (R + 0.034, 0, H * 0.45), (R + 0.02, 0, H * 0.25),
-                     (R * 0.98, 0, H * 0.22)], 0.009, sides=10)
-    K.disc(P, drink, (0, 0, H - 0.014), R * 0.86, 0.003, segs=K.cuts(36, 20))
+    seg = K.cuts(48, 32)
+    K.lathe(P, body, [(0.0, 0.0), (R * 0.9, 0.0), (R * 0.98, 0.006), (R * 1.03, H * 0.3), (R * 1.04, H * 0.6), (R * 1.0, H * 0.97), (R * 0.97, H + 0.0015),
+                      (R * 0.9, H), (R * 0.88, H - 0.004), (R * 0.86, 0.012), (0.0, 0.012)], segs=seg)
+    K.ring(P, "thread", (0, 0, H - 0.001), R * 0.965, 0.0022, n=seg)
+
+    def r_in(z):   # 内側の半径
+        return R * 0.86 + (R * 0.88 - R * 0.86) * (z - 0.012) / (H - 0.016)
+
+    K.tube(P, body, [(R * 0.92, 0, H * 0.8), (R + 0.016, 0, H * 0.83), (R + 0.029, 0, H * 0.72), (R + 0.033, 0, H * 0.53), (R + 0.027, 0, H * 0.36),
+                     (R + 0.012, 0, H * 0.25), (R * 0.95, 0, H * 0.23)], 0.0085, sides=12)
+    level = [H - 0.014, H * 0.56, H * 0.24][bites]
+    K.disc(P, drink, (0, 0, level), r_in(level) + 0.0006, 0.003, segs=seg)
+    for b_ in range(bites):   # 飲んだ跡: 前の水面の高さに、内側を一周する薄い輪
+        z = [H - 0.014, H * 0.56][b_]
+        K.ring(P, stain or drink, (0, 0, z + 0.0015), r_in(z) - 0.0002, 0.0011, n=seg)
+    K.ring(P, stain or drink, (0, 0, level + 0.0017), r_in(level) - 0.0005, 0.0016, n=seg)
     if topping == "marshmallow":
-        for k, (dx, dy) in enumerate(((0.0, 0.0), (0.016, 0.01), (-0.012, 0.015), (0.008, -0.016))):
-            K.pbox(P, "cotton", (dx, dy, H - 0.006), (0.009, 0.009, 0.008), n=4.0, c=3)
-    elif topping == "yuzu":
-        K.disc(P, "felt_yellow", (0.008, 0.0, H - 0.01), 0.018, 0.003, segs=16)
-        K.ring(P, "felt_cream", (0.008, 0.0, H - 0.008), 0.014, 0.0015, n=16)
+        pos = [((0.0, 0.002), (0.017, 0.012), (-0.015, 0.014), (0.009, -0.017)), ((0.012, 0.004), (-0.012, -0.01)), ()][bites]
+        s_ = [1.0, 0.8, 0.0][bites]
+        for dx, dy in pos:   # 俵の形の綿。飲むうちに沈んで小さくなる
+            K.pbox(P, "cotton", (dx, dy, level + 0.005 * s_), (0.0095 * s_, 0.0095 * s_, 0.0075 * s_), n=3.0, c=4)
+    elif topping == "yuzu" and bites < 2:
+        K.disc(P, "felt_yellow", (0.008, 0.0, level + 0.002), 0.018, 0.003, segs=16)
+        K.ring(P, "felt_cream", (0.008, 0.0, level + 0.004), 0.014, 0.0015, n=16)
     elif topping == "corn":
         rnd = random.Random(30)
-        for k in range(10):
+        for k in range([10, 5, 2][bites]):
             a, r = rnd.uniform(0, 2 * math.pi), rnd.uniform(0.0, R * 0.7)
-            K.pbox(P, "felt_gold", (r * math.cos(a), r * math.sin(a), H - 0.01), (0.003, 0.003, 0.0025), n=3.0, c=2)
-        for k in range(4):
-            K.pbox(P, "felt_green", (0.01 * k - 0.015, 0.006 * (k % 2), H - 0.009), (0.002, 0.002, 0.001), n=2.0, c=2)
+            K.pbox(P, "felt_gold", (r * math.cos(a), r * math.sin(a), level + 0.003), (0.003, 0.003, 0.0025), n=3.0, c=2)
+        for k in range([4, 2, 0][bites]):
+            K.pbox(P, "felt_green", (0.01 * k - 0.015, 0.006 * (k % 2), level + 0.0035), (0.002, 0.002, 0.001), n=2.0, c=2)
     elif topping == "teabag":
-        K.tube(P, "thread", [(-R * 0.6, 0.0, H - 0.012), (-R * 0.95, 0.0, H + 0.004), (-R - 0.006, 0.0, H - 0.02), (-R - 0.007, 0.0, H - 0.035)],
+        K.tube(P, "thread", [(-R * 0.6, 0.0, level), (-R * 0.95, 0.0, H + 0.004), (-R - 0.006, 0.0, H - 0.02), (-R - 0.007, 0.0, H - 0.035)],
                0.0007, sides=4)
         K.box(P, "paper_white", (-R - 0.008, 0.0, H - 0.043), (0.002, 0.016, 0.018))
         K.box(P, "felt_red", (-R - 0.0095, 0.0, H - 0.038), (0.001, 0.012, 0.004))
-    K.steam(P, (0, 0, H), 0.06, 0.007, seed=len(name))
+    K.steam(P, (0, 0, H), [0.045, 0.035, 0.025][bites], 0.0045, seed=len(name))
     P.mark("hand", (R + 0.03, 0, H * 0.5))
     P.finish(fuzz=0.001)
 
@@ -762,7 +942,9 @@ def milk_tea(name):
 
 
 # ---------------------------------------------------------------- 組む
-bun("nikuman", "felt_bun")
+for b_ in range(3):
+    if want(nm("nikuman", b_)):
+        bun(nm("nikuman", b_), "felt_bun", bites=b_, filling="niku")
 bun("anman", "felt_bun", "dot", "felt_red")
 bun("pizzaman", "felt_tan")
 bun("curryman", "felt_yellow", "line", "felt_brown")
@@ -772,20 +954,28 @@ can("can_cocoa", "felt_brown", "felt_cream", icon_cup("felt_cream") + icon_heart
 can("can_coffee", "felt_navy2", "felt_tan", icon_bean("felt_tan"))
 can("can_tea", "felt_tea", "felt_cream", icon_leaf("felt_green"))
 can("can_shiruko", "felt_purple", "felt_cream", icon_heart("felt_cream"))
-ramen("ramen_shoyu", "felt_red", "felt_broth", "thread", ["chashu", "naruto", "egg", "nori", "negi", "menma"], seed=1)
+for b_ in range(3):
+    if want(nm("ramen_shoyu", b_)):
+        ramen(nm("ramen_shoyu", b_), "felt_liner", "felt_broth", "thread", ["chashu", "naruto", "egg", "nori", "negi", "menma"], seed=1, bites=b_)
 ramen("ramen_miso", "felt_navy2", "felt_broth_miso", "thread", ["chashu", "corn", "butter", "negi", "menma"], seed=2)
 ramen("ramen_shio", "felt_cream", "felt_broth_shio", "thread_red", ["chashu", "egg", "naruto", "negi"], seed=3)
 onigiri("onigiri_ume", "ume")
-onigiri("onigiri_salmon", "salmon")
+for b_ in range(3):
+    if want(nm("onigiri_salmon", b_)):
+        onigiri(nm("onigiri_salmon", b_), "salmon", b_)
 onigiri("onigiri_konbu", "konbu")
 oden("oden")
-taiyaki("taiyaki")
+for b_ in range(3):
+    if want(nm("taiyaki", b_)):
+        taiyaki(nm("taiyaki", b_), b_)
 mikan("mikan", 4)
 yunomi("yunomi_wood", "wood_light")
 yunomi("yunomi_navy", "felt_navy2")
 dango("dango")
 curry("curry")
-mug("mug_cocoa", "felt_red", "felt_brown", "marshmallow")
+for b_ in range(3):
+    if want(nm("mug_cocoa", b_)):
+        mug(nm("mug_cocoa", b_), "felt_red", "felt_cocoa", "marshmallow", bites=b_, stain="thread_foam")
 mug("mug_milk", "felt_navy2", "felt_cream")
 mug("mug_yuzu", "felt_cream", "felt_yellow", "yuzu")
 noodle_bowl("soba", "felt_charcoal" if "felt_charcoal" in C.HEX else "felt_navy2", "felt_broth", "yarn_soba", 0.0028,
@@ -808,11 +998,29 @@ milk_tea("mug_milktea")
 SHOP_MENU = ["onigiri_salmon", "taiyaki", "nikuman", "korokke", "hashbrown", "fries", "hotsand", "yakiimo", "hotcake", "sanma", "kaki",
              "yakisoba", "ramen_shoyu", "udon", "soba", "mug_cocoa", "oshiruko", "mug_corn", "clam_chowder", "yunomi_navy", "mug_milk",
              "mug_milktea"]   # 雪だるまの店の品書きの順（design/snowman-food/）
+BITE_MENU = [n + b for n in ("onigiri_salmon", "taiyaki", "nikuman", "ramen_shoyu", "mug_cocoa") for b in ("_b1", "_b2")]   # 食べている途中の形も、持ち物のアイコンを描く
 
 if A.export:
     K.export_all(A.export, A.only.split(",") if A.only else None)
 elif A.icons:   # 雪だるまの店の画面のアイコン（game/props/food/icons/）
-    K.render_icons(A.icons, [n for n in SHOP_MENU if not A.only or n in A.only.split(",")], size=256, pad=1.12)
+    K.render_icons(A.icons, [n for n in SHOP_MENU + BITE_MENU if not A.only or n in A.only.split(",")], size=256, pad=1.12)
+elif A.views.startswith("sheet"):   # 食べ口の見比べ: --only に並べた品を、3 つずつ（丸ごと・1 口・2 口）の列で
+    names = A.only.split(",")
+    roots = {r.name: r for r, p in K.made}
+    TZ = 0.75
+    for n, r in roots.items():
+        if n not in names:
+            for o in [r] + K.descendants(r):
+                o.hide_render = True
+    rows = (len(names) + 2) // 3
+    for i, n in enumerate(names):
+        roots[n].location = (0.6 - (i % 3) * 0.3, -(i // 3) * 0.3, TZ)
+    K.table(0.3, -0.3 * (rows - 1) / 2, TZ, 1.4, 0.45 + 0.3 * rows)
+    K.room()
+    K.interior_light()
+    cy = -0.3 * (rows - 1) / 2
+    K.render_views(A, {"sheet": ((0.3, cy + 0.34 + 0.34 * rows, TZ + 0.18 + 0.3 * rows), (0.3, cy, TZ + 0.035), 42),
+                       "sheet_top": ((0.3, cy + 0.14, TZ + 0.75 + 0.2 * rows), (0.3, cy, TZ + 0.02), 38)})
 else:
     groups = {
         "buns": ["nikuman", "anman", "pizzaman", "curryman"],

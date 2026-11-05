@@ -458,7 +458,8 @@ def _grime(m):
     src = inp.links[0].from_socket if inp.links else None
     base = tuple(inp.default_value)
     ao = t.nodes.new("ShaderNodeAmbientOcclusion")
-    ao.inputs["Distance"].default_value = 0.12 * S["scale"]
+    ao.inputs["Distance"].default_value = BAKE.get("ao_dist", 0.12) * S["scale"]
+    ao.only_local = BAKE.get("ao_local", False)   # 軽い形が細かい形にかぶさって、陰がまだらになる小さな品物で使う
     ao.samples = 8
     ramp = t.nodes.new("ShaderNodeMapRange")
     ramp.inputs["To Min"].default_value = 0.5

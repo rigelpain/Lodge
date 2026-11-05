@@ -2280,11 +2280,20 @@ static func held_shape(it: Dictionary) -> Node3D:
 		return bunch
 	if it.get("kind") == "food":   # 雪だるまの店のペレット（途中は押されたペレット）か、できあがった料理（food.gd）
 		var done := FoodMenu.done(it)
-		var f := PropsLib.make(FoodMenu.dish_glb(it.dish) if done else FoodMenu.pellet_glb(it.dish))
+		var bites := int(it.get("bites", 0))
+		var f := PropsLib.make(FoodMenu.dish_glb(it.dish, bites) if done else FoodMenu.pellet_glb(it.dish))
 		var holder := Node3D.new()
 		holder.add_child(f)
-		var left: float = [1.0, 0.72, 0.45][clampi(int(it.get("bites", 0)), 0, 2)]   # ひと口ごとに小さく
+		var left: float = 1.0 if FoodMenu.has_bite_model(it.dish, bites) else [1.0, 0.72, 0.45][clampi(bites, 0, 2)]   # 途中の形がない料理は、ひと口ごとに小さく
 		f.scale = Vector3.ONE * (0.75 * left if done else 1.0) * (Vector3(1.3, 0.6, 1.3) if int(it.get("step", 0)) > 0 and not done else Vector3.ONE)
+		if done:   # 手に持つ向き: 形の正面（glb の -Z）を自分へ
+			var hold: Dictionary = FoodMenu.HOLD.get(it.dish, FoodMenu.HOLD_DRINK if it.dish in FoodMenu.DRINKS else FoodMenu.HOLD_DEFAULT)
+			var k: Vector3 = f.scale * float(hold.scale)
+			f.basis = Basis.from_euler(hold.rot * PI / 180.0, EULER_ORDER_YXZ) * Basis(Vector3.UP, deg_to_rad(float(hold.get("yaw", 0.0))))
+			f.scale = k
+			f.position = hold.pos
+			for smoke in f.find_children("Smoke", "GPUParticles3D", true, false):   # 目の前の湯気は薄く（品を隠さない）
+				(smoke as GPUParticles3D).amount_ratio = 0.3
 		return holder
 	var root := Node3D.new()
 	var mi := MeshInstance3D.new()

@@ -113,7 +113,7 @@ static func item(ci: CanvasItem, it: Dictionary, center: Vector2, size: float, a
 	match it.get("kind", ""):
 		"food":   # 雪だるまの店のペレットか、できあがった料理（Blender で描いた絵。food.gd）
 			var Food := preload("res://food.gd")
-			var path: String = Food.dish_icon(it.dish) if Food.done(it) else Food.pellet_icon(it.dish)
+			var path: String = Food.dish_icon(it.dish, int(it.get("bites", 0))) if Food.done(it) else Food.pellet_icon(it.dish)
 			if not _tex.has(path):   # 取っておく（描く命令は絵を持たないので、手放すと描くまでに消えて白い四角になる）
 				_tex[path] = load(path) if ResourceLoader.exists(path) else null
 			var t: Texture2D = _tex[path]

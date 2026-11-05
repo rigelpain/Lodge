@@ -38,18 +38,41 @@ const DRINKS := ["cocoa", "oshiruko", "corn", "clam", "greentea", "milk", "milkt
 const NOODLES := ["ramen", "udon", "soba", "yakisoba"]
 const CRISP := ["taiyaki", "korokke", "hashbrown", "fries", "hotsand"]   # 皮がぱりっとした物（さくっ）
 const BITES := 3             # 3 口で食べ終わる
+## 手に持つ向き（度。形の正面が自分へ向き、食べ口が見えるように）と、手からのずれ・大きさ。ないものは正面を自分へ向けるだけ
+const HOLD := {
+	"onigiri": {"rot": Vector3(-8, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 3.0},
+	"nikuman": {"rot": Vector3(-20, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 2.4},
+	"taiyaki": {"rot": Vector3(68, 0, 18), "yaw": 180.0, "pos": Vector3(-0.07, 0.02, 0.0), "scale": 2.6},
+	"ramen": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+}
+const HOLD_DRINK := {"rot": Vector3(32, 0, -6), "pos": Vector3(-0.09, -0.06, 0.0), "scale": 2.1}   # 飲み物は取っ手を右（手の側）へ
+const HOLD_DEFAULT := {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 2.2}
 
 
-static func dish_glb(dish: String) -> String:
-	return "res://props/food/%s.glb" % MENU[dish][0]
+## 料理の glb。bites（食べた口数）を渡すと、食べている途中の形（<名前>_b1・_b2。かじった跡と中身が見える）があればそれを返す
+static func dish_glb(dish: String, bites := 0) -> String:
+	return "res://props/food/%s.glb" % _model(dish, bites)
+
+
+## 途中の形があるか（なければ呼ぶ側で小さくして見せる）
+static func has_bite_model(dish: String, bites: int) -> bool:
+	return bites <= 0 or _model(dish, bites) != MENU[dish][0]
+
+
+static func _model(dish: String, bites: int) -> String:
+	var base: String = MENU[dish][0]
+	var b := clampi(bites, 0, BITES - 1)
+	if b > 0 and ResourceLoader.exists("res://props/food/%s_b%d.glb" % [base, b]):
+		return "%s_b%d" % [base, b]
+	return base
 
 
 static func pellet_glb(dish: String) -> String:
 	return "res://props/pellets/pellet_%s.glb" % dish
 
 
-static func dish_icon(dish: String) -> String:
-	return "res://props/food/icons/%s.png" % MENU[dish][0]
+static func dish_icon(dish: String, bites := 0) -> String:
+	return "res://props/food/icons/%s.png" % _model(dish, bites)
 
 
 static func pellet_icon(dish: String) -> String:
