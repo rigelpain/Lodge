@@ -248,3 +248,85 @@ def lumps(P, role, center, half, n, spread, rnd):
         u = Vector((v.co.x / half[0], v.co.y / half[1], v.co.z / half[2]))
         d = sum(math.sin(a * u.x + b * u.y + c * u.z + ph) for a, b, c, ph in waves) / 3.0
         v.co = Vector(center) + v.co * (1.0 + spread * 0.45 * d)
+
+
+def mouth_top(cx, cy, cz, R, a0=0.0, a1=2 * math.pi, lobes=5):
+    """皿の上の物のひと口: 上から見た（XY）丸と歯の跡。mouth の向き違い"""
+    out = [(Vector((cx, cy, cz)), R, 1.0)]
+    for k in range(lobes):
+        a = a0 + (a1 - a0) * (k + 0.5) / lobes
+        out.append((Vector((cx + R * 0.8 * math.cos(a), cy + R * 0.8 * math.sin(a), cz)), R * 0.36, 1.0))
+    return out
+
+
+def koban(w, h, cz, n=2.4, count=64):
+    """小判の輪郭（正面 XZ の点）"""
+    pts = []
+    for k in range(count):
+        a = 2 * math.pi * k / count
+        c, s = math.cos(a), math.sin(a)
+        pts.append((w * math.copysign(abs(c) ** (2 / n), c), cz + h * math.copysign(abs(s) ** (2 / n), s)))
+    return pts
+
+
+def wrap_band(P, role, surf, r_of, cx, cz, w, top, out=0.0016, inn=0.0014, wobble=0.0012):
+    """2 枚合わせの形の下半分を巻く帯（海苔・包み紙）。正面の上の縁 top から底をまわって背中へ。切れるように閉じた板にする。
+    返すのは、面の上の点を求める関数 at(x, z, d)"""
+
+    def z_edge(x):
+        lo, hi = cz - 0.2, cz
+        for _ in range(26):
+            mid = (lo + hi) / 2
+            lo, hi = (mid, hi) if math.hypot(x - cx, mid - cz) > r_of(math.atan2(mid - cz, x - cx)) else (lo, mid)
+        return hi
+
+    def push(x, y, z, d):
+        v = Vector((x - cx, y, z - cz))
+        v = v * (1 + d / max(v.length, 1e-4))
+        return (v.x + cx, v.y, v.z + cz)
+
+    outer, inner = [], []
+    nu, nv = K.cuts(24, 14), K.cuts(12, 8)
+    for i in range(nu + 1):
+        x = -w + 2 * w * i / nu
+        tp = top - 0.0035 * (abs(x) / w) ** 8 + wobble * math.sin(x * 90)   # 角が少し丸く、手で切った縁
+        ze = z_edge(x)
+        col = [(1, tp + (ze - tp) * (j / nv) ** 0.65) for j in range(nv)] + [(0, ze)]
+        col += [(-1, tp + (ze - tp) * (j / nv) ** 0.65) for j in range(nv - 1, -1, -1)]
+        outer.append([push(x, sd * surf(x, z), z, out) for sd, z in col])
+        inner.append([push(x, sd * surf(x, z), z, -inn) for sd, z in col])
+    solid_grid(P.m(role), outer, inner)
+
+    def at(x, z, d=0.0022):
+        return push(x, surf(x, z), z, d)
+    return at
+
+
+def sleeve(P, role, poly, h, dip=0.0, t=0.0012):
+    """紙の袋・箱: 輪郭 poly（上から見た点。中心 0）の、上の開いた薄い入れ物。手前（+Y）の縁は dip だけ低く弧に下がる"""
+    m = P.m(role)
+    bm = m.bm
+    xs = [abs(p[0]) for p in poly] or [1.0]
+    W = max(xs)
+
+    def top(x, y):
+        return h - (dip * (1 - (x / W) ** 2) if y > 0 else 0.0)
+
+    def inset(p):
+        L = max(math.hypot(p[0], p[1]), 1e-5)
+        return (p[0] * (1 - t / L), p[1] * (1 - t / L))
+
+    n = len(poly)
+    ob = [bm.verts.new((p[0], p[1], 0.0)) for p in poly]
+    ot = [bm.verts.new((p[0], p[1], top(p[0], p[1]))) for p in poly]
+    ins = [inset(p) for p in poly]
+    it = [bm.verts.new((p[0], p[1], top(p[0], p[1]))) for p in ins]
+    ib = [bm.verts.new((p[0], p[1], t)) for p in ins]
+    for i in range(n):
+        j = (i + 1) % n
+        bm.faces.new((ob[i], ob[j], ot[j], ot[i]))
+        bm.faces.new((ot[i], ot[j], it[j], it[i]))
+        bm.faces.new((it[i], it[j], ib[j], ib[i]))
+    bm.faces.new(list(reversed(ob)))
+    bm.faces.new(ib)
+    return top

@@ -17,7 +17,8 @@
 | [build_slope.py](build_slope.py) | 斜面の小物（スピーカーの柱・コースの旗・毛糸の安全ネット・案内板） |
 | [build_machines.py](build_machines.py) | ロッジの中の機械と小物（ミシンの制作機・アイロン台の焼き台・スチーマー・乾燥機・カップ・食べ物の粒） |
 | [kit.py](kit.py) | ロッジの中の小物の台本が使う組み立て部品（品物ごとの部品箱、箱・円板・回転体・縫い目、並べて描く、書き出す） |
-| [build_food.py](build_food.py) | 食べ物と飲み物 41 品（中華まん・缶・ラーメン・そば・うどん・マグ・おにぎり・おでんなど。雪だるまの店の 13 品を 2026-11-01 に足した） |
+| [build_food.py](build_food.py) | 食べ物と飲み物（中華まん・缶・ラーメン・そば・うどん・マグ・おにぎり・おでんなど）。雪だるまの店の 22 品は、食べている途中の形（`_b1`・`_b2`）も持つ。説明は [design/food-look/](../design/food-look/README.md) |
+| [food_bite.py](food_bite.py) | 食べ物の形の道具（2 枚合わせのふっくらした形、海苔や紙の帯、紙の袋、かじった跡と切り口） |
 | [build_pellets.py](build_pellets.py) | 雪だるまの店で売るペレット 22 種（料理のもとの手芸の粒。料理ごとに色と形を変える） |
 | [build_room.py](build_room.py) | 床・壁・敷物・座布団・布団・小上がり・掘りごたつ |
 | [build_furniture.py](build_furniture.py) | 調度品と灯り（椅子・ソファ・プフ・卓・本棚・膝掛け・吊り灯り・行灯など） |

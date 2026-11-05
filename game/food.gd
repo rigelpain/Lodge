@@ -43,20 +43,28 @@ const HOLD := {
 	"onigiri": {"rot": Vector3(-8, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 3.0},
 	"nikuman": {"rot": Vector3(-20, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 2.4},
 	"taiyaki": {"rot": Vector3(68, 0, 18), "yaw": 180.0, "pos": Vector3(-0.07, 0.02, 0.0), "scale": 2.6},
+	"korokke": {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.06, 0.0), "scale": 2.5},
+	"hashbrown": {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 2.5},
+	"fries": {"rot": Vector3(-14, 180, 0), "pos": Vector3(-0.05, -0.08, 0.0), "scale": 2.0},
+	"hotsand": {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.06, 0.0), "scale": 2.6},
+	"yakiimo": {"rot": Vector3(-14, 180, -22), "pos": Vector3(-0.04, -0.08, 0.0), "scale": 2.0},
 	"ramen": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+	"udon": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+	"soba": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+	"yakisoba": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+	"hotcake": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.09, -0.02, 0.0), "scale": 1.6},
+	"sanma": {"rot": Vector3(-42, 180, 0), "pos": Vector3(-0.1, 0.02, 0.0), "scale": 1.4},
+	"kaki": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.09, 0.0, 0.0), "scale": 1.35},
+	"oshiruko": {"rot": Vector3(40, 0, 0), "pos": Vector3(-0.07, -0.05, 0.0), "scale": 1.7},
+	"clam": {"rot": Vector3(40, 0, 0), "pos": Vector3(-0.08, -0.05, 0.0), "scale": 1.6},
 }
-const HOLD_DRINK := {"rot": Vector3(32, 0, -6), "pos": Vector3(-0.09, -0.06, 0.0), "scale": 2.1}   # 飲み物は取っ手を右（手の側）へ
+const HOLD_DRINK := {"rot": Vector3(32, 0, -6), "pos": Vector3(-0.09, -0.06, 0.0), "scale": 2.1}   # 飲み物は取っ手を右（手の側）へ、中が見えるように傾ける
 const HOLD_DEFAULT := {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 2.2}
 
 
 ## 料理の glb。bites（食べた口数）を渡すと、食べている途中の形（<名前>_b1・_b2。かじった跡と中身が見える）があればそれを返す
 static func dish_glb(dish: String, bites := 0) -> String:
 	return "res://props/food/%s.glb" % _model(dish, bites)
-
-
-## 途中の形があるか（なければ呼ぶ側で小さくして見せる）
-static func has_bite_model(dish: String, bites: int) -> bool:
-	return bites <= 0 or _model(dish, bites) != MENU[dish][0]
 
 
 static func _model(dish: String, bites: int) -> String:

@@ -28,7 +28,7 @@ HEX = {
     "yarn_red": "B8402E", "felt_flame_r": "E0482A", "felt_flame_o": "F08A2C", "felt_flame_y": "F7C84A",
     "felt_brick": "A4573C", "felt_charcoal": "3A3836", "paper_white": "F4F0E6", "paper_kraft": "C9A87A", "felt_bun": "EFE8D9",
     "felt_tin": "A8A8A4", "yarn_noodle": "EED07E", "yarn_soba": "6E5A48", "felt_broth": "C8813A", "felt_broth_miso": "D49A55",
-    "felt_broth_shio": "E6D5A6", "felt_pink": "E59AA8", "felt_nori": "34473A", "felt_rice": "E6E0CF",
+    "felt_broth_shio": "E6D5A6", "felt_pink": "E59AA8", "felt_nori": "34473A", "felt_rice": "DED8C6",
     "felt_orange": "E58A2E", "felt_curry": "A8642A", "felt_konnyaku": "8C8780", "felt_daikon": "E3CDA0",
     "felt_tea": "8BA35A", "felt_purple": "7A3E5C", "felt_tan": "C8925A", "yarn_cream": "EFE6D2", "wood_light": "D2B07E", "knit_drum": "8E8A84", "snow": "F6F7FA", "cotton": "FBFAF6", "trunk": "6B4A30",
     "brass": "C99A3E", "pearl": "EEEAE2", "lacquer": "141012", "shell": "D8E4E6", "steel": "A9ADB2",

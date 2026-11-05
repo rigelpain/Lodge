@@ -2284,8 +2284,7 @@ static func held_shape(it: Dictionary) -> Node3D:
 		var f := PropsLib.make(FoodMenu.dish_glb(it.dish, bites) if done else FoodMenu.pellet_glb(it.dish))
 		var holder := Node3D.new()
 		holder.add_child(f)
-		var left: float = 1.0 if FoodMenu.has_bite_model(it.dish, bites) else [1.0, 0.72, 0.45][clampi(bites, 0, 2)]   # 途中の形がない料理は、ひと口ごとに小さく
-		f.scale = Vector3.ONE * (0.75 * left if done else 1.0) * (Vector3(1.3, 0.6, 1.3) if int(it.get("step", 0)) > 0 and not done else Vector3.ONE)
+		f.scale = Vector3.ONE * (0.75 if done else 1.0) * (Vector3(1.3, 0.6, 1.3) if int(it.get("step", 0)) > 0 and not done else Vector3.ONE)   # 食べても器の大きさは変えない（中身の量は途中の形が持つ）
 		if done:   # 手に持つ向き: 形の正面（glb の -Z）を自分へ
 			var hold: Dictionary = FoodMenu.HOLD.get(it.dish, FoodMenu.HOLD_DRINK if it.dish in FoodMenu.DRINKS else FoodMenu.HOLD_DEFAULT)
 			var k: Vector3 = f.scale * float(hold.scale)
