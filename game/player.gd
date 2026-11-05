@@ -9,6 +9,7 @@ const Palm := preload("res://palm.gd")
 const SackLook := preload("res://sack_look.gd")
 const Seats := preload("res://seats.gd")
 const FoodMenu := preload("res://food.gd")
+const TableEat := preload("res://table_eat.gd")
 const PropsLib := preload("res://props.gd")
 const Campfire := preload("res://campfire.gd")
 ## あなた。一人称で、見えるのは自分の人形と同じ柄の袖口と、紙の手だけ。
@@ -130,6 +131,8 @@ const POINT_SEND_GAP := 0.17 # 送るのは多くても 1 秒に 6 回
 var hub: Emotes              # 身ぶりの配り役（main.gd が置く。いなければ身ぶりは出せない）
 var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
+var _fp_rig: Node3D          # 机の皿と、一人称の手の道具を描く役（table_eat.gd の Rig）
+var _te_done := {}           # 机での食べ方: このひと口で済ませた音と数（コマ → true）
 var _eating := false         # 左ボタンを押しているあいだ、手の料理を 1 口ずつ食べ続ける
 var _bit_frame := -1         # ひと口を数えた身ぶりの始まりのコマ（同じひと口を 2 度数えない）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
@@ -160,6 +163,7 @@ var craft: Node              # 工房の配り役（main.gd の Craft）。財�
 var shopping := false        # 売り台が開いている（craft_ui.gd）。歩かない
 var _held_fp: Node3D         # 一人称の右手に持った物の形
 var _held_key := ""
+const TABLE_EYE := 0.42       # 机のある席で、目が机の面より少なくともこれだけ上 (m)
 const HELD_TILT := 0.12      # 畳んだソリの包みの名札の面を、まっすぐより少し上へ傾ける (rad)
 const HELD_TURN := 0.0     # 少し内へ回す (rad)
 const HELD_SCALE := 1.25     # 一人称で持つ包みの大きさ
@@ -873,6 +877,7 @@ func _pose_doll() -> void:
 			doll.rock_roll = float(st.get("rock_roll", 0.0))
 			doll.rock = Seats.rock_of(st, Doll.frame_index(), _sit_frame, _stand_frame)
 	doll.seat_soft = mode == Mode.SIT and seats.seat(seat_i).kind == "zabuton"
+	doll.eat_table = table_ctx()
 	if mode == Mode.DRUM:
 		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
 		doll.facing = pl.face
@@ -1144,6 +1149,9 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			# ロッジの席: 座った人形の目の所（中腰のあいだは半ば）。揺り椅子・ビーズクッションでは、傾いて動いた人形の目の所（視点は傾けない）
 			var e := doll.eye_point(true) if _sit_stage == 2 else doll.eye_point(false).lerp(doll.eye_point(true), 0.55)
 			eye = to_local(doll.global_transform * e)
+			var st := seats.seat(seat_i)
+			if _sit_stage == 2 and st.has("table"):   # 机より目が下だと、天板の裏しか見えない（掘りごたつの座布団）。机の面の少し上へ
+				eye.y = maxf(eye.y, to_local(Vector3(0, float(st.table.y) + TABLE_EYE, 0)).y)
 		eye.y += _cam_em.z
 		# 着地の沈みは目の高さの追いかけ（lerp）の外で足す（なまらず、すとんと沈んですっと戻る）
 		cam.position.y += _dip_shown
@@ -1298,6 +1306,7 @@ func _pose_hands(dt: float) -> void:
 	_face_stock_fp()
 	_place_held_fp(grow > 0.0)
 	_face_held_fp()
+	_fp_table_step()
 	_place_shapes_fp(em)
 
 
@@ -1619,14 +1628,102 @@ func eat_held() -> void:
 
 ## 手の料理をひと口: 右手を口へ運んでもぐもぐ（emotes.gd の eat）。噛むコマで持ち物のひと口を数える（_eat_step）
 func _bite() -> void:
+	var c := table_ctx()
+	if not c.is_empty():   # 机のある席: 食べ物に合った食べ方で
+		_bite_table(c)
+		return
 	var it := held()
 	if hub == null or menu_open or not FoodMenu.done(it) or (not _em.is_empty() and _em.kind == "eat" and _em_k() < 16):
 		return
 	hub.send({"kind": "eat", "who": id, "dish": it.dish, "last": int(it.get("bites", 0)) >= FoodMenu.BITES - 1})
 
 
+## 机のある席で座りきっていて、手にできあがった料理があるときの状況（table_eat.gd の ctx）。それ以外は空
+func table_ctx() -> Dictionary:
+	if seats == null or mode != Mode.SIT or seat_i < 0 or _sit_stage != 2 or _stand_frame >= 0 or craft == null:
+		return {}
+	return TableEat.ctx(seats.seat(seat_i), held())
+
+
+func _bite_table(c: Dictionary) -> void:
+	if hub == null or menu_open:
+		return
+	var seamless := false
+	if not _em.is_empty() and _em.kind == "eat_t":
+		var k := _em_k()
+		if k < int(_em.len) - 1:
+			return
+		seamless = _em.style == "slurp"   # すすり続ける: 箸を下ろさず、切れ目なく
+	_te_done = {}
+	hub.send(TableEat.event(id, c, not seamless))
+
+
+## 机での食べ方の進み（毎フレーム）: 決まったコマで音、ひと口を数える。押し続けていれば切れ目なく次へ
+func _eat_table_step() -> void:
+	var k := _em_k()
+	var spec: Dictionary = TableEat.STYLES.get(_em.style, {})
+	var audio = get_parent().get_node_or_null("Audio")
+	if audio and spec.snd.has(k) and not _te_done.has(k):
+		_te_done[k] = true
+		audio.eat(self, spec.snd[k][0], spec.snd[k][1], true)
+	if k >= int(spec.bite) and not _te_done.has("bite") and craft:
+		_te_done["bite"] = true
+		var ev := {"kind": "bite", "who": id, "slot": craft.hands.get(id, -1)}
+		if craft.send(ev) and ev.has("ate"):
+			_eating = false
+			if audio:
+				audio.eat(self, "eat_ah", 2, true)
+	if k >= int(_em.len) - 1 and _eating and FoodMenu.done(held()):
+		_bite()
+
+
+## 机のある席の、一人称の手の基準: 目の所で、席の向きに水平（カメラと違って下を向かない。下を向くと手が机に潜る）
+func _fp_table_frame(c: Dictionary) -> Transform3D:
+	return Transform3D(Basis.looking_at(c.face, Vector3.UP), cam.global_position)
+
+
+## その基準での、一人称の手に渡す点
+func _fp_table_anchors(c: Dictionary) -> Dictionary:
+	var dish: Vector3 = _fp_table_frame(c).affine_inverse() * (c.at + Vector3.UP * 0.05)
+	return {"mouth": Vector3(0.02, -0.07, -0.22), "near": Vector3(0.03, -0.17, -0.42), "lift": Vector3(0.05, -0.05, -0.4), "lip": Vector3(0.0, -0.26, -0.1), "rest_r": Vector3(0.24, -0.34, -0.34), "rest_l": Vector3(-0.24, -0.34, -0.34),
+			"l_table": Vector3(-0.28, -0.4, -0.3), "dish": dish, "right": Vector3.RIGHT, "up": Vector3.UP, "hold_w": TableEat.HOLD_W, "tool": TableEat.TOOL_LEN}
+
+
+## 机の皿と、一人称の手の道具（毎フレーム）。三人称では人形の分（doll.gd の _eat_rig_step）が見える
+func _fp_table_step() -> void:
+	var c := table_ctx() if not third else {}
+	if c.is_empty() and _fp_rig == null:
+		return
+	if _fp_rig == null:
+		_fp_rig = TableEat.Rig.new(1 << 2)
+		add_child(_fp_rig)
+	if c.is_empty():
+		_fp_rig.step({}, {}, -1, {}, Basis.IDENTITY, 1.0, 1.0, Vector3.ZERO)
+		return
+	var em := doll.emote_now()
+	var active: bool = em[0] == "eat_t" and not _em.is_empty() and _em.kind == "eat_t"
+	var pw := {}
+	var mouth := Vector3.ZERO
+	var xf := _fp_table_frame(c)
+	if active:
+		var A := _fp_table_anchors(c)
+		var pt: Dictionary = TableEat.pose(_em.style, em[1], _em.first, A)
+		mouth = xf * (A.lip as Vector3)   # 麺が吸い込まれる先（一人称では画面の下の外）
+		pw = {"r": xf * (pt.r as Vector3), "l": xf * (pt.l as Vector3), "tilt": pt.tilt, "carry": pt.carry, "item": null, "tip": null, "tip_l": null}
+		if pt.item != null:
+			pw.item = xf * (pt.item as Vector3)
+		if pt.tip != null:
+			pw.tip = xf * (pt.tip as Vector3)
+		if pt.tip_l != null:
+			pw.tip_l = xf * (pt.tip_l as Vector3)
+	_fp_rig.step(c, _em if active else {}, em[1] if active else -1, pw, xf.basis, 0.72, 1.0, mouth)
+
+
 ## 食べているひと口の進み（毎フレーム）: 5 コマ目で音、10 コマ目でひと口を数える。押し続けていれば次のひと口
 func _eat_step() -> void:
+	if not _em.is_empty() and _em.kind == "eat_t":
+		_eat_table_step()
+		return
 	if _em.is_empty() or _em.kind != "eat":
 		if _eating:
 			_bite()
@@ -1771,6 +1868,8 @@ func _emote_cam(kind: String, k: int) -> Vector3:
 	if k < 0 or (n > 0 and k >= n):
 		return Vector3.ZERO
 	match kind:
+		"eat_t":
+			return _table_eat_cam(k)
 		"un":
 			return Vector3([-0.06, -0.15, -0.15, -0.06, 0.0, 0.0, 0.0][k], 0, 0)
 		"nn":
@@ -1794,6 +1893,22 @@ func _emote_cam(kind: String, k: int) -> Vector3:
 	return Vector3.ZERO
 
 
+## 机で食べているあいだの視点: 皿を見下ろす。持ち上げる食べ方は、持ち上げたら顔を上げる。長さは ev.len
+func _table_eat_cam(k: int) -> Vector3:
+	var c := table_ctx()
+	if c.is_empty() or k >= int(_em.len):
+		return Vector3.ZERO
+	var d: Vector3 = c.at - cam.global_position
+	var flat := Vector2(d.x, d.z).length()
+	var lifts: bool = TableEat.STYLES[_em.style].has("hold")
+	var f := 0.8 if not lifts else (0.5 if k < 3 or k >= int(_em.len) - 3 else 0.25)
+	if _em.style == "slurp" and (not _em.first or k >= TableEat.SLURP_LIFT):
+		f = 0.4   # すすっているあいだは顔を上げ、器から口へのびる麺が見える
+	var yaw := wrapf(atan2(-d.x, -d.z) - rotation.y, -PI, PI)
+	var nod: float = TableEat.pose(_em.style, k, _em.first, _fp_table_anchors(c)).nod
+	return Vector3(clampf(atan2(d.y, flat) - _pitch, -1.0, 0.6) * f + nod * 0.5, yaw * f, 0.09)   # 少し身を乗り出して、皿の中を見る
+
+
 ## 身ぶりの一人称の手（カメラの座標）。身ぶりでなければ INF
 func _emote_hand(s: int) -> Vector3:
 	if _winding:
@@ -1811,6 +1926,11 @@ func _emote_hand(s: int) -> Vector3:
 	for gr in _em.get("grips", []):
 		mine.append(int(gr[0]))
 	match kind:
+		"eat_t":
+			var c := table_ctx()
+			if not c.is_empty() and k < int(_em.len):
+				var pt: Dictionary = TableEat.pose(_em.style, k, _em.first, _fp_table_anchors(c))
+				return cam.to_local(_fp_table_frame(c) * ((pt.r if s > 0 else pt.l) as Vector3))
 		"high_five":
 			if s in mine:
 				if k < 3:
@@ -2233,7 +2353,7 @@ func _facing(at: Vector3) -> float:
 
 ## 一人称の右手に、持っている物の形を持たせる（雪玉を持っているときは雪玉だけ）
 func _place_held_fp(ball: bool) -> void:
-	var it := held() if not ball else {}
+	var it := held() if not ball and table_ctx().is_empty() else {}   # 机のある席では、料理は机の上（table_eat.gd）
 	var key := str(it)
 	if key == _held_key:
 		return

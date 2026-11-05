@@ -1042,7 +1042,7 @@ def kaki(name, bites=0):
     P.finish(fuzz=0.0006)
 
 
-def yakisoba(name, bites=0):
+def yakisoba(name, bites=0, noodles=True):
     """焼きそば: 白い皿に藍の縫い目。ソース色の細い毛糸の麺を山に盛り、キャベツ・豚肉・紅しょうが・青のり。食べるほど山が低くなる"""
     P = K.Parts(name, kind="food", tris=9000)
     rnd = random.Random(27)
@@ -1051,7 +1051,7 @@ def yakisoba(name, bites=0):
     Rm, Hm = 0.074 * k_ ** 0.5, 0.042 * k_
     # 山の芯: 麺のすきまから皿が透けないように
     K.pbox(P, "felt_sauce", (0, 0, 0.011 + Hm * 0.22), (Rm * 0.86, Rm * 0.86, Hm * 0.42), n=2.0, nz=2.0, c=K.cuts(8, 6))
-    for k in range([54, 38, 20][bites]):
+    for k in range([54, 38, 20][bites] if noodles else 0):
         a0, r0 = rnd.uniform(0, 2 * math.pi), rnd.uniform(0.1, 0.9)
         da, dr = rnd.uniform(-2.6, 2.6), rnd.uniform(-0.5, 0.5)
         pts = []
@@ -1089,7 +1089,7 @@ def yakisoba(name, bites=0):
         a, r = rnd.uniform(0, 2 * math.pi), rnd.uniform(0.0, 0.016)
         x, y = 0.012 + r * math.cos(a), 0.008 + r * math.sin(a)
         K.box(P, "felt_red", (x, y, mound_z(x, y) + 0.0035), (0.015, 0.0028, 0.0022), rot=(rnd.uniform(0, 3), "Z"))
-    B.scatter(P, "thread_aonori", B.surface(P, "yarn_sauce"), [320, 200, 90][bites], (0.0014, 0.0012, 0.0006), rnd)
+    B.scatter(P, "thread_aonori", B.surface(P, "yarn_sauce" if noodles else "felt_sauce"), [320, 200, 90][bites], (0.0014, 0.0012, 0.0006), rnd)
     K.steam(P, (0, -0.02, 0.05 * k_), 0.03, 0.005, seed=27)
     P.finish(fuzz=0.0008)
 
@@ -1214,6 +1214,14 @@ for b_ in range(3):
     if want(nm("udon", b_)):   # きつねうどん: 暗い器に淡い汁、太く白い麺
         ramen(nm("udon", b_), "felt_charcoal", "felt_broth_udon", "thread", ["kitsune", "negi", "kamaboko"], seed=5, bites=b_, noodle="yarn_cream", thick=0.0058,
               counts=(12, 8, 4), wave=0.0026, liner="felt_liner", zigzag=False)
+    if want("ramen_shoyu_nn%d" % b_):
+        ramen("ramen_shoyu_nn%d" % b_, "felt_liner", "felt_broth", "thread", ["chashu", "naruto", "egg", "nori", "negi", "menma"], seed=1, bites=b_, counts=(0, 0, 0))
+    if want("soba_nn%d" % b_):
+        ramen("soba_nn%d" % b_, "felt_liner", "felt_broth_soba", "thread_dark", ["kakiage", "negi"], seed=4, bites=b_, noodle="yarn_soba", counts=(0, 0, 0), zigzag=False)
+    if want("udon_nn%d" % b_):
+        ramen("udon_nn%d" % b_, "felt_charcoal", "felt_broth_udon", "thread", ["kitsune", "negi", "kamaboko"], seed=5, bites=b_, noodle="yarn_cream", counts=(0, 0, 0), liner="felt_liner", zigzag=False)
+    if want("yakisoba_nn%d" % b_):
+        yakisoba("yakisoba_nn%d" % b_, bites=b_, noodles=False)
     for n_, fn in (("korokke", korokke), ("hashbrown", hashbrown), ("fries", fries), ("hotsand", hotsand), ("yakiimo", yakiimo), ("hotcake", hotcake),
                    ("sanma", sanma), ("kaki", kaki), ("yakisoba", yakisoba), ("oshiruko", oshiruko), ("clam_chowder", clam_chowder)):
         if want(nm(n_, b_)):

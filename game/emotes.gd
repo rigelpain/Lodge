@@ -41,6 +41,7 @@ const KINDS := {
 	"huh": {"frames": 16, "root": false},         # 声「ウン？」首をかしげる
 	"oi": {"frames": 18, "root": false},          # 声「おーーーい」遠くの人を呼ぶ（空いた手を口に当てる）
 	"eat": {"frames": 16, "root": false},         # 手の料理をひと口（右手を口へ運び、もぐもぐ。ev.last で最後のひと口: ほっと息）
+	"eat_t": {"frames": 0, "root": false},        # 机のある席で、食べ物に合った食べ方でひと口（table_eat.gd。長さは ev.len）
 	"catch": {"frames": 10, "root": false},       # 雪合戦の対決で、相手の雪玉を両手で取る（duel.gd が決めて出す。ev.ball の雪玉が消える）
 }
 const VOICES := ["wa", "un", "nn", "huh", "oi"]

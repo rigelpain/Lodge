@@ -238,6 +238,7 @@ func _pose_doll() -> void:
 	doll.seat_drop = float(_s.get("sd", 0.45))
 	doll.seat_edge = float(_s.get("se", 0.2))
 	doll.seat_soft = bool(_s.get("so", false))
+	doll.eat_table = _s.get("te", {})
 	doll.rock_axis = _s.get("ra", Vector3.ZERO)   # 揺り椅子・ビーズクッションで体ごと傾く
 	doll.rock = float(_s.get("rk", 0.0))
 	doll.rock_at = _s.get("rp", Vector3.ZERO)
