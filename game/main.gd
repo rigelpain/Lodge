@@ -155,6 +155,7 @@ var player: CharacterBody3D
 var emotes: Emotes          # 身ぶりと声の配り役（人より先に置く。人が登録する）
 var duel: Duel              # 雪合戦の対決の配り役（duel.gd）。握手から始まる 1 対 1
 var duel_hud: CanvasLayer   # 対決の画面（duel_hud.gd）
+var duel_focus := false     # 自分が雪合戦で戦っているあいだ（set_duel_focus）
 var hud: CanvasLayer        # 画面の表示（hud.gd）。文字を使わず、アイコンと形で伝える
 var args := {}
 var elapsed := 0.0
@@ -947,6 +948,30 @@ func _pip_env_of() -> Environment:
 	return _pip_env
 
 
+## 右上の 360° の小窓を出す・消す。pip_hidden は遊ぶ人の選び（P・設定）で、雪合戦のあいだ（duel_focus）はそれと別に消す
+func _sync_pip_shown() -> void:
+	if _pip_layer:
+		_pip_layer.visible = not pip_hidden and not duel_focus
+
+
+## 雪合戦で戦っているあいだ、ふだんの HUD をよけて一人称に固定する（2026-11-05 代表「タグやインベントリ、体力ゲージ、時間ゲージ、
+## ミニマップ以外のHUDをよけることってできますか？集中して戦いたいので。あ、雪玉ストック数は避けなくていいです」「一人称視点固定にしてほしいです」）。
+## 残す物: 名札の札（hud.gd）・持ち物の列と雪玉のストック（craft_ui.gd）・ハート・時計・円の地図（duel_hud.gd）。
+## ここでよけるのは、右上の小窓・右下の刺繍枠とバッジ・日時計。案内のワッペン・糸巻き・確かめ用の数字（hud.gd）、I・N・R の札・財布（craft_ui.gd）は
+## それぞれ duel_focus を見て描かない。遊ぶ人の選び（小窓の P・設定の刺繍枠・三人称）は書き換えないので、終わると元のとおりに戻る
+func set_duel_focus(on: bool) -> void:
+	duel_focus = on
+	_sync_pip_shown()
+	if self_cam:
+		self_cam.set_focus_off(on)
+	var dc := get_node_or_null("/root/DayCycle")
+	var dial = dc.get("_dial") if dc else null
+	if is_instance_valid(dial):
+		dial.visible = not on
+	if player:
+		player.lock_first(on)
+
+
 func _layout_pip() -> void:
 	var size: Vector2 = PIP_SIZES[pip_mode]
 	if pip_mat:
@@ -995,7 +1020,7 @@ func _process(_dt: float) -> void:
 	if pip_cams.is_empty():
 		return
 	_place_pip_cams()
-	if pip_hidden:
+	if pip_hidden or duel_focus:
 		_pip_due = 0.0
 	else:
 		_sync_pip_inside()
@@ -2005,7 +2030,7 @@ func _apply_setting(key: String, v) -> void:
 			if player: player.ride_fov_amount = v
 		"pip":
 			pip_hidden = not v
-			if _pip_layer: _pip_layer.visible = v
+			_sync_pip_shown()
 		"selfcam":
 			if self_cam: self_cam.set_shown(v)
 		"snow":
@@ -2053,7 +2078,7 @@ func _unhandled_input(e: InputEvent) -> void:
 		elif e.physical_keycode == KEY_P and _pip_layer:
 			# 右上の 360° 映像を消す／出す（消している間は描画もしない）
 			pip_hidden = not pip_hidden
-			_pip_layer.visible = not pip_hidden
+			_sync_pip_shown()
 			settings.sync("pip", not pip_hidden)
 		elif e.physical_keycode == KEY_V and pip_mat:
 			pip_mode = (pip_mode + 1) % 3

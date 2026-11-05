@@ -78,6 +78,8 @@ var prompt := ""             # 画面に出す一言（main.gd が読む）
 const MIRROR_GAZE_Y := 0.2    # 大きな鏡に映っているあいだの、上下の見る向きの効き
 var base_fov := 75.0         # 一人称の視野角（設定からだけ変える）
 var third := false           # C で三人称
+var fp_locked := false       # 雪合戦で戦っているあいだ、一人称に固定する（lock_first）
+var _third_want := false     # 遊ぶ人の選んだ視点（固定が解けたら、これに戻す）
 var cam_dist := 3.4          # 三人称: 頭の後ろからカメラまでの距離 (m)。ピンチ・設定
 var cam_frame := -0.2        # 三人称: 人形の目の高さの線が、画面のどの高さに来るか（まんなかが 0、上の縁が 1、下の縁が -1）。
                              # 負で人形が画面の下のほうに来て、上が広く見える。カメラの見下ろす角度はマウスの上下のまま
@@ -300,6 +302,8 @@ const PINCH_SWITCH := 0.35   # 切り替えに要る、たまった開き閉じ�
 var _pinch_acc := 0.0
 
 func _pinch(factor: float) -> void:
+	if fp_locked:
+		return
 	var f := log(maxf(factor, 0.01))   # 開くと正、閉じると負
 	if third:
 		if f > 0.0 and cam_dist <= CAM_DIST.x + 0.01:
@@ -346,7 +350,20 @@ func _save_cam(dt: float) -> void:
 
 ## 三人称では自分の体を映し、一人称の手は映さない。滑るときの風（層 5）はどちらでも映す
 func set_third(on: bool) -> void:
-	third = on
+	_third_want = on
+	_apply_third()
+
+
+## 雪合戦で戦っているあいだ、一人称に固定する。解けたら、遊ぶ人の選んでいた視点へ（設定は書き換えない）
+func lock_first(on: bool) -> void:
+	if on and not fp_locked:
+		_third_want = third
+	fp_locked = on
+	_apply_third()
+
+
+func _apply_third() -> void:
+	third = _third_want and not fp_locked
 	cam.cull_mask = ((1 << 0) | (1 << 1) | (1 << 3) if third else (1 << 0) | (1 << 2) | (1 << 3)) | (1 << 4) | (1 << 7)   # 層 8 は太陽
 
 
@@ -388,8 +405,9 @@ func _unhandled_input(e: InputEvent) -> void:
 	elif e is InputEventKey and e.pressed and not e.echo:
 		match e.physical_keycode:
 			KEY_C:
-				set_third(not third)
-				get_parent().settings.sync("third", third)
+				if not fp_locked:
+					set_third(not third)
+					get_parent().settings.sync("third", third)
 			KEY_F:
 				var duel := get_parent().get_node_or_null("Duel")
 				if duel and mode == Mode.WALK and duel.try_catch(self):
