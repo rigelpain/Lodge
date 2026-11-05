@@ -18,6 +18,7 @@ const Seats := preload("res://seats.gd")
 ## あなたが席に座ると、そのそばの空いた席へ寄ってくる（同じ机を囲む）。座る・立つは、あなたと同じ出来事（seats.gd の sit・stand）
 ## 雪合戦: 雪玉を持ったあなたに低い手のひらを差し出されると、しゃがんで雪玉を作ってから握手しに来る（握手で対決が始まる。duel.gd）。
 ## 掛金を受け、円の中を回りながら振りかぶって投げ、ときどきよけて、ときどき取る。なくなれば作る。ロッジでくつろぐ仲間はしない
+## 財布はいつも金色の真鍮のボタン 5 枚以上（DUEL_BUTTONS）。掛金で減っても、次の握手で戻るので、賭けられなくならない
 
 enum State { PUSH, WAIT, RIDE }
 
@@ -93,6 +94,7 @@ func _ready() -> void:
 	craft = get_parent().get_node_or_null("Craft")
 	if craft and id >= 0:
 		craft.join(id)
+		_fill_wallet()
 		craft.happened.connect(_on_craft)
 		craft.send({"kind": "doll", "who": id, "doll": doll.kind})   # いまの人形をみんなに知らせる
 	seats = get_parent().get_node_or_null("Seats")
@@ -535,6 +537,7 @@ func _go_five(dt: float) -> void:
 
 # ---------------------------------------------------------------- 雪合戦の対決（duel.gd）
 
+const DUEL_BUTTONS := 50     # 財布にいつも持っている分（木の何個分。金色の真鍮のボタン 5 枚）。2026-11-05 代表「CPUは金5枚持っていてほしいです」
 const BET_WAIT := 4.0        # 掛金がこれだけ変わらなければ受ける (s)。あなたが額を選び終えるのを待つ
 const START_WAIT := 1.5      # 戦いが始まってから、最初に投げるまで (s)
 const THROW_EVERY := Vector2(0.0, 1.2)   # 投げられるようになってから（duel.gd の THROW_GAP）、次に振りかぶるまで (s)
@@ -620,6 +623,13 @@ func _try_catch(duel: Node) -> void:
 		_catching = -1
 
 
+## 財布が DUEL_BUTTONS より少なければ、そこまで足す（多いぶんは持ったまま）。はじめと、握手で掛金の画面に入るとき
+func _fill_wallet() -> void:
+	var lack: int = DUEL_BUTTONS - craft.wallet(id)
+	if lack > 0:
+		craft.send({"kind": "earn", "who": id, "n": lack})
+
+
 ## 対決にかかわっているあいだの動き。動かしたら true（ふだんの動きはしない）
 func _duel_step(dt: float) -> bool:
 	var duel := get_parent().get_node_or_null("Duel")
@@ -633,6 +643,8 @@ func _duel_step(dt: float) -> bool:
 	_duel_t -= dt
 	match String(d.phase):
 		"bet":
+			if _duel_stake < 0:   # 掛金の画面に入ったところ（前の対決で減った分は、ここで戻る）
+				_fill_wallet()
 			if int(d.stake) != _duel_stake:
 				_duel_stake = int(d.stake)
 				_duel_t = BET_WAIT

@@ -1,7 +1,7 @@
 extends SceneTree
 ## 雪合戦の対決の、投げの間の糸の輪（duel_hud.gd の _draw_gap）を撮る。窓を出す:
 ##   Godot --fixed-fps 60 --path game --resolution 1280x720 -s res://tools/duel_gap_shots.gd -- --no-sound --bots=1 --lodge-bots=0 --no-pip --hud-idle=0 --dir=/path/shots
-## 01 投げた直後 / 02 間のなかば / 03 もうすぐ明ける / 04 明けた瞬間 / 05 消えたあと（右手に雪玉）/
+## 00 掛金の上限（仲間の金 5 枚）/ 01 投げた直後 / 02 間のなかば / 03 もうすぐ明ける / 04 明けた瞬間 / 05 消えたあと（右手に雪玉）/
 ## 06 雪玉がないままの間 / 07 相手の雪玉を取れるときの間（キャッチの照準と重ならないか）
 
 const AT := Vector3(14, 0, 16)
@@ -77,6 +77,13 @@ func _run() -> void:
 	_ok(duel.throw_wait(p.id) == 0, "ふだんの雪合戦で投げても間がない")
 	await _wait(0.2)
 	duel._shook(p.id, foe.id)
+	await _wait(0.4)
+	# 掛金の上限: 財布が多くても、仲間の金 5 枚まで
+	main.craft.wallets[p.id] = 300
+	main.duel_hud.nudge(100, 1)
+	await _wait(0.3)
+	_ok(int(duel.of(p.id).stake) == 50, "掛金の上限は仲間の金 5 枚: %d" % int(duel.of(p.id).stake))
+	await _shot("00_bet_top")
 	duel._apply({"kind": "ok", "who": p.id})
 	duel._apply({"kind": "ok", "who": foe.id})
 	await _wait(0.5)
