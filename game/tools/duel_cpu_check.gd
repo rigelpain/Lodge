@@ -19,6 +19,8 @@ var craft: Node
 var foe: Node3D
 var fails := 0
 var _seen := {"throw": 0, "windup": 0, "catch": 0, "hit_me": 0, "hit_foe": 0, "make": 0}
+var _foe_threw := -1.0       # 仲間がこの前に投げた時
+var _foe_gap := INF          # 仲間が投げてから次を投げるまでの、いちばん短い間 (s)
 
 
 func _initialize() -> void:
@@ -108,6 +110,7 @@ func _offer() -> bool:
 
 ## 仲間の前で投げる（長く振りかぶって、体のまんなかをねらう。遊ぶ人と同じ wind_up・throw_ball）
 func _throw_at_foe() -> void:
+	await _until(func(): return hub.can_throw(p.id), 3.0)   # 投げたばかりなら待つ（duel.gd の THROW_GAP）
 	_face(foe.global_position)
 	p.wind_up()
 	await _wait(0.5)
@@ -302,6 +305,7 @@ func _run() -> void:
 			break
 		await _settle("%d戦目の負け" % (round_i + 2), w0 - (5 if int(d2.winner) == foe.id else 0), f0 + (5 if int(d2.winner) == foe.id else 0))
 	_ok(won, "投げて勝てた")
+	_ok(_foe_gap >= duel.THROW_GAP, "仲間も投げたあと %.1f 秒は投げない: いちばん短い間 %.2f 秒" % [duel.THROW_GAP, _foe_gap])
 	_say("見たもの: %s" % str(_seen))
 	_say("おわり: ×の数 %d" % fails)
 	quit(fails)
@@ -343,6 +347,9 @@ func _note(ev: Dictionary) -> void:
 		"throw":
 			if int(ev.who) == foe.id:
 				_seen.throw += 1
+				if _foe_threw >= 0.0 and not duel.fighting(foe.id).is_empty():
+					_foe_gap = minf(_foe_gap, _now() - _foe_threw)
+				_foe_threw = _now()
 		"windup":
 			if int(ev.who) == foe.id:
 				_seen.windup += 1

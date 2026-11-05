@@ -260,7 +260,7 @@ func _pose_doll() -> void:
 	# 雪玉・帯の米袋・ランタンは、配り役（ホストが決めて配った値）から。player.gd の _pose_doll と同じ
 	if hub:
 		var n: int = hub.balls_of(id)
-		doll.holding_ball = n > 0 and (craft == null or craft.held(id).is_empty())
+		doll.holding_ball = n > 0 and (craft == null or craft.held(id).is_empty()) and hub.can_throw(id)
 		doll.sleeve_balls = n - (1 if doll.holding_ball else 0)
 	if craft:
 		var spec: Dictionary = craft.sack(id)

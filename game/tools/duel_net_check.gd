@@ -1,9 +1,10 @@
 extends SceneTree
 ## 通信の確かめ: 雪合戦の対決が、ホストとつなぐ側の画面で同じになるか（数字だけ出す）。ホストを先に起動する。
-##   Godot --headless --fixed-fps 60 --path game -s res://tools/duel_net_check.gd -- --host --port=24731 --no-sound --bots=0 --lodge-bots=0
-##   Godot --headless --fixed-fps 60 --path game -s res://tools/duel_net_check.gd -- --join=127.0.0.1 --port=24731 --no-sound --bots=0 --lodge-bots=0
-## 握手 → つなぐ側が掛金 20 を出し、ホストが受ける → 戦い: つなぐ側が 1 発、ホストが 2 発当てる → ホストの雪玉をつなぐ側が取る →
-## ホストが 3 発目 → 2 人で握手して払う。1 秒ごとに両方の画面の対決（段・当てた数・残りの秒・雪玉・財布）を出す
+## 段取りは実時間で進めるので、--fixed-fps は付けない（ゲームの時間が先へ進んで、インターバルや制限時間が合わなくなる）。
+##   Godot --headless --path game -s res://tools/duel_net_check.gd -- --host --port=24731 --no-sound --bots=0 --lodge-bots=0
+##   Godot --headless --path game -s res://tools/duel_net_check.gd -- --join=127.0.0.1 --port=24731 --no-sound --bots=0 --lodge-bots=0
+## 握手 → つなぐ側が掛金 20 を出し、ホストが受ける → 戦い: つなぐ側が 1 発（続けて投げても 2 発目は出ない）、ホストが 2 発当てる → ホストの雪玉をつなぐ側が取る →
+## （両方の画面に紙吹雪）→ ホストが 3 発目 → 2 人で握手して払う。1 秒ごとに両方の画面の対決（段・当てた数・残りの秒・雪玉・財布）を出す
 
 const Snowball := preload("res://snowball.gd")
 const Duel := preload("res://duel.gd")
@@ -66,9 +67,9 @@ func _line(tag: String) -> void:
 		return
 	var ha: int = int(d.hits_a) if int(d.a) == host_id else int(d.hits_b)
 	var hj: int = int(d.hits_b) if int(d.a) == host_id else int(d.hits_a)
-	_say("%s 段 %s 当てた ホスト %d つなぐ %d 残りの秒 %d 掛金 %d 勝ち %d 雪玉 ホスト %d つなぐ %d 財布 ホスト %d つなぐ %d 円 %s" % [tag, d.phase, ha, hj,
+	_say("%s 段 %s 当てた ホスト %d つなぐ %d 残りの秒 %d 掛金 %d 勝ち %d 雪玉 ホスト %d つなぐ %d 財布 ホスト %d つなぐ %d 円 %s 投げられる ホスト %s つなぐ %s" % [tag, d.phase, ha, hj,
 		int(Duel.left_s(d)), int(d.stake), int(d.winner), main.emotes.balls_of(host_id), main.emotes.balls_of(join_id),
-		main.craft.wallet(host_id), main.craft.wallet(join_id), main.duel._rings.size()])
+		main.craft.wallet(host_id), main.craft.wallet(join_id), main.duel._rings.size(), main.emotes.can_throw(host_id), main.emotes.can_throw(join_id)])
 
 
 func _since() -> float:
@@ -121,15 +122,23 @@ func _run() -> void:
 	_fight_t = Time.get_ticks_msec()
 	_line("始まった")
 	_log_loop()
+	hub.happened.connect(func(ev):
+		if ev.kind == "catch":
+			await _wait(0.15)
+			var n: int = hub.get_children().filter(func(c): return c is CPUParticles3D and c.amount == 20).size()
+			_say("%s 取った: この画面の紙吹雪 %d" % ["○" if n == 1 else "×", n])
+		elif ev.kind == "hit":
+			var n: int = hub.get_children().filter(func(c): return c is MeshInstance3D and c.material_override is StandardMaterial3D and c.material_override.billboard_mode == BaseMaterial3D.BILLBOARD_ENABLED).size()
+			_say("%s 当たった: この画面の星 %d" % ["○" if n == 1 else "×", n]))
 	if _host():
 		_place(p, AT + Vector3(0, 0, -2), AT + Vector3(0, 0, 3))
 	else:
 		_place(p, AT + Vector3(0, 0, 3), AT + Vector3(0, 0, -2))
 	var them: Node3D = main.net.remotes[them_id]
 	if _host():
-		for at in [3.0, 5.0, 7.0, 10.0]:
+		for at in [3.0, 5.5, 8.0, 11.0]:
 			if at > 9.0:   # 雪玉がなくなったので、作る（対決中も作れる）
-				await _until(7.6)
+				await _until(8.6)
 				hub.send({"kind": "make_ball", "who": p.id})
 			await _until(at)
 			_throw(p, them)
@@ -138,9 +147,13 @@ func _run() -> void:
 		await _until(1.0)
 		_throw(p, them)
 		_say("投げた（1.0 秒）")
-		await _until(6.5)
+		await _until(1.5)
+		_throw(p, them)   # 投げたばかり: ホストが受けない（雪玉は減らない）
+		await _wait(0.3)
+		_say("%s 続けて投げても出ない: 雪玉 %d（のぞみ 2）" % ["○" if hub.balls_of(p.id) == 2 else "×", hub.balls_of(p.id)])
+		await _until(7.5)
 		var done := false
-		while _since() < 9.0 and not done:
+		while _since() < 10.5 and not done:
 			for b in hub.get_children():
 				if b is Snowball and b.thrower == them_id and not b._done and b.global_position.distance_to(duel._chest(p)) < duel.CATCH_REACH:
 					duel.send({"kind": "catch", "who": p.id, "ball": b.ball_id})
@@ -148,7 +161,7 @@ func _run() -> void:
 					done = true
 					break
 			await physics_frame
-	await _until(12.5)
+	await _until(13.0)
 	_line("決まった")
 	# 払いの握手
 	if _host():

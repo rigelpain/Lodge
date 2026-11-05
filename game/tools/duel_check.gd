@@ -50,6 +50,7 @@ func _bots() -> Array:
 
 ## a が b の胸へ投げる（当たる速さで）
 func _throw(a: Node3D, b: Node3D) -> void:
+	main.duel._gap_until.clear()   # ここで見たいのは当たりの数え方。投げる間は duel_catch_check で見る
 	var origin := a.global_position + Vector3.UP * 1.4 + (b.global_position - a.global_position).normalized() * 0.5
 	var target := b.global_position + Vector3.UP * 1.0
 	var flat := target - origin

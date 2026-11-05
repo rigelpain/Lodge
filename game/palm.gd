@@ -265,7 +265,7 @@ static func pop(k: int) -> float:
 # ---------------------------------------------------------------- 合った所で飛び散るもの
 
 ## 紙吹雪と紙の星。normal はぶつかった手の向き（横へ散る）
-static func burst(parent: Node, point: Vector3) -> void:
+static func burst(parent: Node, point: Vector3, size := 1.0, with_star := true) -> void:
 	var c := CPUParticles3D.new()
 	c.one_shot = true
 	c.emitting = false
@@ -276,8 +276,8 @@ static func burst(parent: Node, point: Vector3) -> void:
 	c.randomness = 0.5
 	c.direction = Vector3.UP
 	c.spread = 100.0
-	c.initial_velocity_min = 1.6
-	c.initial_velocity_max = 3.4
+	c.initial_velocity_min = 1.6 * size
+	c.initial_velocity_max = 3.4 * size
 	c.gravity = Vector3(0, -3.2, 0)
 	c.damping_min = 1.2
 	c.damping_max = 2.2
@@ -286,8 +286,8 @@ static func burst(parent: Node, point: Vector3) -> void:
 	c.angle_max = 360.0
 	c.angular_velocity_min = -540.0
 	c.angular_velocity_max = 540.0
-	c.scale_amount_min = 0.7
-	c.scale_amount_max = 1.3
+	c.scale_amount_min = 0.7 * size
+	c.scale_amount_max = 1.3 * size
 	var g := Gradient.new()   # 色は 5 つのどれか（混ぜない）
 	g.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
 	var offs := PackedFloat32Array()
@@ -315,11 +315,12 @@ static func burst(parent: Node, point: Vector3) -> void:
 	c.global_position = point
 	c.restart()
 	c.finished.connect(c.queue_free)
-	_star(parent, point)
+	if with_star:
+		star(parent, point, size)
 
 
 ## 紙を切った星が、合った瞬間にひらいて消える（12 コマで 4 コマ）
-static func _star(parent: Node, point: Vector3) -> void:
+static func star(parent: Node, point: Vector3, size := 1.0) -> void:
 	var pts := PackedVector2Array()
 	for k in 16:
 		var a := TAU * k / 16.0 + PI / 2.0
@@ -340,7 +341,7 @@ static func _star(parent: Node, point: Vector3) -> void:
 	var tw := star.create_tween()
 	for s in [[0.5, 1.0], [1.15, 1.0], [1.45, 0.65], [1.6, 0.25]]:
 		tw.tween_callback(func():
-			star.scale = Vector3.ONE * s[0]
+			star.scale = Vector3.ONE * s[0] * size
 			m.albedo_color.a = s[1])
 		tw.tween_interval(1.0 / 12.0)
 	tw.tween_callback(star.queue_free)

@@ -49,6 +49,7 @@ func _throw(a: Node3D, b: Node3D) -> void:
 	flat.y = 0
 	var t := flat.length() / 12.0
 	var vel := flat.normalized() * 12.0 + Vector3.UP * ((target.y - origin.y + 4.9 * t * t) / t)
+	main.duel._gap_until.clear()   # 絵を撮るので、投げる間は待たない
 	main.emotes.send({"kind": "throw", "who": a.id, "origin": origin, "velocity": vel})
 
 
