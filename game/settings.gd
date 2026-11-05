@@ -41,6 +41,7 @@ const ITEMS := [
 	["ssao", "くぼみの影・色の照り返し", "bool", true, null],
 	["shadows", "影", "bool", true, null],
 	["glow", "明るい所の光のにじみ", "bool", true, null],
+	["vsync", "縦同期（画面のズレが気になるとき）", "bool", false, null],
 	["vol_music", "音量: 音楽", "float", 0.05, [0.0, 1.0, 0.01]],
 	["vol_sfx", "音量: 効果音", "float", 0.05, [0.0, 1.0, 0.01]],
 	["vol_voice", "音量: ボイス", "float", 0.05, [0.0, 1.0, 0.01]],

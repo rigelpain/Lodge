@@ -166,6 +166,7 @@ const THREAD_R := 0.011          # 糸の太さ（半径 m）。遠くでは太�
 const THREAD_FAR := 0.0004       # 1 m 離れるごとに足す太さ（遠くからもそよぐ糸が見えるように）
 const THREAD_SIDES := 5
 const DRAW_NEAR := 45.0          # これより遠いボタンの糸は、描き直さない
+const DRAW_MID := 12.0           # これより遠いボタンの糸は、3 コマに 1 度だけ描き直す
 
 var world: Node3D               # main.gd
 var auto := true                # 自分で降らせる（確かめの台本は false にして drop_at で置く）
@@ -188,6 +189,7 @@ var _clock := 0.0
 var _confetti_mat: StandardMaterial3D
 var _thread_mats := {}
 var _cam_pos := Vector3.ZERO
+var _cam: Camera3D
 var _last_frame := -1
 
 
@@ -928,6 +930,7 @@ static func _lid_mat() -> StandardMaterial3D:
 
 func _process(_dt: float) -> void:
 	var cam := get_viewport().get_camera_3d()
+	_cam = cam
 	if cam:
 		_cam_pos = cam.global_position
 	var f := Doll.frame_index()
@@ -1198,8 +1201,14 @@ func _draw_thread(b: Btn, f: int, t: float, bury := 0.0) -> void:
 	if b.drawn == f:
 		return
 	var d := _cam_pos.distance_to(b.at)
-	if d > DRAW_NEAR and b.drawn >= 0 and b.state == "rest":
-		return
+	if b.drawn >= 0 and b.state == "rest":
+		if d > DRAW_NEAR:
+			return
+		# 画面の外の糸は組み直さない。少し遠い糸は 3 コマに 1 度（ボタンが増えるほど重くなるので。2026-11-05 測定）
+		if _cam and not _cam.is_position_in_frustum(b.at):
+			return
+		if d > DRAW_MID and (f + b.sd) % 3 != 0:
+			return
 	b.drawn = f
 	var m := b.mesh
 	m.clear_surfaces()
@@ -1301,16 +1310,34 @@ func _tail(b: Btn, k: int, wd: Vector3, g: float, f: int, bury: float, grow: flo
 	return pts
 
 
+static var _TUBE_COS := _tube_ring(true)
+static var _TUBE_SIN := _tube_ring(false)
+
+
+static func _tube_ring(want_cos: bool) -> PackedFloat32Array:
+	var a := PackedFloat32Array()
+	for k in THREAD_SIDES + 1:
+		var ang := TAU * k / THREAD_SIDES
+		a.append(cos(ang) if want_cos else sin(ang))
+	return a
+
+
 ## 太さ rad の管を描く（点ごとの輪を、前の点の向きから最小の回転で運ぶ）。U は周り、V は長さ（撚りの模様の PITCH で 1）
 static func _tube(m: ImmediateMesh, pts: PackedVector3Array, rad: float) -> void:
 	var n := pts.size()
 	if n < 2:
 		return
-	var rings := []
+	var sides := THREAD_SIDES
+	var w := sides + 1
+	var pos := PackedVector3Array()
+	var nor := PackedVector3Array()
+	var vs := PackedFloat32Array()
+	pos.resize(n * w)
+	nor.resize(n * w)
+	vs.resize(n)
 	var t0 := (pts[1] - pts[0]).normalized()
 	var nv := t0.cross(Vector3.UP if absf(t0.y) < 0.9 else Vector3.RIGHT).normalized()
 	var s := 0.0
-	var vs := []
 	for i in n:
 		var t: Vector3 = pts[mini(i + 1, n - 1)] - pts[maxi(i - 1, 0)]
 		if t.length() < 1e-5:
@@ -1319,25 +1346,43 @@ static func _tube(m: ImmediateMesh, pts: PackedVector3Array, rad: float) -> void
 		nv = nv - t * nv.dot(t)
 		nv = nv.normalized() if nv.length() > 1e-4 else t.cross(Vector3.UP).normalized()
 		var bv := t.cross(nv)
-		var ring := []
 		var r := rad * (0.55 if i == 0 or i == n - 1 else 1.0)
-		for k in THREAD_SIDES + 1:
-			var a := TAU * k / THREAD_SIDES
-			var dv := nv * cos(a) + bv * sin(a)
-			ring.append([pts[i] + dv * r, dv])
-		rings.append(ring)
+		var base := i * w
+		var p: Vector3 = pts[i]
+		for k in w:
+			var dv: Vector3 = nv * _TUBE_COS[k] + bv * _TUBE_SIN[k]
+			pos[base + k] = p + dv * r
+			nor[base + k] = dv
 		if i > 0:
-			s += pts[i].distance_to(pts[i - 1])
-		vs.append(s / Rope.PITCH)
+			s += p.distance_to(pts[i - 1])
+		vs[i] = s / Rope.PITCH
 		t0 = t
 	for i in n - 1:
-		for k in THREAD_SIDES:
-			var q := [[i, k], [i + 1, k], [i, k + 1], [i, k + 1], [i + 1, k], [i + 1, k + 1]]
-			for c in q:
-				var v: Array = rings[c[0]][c[1]]
-				m.surface_set_normal(v[1])
-				m.surface_set_uv(Vector2(float(c[1]) / THREAD_SIDES, vs[c[0]]))
-				m.surface_add_vertex(v[0])
+		var v0: float = vs[i]
+		var v1: float = vs[i + 1]
+		var a0 := i * w
+		var a1 := a0 + w
+		for k in sides:
+			var u0 := float(k) / sides
+			var u1 := float(k + 1) / sides
+			m.surface_set_normal(nor[a0 + k])
+			m.surface_set_uv(Vector2(u0, v0))
+			m.surface_add_vertex(pos[a0 + k])
+			m.surface_set_normal(nor[a1 + k])
+			m.surface_set_uv(Vector2(u0, v1))
+			m.surface_add_vertex(pos[a1 + k])
+			m.surface_set_normal(nor[a0 + k + 1])
+			m.surface_set_uv(Vector2(u1, v0))
+			m.surface_add_vertex(pos[a0 + k + 1])
+			m.surface_set_normal(nor[a0 + k + 1])
+			m.surface_set_uv(Vector2(u1, v0))
+			m.surface_add_vertex(pos[a0 + k + 1])
+			m.surface_set_normal(nor[a1 + k])
+			m.surface_set_uv(Vector2(u0, v1))
+			m.surface_add_vertex(pos[a1 + k])
+			m.surface_set_normal(nor[a1 + k + 1])
+			m.surface_set_uv(Vector2(u1, v1))
+			m.surface_add_vertex(pos[a1 + k + 1])
 
 
 # ---------------------------------------------------------------- 粒と音

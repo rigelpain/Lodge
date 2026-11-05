@@ -84,6 +84,12 @@ func _ready() -> void:
 	_step(Doll.frame_index())
 
 
+const FAR_BASE := 20.0      # これ＋大きさ×FAR_PER_SIZE より遠い炎は止めておく (m)。キャンドルは約 27 m、焚き火は約 80 m
+const FAR_PER_SIZE := 60.0
+const NEAR_ALWAYS := 10.0   # これより近い炎は画面の外でも動かす（鏡や小窓に映る分）
+var _stepped := false
+
+
 func _process(_dt: float) -> void:
 	var k := Doll.frame_index()
 	if k != _k:
@@ -97,7 +103,23 @@ func _step(k: int) -> void:
 	var step := k / 2
 	var up := global_basis.orthonormalized().inverse()   # 傾いた物に付けても、炎はまっすぐ上へ
 	_body.visible = on and style != "felt"
-	if on and style == "felt":
+	# 遠くて小さな炎は止めておき、画面の外の炎は形を替えない（ロッジじゅうの火で 1 コマ 1.6 ms 使っていた。2026-11-05）
+	var cam := get_viewport().get_camera_3d()
+	var far := false
+	var offscreen := false
+	if cam and _stepped:
+		var d2 := cam.global_position.distance_squared_to(global_position)
+		var lim := FAR_BASE + FAR_PER_SIZE * size
+		far = d2 > lim * lim
+		offscreen = d2 > NEAR_ALWAYS * NEAR_ALWAYS and not cam.is_position_in_frustum(global_position)
+	_stepped = true
+	if far:
+		if _light:
+			_light.visible = on
+		return
+	if offscreen and style == "felt":
+		pass
+	elif on and style == "felt":
 		_step_felt(step, up)
 	elif on:
 		var cut := int(_hash(step * 3) * CUTS)

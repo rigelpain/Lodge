@@ -299,12 +299,21 @@ func _feed_posts(listener: Vector3) -> void:
 		var cursor: float = post.cursor
 		var buf := PackedVector2Array()
 		buf.resize(n)
+		# 読む位置はコマの中で一直線に進むので、足し算で求める（1 秒に 1 万回以上回るので、毎回 fposmod しない）
+		var idx: float = fposmod((cursor - d0) * SPEAKER_RATE, float(n_pcm))
+		var adv: float = 1.0 - (d1 - d0) * SPEAKER_RATE / n
+		var pcm: PackedFloat32Array = _pcm
 		for k in n:
-			var t_emit: float = cursor + float(k) / SPEAKER_RATE - lerpf(d0, d1, float(k) / n)
-			var idx := fposmod(t_emit * SPEAKER_RATE, float(n_pcm))
 			var i0 := int(idx)
-			var v := lerpf(_pcm[i0], _pcm[(i0 + 1) % n_pcm], idx - i0)
+			var i1 := i0 + 1 if i0 + 1 < n_pcm else 0
+			var v0: float = pcm[i0]
+			var v: float = v0 + (pcm[i1] - v0) * (idx - i0)
 			buf[k] = Vector2(v, v)
+			idx += adv
+			if idx >= n_pcm:
+				idx -= n_pcm
+			elif idx < 0.0:
+				idx += n_pcm
 		pb.push_buffer(buf)
 		post.cursor = cursor + float(n) / SPEAKER_RATE
 		post.last_delay = d1
