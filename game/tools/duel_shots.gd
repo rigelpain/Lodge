@@ -1,7 +1,7 @@
 extends SceneTree
 ## 雪合戦の対決（duel.gd・duel_hud.gd）の流れを撮る。対決の仲間（--duel-bot）が相手。
 ##   Godot --path game --resolution 1280x720 -s res://tools/duel_shots.gd -- --duel-bot --bots=1 --lodge-bots=0 --no-pip --no-sound --dir=/path/shots
-## 01 掛金の画面 / 02 始まり（三人称、待ち針が刺さる）/ 03 戦い（一人称、1 発ずつ当てた）/ 04 キャッチの照準（F）/
+## 01 掛金の画面 / 02 始まり（待ち針が刺さる）/ 03 戦い（一人称、1 発ずつ当てた）/ 04 キャッチの照準（F）/
 ## 05 勝ち（ロゼットと握手の手袋）/ 06 フィールドを上から
 
 const Snowball := preload("res://snowball.gd")
@@ -81,14 +81,12 @@ func _run() -> void:
 	while duel.of(p.id).get("phase", "") != "fight":
 		await _wait(0.2)
 	foe._duel_t = 99.0
-	p.set_third(true)
 	p.set("_pitch", -0.35)
 	await _wait(0.5)
-	await _shot("02_start_tp")
+	await _shot("02_start")
 	foe.process_mode = Node.PROCESS_MODE_DISABLED
 	_place(foe, at + Vector3(0, 0, 3.0), at)
 	_place(p, at + Vector3(0, 0, -1.5), at + Vector3(0, 0, 3.0))
-	p.set_third(false)
 	p.set("_pitch", -0.05)
 	_throw(p, foe)
 	await _wait(1.0)

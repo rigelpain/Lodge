@@ -135,6 +135,11 @@ func _who() -> int:
 	return int(player.get("id")) if player else -1
 
 
+## 雪合戦で戦っているあいだ: 持ち物のマスと雪玉のストックだけを残す（main.gd の set_duel_focus）
+func _focus() -> bool:
+	return main != null and main.get("duel_focus") == true
+
+
 func _open_panel() -> void:
 	_view.mouse_filter = Control.MOUSE_FILTER_STOP
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -741,7 +746,7 @@ func _view_stamp() -> Array:
 		return [Engine.get_process_frames()]
 	var who := _who()
 	var coins: int = craft.wallet(who)
-	var s := [_view.size, Icons.tuck, Icons.user_scale, craft.hands.get(who, -1), craft.bag(who).hash(), coins, _pending, _balls,
+	var s := [_view.size, Icons.tuck, Icons.user_scale, _focus(), craft.hands.get(who, -1), craft.bag(who).hash(), coins, _pending, _balls,
 			craft.sacks.get(who, []).hash(), craft.sack_sel.get(who, 0), craft.lantern(who).hash(), craft.lamp_on(who),
 			Time.get_ticks_msec() / 250]
 	var sc = main.get("self_cam") if main else null
@@ -773,8 +778,9 @@ class View extends Control:
 			_draw_gear_screen(u)
 		if ui._bar_a > 0.01:   # 操作のための表示なので、風では揺らさない（2026-10-29 代表）
 			_draw_bar(u, ui._bar_a)
-		_draw_flies(u)
-		_draw_gear(u)
+		if not ui._focus():
+			_draw_flies(u)
+			_draw_gear(u)
 		_draw_balls(u)
 
 	## 帯の装備の札（2026-10-29 代表「米袋は刺繍小窓の上においてほしい」）: 右下の刺繍の小窓の真上に、左から
@@ -844,6 +850,8 @@ class View extends Control:
 		var h := 46.0 * u
 		var x0 := cx - total / 2.0
 		var y := bottom - 78.0 * u - 10.0 * u - 8.0 * u - h / 2.0   # I・N・R の札の上
+		if ui._focus():
+			y = bottom - h / 2.0   # 雪合戦のあいだは札も刺繍枠もよけるので、右下の隅へ下ろす
 		var off := Icons.tuck_off(Rect2(x0, y - h / 2.0, total + 10.0 * u, h), size)   # 何もしないでいると画面の外へ（針の先まで）
 		x0 += off.x
 		y += off.y
@@ -937,7 +945,8 @@ class View extends Control:
 		var n := Craft.HAND_SLOTS + 1
 		var coins: int = craft.wallet(who) - ui._pending
 		var cells_w := n * cell + (n - 1) * gap
-		var purse: bool = coins > 0 or not ui._flies.is_empty()   # ボタンがなければ財布の場所を取らない（飛んでくるあいだは出す）
+		var focus: bool = ui._focus()
+		var purse: bool = not focus and (coins > 0 or not ui._flies.is_empty())   # ボタンがなければ財布の場所を取らない（飛んでくるあいだは出す）
 		var w := cells_w + (gap * 2.0 + _coins_w(coins, 9.0 * u) if purse else 0.0)
 		var x0 := size.x / 2.0 - cells_w / 2.0
 		var y := size.y - 20.0 * u - cell
@@ -946,7 +955,7 @@ class View extends Control:
 		y += off.y
 		Icons.screen()
 		Icons.patch(self, Icons.rr(x0 - 12.0 * u, y - 10.0 * u, w + 24.0 * u, cell + 20.0 * u, 16.0 * u), Icons.PAPER, 0.85 * a, false)
-		if craft.has_hand_items(who):   # 持ち替えの案内: Z（と、ホイール・二本指スクロール）
+		if craft.has_hand_items(who) and not focus:   # 持ち替えの案内: Z（と、ホイール・二本指スクロール）
 			Icons.keycap(self, "Z", Vector2(x0 - 44.0 * u, y + cell * 0.32), 30.0 * u, a)
 			Icons.icon(self, "mouse_wheel", Vector2(x0 - 44.0 * u, y + cell * 0.86), 34.0 * u, a)
 		for i in n:

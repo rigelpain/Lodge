@@ -233,7 +233,7 @@ func _process(dt: float) -> void:
 		h.on = false
 	_order.clear()
 	var menu: bool = main.settings != null and main.settings.is_open
-	if p and hints_on and not menu:
+	if p and hints_on and not menu and not main.duel_focus:   # 雪合戦で戦っているあいだは案内を出さない（main.gd の set_duel_focus）
 		_find_hints(dt, sled, p)
 	for id in _hints:
 		var h: Dictionary = _hints[id]
@@ -696,7 +696,7 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		_spd_spin -= dt * 18.0   # ボビンが逆に回って糸を巻き取る
 		if _reel <= 0.0:
 			_spd_sewn.clear()
-	on = on and allowed and not menu
+	on = on and allowed and not menu and not main.duel_focus
 	_spd_a = move_toward(_spd_a, 1.0 if on else 0.0, dt * (3.0 if on else 1.2))
 	_spd = lerpf(_spd, speed, minf(1.0, dt * 8.0))
 	_spd_spin += dt * _spd * 2.0
@@ -1019,7 +1019,7 @@ var _view_stamp_last := []
 ## 引っこめ・札の出入り・跳ね・長押しなど動いている途中は、印が毎コマ変わるので毎コマ描く
 func _view_stamp() -> Array:
 	var p = main.player if main else null
-	var s := [_view.size, _hints.hash(), Icons.tuck, _badge_pop.hash(), float(p.get("tag_hold")) if p else 0.0]
+	var s := [_view.size, _hints.hash(), Icons.tuck, _badge_pop.hash(), float(p.get("tag_hold")) if p else 0.0, main.duel_focus if main else false]
 	if Icons.wind > 0.001:
 		s.append(Doll.frame_index() if Icons.wind_stepped else Engine.get_process_frames())
 	var sc = main.get("self_cam") if main else null
@@ -1169,7 +1169,7 @@ class View extends Control:
 		_draw_damp(u)
 		if hud._spd_a > 0.01:
 			_draw_speedo(u)
-		if hud.debug_on and not hud._dbg.is_empty():
+		if hud.debug_on and not hud._dbg.is_empty() and not hud.main.duel_focus:
 			_draw_debug(u)
 			draw_set_transform_matrix(Transform2D.IDENTITY)
 		if hud.main.settings and hud.main.settings.is_open:

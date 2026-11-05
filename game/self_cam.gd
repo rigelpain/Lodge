@@ -41,7 +41,9 @@ var main: Node3D
 var player: CharacterBody3D
 var cam: Camera3D
 var vp: SubViewport
-var hidden := false
+var hidden := false           # 画面に出していない（設定で消している、か、雪合戦のあいだ）
+var _want_shown := true       # 遊ぶ人の選び（設定の「刺繍枠」）
+var _focus_off := false       # 雪合戦のあいだ、選びとは別によける（main.gd の set_duel_focus）
 var plain_frame := false      # true なら、木の輪とねじは描かない（hud_plates.gd の立体の刺繍枠を重ねる）。赤い糸の縁取りだけ
 
 var _frame: Control
@@ -354,6 +356,17 @@ void fragment() {
 
 
 func set_shown(on: bool) -> void:
+	_want_shown = on
+	_apply_shown()
+
+
+func set_focus_off(on: bool) -> void:
+	_focus_off = on
+	_apply_shown()
+
+
+func _apply_shown() -> void:
+	var on := _want_shown and not _focus_off
 	hidden = not on
 	visible = on
 	vp.render_target_update_mode = SubViewport.UPDATE_ONCE if on else SubViewport.UPDATE_DISABLED

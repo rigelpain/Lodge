@@ -10,6 +10,7 @@ extends CanvasLayer
 ##     縁に近づくと輪が太く赤く光る。近づく相手の雪玉に破線の輪。手の届く所で照準に合うと、まんなかに赤い輪と開いた手袋と F のキー。
 ##     当てられてのけぞっているあいだ（当たらないあいだ）は、その人の人形の絵が点滅する
 ##   勝ち負けのあと（over）: 枠に金の糸（払うまでの 30 秒）、まんなかに勝った人の色のロゼット。下に握手の手袋（握手で払う）と掛金の山
+## 自分が戦っているあいだ（fight）は、ふだんの HUD をよけて一人称に固定する（main.gd の set_duel_focus。2026-11-05 代表「集中して戦いたいので」）
 
 const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
@@ -23,6 +24,7 @@ var main: Node
 var duel: Node
 var player: Node
 var bet_open := false
+var focus := false           # 自分が戦っている（ふだんの HUD をよけている）
 var _view: Control
 var _pop := {}               # 何 → 跳ねの残り（1→0）。"lost_me" "lost_them" "catch" "start"
 var _hover := ""
@@ -96,8 +98,17 @@ func _process(dt: float) -> void:
 		_pop[k] = maxf(0.0, _pop[k] - dt * 1.6)
 	_shake = maxf(0.0, _shake - dt * 2.5)
 	_sync_bet()
+	_sync_focus()
 	if not mine().is_empty() or bet_open:
 		_view.queue_redraw()
+
+
+## 戦いが始まったら、ふだんの HUD をよけて一人称に固定する。勝ち負けが決まる・相手が抜ける・通信が切れる（どれも fight の段が終わる）と戻す
+func _sync_focus() -> void:
+	var on: bool = duel != null and not duel.fighting(me()).is_empty()
+	if on != focus:
+		focus = on
+		main.set_duel_focus(on)
 
 
 ## 掛金を足す・引く（step は 1・10・100、sign は 1 か -1）
