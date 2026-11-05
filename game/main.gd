@@ -499,6 +499,8 @@ func _ready() -> void:
 	settings.to_start.connect(func(): net.leave())
 	for key in settings.values:
 		_apply_setting(key, settings.values[key])
+	if get_tree().current_scene == self:
+		use_game_pacing()
 	if args.has("settings"):   # 確かめ用: 設定画面を開いた状態で始める
 		settings.set_open(true)
 		if player: player.menu_open = true
@@ -1015,6 +1017,8 @@ func _process(_dt: float) -> void:
 ## （2026-11-05 測定。熱の余裕も食う）。物理は 1 コマに何歩でも進むので、ゲームの中の時間と通信は同じ速さで進む。
 ## 確かめの道具（-s で動かす）は current_scene が空なので、落とさない
 const BACKGROUND_FPS := 15
+const GAME_FPS := 60
+var _game_pacing := false
 
 
 func _notification(what: int) -> void:
@@ -1023,7 +1027,16 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		Engine.max_fps = BACKGROUND_FPS
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
-		Engine.max_fps = ProjectSettings.get_setting("application/run/max_fps", 60)
+		Engine.max_fps = GAME_FPS
+
+
+## 遊ぶときのコマの出し方: 縦同期を切り、60 FPS で頭打ちにする。縦同期があると 1 コマが 16.7 ms を少し超えただけで
+## 30 FPS に張りつく（ファンのない Air は熱で少し遅くなるので、遊んでいるうちに 60 → 30 と段差で落ちていた。2026-11-05 測定）。
+## ズレが気になるときは設定の「縦同期」で戻せる。確かめの道具（-s）は、速く回せるように当てない
+func use_game_pacing() -> void:
+	Engine.max_fps = GAME_FPS
+	_game_pacing = true
+	_apply_setting("vsync", settings.values.get("vsync", false))
 
 
 func _make_world() -> void:
@@ -2011,7 +2024,8 @@ func _apply_setting(key: String, v) -> void:
 			_fit_h = -1   # 窓の大きさの縮めとかけ合わせて当て直す（_fit_3d_scale）
 			_fit_3d_scale()
 		"vsync":
-			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if v else DisplayServer.VSYNC_DISABLED)
+			if _game_pacing:
+				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if v else DisplayServer.VSYNC_DISABLED)
 		"glow":
 			if env: env.glow_enabled = v
 		"ssao":

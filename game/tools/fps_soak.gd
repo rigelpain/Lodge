@@ -1,6 +1,6 @@
 extends SceneTree
 ## 遊んでいるうちに FPS が落ちないかを、実時間で測る（時間は早めない。画面ありで起動する）。
-##   Godot --path game -s res://tools/fps_soak.gd -- --secs=600 --out=/path/soak.csv [--play=loop|still] [--every=5] [--time=時]
+##   Godot --path game -s res://tools/fps_soak.gd -- --secs=600 --out=/path/soak.csv [--play=loop|still] [--every=5] [--time=時] [--vsync=on|off] [--cap=FPS]
 ## --play=loop: あなたがソリを押して登り、乗って滑り、降りて歩き回る（ふつうの遊びに近い動きをくり返す）
 ## --play=still: スポーンの場所に立ったまま（動きをなくして、時間で増える物だけを見る）
 ## --recover=秒: 測り終わる前のこの秒だけ、時刻を朝の 10 時へ戻す（落ちた FPS が戻るなら熱ではなく中身の原因）
@@ -43,6 +43,7 @@ func _initialize() -> void:
 	current_scene = main   # これがないと一日の巡り（daycycle.gd）が太陽を見つけられず、時刻が進まない
 	AudioServer.set_bus_mute(0, true)   # 音の仕組みは動かしたまま、スピーカーからは鳴らさない
 	_vp_rid = root.get_viewport_rid()
+	main.use_game_pacing()   # ふつうに遊ぶときと同じコマの出し方にする
 	if args.has("vsync"):   # --vsync=off|on で縦同期を比べる
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED if args["vsync"] == "off" else DisplayServer.VSYNC_ENABLED)
 	print("窓 %s 画面 %s" % [str(root.size), str(DisplayServer.screen_get_size())])
@@ -51,7 +52,7 @@ func _initialize() -> void:
 
 func _process(dt: float) -> bool:
 	t += dt
-	Engine.max_fps = int(args.get("cap", str(ProjectSettings.get_setting("application/run/max_fps", 0))))   # 窓が裏に回っても落とさない（main.gd の BACKGROUND_FPS）
+	Engine.max_fps = int(args.get("cap", str(main.GAME_FPS)))   # 窓が裏に回っても落とさない（main.gd の BACKGROUND_FPS）
 	if t < 1.0:
 		return false
 	_frames += 1
