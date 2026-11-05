@@ -536,7 +536,7 @@ func _sync_held() -> void:
 			att.add_child(shape)
 			_held = att
 	if _held:
-		_held.visible = not doll.holding_ball and not doll._ball.visible
+		_held.visible = not doll.holding_ball and not doll._ball.visible and doll.eat_table.is_empty()   # 机のある席では、料理は机の上（table_eat.gd）
 		if it.get("kind") == "folded" and _held.get_child_count() > 0:
 			# 畳んだソリの包みは、名札を貼った面を人形の前へ向ける（小窓・ほかの人から見える）
 			var f: Vector3 = -player.global_basis.z

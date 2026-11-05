@@ -5,6 +5,9 @@ eat_crunch_01..04  皮がぱりっとした物（たい焼き・コロッケ・�
 eat_slurp_01..02   麺をすする（ラーメン・うどん・そば・焼きそば）: 息を吸う「ずずっ」が上ずる
 eat_sip_01..02     飲み物をひと口（ココア・お汁粉・スープ・お茶・ミルク）: 短い「ずっ」と、飲み込む「こくっ」
 eat_ah_01..02      食べ終わって、ほっと息をつく「ほっ」（言葉ではない、息の音）
+eat_hafu_01..03    熱い物の前で「はふ」: 口を開けて短く息を吐く（机のある席の肉まんなど。game/table_eat.gd）
+eat_blow_01..02    飲み物を「ふーっ」と吹く
+eat_cho_01..03     箸の先が器や身に当たる小さな「こつ」
 """
 import numpy as np
 
@@ -65,6 +68,31 @@ def sip(rng):
     return fade(out, 0.002, 0.05)
 
 
+def hafu(rng):
+    """はふ: 開いた口から息を短く吐く。下の帯域が厚い息に、はじめだけ「は」の明るさ"""
+    n = n_of(rng.uniform(0.17, 0.23))
+    noise = rng.standard_normal(n)
+    body = bp(noise, 500, 1700, 2) * ar(n, 0.012, n / SR * 0.75, 1.6)
+    head = bp(noise, 1700, 3600, 2) * ar(n, 0.006, 0.05, 1.5) * 0.45
+    return fade(body + head, 0.002, 0.04)
+
+
+def blow(rng):
+    """ふーっ: すぼめた口から細く長く。息の帯域が少しずつ下がる"""
+    n = n_of(rng.uniform(0.5, 0.65))
+    noise = rng.standard_normal(n)
+    hi = bp(noise, 900, 3200, 2) * ar(n, 0.05, n / SR * 0.6, 1.2)
+    lo = lp(noise, 700, 2) * ar(n, 0.08, n / SR * 0.5, 1.2) * 0.35
+    return fade(hi + lo, 0.004, 0.08)
+
+
+def cho(rng):
+    """こつ: 木の箸の先が当たる。ごく短い乾いた音"""
+    n = n_of(0.05)
+    out = bp(rng.standard_normal(n), 1400, 4200, 2) * exp_decay(n, 0.006)
+    return fade(out, 0.0005, 0.01)
+
+
 def ah(rng):
     """ほっ: 満ち足りた息。「お」の口の形の、やわらかい吐く息が細っていく"""
     n = n_of(0.7)
@@ -81,3 +109,7 @@ if __name__ == "__main__":
         write(f"eat_slurp_{i + 1:02d}.wav", slurp(np.random.default_rng(2720 + i)), -9)
         write(f"eat_sip_{i + 1:02d}.wav", sip(np.random.default_rng(2730 + i)), -9)
         write(f"eat_ah_{i + 1:02d}.wav", ah(np.random.default_rng(2740 + i)), -12)
+        write(f"eat_blow_{i + 1:02d}.wav", blow(np.random.default_rng(2750 + i)), -16)
+    for i in range(3):
+        write(f"eat_hafu_{i + 1:02d}.wav", hafu(np.random.default_rng(2760 + i)), -14)
+        write(f"eat_cho_{i + 1:02d}.wav", cho(np.random.default_rng(2770 + i)), -18)

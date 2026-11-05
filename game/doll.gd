@@ -1,6 +1,7 @@
 extends Node3D
 
 const Look := preload("res://look.gd")
+const TableEat := preload("res://table_eat.gd")
 const FpHands := preload("res://fp_hands.gd")
 const Palm := preload("res://palm.gd")
 const Lantern := preload("res://lantern.gd")
@@ -140,6 +141,8 @@ var grip := Vector3.INF      # つかんでいる立ち位置（ソリの座標�
 var rope_hand := Vector3.INF # 紐を持つ右手の所（世界）
 var lean := Vector2.ZERO     # 乗っているときの体重移動（x 右、y 前）
 var holding_ball := false    # 右手に雪玉を持っている
+var eat_table := {}          # 机のある席で手に料理があるとき: 机の皿の状況（table_eat.gd の ctx。持ち主が毎フレーム入れる）
+var _eat_rig: Node3D         # 机の皿と、手の道具を描く役（table_eat.gd の Rig）
 var sleeve_balls := 0        # 左の袖に縫い付けた雪玉の数（持ち主が毎フレーム入れる）
 var emote := {}              # いまの身ぶり（emotes.gd の出来事）。終わると空になる
 var crouch := false          # しゃがんでいる（持ち主が毎フレーム入れる）
@@ -1090,6 +1093,10 @@ func _exit_tree() -> void:
 
 # ---------------------------------------------------------------- 動き
 
+func _process(_dt: float) -> void:
+	_eat_rig_step()
+
+
 func _physics_process(dt: float) -> void:
 	var host := get_parent() as Node3D
 	var pos := host.global_position
@@ -1154,6 +1161,53 @@ func _physics_process(dt: float) -> void:
 
 
 ## 骨の座標の空間での、世界の点
+## 机での食べ方の姿勢に渡す点（骨の空間）。口の所は頭の骨と腕の長さから決めるので、どの人形でも口の前に来る
+func _eat_anchors() -> Dictionary:
+	var sh := (_head_of(_id("upper_arm.L")) + _head_of(_id("upper_arm.R"))) * 0.5
+	var arm := _len(_id("upper_arm.R")) + _len(_id("forearm.R"))
+	var head := _head_of(_id("head")) if _id("head") >= 0 else sh + Vector3(0, 0.1, 0)
+	return {"mouth": head + Vector3(0.03, -0.1, -0.42) * arm, "near": head + Vector3(0.02, -0.34, -0.6) * arm, "lift": head + Vector3(0.03, -0.02, -0.72) * arm,
+			"rest_r": sh + Vector3(0.2, -0.35, -0.55) * arm, "rest_l": sh + Vector3(-0.2, -0.35, -0.55) * arm,
+			"dish": _to_skel(eat_table.at), "right": Vector3.RIGHT, "up": Vector3.UP,
+			"hold_w": TableEat.HOLD_W / _scale, "tool": TableEat.TOOL_LEN / _scale}
+
+
+## 机の皿と手の道具（毎フレーム）。一人称の手の分は player.gd が別に描く
+func _eat_rig_step() -> void:
+	if eat_table.is_empty() and _eat_rig == null:
+		return
+	if _eat_rig == null:
+		_eat_rig = TableEat.Rig.new(layers)
+		add_child(_eat_rig)
+	if eat_table.is_empty():
+		_eat_rig.step({}, {}, -1, {}, Basis.IDENTITY, 1.0, 1.0, Vector3.ZERO)
+		return
+	var em := emote_now()
+	var active: bool = em[0] == "eat_t"
+	var pw := {}
+	var mouth := Vector3.ZERO
+	if active:
+		var A := _eat_anchors()
+		var pt: Dictionary = TableEat.pose(emote.style, em[1], emote.first, A)
+		var xf := skel.global_transform
+		mouth = xf * (A.mouth as Vector3)
+		var hr: Vector3 = xf * skel.get_bone_global_pose(_id("hand.R")).origin
+		var hl: Vector3 = xf * skel.get_bone_global_pose(_id("hand.L")).origin
+		pw = {"r": hr, "l": hl, "tilt": pt.tilt, "carry": pt.carry, "item": null, "tip": null, "tip_l": null}
+		if pt.item != null:
+			pw.item = xf * (pt.item as Vector3)
+			if TableEat.STYLES[emote.style].get("hold", "") == "both":   # 届かないときも、両手のあいだに
+				pw.item = hr.lerp(hl, 0.5) + (xf.basis * Vector3.FORWARD).normalized() * 0.1 * _scale   # 手の先の方に（胸や鎧に隠れない）
+			elif TableEat.STYLES[emote.style].get("hold", "") == "left":
+				pw.item = hl + (xf.basis * Vector3.RIGHT).normalized() * TableEat.HOLD_W
+		if pt.tip != null:
+			pw.tip = xf * (pt.tip as Vector3)
+		if pt.tip_l != null:
+			pw.tip_l = xf * (pt.tip_l as Vector3)
+	var fw := Vector3(eat_table.face)
+	_eat_rig.step(eat_table, emote if active else {}, em[1] if active else -1, pw, Basis.looking_at(fw, Vector3.UP), 0.8, 0.8, mouth)
+
+
 func _to_skel(world: Vector3) -> Vector3:
 	return skel.global_transform.affine_inverse() * world
 
@@ -1839,7 +1893,7 @@ const EMOTE_FRAMES := {
 	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18, "eat": 16, "catch": 10,
 }
 ## 腕を使う身ぶり。このあいだは手の形を出さない
-const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit", "eat", "catch"]
+const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit", "eat", "eat_t", "catch"]
 
 
 ## いまの身ぶりと、始まってからのコマ数（このコマ）。終わっていたら消す
@@ -1849,7 +1903,7 @@ func _emote_k() -> Array:
 	if emote.is_empty():
 		return ["", -1]
 	var k := _frame - int(emote.frame)
-	var n: int = EMOTE_FRAMES.get(emote.kind, 12)
+	var n: int = emote.get("len", EMOTE_FRAMES.get(emote.kind, 12))
 	if emote.has("until") and _frame >= int(emote.until) + 8:
 		n = maxi(1, k)
 	if n > 0 and k >= n:
@@ -1980,6 +2034,10 @@ func _emote_body(kind_: String, k: int) -> float:
 			# ひと口: 料理を見下ろして口へ運び（0〜4）、もぐもぐと 2 回うなずくように噛んで（5〜11）、顔を上げる
 			_em_head.y = [-0.18, -0.24, -0.2, -0.12, -0.05, -0.1, 0.0, -0.1, 0.0, -0.08, 0.0, 0.02, 0.04, 0.03, 0.01, 0.0][k]
 			return [0.04, 0.06, 0.05, 0.03, 0.0, 0.03, 0.0, 0.03, 0.0, 0.02, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0][k]
+		"eat_t":
+			if not eat_table.is_empty():
+				_em_head.y = TableEat.pose(emote.style, k, emote.first, _eat_anchors()).nod
+			return 0.0
 		"oi":
 			# 呼ぶ: 小さく息を吸ってかがみ（ため）、胸を張って顔を上げ、遠くへ声を届ける
 			if k < 2:
@@ -2102,6 +2160,11 @@ func _emote_arms(kind_: String, k: int) -> void:
 			elif k < 11:
 				for side in ["L", "R"]:
 					_arm(side, Vector3(0.75, 0.3, -0.35), Vector3(0.55, 0.85, -0.3))   # 両手を開いて上へ
+		"eat_t":
+			if not eat_table.is_empty():
+				var pt: Dictionary = TableEat.pose(emote.style, k, emote.first, _eat_anchors())
+				_hand_to("R", pt.r)
+				_hand_to("L", pt.l)
 		"eat":
 			# 右手（料理を持つ手）を口の前へ運び、噛むあいだそこに置き、下ろす。口の所は頭の骨と腕の長さから決めるので、
 			# 7 体（頭の大きさ・腕の長さがちがう）のどれでも口の前に来る
@@ -2152,6 +2215,16 @@ func _emote_breath(kind_: String, k: int) -> void:
 			if k == 2:
 				_puff(1.15, 0.6)
 				_next_breath = _frame + 24
+		"eat_t":
+			# はふはふ、ふーっ: 熱い物の前で息を吐く。最後のひと口のあとは、ほっと温かい息
+			if (emote.style == "hafu" and k in [6, 11, 15]) or (emote.style == "cup" and k in [5, 7]):
+				_puff(1.15, 0.8)
+				_next_breath = _frame + 24
+			elif k == int(emote.len) - 3 and emote.get("last", false):
+				_puff(1.5, 1.1)
+				_next_breath = _frame + 30
+			else:
+				_next_breath = maxi(_next_breath, _frame + 8)   # 食べているあいだは、ふだんの白い息で皿を隠さない
 		"eat":
 			# 最後のひと口を飲み込んだら、ほっと温かい息（寒い所では白く見える）
 			if k == 13 and emote.get("last", false):

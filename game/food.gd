@@ -75,6 +75,11 @@ static func _model(dish: String, bites: int) -> String:
 	return base
 
 
+## 麺だけ抜いた器（机ですするとき、麺はゲームが 1 本ずつ描く。table_eat.gd）
+static func noodle_glb(dish: String, bites := 0) -> String:
+	return "res://props/food/%s_nn%d.glb" % [MENU[dish][0], clampi(bites, 0, BITES - 1)]
+
+
 static func pellet_glb(dish: String) -> String:
 	return "res://props/pellets/pellet_%s.glb" % dish
 

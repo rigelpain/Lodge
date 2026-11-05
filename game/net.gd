@@ -278,6 +278,8 @@ func _my_state() -> Dictionary:
 		"so": d.seat_soft}
 	if p.sled and is_instance_valid(p.sled):
 		s["sl"] = main.get_path_to(p.sled)
+	if not d.eat_table.is_empty():   # 机のある席の料理（table_eat.gd）: 皿の所・品・食べた口数
+		s["te"] = d.eat_table
 	if d.rock_axis != Vector3.ZERO:   # 揺り椅子・ビーズクッションで体ごと傾く（hearth_nook.gd）
 		s["ra"] = d.rock_axis
 		s["rk"] = d.rock

@@ -26,6 +26,8 @@ const REACH := 1.5           # 座れる、席までの距離 (m)
 const BENCH_STEP := 0.75     # 長椅子に並ぶ間
 const KOTATSU_PIT := 0.40    # 掘りごたつの穴の深さ（lodge/dims.py の PIT_DEPTH）。座布団の席の足はここまで下ろせる
 const KOTATSU_HIPS := 0.56   # 座布団の席: 腰の所を、こたつ（天板と垂れた布団）の縁からこれだけ手前に（座布団に腰かけ、脚を穴へ下ろす。大きな人形の腹が天板に当たらない）
+const TABLE_IN := 0.2        # 机の縁から奥へ、皿を置く所 (m)
+const TABLE_RISE := [0.05, 0.9]   # 腰を下ろす面から見た、机の面の高さの範囲 (m)。外れていれば机ではない
 const STAND_BACK := {"chair": 0.62, "stool": 0.6, "bench": -0.6, "zabuton": 0.48,
 		"sofa": -1.0, "rocker": -0.95, "beanbag": 0.95}   # 立つ所: 席の後ろへ（負は前へ）。ビーズクッションはラグの上でまわりを囲まれるので、うしろ（部屋の側）から乗り込む
 const ROCK_EASE := 18        # 揺り椅子: 座りきってから、揺れが大きくなりきるまでのコマ
@@ -36,7 +38,7 @@ const SIT_OUT := 2           # 立ちきるまでのコマ（中腰 1 コマ）
 
 var lodge: Node3D
 var seats: Array = []        # 席: {kind, pos（腰を下ろす座面の上、世界）, face（座って向く向き、水平）, floor（足を下ろす高さ）, stand（立つ所）,
-                             #      edge（pos から座面の前の縁までの奥行き、m）, size（座面の幅と奥行き、m）}
+                             #      edge（pos から座面の前の縁までの奥行き、m）, size（座面の幅と奥行き、m）, table（前の机の皿を置く所。机がなければ無い）}
 var taken := {}              # 席の番号 → 座っている人の番号
 var seat_of := {}            # 人の番号 → 席の番号
 var _found := false
@@ -211,8 +213,10 @@ func _find() -> void:
 		var p := Vector3(c.x, top, c.z)
 		if kind == "zabuton":
 			_add_zabuton(b, face, hit[1])
+			_mark_table(space, Vector3(c.x, top + 0.12, c.z), hit)
 			continue
 		_add(kind, p, face, floor_y, _edge(b, p, face), b.size)
+		_mark_table(space, Vector3(c.x, top + 0.12, c.z), hit)
 	# 暖炉のまわりの家具（hearth_nook.gd の目印。名前の番号の順）
 	var nook := lodge.find_children("nook_seat_*", "Node3D", true, false)
 	nook.sort_custom(func(a: Node, b: Node) -> bool: return String(a.name) < String(b.name))
@@ -235,6 +239,22 @@ func _find() -> void:
 		if hit.is_empty():
 			continue
 		_add_zabuton(b, hit[0], hit[1])
+		_mark_table(space, top + Vector3.UP * 0.12, hit)
+
+
+## いま足した席の前に、物を置ける机（カウンター・こたつの天板）があれば、その置き場を席に控える（table: 世界の点）。
+## at（ロッジの座標）は机を探った所、hit は _table_dir の結果。当たった物の上が床や壁なら机ではない。table_eat.gd の食べ方はこれで決まる
+func _mark_table(space: PhysicsDirectSpaceState3D, at: Vector3, hit: Array) -> void:
+	var s: Dictionary = seats[-1]
+	var from := lodge.to_global(at)
+	var fw: Vector3 = (lodge.global_basis * (hit[0] as Vector3)).normalized()
+	var spot: Vector3 = from + fw * (float(hit[1]) + TABLE_IN)
+	var down := space.intersect_ray(PhysicsRayQueryParameters3D.create(spot + Vector3.UP * 0.8, spot - Vector3.UP * 1.2))
+	if down.is_empty() or (down.normal as Vector3).y < 0.7:
+		return
+	var y: float = down.position.y
+	if y - float(s.pos.y) > TABLE_RISE[0] and y - float(s.pos.y) < TABLE_RISE[1]:
+		s["table"] = Vector3(spot.x, y, spot.z)
 
 
 ## 暖炉のまわりの家具の席: 目印の所が腰を下ろす所、-Z が座って向く向き。meta は
