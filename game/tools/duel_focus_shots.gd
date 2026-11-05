@@ -104,7 +104,7 @@ func _run() -> void:
 	DirAccess.make_dir_recursive_absolute(args.get("dir", "/tmp/duel_focus"))
 	await _wait(2.0)
 	p = main.player
-	foe = main.get_children().filter(func(c): return c.get_script() == main.Bot and c.duelist)[0]
+	foe = main.get_children().filter(func(c): return c.get_script() == main.Bot and not c.lounge)[0]
 	# ---- 1 回目: 三人称、小窓と刺繍枠を出している
 	p.set_third(true)
 	main.hud.hints_on = true

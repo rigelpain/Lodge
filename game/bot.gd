@@ -16,6 +16,8 @@ const Seats := preload("res://seats.gd")
 ## 速く下るソリをつかむと引きずられ、引きずられている間は押さずに踏ん張る（止める力は sled.gd がまとめてかける）。
 ## lounge の仲間は、ソリを押さずにロッジでくつろぐ: 空いた席（seats.gd）に座り、しばらくすると立って別の空いた席へ歩いて座り直す。
 ## あなたが席に座ると、そのそばの空いた席へ寄ってくる（同じ机を囲む）。座る・立つは、あなたと同じ出来事（seats.gd の sit・stand）
+## 雪合戦: 雪玉を持ったあなたに低い手のひらを差し出されると、しゃがんで雪玉を作ってから握手しに来る（握手で対決が始まる。duel.gd）。
+## 掛金を受け、円の中を回りながら振りかぶって投げ、ときどきよけて、ときどき取る。なくなれば作る。ロッジでくつろぐ仲間はしない
 
 enum State { PUSH, WAIT, RIDE }
 
@@ -175,10 +177,11 @@ func _physics_process(dt: float) -> void:
 	if post != null:
 		_stand_at_post(dt)
 		return
-	if duelist and _duel_step(dt):
+	if _duel_step(dt):
 		return
 	var s := sled.global_position
 	var to_top := Vector2(s.x, s.z).length()
+	_watch_offer()
 	if state != State.RIDE and (_five_with > 0 or _rooted()):
 		_go_five(dt)
 		return
@@ -257,9 +260,10 @@ func _physics_process(dt: float) -> void:
 				target_l = Vector3(sx * (hx + 1.1), 0, hz + 1.1)   # 自分側の後ろの角へ
 			to = sled.to_global(target_l) - global_position
 			to.y = 0
-			dir = to.normalized() if to.length() > 0.2 else up
+			dir = _round_player(to.normalized()) if to.length() > 0.2 else up
 			debug = "持ち場まで%.2f" % (post - global_position).length()
-			if (post - global_position).length() < 0.8 and _regrab <= 0.0:
+			# あなたが持ち場のそばに立っていて寄れなければ、少し遠くからつかむ
+			if (post - global_position).length() < (1.4 if _player_within(1.0) else 0.8) and _regrab <= 0.0:
 				if sled.take_handle(self, stand_l):
 					handle = stand_l
 					_col.disabled = true
@@ -286,6 +290,28 @@ func _physics_process(dt: float) -> void:
 	if dir.length() > 0.1:
 		look_at(global_position + dir, Vector3.UP)
 	_pose_doll()
+
+
+## 通り道にあなたが立っていれば、ソリから離れる側へ回る（握手のあとは、あなたの正面にいるので、ソリがあなたの向こうだと突き当たって止まる）
+func _round_player(dir: Vector3) -> Vector3:
+	if not _player_within(1.3):
+		_rounding = false
+		return dir
+	var gap := Emotes._flat(player.global_position - global_position)
+	if dir.dot(gap.normalized()) <= 0.5:
+		return dir
+	if not _rounding:   # 回る向きは、回り終えるまで変えない（左右に振れて進めなくなる）
+		_rounding = true
+		var away := Emotes._flat(global_position - sled.global_position)
+		_turn_sign = 1.0 if dir.rotated(Vector3.UP, 1.2).dot(away) > dir.rotated(Vector3.UP, -1.2).dot(away) else -1.0
+	return dir.rotated(Vector3.UP, 1.2 * _turn_sign)
+
+
+var _rounding := false       # あなたのまわりを回っている途中
+
+
+func _player_within(m: float) -> bool:
+	return player != null and Emotes._flat(player.global_position - global_position).length() < m
 
 
 ## 一緒に乗っているあなたの体重移動に、少し遅れて合わせる
@@ -346,6 +372,9 @@ func _pose_doll() -> void:
 	else:
 		doll.act = Doll.Act.WALK
 	doll.sled = sled
+	if hub:
+		doll.holding_ball = hub.balls_of(id) > 0   # 持っている雪玉（右手に 1 つ、残りは袖。player.gd と同じ）
+		doll.sleeve_balls = maxi(hub.balls_of(id) - 1, 0)
 	doll.lean = Vector2(_lean_now.x, _lean_now.y - _lean_now.z) if state == State.RIDE else Vector2.ZERO
 	if craft:
 		doll.lantern = craft.lantern(id).get("look", "")
@@ -391,9 +420,13 @@ func _on_emote(ev: Dictionary) -> void:
 		if ev.kind == "hit" and handle != Vector3.INF:
 			let_go()   # びっくりして手を離す
 			_regrab = REGRAB_WAIT
+		if ev.kind == "hit":
+			_wind = -1.0   # 振りかぶっていても、のけぞって投げられない
 		if ev.kind == "hit" and randf() < 0.6:
 			_reply(randf_range(0.7, 1.0), {"kind": "wa"})   # 当たっても楽しい
 		return
+	if ev.kind == "throw":
+		_saw_throw(ev)
 	# 返すのは、あなた（人）の身ぶりにだけ（仲間どうしで返し合い続けないように）
 	if player == null or hub.who_of(who) != player:
 		return
@@ -430,12 +463,13 @@ func _on_emote(ev: Dictionary) -> void:
 				_reply(randf_range(0.1, 0.25), {"kind": "hands", "hands": "high_both"})   # 一緒に乗っていれば、一緒に万歳
 				_reply(randf_range(0.35, 0.5), {"kind": "wa"})
 				_lower_t = 3.0
-			elif near < 7.0 and state != State.RIDE and not lounge:
+			elif near < 7.0 and state != State.RIDE and not lounge and _offered_to_me(parts[0], who):
 				# 手のひらを差し出された: 前まで行って、同じ高さで掲げる（片手か両手かもまねる。片手なら右手）
 				_five_with = who
 				_five_shape = Palm.hands_name(parts[0], "both" if both else "R")
 				_five_until = Doll.frame_index() + 12 * 8
 				_five_sent = false
+				_five_ball = _wants_ball(parts[0], who)
 
 
 func _reply(after: float, ev: Dictionary) -> void:
@@ -482,11 +516,14 @@ func _go_five(dt: float) -> void:
 		to.y = 0
 		var face: Vector3 = them.global_position - global_position
 		face.y = 0
-		if to.length() > 0.15:
+		if _five_ball and hub.balls_of(id) < 1 and not _rooted():
+			hub.send({"kind": "make_ball", "who": id})   # 対決に応じる: まず雪玉を丸める
+		_five_ball = _five_ball and (hub.balls_of(id) < 1 or _rooted())
+		if to.length() > 0.15 and not _five_ball:
 			dir = to.normalized()
 		if face.length() > 0.1:
 			look_at(global_position + face, Vector3.UP)
-		if not _five_sent and to.length() < 0.6 and Emotes._forward(self).dot(face.normalized()) > 0.6:
+		if not _five_ball and not _five_sent and to.length() < 0.6 and Emotes._forward(self).dot(face.normalized()) > 0.6:
 			hub.send({"kind": "hands", "who": id, "hands": _five_shape})
 			_five_sent = true
 	velocity.x = dir.x * SPEED * damp_k(false)
@@ -496,13 +533,95 @@ func _go_five(dt: float) -> void:
 	_pose_doll()
 
 
-# ---------------------------------------------------------------- 雪合戦の対決（duel.gd。確かめ用の仲間 --duel-bot）
+# ---------------------------------------------------------------- 雪合戦の対決（duel.gd）
 
-var duelist := false         # 雪合戦の対決の相手をする仲間（main.gd の --duel-bot）。掛金を受け、円の中を回りながら投げ、なくなれば作る
+const BET_WAIT := 4.0        # 掛金がこれだけ変わらなければ受ける (s)。あなたが額を選び終えるのを待つ
+const START_WAIT := 1.5      # 戦いが始まってから、最初に投げるまで (s)
+const THROW_EVERY := Vector2(2.0, 3.5)   # 次に投げるまで (s)
+const WINDUP_T := 0.4        # 投げる前に振りかぶる長さ (s)。あなたが見てからよけられるように
+const THROW_SPREAD := 2.4    # 投げる速さのずれ (m/s)。大きいほど外れる
+const CATCH_ODDS := 0.2      # あなたの雪玉を取りにいく割合
+const DODGE_ODDS := 0.35     # あなたの雪玉をよける割合（残りは、そのまま受ける）
+const DODGE_T := 0.5         # 横へよける長さ (s)
+const REACT_T := Vector2(0.1, 0.25)   # 投げられてから動き出すまで (s)
+
 var _duel_t := 0.0           # 次に投げる・受けるまで (s)
 var _duel_stake := -1        # 見ていた掛金（変わったら、少し待ってから受ける）
 var _orbit := 0.0            # 円のまんなかのまわりを回る角
 var _orbit_dir := 1.0
+var _wind := -1.0            # 振りかぶっている残り (s)。負なら振りかぶっていない
+var _catching := -1          # 取りにいく雪玉の番号
+var _dodge := Vector3.ZERO   # よける向き
+var _dodge_wait := 0.0       # よけ始めるまで (s)
+var _dodge_t := 0.0          # よける残り (s)
+var _five_ball := false      # 握手しに行く前に、雪玉を作る（対決に応じる）
+
+
+## 雪玉を持って低い手のひらを差し出すのは、対決の申し込み: 見ている相手にだけ応じる（仲間が何人いても、見て選べる）
+func _offered_to_me(height: String, who: int) -> bool:
+	if height != "low" or hub.balls_of(who) < 1:
+		return true
+	var them: Node3D = hub.who_of(who)
+	return Emotes._flat(-them.global_basis.z).normalized().dot(Emotes._flat(global_position - them.global_position).normalized()) > 0.8
+
+
+## 雪玉を持って低い手のひらを掲げたまま、こちらを見ている人（あとから近づいた・あとから向いた）にも応じる
+func _watch_offer() -> void:
+	if _five_with > 0 or player == null or state == State.RIDE or int(player.get("id")) < 0:
+		return
+	var who: int = player.id
+	var h: String = hub.hands.get(who, "")
+	var duel := get_parent().get_node_or_null("Duel")
+	if not h.begins_with("low") or hub.balls_of(who) < 1 or duel == null or not duel.of(id).is_empty():
+		return
+	if global_position.distance_to(player.global_position) < 7.0 and _offered_to_me("low", who):
+		_five_with = who
+		_five_shape = Palm.hands_name("low", "both" if h.ends_with("both") else "R")
+		_five_until = Doll.frame_index() + 12 * 8
+		_five_sent = false
+		_five_ball = _wants_ball("low", who)
+
+
+## 低い手のひらを差し出した人が雪玉を持っていて、自分は持っていない: 握手で対決が始まるように作る（ロッジの床では始まらないので作らない）
+func _wants_ball(height: String, who: int) -> bool:
+	var duel := get_parent().get_node_or_null("Duel")
+	var w := get_parent()
+	return height == "low" and duel != null and duel.of(id).is_empty() and hub.balls_of(who) > 0 and hub.balls_of(id) < 1 \
+		and w.lodge_weight(global_position.x, global_position.z) >= 1.0
+
+
+## 対決の相手が投げた: 取りにいくか、よけるか、そのまま受けるかを 1 球に 1 度決める
+func _saw_throw(ev: Dictionary) -> void:
+	var duel := get_parent().get_node_or_null("Duel")
+	if duel == null:
+		return
+	var d: Dictionary = duel.fighting(id)
+	if d.is_empty() or duel.opponent(d, id) != int(ev.who):
+		return
+	var roll := randf()
+	if roll < CATCH_ODDS:
+		_catching = int(ev.get("ball", -1))
+	elif roll < CATCH_ODDS + DODGE_ODDS:
+		var v: Vector3 = ev.velocity
+		v.y = 0
+		_dodge = v.cross(Vector3.UP).normalized()
+		var at: Vector3 = d.at
+		if _dodge.dot(at - global_position) < 0.0:
+			_dodge = -_dodge   # 円のまんなかの側へ（縁に追いつめられない）
+		_dodge_wait = randf_range(REACT_T.x, REACT_T.y)
+		_dodge_t = DODGE_T
+
+
+## 取りにいく雪玉が手の届く所に来たら取る（取れたかはホストが決める）
+func _try_catch(duel: Node) -> void:
+	if _catching < 0:
+		return
+	var b: Node3D = hub.ball(_catching)
+	if b == null:
+		_catching = -1
+	elif b.global_position.distance_to(duel._chest(self)) < duel.CATCH_REACH:
+		duel.send({"kind": "catch", "who": id, "ball": _catching})
+		_catching = -1
 
 
 ## 対決にかかわっているあいだの動き。動かしたら true（ふだんの動きはしない）
@@ -518,25 +637,34 @@ func _duel_step(dt: float) -> bool:
 	_duel_t -= dt
 	match String(d.phase):
 		"bet":
-			# 掛金が 2.5 秒変わらなければ受ける（あなたが額を選び終えるのを待つ）
 			if int(d.stake) != _duel_stake:
 				_duel_stake = int(d.stake)
-				_duel_t = 2.5
+				_duel_t = BET_WAIT
 			var ok: bool = d.ok_a if id == int(d.a) else d.ok_b
 			if not ok and _duel_t <= 0.0:
-				_duel_t = 2.5
+				_duel_t = BET_WAIT
 				duel.send({"kind": "ok", "who": id})
 			_duel_move(Vector3.ZERO, them, dt)
 			return true
 		"fight":
+			if _duel_stake >= 0:   # 始まったところ
+				_duel_stake = -1
+				_duel_t = START_WAIT
+				_wind = -1.0
+				_catching = -1
+				_dodge_t = 0.0
 			let_go()
 			_duel_fight(d, them, dt, duel)
 			return true
 		"over":
+			if _wind >= 0.0 and them:   # 振りかぶっていた分は投げてしまう（腕が上がったままにならない。もう数えない）
+				_wind = -1.0
+				_duel_throw(them)
 			# 払いの握手をしにいく（相手の前で低い手のひら）
 			if them and _five_with < 0 and _shape == "":
 				_five_with = duel.opponent(d, id)
 				_five_shape = "low_R"
+				_five_ball = false
 				_five_until = Doll.frame_index() + 12 * 25
 				_five_sent = false
 	return false
@@ -554,19 +682,30 @@ func _duel_fight(d: Dictionary, them: Node3D, dt: float, duel: Node) -> void:
 	var to := goal - global_position
 	to.y = 0
 	var dir := to.normalized() if to.length() > 0.3 else Vector3.ZERO
+	_try_catch(duel)
+	_dodge_wait -= dt
+	if _dodge_t > 0.0 and _dodge_wait <= 0.0:
+		_dodge_t -= dt
+		dir = _dodge
 	if _rooted():
 		dir = Vector3.ZERO
 	elif hub.balls_of(id) <= 0:
 		hub.send({"kind": "make_ball", "who": id})   # なくなったら、しゃがんで作る
 		dir = Vector3.ZERO
+		_wind = -1.0
+	elif _wind >= 0.0:
+		_wind -= dt
+		if _wind < 0.0:
+			_duel_throw(them)
 	elif _duel_t <= 0.0:
-		_duel_t = randf_range(1.6, 3.0)
-		_duel_throw(them)
+		_duel_t = randf_range(THROW_EVERY.x, THROW_EVERY.y)
+		_wind = WINDUP_T
+		hub.send({"kind": "windup", "who": id})
 	_duel_move(dir, them, dt)
 	duel.keep_in(self, id)
 
 
-## 相手の胸へ、山なりに投げる（少しずらす。半分ほど当たる）
+## 相手の胸へ、山なりに投げる（少しずらす。立っている相手に半分ほど当たる。動いている先は読まないので、歩いていればよけられる）
 func _duel_throw(them: Node3D) -> void:
 	var fwd := Emotes._forward(self)
 	var origin := global_position + Vector3.UP * doll.height() * 0.85 + fwd * 0.4
@@ -578,7 +717,7 @@ func _duel_throw(them: Node3D) -> void:
 	var t := maxf(flat.length() / vh, 0.1)
 	var vy: float = (target.y - origin.y + 0.5 * 9.8 * t * t) / t
 	var vel: Vector3 = flat.normalized() * vh + Vector3.UP * vy
-	vel += Vector3(randf_range(-1, 1), randf_range(-0.5, 0.5), randf_range(-1, 1)) * 0.8
+	vel += Vector3(randf_range(-1, 1), randf_range(-0.5, 0.5), randf_range(-1, 1)) * THROW_SPREAD
 	hub.send({"kind": "throw", "who": id, "origin": origin, "velocity": vel})
 
 

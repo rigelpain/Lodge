@@ -58,7 +58,7 @@ func _run() -> void:
 	p = main.player
 	var hub = main.emotes
 	var duel = main.duel
-	var foe = main.get_children().filter(func(c): return c.get_script() == main.Bot and c.duelist)[0]
+	var foe = main.get_children().filter(func(c): return c.get_script() == main.Bot and not c.lounge)[0]
 	foe.process_mode = Node.PROCESS_MODE_DISABLED
 	foe.doll.process_mode = Node.PROCESS_MODE_ALWAYS   # 止めた仲間でも、人形の体の形（当たり）は今の所に
 	var at := Vector3(14, 0, 16)
