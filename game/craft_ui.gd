@@ -714,7 +714,50 @@ func _process(dt: float) -> void:
 		name_edit.position = _name_rect.position
 		name_edit.size = _name_rect.size
 		name_edit.add_theme_font_size_override("font_size", maxi(10, int(_name_rect.size.y * 0.55)))
-	_view.queue_redraw()
+	var vst := _view_stamp()
+	if vst != _view_stamp_last:
+		_view_stamp_last = vst
+		_view.queue_redraw()
+
+
+var _view_stamp_last := []
+var _shine_k := -1
+var _shine_due := 0
+var _shine_tick := 0
+
+## 持ち物の列・お金・I N R の札・雪玉の中身の印。これが変わったときだけ描き直す（hud.gd の _view_stamp と同じ考え）。
+## 毎コマ描くと M2 で 1 コマ 4〜5 ms かかり、本体の CPU を使い切って熱で遅くなる原因になっていた（2026-11-05 測定）。
+## 画面を開いているあいだ・飛んでいるボタン・跳ね・名前の札の出入りは毎コマ。
+## 真鍮より上のボタンは光るので 12 コマ／秒。人形が動くコマ（いちばん重いコマ）と重ならないよう 2 コマあとに描く。
+## 印に入れ忘れた変化があっても、0.25 秒で追いつく
+func _view_stamp() -> Array:
+	var moving := shop_open or machine_open or gear_open or not _flies.is_empty() or _bar_a < 1.0 \
+			or _shake > 0.0 or _coin_pop > 0.0 or _ball_pop > 0.0 or _name_t > 0.0
+	for k in _pop:
+		if _pop[k] > 0.0:
+			moving = true
+			break
+	if moving:
+		return [Engine.get_process_frames()]
+	var who := _who()
+	var coins: int = craft.wallet(who)
+	var s := [_view.size, Icons.tuck, Icons.user_scale, craft.hands.get(who, -1), craft.bag(who).hash(), coins, _pending, _balls,
+			craft.sacks.get(who, []).hash(), craft.sack_sel.get(who, 0), craft.lantern(who).hash(), craft.lamp_on(who),
+			Time.get_ticks_msec() / 250]
+	var sc = main.get("self_cam") if main else null
+	if sc and is_instance_valid(sc) and sc.get("_frame") != null:
+		s.append_array([(sc._frame as Control).get_global_rect(), sc.get("hidden")])
+	if coins >= 10:
+		var k := Doll.frame_index()
+		if k != _shine_k:
+			_shine_k = k
+			_shine_due = 2
+		if _shine_due > 0:
+			_shine_due -= 1
+			if _shine_due == 0:
+				_shine_tick += 1
+		s.append(_shine_tick)
+	return s
 
 
 class View extends Control:

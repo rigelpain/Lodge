@@ -1011,6 +1011,21 @@ func _process(_dt: float) -> void:
 			_pip_next = (_pip_next + 1) % FACES.size()
 
 
+## 裏に回ったゲームは 15 コマ／秒に落とす。閉じ忘れた窓が CPU と GPU を使い続けて、手前で遊んでいるゲームまで遅くしていた
+## （2026-11-05 測定。熱の余裕も食う）。物理は 1 コマに何歩でも進むので、ゲームの中の時間と通信は同じ速さで進む。
+## 確かめの道具（-s で動かす）は current_scene が空なので、落とさない
+const BACKGROUND_FPS := 15
+
+
+func _notification(what: int) -> void:
+	if not is_inside_tree() or get_tree().current_scene != self:
+		return
+	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
+		Engine.max_fps = BACKGROUND_FPS
+	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
+		Engine.max_fps = ProjectSettings.get_setting("application/run/max_fps", 60)
+
+
 func _make_world() -> void:
 	env = Environment.new()
 	env.background_mode = Environment.BG_SKY
@@ -1995,6 +2010,8 @@ func _apply_setting(key: String, v) -> void:
 		"scale":
 			_fit_h = -1   # 窓の大きさの縮めとかけ合わせて当て直す（_fit_3d_scale）
 			_fit_3d_scale()
+		"vsync":
+			DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if v else DisplayServer.VSYNC_DISABLED)
 		"glow":
 			if env: env.glow_enabled = v
 		"ssao":

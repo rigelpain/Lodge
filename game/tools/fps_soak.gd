@@ -43,12 +43,15 @@ func _initialize() -> void:
 	current_scene = main   # これがないと一日の巡り（daycycle.gd）が太陽を見つけられず、時刻が進まない
 	AudioServer.set_bus_mute(0, true)   # 音の仕組みは動かしたまま、スピーカーからは鳴らさない
 	_vp_rid = root.get_viewport_rid()
+	if args.has("vsync"):   # --vsync=off|on で縦同期を比べる
+		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED if args["vsync"] == "off" else DisplayServer.VSYNC_ENABLED)
 	print("窓 %s 画面 %s" % [str(root.size), str(DisplayServer.screen_get_size())])
 	RenderingServer.viewport_set_measure_render_time(_vp_rid, true)
 
 
 func _process(dt: float) -> bool:
 	t += dt
+	Engine.max_fps = int(args.get("cap", str(ProjectSettings.get_setting("application/run/max_fps", 0))))   # 窓が裏に回っても落とさない（main.gd の BACKGROUND_FPS）
 	if t < 1.0:
 		return false
 	_frames += 1

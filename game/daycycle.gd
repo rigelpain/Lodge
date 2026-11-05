@@ -24,6 +24,7 @@ var _dial: Control
 var dial_right := 16.0            # 画面の右の端から日時計までの間（px）。右下の自分の小窓（self_cam.gd）があれば、その左に寄せる
 var _ink_t := 0.0
 var _ink_target := 1.0
+var _dial_stamp := []
 
 # 空の色: 昼・夕・夜（上・地平・地面・雲）
 const DAY_TOP := Color(0.30, 0.52, 0.88)    # 澄んだ濃い青。影の側にこの青が映る
@@ -66,7 +67,10 @@ func _process(dt: float) -> void:
 		(_dial.get_parent() as CanvasLayer).offset = preload("res://hud_icons.gd").tuck_off(_dial.get_global_rect(), _dial.get_viewport_rect().size)
 		_update_ink(dt)
 		_dial.ink = move_toward(_dial.ink, _ink_target, dt * 2.0)
-		_dial.queue_redraw()
+		var st := [int(hour * 60.0), _dial.ink, _dial.size]   # 変わったときだけ描き直す（細い線でも毎コマは重い）
+		if st != _dial_stamp:
+			_dial_stamp = st
+			_dial.queue_redraw()
 
 
 ## 時刻を "10:24" の形で

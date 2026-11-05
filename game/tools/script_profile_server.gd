@@ -94,10 +94,10 @@ func _frame(a: Array) -> void:
 		i += 1   # 名前
 		var nf: int = a[i]
 		i += 1
-		i += nf * 2
-	var nscr: int = a[i]
+		i += nf   # 名前と時間の組の数 × 2 で入っている
+	var nscr: int = a[i]   # 関数の数 × 5 で入っている
 	i += 1
-	for _k in nscr:
+	for _k in nscr / 5:
 		var id: int = a[i]
 		var c: int = a[i + 1]
 		var slf: float = a[i + 2]
