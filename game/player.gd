@@ -136,6 +136,8 @@ var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 �
 var ring: EmoteRing
 var _em := {}                # いまの自分の身ぶり（出来事）
 var _winding := false
+var _wind_wait := false      # 雪合戦の対決で、投げたばかりのうちに左クリックを押した。押したままなら、投げられるようになったら振りかぶる
+var _catching := -1          # 雪合戦の対決で、取りにいった雪玉の番号（duel.gd の reach_for）
 var _wind_t := 0.0
 var _ball_fp: MeshInstance3D # 一人称の右手の雪玉
 var _stock_fp: Node3D        # 一人称の、左の袖口に縫い付けた雪玉のストック
@@ -394,6 +396,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT and _eating:
 		_eating = false   # 食べているひと口は最後まで
+	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT and _wind_wait:
+		_wind_wait = false
 	elif e is InputEventMouseButton and not e.pressed and e.button_index == MOUSE_BUTTON_LEFT and _winding:
 		throw_ball()
 	elif e is InputEventKey and not e.pressed and e.physical_keycode == KEY_B:
@@ -410,8 +414,10 @@ func _unhandled_input(e: InputEvent) -> void:
 					get_parent().settings.sync("third", third)
 			KEY_F:
 				var duel := get_parent().get_node_or_null("Duel")
-				if duel and mode == Mode.WALK and duel.try_catch(self):
-					return   # 雪合戦の対決: 照準に合った、手の届く相手の雪玉を取る（2026-11-02 代表「キャッチはFキーにしましょう」）
+				var aimed: int = duel.try_catch(self) if duel and mode == Mode.WALK else -1
+				if aimed >= 0:
+					_catching = aimed   # 雪合戦の対決: 照準に合った相手の雪玉を取りにいく（2026-11-02 代表「キャッチはFキーにしましょう」）
+					return
 				if rooted():
 					return
 				if mode == Mode.SIT:
@@ -889,7 +895,7 @@ func _pose_doll() -> void:
 	doll.rope_hand = _hand_world() if mode == Mode.ROPE else Vector3.INF
 	doll.lean = Vector2(_key(KEY_D) - _key(KEY_A), _key(KEY_W) - _key(KEY_S)) if mode == Mode.RIDE else Vector2.ZERO
 	doll.point_sides = Palm.sides_of(hand)
-	holding_ball = ball_count() > 0 and held().is_empty()
+	holding_ball = ball_count() > 0 and held().is_empty() and hub.can_throw(id)   # 雪合戦の対決で投げたばかりなら、次の雪玉はまだ袖に
 	doll.holding_ball = holding_ball
 	doll.sleeve_balls = ball_count() - (1 if holding_ball else 0)
 	doll.crouch = crouching
@@ -1499,6 +1505,9 @@ func _left_click() -> void:
 	if ball_count() > 0 and mode != Mode.DRUM:   # 乾燥機の中からは投げない
 		if not held().is_empty() and craft:
 			craft.send({"kind": "hand", "who": id, "slot": -1})
+		if not hub.can_throw(id):
+			_wind_wait = true
+			return
 		holding_ball = held().is_empty()
 		wind_up()
 	elif hands_name == "high_both":
@@ -1720,6 +1729,12 @@ func throw_ball() -> void:
 
 
 func _update_emote(dt: float) -> void:
+	if _wind_wait and hub.can_throw(id) and not rooted():
+		_wind_wait = false
+		holding_ball = ball_count() > 0 and held().is_empty()
+		wind_up()
+	if _catching >= 0 and not get_parent().duel.reach_for(self, _catching):
+		_catching = -1
 	if _winding:
 		_wind_t += dt
 	crouching = mode == Mode.WALK and Input.is_physical_key_pressed(KEY_CTRL) and not menu_open

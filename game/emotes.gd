@@ -169,8 +169,8 @@ func _apply(ev: Dictionary) -> void:
 				return   # もう持てない
 			_making[ev.who] = int(ev.frame) + MAKE_READY
 		"throw":
-			if balls_of(ev.who) <= 0:
-				return   # 投げる雪玉がない
+			if balls_of(ev.who) <= 0 or not can_throw(ev.who):
+				return   # 投げる雪玉がない・雪合戦の対決で、投げたばかり（duel.gd）
 			_set_balls(ev.who, balls_of(ev.who) - 1)
 			ev["ball"] = _next_ball
 			_next_ball += 1
@@ -430,6 +430,12 @@ func ball(id: int) -> Snowball:
 func can_hit(thrower: int, target: int) -> bool:
 	var duel := get_parent().get_node_or_null("Duel")
 	return duel == null or duel.can_hit(thrower, target)
+
+
+## 次を投げられるか（雪合戦の対決で投げたばかりなら、まだ。duel.gd）
+func can_throw(id: int) -> bool:
+	var duel := get_parent().get_node_or_null("Duel")
+	return duel == null or duel.can_throw(id)
 
 
 ## 雪玉が人に当たった（雪玉が呼ぶ）。のけぞりは出来事として配る

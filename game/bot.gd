@@ -373,8 +373,8 @@ func _pose_doll() -> void:
 		doll.act = Doll.Act.WALK
 	doll.sled = sled
 	if hub:
-		doll.holding_ball = hub.balls_of(id) > 0   # 持っている雪玉（右手に 1 つ、残りは袖。player.gd と同じ）
-		doll.sleeve_balls = maxi(hub.balls_of(id) - 1, 0)
+		doll.holding_ball = hub.balls_of(id) > 0 and hub.can_throw(id)   # 持っている雪玉（右手に 1 つ、残りは袖。player.gd と同じ）
+		doll.sleeve_balls = hub.balls_of(id) - (1 if doll.holding_ball else 0)
 	doll.lean = Vector2(_lean_now.x, _lean_now.y - _lean_now.z) if state == State.RIDE else Vector2.ZERO
 	if craft:
 		doll.lantern = craft.lantern(id).get("look", "")
@@ -537,7 +537,7 @@ func _go_five(dt: float) -> void:
 
 const BET_WAIT := 4.0        # 掛金がこれだけ変わらなければ受ける (s)。あなたが額を選び終えるのを待つ
 const START_WAIT := 1.5      # 戦いが始まってから、最初に投げるまで (s)
-const THROW_EVERY := Vector2(2.0, 3.5)   # 次に投げるまで (s)
+const THROW_EVERY := Vector2(0.0, 1.2)   # 投げられるようになってから（duel.gd の THROW_GAP）、次に振りかぶるまで (s)
 const WINDUP_T := 0.4        # 投げる前に振りかぶる長さ (s)。あなたが見てからよけられるように
 const THROW_SPREAD := 2.4    # 投げる速さのずれ (m/s)。大きいほど外れる
 const CATCH_ODDS := 0.2      # あなたの雪玉を取りにいく割合
@@ -616,11 +616,7 @@ func _saw_throw(ev: Dictionary) -> void:
 func _try_catch(duel: Node) -> void:
 	if _catching < 0:
 		return
-	var b: Node3D = hub.ball(_catching)
-	if b == null:
-		_catching = -1
-	elif b.global_position.distance_to(duel._chest(self)) < duel.CATCH_REACH:
-		duel.send({"kind": "catch", "who": id, "ball": _catching})
+	if not duel.reach_for(self, _catching):
 		_catching = -1
 
 
@@ -697,8 +693,9 @@ func _duel_fight(d: Dictionary, them: Node3D, dt: float, duel: Node) -> void:
 		_wind -= dt
 		if _wind < 0.0:
 			_duel_throw(them)
-	elif _duel_t <= 0.0:
-		_duel_t = randf_range(THROW_EVERY.x, THROW_EVERY.y)
+			_duel_t = duel.THROW_GAP + randf_range(THROW_EVERY.x, THROW_EVERY.y)
+	elif _duel_t <= 0.0 and duel.can_throw(id):
+		_duel_t = randf_range(THROW_EVERY.x, THROW_EVERY.y) + 1.0   # のけぞって投げられなかったら、また少し待つ
 		_wind = WINDUP_T
 		hub.send({"kind": "windup", "who": id})
 	_duel_move(dir, them, dt)

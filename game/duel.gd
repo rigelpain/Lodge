@@ -9,8 +9,9 @@ const Icons := preload("res://hud_icons.gd")
 ## 始めるとき、それまで何個持っていても、雪玉は 3 つになる。対決中も雪玉は作れる（2026-11-02 代表）。
 ## フィールドは握手した所を中心に半径 5 m の円。雪に赤い毛糸の並み縫いと待ち針で描く（どの画面でも、配られた対決から作る）。
 ## 対決中の 2 人と、それ以外の人の雪玉は、互いに当たらない（can_hit。snowball.gd が見る）。ソリは当たる（轢かれると、のけぞる）。
-## 相手の雪玉が手の届く所（CATCH_REACH）に来たとき、照準（画面のまんなか）を合わせて F で取れる（player.gd → try_catch。
-## 2026-11-02 代表「キャッチはFキーにしましょう」）。
+## 相手の雪玉が近づいた（CATCH_READY）とき、照準（画面のまんなか）を合わせて F を押すと取りにいく（player.gd → try_catch。
+## 2026-11-02 代表「キャッチはFキーにしましょう」）。玉は手の届く所（CATCH_REACH）まで飛んできてから取れる（reach_for）。
+## 投げたあと THROW_GAP のあいだは次を投げられない（2026-11-05 代表「投げれるのにインターバルあったほうが良いかも。交わした時に雪玉作れるようになるから」）。
 ## 当てられた人は、のけぞっているあいだ（GUARD）相手の雪玉が当たらない（すり抜ける）。のけぞりで動けないうちに続けて当てられないように
 ## （2026-11-02 代表「硬直でチェーンするのは望ましくないですね」）。
 ## 相手はコンピューターの仲間でもよい（bot.gd。--bots= で置いた仲間。同じ出来事で動くので、流れも掛金も人と同じ。
@@ -35,7 +36,11 @@ const PAY_T := 30.0          # 勝ち負けが決まってから、握手しな�
 const BET_T := 60.0          # 掛金がこの秒のうちに決まらなければやめる
 const CATCH_REACH := 0.8     # 手の届く所（肩の高さの、体の少し前から, m。_chest）
 const CATCH_SLACK := 0.9     # ホストが確かめるときのゆとり (m)。つなぐ側の画面の雪玉は、ホストのより少し遅れている
-const CATCH_AIM := 0.08      # 照準（画面のまんなか）と雪玉のずれの上限（画面の高さに対して）
+const CATCH_READY := 2.4     # F を押して取りにいける、雪玉までの距離 (m。_chest から)。仲間の玉（10 m/s）で、当たるまで 0.25 秒ほど
+const CATCH_AIM := 0.2       # 照準（画面のまんなか）と雪玉のずれの上限（画面の高さに対して）。相手の胸を見ていて飛んでくる玉が入る広さ
+const THROW_GAP := 2.4       # 投げてから、次を振りかぶれるまで (s)。雪玉づくりは押してから、できるまで 1.43 秒・立てるまで 1.92 秒。
+                             # 相手の玉をよけて（0.8 秒）から作っても、次が投げられる（2.35 秒）前に雪玉ができ（2.20 秒）、
+                             # 振りかぶらない次の玉が 3 m から届く（2.73 秒）前に立てる（2.68 秒）。測り方は tools/duel_catch_check.gd
 const WALL := 0.3            # 見えない壁: 縁からこれだけ内側で止まる (m)
 const RUN_OVER_SPEED := 3.0  # これより速いソリに触れると轢かれる (m/s)
 const RUN_OVER_WAIT := 1.5   # 一度轢かれてから、次に轢かれるまで (s)
@@ -53,6 +58,7 @@ var _rings := {}             # 番号 → フィールドの印（毛糸と待�
 var _run_over := {}          # 人の番号 → 次に轢かれるまでの残り (s)
 var _guard := {}             # 人の番号 → このコマまで当たらない（当てられた。どの画面でも、配られた struck から）
 var _parked := {}            # 雪玉の番号 → 当てるのを待っている当たり {who, by, point, dir, t}
+var _gap_until := {}         # 人の番号 → このコマから次を投げられる（戦っているあいだに投げた。どの画面でも、配られた throw から）
 
 
 func _ready() -> void:
@@ -105,6 +111,11 @@ func can_hit(thrower: int, target: int) -> bool:
 	return not dt.is_empty() and dt == dv and not guarded(target)
 
 
+## 次を投げられるか（戦っているあいだは、投げてから THROW_GAP たつまで投げられない。ふだんの雪合戦は縛らない）
+func can_throw(who: int) -> bool:
+	return fighting(who).is_empty() or int(_gap_until.get(who, -1)) <= Doll.frame_index()
+
+
 ## 当てられたばかりで、相手の雪玉が当たらないあいだか
 func guarded(who: int) -> bool:
 	return int(_guard.get(who, -1)) > Doll.frame_index()
@@ -137,22 +148,28 @@ func send(ev: Dictionary) -> void:
 	_apply(ev)
 
 
-## F（player.gd）。手の届く所の相手の雪玉に照準が合っていれば、取りにいく（取れたかはホストが決める）。
-## 取りにいったら true（振りかぶらない）
-func try_catch(p: Node3D) -> bool:
+## F（player.gd）。近づいた相手の雪玉に照準が合っていれば、その雪玉の番号（取りにいく。reach_for で待つ）。なければ -1
+func try_catch(p: Node3D) -> int:
 	var me: int = int(p.get("id"))
 	var d := fighting(me)
 	var cam: Camera3D = p.get("cam")
 	if d.is_empty() or cam == null:
-		return false
+		return -1
 	var b := catchable(p, cam, opponent(d, me))
-	if b == null:
-		return false
-	send({"kind": "catch", "who": me, "ball": b.ball_id})
-	return true
+	return b.ball_id if b else -1
 
 
-## 照準に合っている、手の届く相手の雪玉（なければ null）
+## 取りにいくと決めた雪玉を待つ。手の届く所に来たら取る（取れたかはホストが決める）。
+## 手前で体に当たって消えていても頼む（当てるのを待っているあいだなら取れる。park_hit）。まだ待つなら true
+func reach_for(who: Node3D, ball_id: int) -> bool:
+	var b: Node3D = hub.ball(ball_id)
+	if b != null and b.global_position.distance_to(_chest(who)) >= CATCH_REACH:
+		return true
+	send({"kind": "catch", "who": int(who.get("id")), "ball": ball_id})
+	return false
+
+
+## 照準に合っている、取りにいける相手の雪玉（なければ null）
 func catchable(p: Node3D, cam: Camera3D, opp: int) -> Snowball:
 	var vs := cam.get_viewport().get_visible_rect().size
 	var mid := vs / 2.0
@@ -163,7 +180,7 @@ func catchable(p: Node3D, cam: Camera3D, opp: int) -> Snowball:
 		if not (c is Snowball) or c.thrower != opp or c._done:
 			continue
 		var dist: float = c.global_position.distance_to(chest)
-		if dist > CATCH_REACH or cam.is_position_behind(c.global_position):
+		if dist > CATCH_READY or cam.is_position_behind(c.global_position):
 			continue
 		if cam.unproject_position(c.global_position).distance_to(mid) > CATCH_AIM * vs.y:
 			continue
@@ -221,6 +238,8 @@ func _apply(ev: Dictionary) -> void:
 
 
 func _on_emote(ev: Dictionary) -> void:
+	if ev.kind == "throw" and not fighting(int(ev.who)).is_empty():
+		_gap_until[int(ev.who)] = int(ev.frame) + int(THROW_GAP * Doll.FPS)
 	if _client():
 		return
 	match ev.kind:
