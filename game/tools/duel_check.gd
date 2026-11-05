@@ -66,8 +66,8 @@ func _run() -> void:
 	var duel = main.duel
 	var craft = main.craft
 	var bots := _bots()
-	var foe = bots.filter(func(b): return b.duelist)[0]
-	var other = bots.filter(func(b): return not b.duelist)[0]
+	var foe = bots[0]
+	var other = bots[1]
 	foe.process_mode = Node.PROCESS_MODE_DISABLED   # 握手の所まで寄せるあいだ、止めておく
 	other.process_mode = Node.PROCESS_MODE_DISABLED
 	var at := Vector3(14, 0, 16)
@@ -91,7 +91,7 @@ func _run() -> void:
 	await _wait(0.2)
 	d = duel.of(p.id)
 	_ok(int(d.stake) == 20 and (d.ok_a if int(d.a) == p.id else d.ok_b), "掛金 20 を出した（出した人は受けた）: %d" % int(d.stake))
-	await _wait(3.5)
+	await _wait(foe.BET_WAIT + 1.0)
 	d = duel.of(p.id)
 	_ok(d.phase == "fight", "仲間が受けて始まった: %s" % d.phase)
 	_ok(not main.duel_hud.bet_open and not p.menu_open, "掛金の画面が閉じた")

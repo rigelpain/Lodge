@@ -435,10 +435,9 @@ func _ready() -> void:
 			_add_pals(b)
 
 	if args.has("duel-bot"):
-		# 確かめ用: 仲間を雪合戦の対決の相手にする（あなたと仲間に雪玉を 1 つ。低い手のひらを掲げると握手しに来る）
+		# 確かめ用: 雪合戦の対決をすぐ始められるように、あなたと最初の仲間に雪玉を 1 つ
 		for c in get_children():
 			if c.get_script() == Bot and not c.lounge:
-				c.duelist = true
 				emotes._set_balls(c.id, 1)
 				break
 		if player:
