@@ -9,16 +9,20 @@ extends CanvasLayer
 ##     枠の下に、円の小さな地図（白いフェルトの丸に赤い毛糸の輪。自分は上向きの矢じり、相手は丸、飛んでいる相手の雪玉は白い点）。
 ##     縁に近づくと輪が太く赤く光る。近づく相手の雪玉に破線の輪。手の届く所で照準に合うと、まんなかに赤い輪と開いた手袋と F のキー。
 ##     当てられてのけぞっているあいだ（当たらないあいだ）は、その人の人形の絵が点滅する
+##     投げたあと次を投げられるまで（duel.gd の THROW_GAP）は、藍のフェルトの丸に赤い糸の輪。糸が 1 コマに 1 目ずつ抜け、
+##     抜けきると、まんなかに綿の雪玉が跳ねて消える（2026-11-05 代表「雪合戦中の投げCTって表示されてますっけ」「なかったらあったほうが嬉しい」）
 ##   勝ち負けのあと（over）: 枠に金の糸（払うまでの 30 秒）、まんなかに勝った人の色のロゼット。下に握手の手袋（握手で払う）と掛金の山
 ## 自分が戦っているあいだ（fight）は、ふだんの HUD をよけて一人称に固定する（main.gd の set_duel_focus。2026-11-05 代表「集中して戦いたいので」）
 
 const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
+const Doll := preload("res://doll.gd")
 const Duel := preload("res://duel.gd")
 const Snowball := preload("res://snowball.gd")
 
 const STEPS := [[1, "wood"], [10, "brass"], [100, "pearl"]]
 const GOLD := Color(0.86, 0.66, 0.26)
+const GAP_R := 44.0          # 投げの間の糸の輪の半径（1080p の px。雪玉のストックのすぐ上の左）
 
 var main: Node
 var duel: Node
@@ -30,6 +34,7 @@ var _pop := {}               # 何 → 跳ねの残り（1→0）。"lost_me" "l
 var _hover := ""
 var _rects := {}             # 押せる所の名前 → Rect2
 var _shake := 0.0
+var _gap_was := 0            # 前のコマの、次を投げられるまでの残り（明けた瞬間を見つける）
 
 
 func _ready() -> void:
@@ -97,6 +102,10 @@ func _process(dt: float) -> void:
 	for k in _pop.keys():
 		_pop[k] = maxf(0.0, _pop[k] - dt * 1.6)
 	_shake = maxf(0.0, _shake - dt * 2.5)
+	var wait: int = duel.throw_wait(me()) if duel else 0
+	if _gap_was > 0 and wait <= 0:
+		_pop["gap"] = 1.0
+	_gap_was = wait
 	_sync_bet()
 	_sync_focus()
 	if not mine().is_empty() or bet_open:
@@ -172,6 +181,7 @@ class View extends Control:
 			return
 		_draw_top(d, u)
 		if d.phase == "fight":
+			_draw_gap(u)
 			_draw_catch(d, u)
 
 	# ---- 掛金の画面
@@ -410,6 +420,43 @@ class View extends Control:
 			uv.append((q - c) / (r * 1.6))
 		draw_colored_polygon(pts, Color(0.98, 0.98, 0.96), uv, Icons.felt())
 		draw_arc(c + Vector2(0, r * 0.15), r * 0.8, 0.3, PI - 0.3, 10, Color(0.72, 0.80, 0.92, 0.45), r * 0.25, true)
+
+	# ---- 投げの間
+
+	## 次を投げられるまでの残り。藍のフェルトの丸（雪玉のストックと同じ布と麻の縁）に、時計と同じ向きで抜けていく赤い糸の輪。
+	## まんなかは、待っているあいだ破線の丸（雪玉がまだ手に来ていない）。明けると糸の輪が金になって綿の雪玉が跳ね、消える。
+	## 雪玉を持っていなければ、跳ねずに消える
+	func _draw_gap(u: float) -> void:
+		var wait: int = ui.duel.throw_wait(ui.me())
+		var pop: float = ui._pop.get("gap", 0.0)
+		var hub = ui.main.get("emotes")
+		var has_ball: bool = hub != null and hub.balls_of(ui.me()) > 0
+		if wait <= 0 and (pop <= 0.0 or not has_ball):
+			return
+		var r := GAP_R * u
+		var c := Vector2(size.x - (18.0 + 230.0 - GAP_R) * u, size.y - (18.0 + 46.0 + 12.0 + GAP_R) * u)
+		var a := 1.0
+		var big := 1.0
+		if wait <= 0:
+			a = clampf(pop / 0.35, 0.0, 1.0)   # 跳ねたあとに薄れて消える
+			big += 0.25 * sin(pop * PI)
+		Icons.screen()
+		Icons.patch(self, Icons.circ(c, r * big, 28), Doll.STOCK_NAVY, a, true, Color(0.70, 0.57, 0.38))
+		for i in Duel.GAP_FRAMES:
+			var ang := -PI / 2 + TAU * i / Duel.GAP_FRAMES
+			var dirv := Vector2(cos(ang), sin(ang))
+			var p1 := c + dirv * r * 0.84 * big
+			if wait <= 0:
+				draw_line(c + dirv * r * 0.68 * big, p1, Color(GOLD, a), 3.0 * u, true)
+			elif i < wait:
+				draw_line(c + dirv * r * 0.68 * big, p1, Doll.STOCK_RED, 3.0 * u, true)
+			else:
+				draw_circle(p1, 1.3 * u, Color(Doll.STOCK_NAVY.darkened(0.5), 0.8))   # 糸を抜いたあとの針穴
+		if wait <= 0:
+			Icons.cotton(self, c, r * 0.56 * big, 1, a)
+		else:
+			Icons.screen()
+			Icons.dashes(self, Icons.circ(c, r * 0.42, 16), Icons.CAP, 2.0 * u, 4.0 * u, 3.0 * u, 0.9, true)
 
 	# ---- キャッチの照準
 
