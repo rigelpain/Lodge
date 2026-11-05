@@ -1,6 +1,7 @@
 extends SceneTree
 ## 雪だるまの店の料理とペレットを、ゲームの素材（props.gd）で並べて撮る（確かめ用）。
-##   Godot --path game --resolution 1280x720 -s res://tools/food_models_shot.gd -- --out=/path/x.png [--only=taiyaki] [--pellets]
+##   Godot --path game --resolution 1280x720 -s res://tools/food_models_shot.gd -- --out=/path/x.png [--only=taiyaki] [--pellets] [--bites]
+##   --bites で、品ごとに 食べる前・1 口・2 口を横に並べる
 
 const Props := preload("res://props.gd")
 const Food := preload("res://food.gd")
@@ -31,12 +32,23 @@ func _run() -> void:
 	sun.light_energy = 1.2
 	sun.shadow_enabled = true
 	stage.add_child(sun)
-	var keys: Array = Food.ORDER if not args.has("only") else String(args.only).split(",")
+	var keys: Array = Array(Food.ORDER) if not args.has("only") else Array(String(args.only).split(","))
 	var cols := 6
+	if args.has("bites"):
+		var many: Array = []
+		for k in keys:
+			many += [[k, 0], [k, 1], [k, 2]]
+		keys = many
+		cols = 3
 	for i in keys.size():
-		var path: String = Food.pellet_glb(keys[i]) if args.has("pellets") else Food.dish_glb(keys[i])
+		var path: String
+		if args.has("bites"):
+			path = Food.dish_glb(keys[i][0], keys[i][1])
+		else:
+			path = Food.pellet_glb(keys[i]) if args.has("pellets") else Food.dish_glb(keys[i])
 		var n := Props.make(path)
 		n.position = Vector3((i % cols) * 0.3, 0, (i / cols) * 0.3)
+		n.rotation_degrees.y = 180.0 if args.has("bites") else 0.0   # 形の正面をカメラへ
 		stage.add_child(n)
 	var cam := Camera3D.new()
 	var w := mini(keys.size(), cols) * 0.3

@@ -26,9 +26,9 @@ HEX = {
     "felt_navy2": "2F3B79", "felt_cream": "F1E8D6", "pole": "A87A4C",
     "felt_gold": "D2A04A", "felt_heat": "E8823A", "felt_brown": "7A4E34", "felt_beige": "D9C4A0", "felt_green": "7C9A5C",
     "yarn_red": "B8402E", "felt_flame_r": "E0482A", "felt_flame_o": "F08A2C", "felt_flame_y": "F7C84A",
-    "felt_brick": "A4573C", "felt_charcoal": "3A3836", "paper_white": "F4F0E6", "paper_kraft": "C9A87A", "felt_bun": "F4EEE2",
+    "felt_brick": "A4573C", "felt_charcoal": "3A3836", "paper_white": "F4F0E6", "paper_kraft": "C9A87A", "felt_bun": "EFE8D9",
     "felt_tin": "A8A8A4", "yarn_noodle": "EED07E", "yarn_soba": "6E5A48", "felt_broth": "C8813A", "felt_broth_miso": "D49A55",
-    "felt_broth_shio": "E6D5A6", "felt_pink": "E59AA8", "felt_nori": "2C3A2E", "felt_rice": "FAF6EC",
+    "felt_broth_shio": "E6D5A6", "felt_pink": "E59AA8", "felt_nori": "34473A", "felt_rice": "DED8C6",
     "felt_orange": "E58A2E", "felt_curry": "A8642A", "felt_konnyaku": "8C8780", "felt_daikon": "E3CDA0",
     "felt_tea": "8BA35A", "felt_purple": "7A3E5C", "felt_tan": "C8925A", "yarn_cream": "EFE6D2", "wood_light": "D2B07E", "knit_drum": "8E8A84", "snow": "F6F7FA", "cotton": "FBFAF6", "trunk": "6B4A30",
     "brass": "C99A3E", "pearl": "EEEAE2", "lacquer": "141012", "shell": "D8E4E6", "steel": "A9ADB2",
@@ -404,7 +404,8 @@ class M:
         if self.role in PATCH and not getattr(self, "uv_set", False):
             box_uv(self, getattr(self, "uv_scale", 1.0))
         me = bpy.data.meshes.new(self.name)
-        bmesh.ops.recalc_face_normals(self.bm, faces=self.bm.faces)
+        if not getattr(self, "keep_normals", False):   # 開いた面（食べ口の切り口など）は、推定すると裏返るのでそのまま
+            bmesh.ops.recalc_face_normals(self.bm, faces=self.bm.faces)
         self.bm.normal_update()
         self.bm.to_mesh(me)
         self.bm.free()

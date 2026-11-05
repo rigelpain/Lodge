@@ -38,18 +38,49 @@ const DRINKS := ["cocoa", "oshiruko", "corn", "clam", "greentea", "milk", "milkt
 const NOODLES := ["ramen", "udon", "soba", "yakisoba"]
 const CRISP := ["taiyaki", "korokke", "hashbrown", "fries", "hotsand"]   # 皮がぱりっとした物（さくっ）
 const BITES := 3             # 3 口で食べ終わる
+## 手に持つ向き（度。形の正面が自分へ向き、食べ口が見えるように）と、手からのずれ・大きさ。ないものは正面を自分へ向けるだけ
+const HOLD := {
+	"onigiri": {"rot": Vector3(-8, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 3.0},
+	"nikuman": {"rot": Vector3(-20, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 2.4},
+	"taiyaki": {"rot": Vector3(68, 0, 18), "yaw": 180.0, "pos": Vector3(-0.07, 0.02, 0.0), "scale": 2.6},
+	"korokke": {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.06, 0.0), "scale": 2.5},
+	"hashbrown": {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 2.5},
+	"fries": {"rot": Vector3(-14, 180, 0), "pos": Vector3(-0.05, -0.08, 0.0), "scale": 2.0},
+	"hotsand": {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.06, 0.0), "scale": 2.6},
+	"yakiimo": {"rot": Vector3(-14, 180, -22), "pos": Vector3(-0.04, -0.08, 0.0), "scale": 2.0},
+	"ramen": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+	"udon": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+	"soba": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+	"yakisoba": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.1, 0.0, 0.0), "scale": 1.5},
+	"hotcake": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.09, -0.02, 0.0), "scale": 1.6},
+	"sanma": {"rot": Vector3(-42, 180, 0), "pos": Vector3(-0.1, 0.02, 0.0), "scale": 1.4},
+	"kaki": {"rot": Vector3(-38, 180, 0), "pos": Vector3(-0.09, 0.0, 0.0), "scale": 1.35},
+	"oshiruko": {"rot": Vector3(40, 0, 0), "pos": Vector3(-0.07, -0.05, 0.0), "scale": 1.7},
+	"clam": {"rot": Vector3(40, 0, 0), "pos": Vector3(-0.08, -0.05, 0.0), "scale": 1.6},
+}
+const HOLD_DRINK := {"rot": Vector3(32, 0, -6), "pos": Vector3(-0.09, -0.06, 0.0), "scale": 2.1}   # 飲み物は取っ手を右（手の側）へ、中が見えるように傾ける
+const HOLD_DEFAULT := {"rot": Vector3(-10, 180, 0), "pos": Vector3(-0.05, -0.05, 0.0), "scale": 2.2}
 
 
-static func dish_glb(dish: String) -> String:
-	return "res://props/food/%s.glb" % MENU[dish][0]
+## 料理の glb。bites（食べた口数）を渡すと、食べている途中の形（<名前>_b1・_b2。かじった跡と中身が見える）があればそれを返す
+static func dish_glb(dish: String, bites := 0) -> String:
+	return "res://props/food/%s.glb" % _model(dish, bites)
+
+
+static func _model(dish: String, bites: int) -> String:
+	var base: String = MENU[dish][0]
+	var b := clampi(bites, 0, BITES - 1)
+	if b > 0 and ResourceLoader.exists("res://props/food/%s_b%d.glb" % [base, b]):
+		return "%s_b%d" % [base, b]
+	return base
 
 
 static func pellet_glb(dish: String) -> String:
 	return "res://props/pellets/pellet_%s.glb" % dish
 
 
-static func dish_icon(dish: String) -> String:
-	return "res://props/food/icons/%s.png" % MENU[dish][0]
+static func dish_icon(dish: String, bites := 0) -> String:
+	return "res://props/food/icons/%s.png" % _model(dish, bites)
 
 
 static func pellet_icon(dish: String) -> String:

@@ -528,7 +528,7 @@ func _sync_held() -> void:
 			var att := BoneAttachment3D.new()
 			att.bone_name = "hand.R"
 			doll.skel.add_child(att)
-			var shape := Player.held_shape(it)
+			var shape := Player.held_shape(it, false)
 			shape.scale = Vector3.ONE / doll._scale
 			shape.position = Vector3(0, 0.06, -0.03) / doll._scale
 			for mi in shape.find_children("*", "MeshInstance3D", true, false):
