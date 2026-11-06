@@ -1153,8 +1153,8 @@ func _pop(b: Btn, f: int, to: Node3D) -> void:
 	b.roll0 = -1
 	b.lid.visible = false
 	b.cut_bits = true
-	_audio("snap", b.at, f)
-	_audio("pop", b.at, f + 1)   # 素材ごとの取得音は、財布に入る瞬間に耳元で（craft_ui.gd → audio.gd の coin）
+	_audio("snap", b.at, f, 0, to)
+	_audio("pop", b.at, f + 1, 0, to)   # 素材ごとの取得音は、財布に入る瞬間に耳元で（craft_ui.gd → audio.gd の coin）
 	_confetti(b.at + b.up * 0.15, b.tier)
 	# 切れた糸の残りは、しばらく雪に残って消える
 	get_tree().create_timer(4.0).timeout.connect(func() -> void:
@@ -1456,10 +1456,11 @@ func _puff(at: Vector3, up: Vector3, size: float) -> void:
 	get_tree().create_timer(1.5).timeout.connect(p.queue_free)
 
 
-func _audio(what: String, at: Vector3, f: int, tier := 0) -> void:
+## who はその音を出した人（ほかの人なら、音はほかの人の音の決まりで。audio.gd）
+func _audio(what: String, at: Vector3, f: int, tier := 0, who: Node3D = null) -> void:
 	var a: Node = world.get_node_or_null("Audio") if world else null
 	if a and a.has_method("button"):
-		a.button(what, at, f, tier)
+		a.button(what, at, f, tier, who != null and who != a.player)
 
 
 # ---------------------------------------------------------------- 裁ちばさみ
@@ -1481,9 +1482,9 @@ func _start_shears(b: Btn, who: Node3D, f0: int) -> void:
 	n.visible = false
 	add_child(n)
 	_shears.append({"node": n, "a": ha, "b": hb, "btn": b, "who": who, "f0": f0})
-	_audio("swish", who.global_position + Vector3.UP, f0)
-	_audio("shears", b.at, f0 + SHEAR_CUT)
-	_audio("shears", b.at, f0 + SHEAR_CUT + 2)
+	_audio("swish", who.global_position + Vector3.UP, f0, 0, who)
+	_audio("shears", b.at, f0 + SHEAR_CUT, 0, who)
+	_audio("shears", b.at, f0 + SHEAR_CUT + 2, 0, who)
 
 
 ## はさみを動かす（12 コマ）: 手から出て、ボタンの糸へ伸び、開いて、ちょきん、ちょきん。戻ってしまう

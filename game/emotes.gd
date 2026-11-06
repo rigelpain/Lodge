@@ -472,17 +472,17 @@ func hit_person(by: int, id: int, point: Vector3, dir: Vector3) -> void:
 	var duel := get_parent().get_node_or_null("Duel")
 	var star: bool = duel != null and not duel.fighting(id).is_empty()
 	_emit({"kind": "hit", "who": id, "by": by, "frame": Doll.frame_index() + 1, "point": point, "dir": dir, "star": star})
-	_emit({"kind": "splat", "frame": Doll.frame_index(), "point": point, "normal": -dir, "on_person": id})
+	_emit({"kind": "splat", "frame": Doll.frame_index(), "point": point, "normal": -dir, "on_person": id, "by": by})
 
 
 ## 雪玉が物（ソリ・地面・ロッジ）に当たって崩れた。残る雪を付ける物は、通信に乗るよう節点の道すじで渡す
-func ball_splat(point: Vector3, normal: Vector3, body: Node) -> void:
+func ball_splat(point: Vector3, normal: Vector3, body: Node, by := -1) -> void:
 	if _client():
 		return
 	var on := ""
 	if body is Node3D and get_parent().is_ancestor_of(body):
 		on = str(get_parent().get_path_to(body))
-	_emit({"kind": "splat", "frame": Doll.frame_index(), "point": point, "normal": normal, "on": on})
+	_emit({"kind": "splat", "frame": Doll.frame_index(), "point": point, "normal": normal, "on": on, "by": by})
 
 
 ## 崩れた雪の見た目（どの画面でも、出来事から作る）
