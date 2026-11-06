@@ -174,6 +174,7 @@ func _tables() -> void:
 	await _table("息の身ぶり（小さい音）", func(): _emote("breath", -22.0, Vector3.ZERO, true, "Voice"),
 			func(at: Vector3): _emote("breath", -22.0, at, false, "Voice"))
 	await _sled_table()
+	await _place_table()
 
 
 ## ソリのしゃー（全速の音量で回っている所）。自分が触っているときの口（基準）と、ほかの人のソリの口を距離ごとに。
@@ -204,6 +205,23 @@ func _sled_table() -> void:
 			other.max_db = top)
 		other.volume_db = -80.0
 		_say("  %5.1f m: ピーク %6.1f dB  エネルギー %6.1f dB  差 %+.1f dB" % [d, m[0], m[1], m[1] - base[1]])
+	audio.set_physics_process(true)
+
+
+## 耳元でない自分の音と場の音（設定の効果音の音量を変えて、その分だけ動くかを見る）
+func _place_table() -> void:
+	audio.set_physics_process(false)
+	var at := _put_at(1.0)
+	var mine: Array = await _measure(func(): audio._emote_sound({"frame": Doll.frame_index()}, 0, "button_snap", 3, -4.0, 1.0, at, false, "", "", true))
+	_say("自分のボタン（1 m）: ピーク %.1f dB  エネルギー %.1f dB" % [mine[0], mine[1]])
+	var probe := Node3D.new()
+	main.add_child(probe)
+	probe.global_position = at
+	var ps: Array = audio.campfire(probe)
+	ps[0].volume_db = -9.0
+	var fire: Array = await _measure(func(): pass)
+	ps[0].stop()
+	_say("焚き火の床（1 m）: ピーク %.1f dB  エネルギー %.1f dB" % [fire[0], fire[1]])
 	audio.set_physics_process(true)
 
 

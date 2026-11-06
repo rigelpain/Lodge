@@ -7,10 +7,10 @@ const Craft := preload("res://craft.gd")
 ## 場にあるものしか鳴らさない。外は響かない。言葉はない（声は言葉にならない「ワ〜」「ウン」「ンーン」だけ）。
 ##
 ## wav は sound/wav/ から実行時に読む（原型なので res:// の外。書き出すときは res:// に写す）。
-## バス: Outdoor（外。ロッジの中ではこもる）← Speaker（柱の曲）、Wind（風）、Others（ほかの人の外の音）
+## バス: Outdoor（外。ロッジの中ではこもる）← Speaker（柱の曲）、Wind（風）、OutdoorSfx（外の効果音: ソリ、人の音、ボタン、雪玉、焚き火）
 ##       Inside（ロッジの中。短い残響。外からは壁ごしにこもる）、Self（自分の足あと、戸）
 ## main.gd の _make_volume_buses() が、このあとに設定の音量バスを挿す:
-##       Speaker → Music → Outdoor、Inside・Self → SFX → Master（Wind と Others は Outdoor のまま、音量だけ SFX と同じ）、
+##       Speaker → Music → Outdoor、Inside・Self → SFX → Master（Wind と OutdoorSfx は Outdoor のまま、音量だけ SFX と同じ）、
 ##       息・声・スタンプの声は Voice → Master。バスの名前は設定が引くので変えない
 
 const C_SOUND := 340.0          # 音の速さ (m/s)。柱ごとの遅れに使う
@@ -31,7 +31,7 @@ const STRIDE := 2.0             # 一歩の長さ (m)
 const STEP_FOOT := 0.13         # ロッジの当たりのこの高さ（ロッジの座標）より下は、段の外の雪の上（いちばん下の段の上面は 0.15）
 ## ほかの人（つないだ人・CPU）の音の決まり（2026-11-06 代表「自分以外のキャラの足音などが大きく聞こえる」）。自分の音はこの決まりの外。
 ## - 大きさは、同じ音を自分で鳴らすときより OTHER_DROP だけ下から始める。すぐそばでも、それより上がらない（max_db で頭を押さえる）
-## - 外の音は Others のバス（設定の「効果音」が効く）を通す。Outdoor に直に流すと設定の音量が効かず、自分の音より大きくなっていた
+## - 外の音は OutdoorSfx のバス（設定の「効果音」が効く）を通す。Outdoor に直に流すと設定の音量が効かず、自分の音より大きくなっていた
 ## - 体の音（足音・息・身ぶり・ソリ）は OTHER_UNIT から先、距離が 2 倍になるごとに 12 dB 減り、OTHER_MAX で切れる。
 ##   声だけは呼びかけなので遠くまで届く（2 倍で 6 dB）。_emote_sound
 const OTHER_DROP := 3.0         # 自分の音より何 dB 下から始めるか。3D の音はまんなかで聞くと左右それぞれさらに 3 dB 小さいので、聞こえる大きさは約 6 dB 下
@@ -196,7 +196,7 @@ func _make_buses() -> void:
 	_bus("Outdoor", "Master", [lp_out])
 	_bus("Speaker", "Outdoor", [])
 	_bus("Wind", "Outdoor", [])
-	_bus("Others", "Outdoor", [])
+	_bus("OutdoorSfx", "Outdoor", [])
 	var rv := AudioEffectReverb.new()   # 木の部屋。短く
 	rv.room_size = 0.25
 	rv.damping = 0.6
@@ -350,14 +350,14 @@ func _feed_posts(listener: Vector3) -> void:
 # ---- ソリ -----------------------------------------------------------------------
 
 func _make_sled() -> void:
-	_runner_fast = _p3(sled, "Outdoor", -80, 5.0, 50.0)
+	_runner_fast = _p3(sled, "OutdoorSfx", -80, 5.0, 50.0)
 	_runner_fast.stream = _wav("runner_fast_loop")
 	_runner_fast.play()
-	_creak = _p3(sled, "Outdoor", -14, 4.0, 30.0)
-	_runner_other = _p3_other(sled, "Others", -80)
+	_creak = _p3(sled, "OutdoorSfx", -14, 4.0, 30.0)
+	_runner_other = _p3_other(sled, "OutdoorSfx", -80)
 	_runner_other.stream = _runner_fast.stream
 	_runner_other.play()
-	_creak_other = _p3_other(sled, "Others", -14.0 - OTHER_DROP)
+	_creak_other = _p3_other(sled, "OutdoorSfx", -14.0 - OTHER_DROP)
 
 
 ## 自分が押している・引いている・乗っているソリか。それ以外のソリの音は、ほかの人の音の決まりで
@@ -465,12 +465,12 @@ func _make_walkers() -> void:
 
 
 ## 歩く人を足す（仲間、通信でつないでいるほかの人。net.gd が来た人を足す）。
-## 足音はその人の所から、外なら Others、ロッジの中なら Inside（短い残響）で鳴らす。remote は届いた姿を写す体（remote_person.gd）
+## 足音はその人の所から、外なら OutdoorSfx、ロッジの中なら Inside（短い残響）で鳴らす。remote は届いた姿を写す体（remote_person.gd）
 func add_walker(who: Node3D, remote := false) -> void:
 	if _walkers.has(who):
 		return
 	_walkers[who] = {"acc": rng.randf(), "push_t": rng.randf(), "breath_t": rng.randf_range(1.0, 3.0), "pushing": 0.0,
-			"step": _p3_other(who, "Others", -10.0 - OTHER_DROP), "step_in": _p3_other(who, "Inside", -10.0 - OTHER_DROP),
+			"step": _p3_other(who, "OutdoorSfx", -10.0 - OTHER_DROP), "step_in": _p3_other(who, "Inside", -10.0 - OTHER_DROP),
 			"breath": _p3_other(who, "Voice", -16.0 - OTHER_DROP, OTHER_UNIT, 20.0), "remote": remote, "last": who.global_position}
 
 
@@ -895,7 +895,7 @@ func _one_shot(at: Vector3, name_: String, db: float, pitch := 1.0, delay := 0.0
 		go.call()
 
 
-## 足の音を 1 つ鳴らす。db は自分の大きさ。自分は耳元（Self）、人はその人の所から OTHER_DROP だけ下げて（ロッジの中なら Inside、外なら Others）
+## 足の音を 1 つ鳴らす。db は自分の大きさ。自分は耳元（Self）、人はその人の所から OTHER_DROP だけ下げて（ロッジの中なら Inside、外なら OutdoorSfx）
 func _play_step(who: Node3D, w: Dictionary, name_: String, db: float, pitch: float) -> void:
 	var s := _wav(name_)
 	if who == player:
@@ -987,11 +987,11 @@ func _make_lodge() -> void:
 ## 外の焚き火（campfire.gd）の音: 暖炉と同じ録音（燃える床のループと、ぱちぱち）を、焚き火の所で外の音として鳴らす。
 ## [床のループ, ぱちぱちの口] を返す。ぱちぱちは焚き火が fire_crack で鳴らす（燃える強さで大きさを変える）
 func campfire(parent: Node3D) -> Array:
-	var bed := _p3(parent, "Outdoor", -40.0, 3.0, 35.0)
+	var bed := _p3(parent, "OutdoorSfx", -40.0, 3.0, 35.0)
 	bed.position = Vector3.UP * 0.4
 	bed.stream = _wav("fire_bed_loop")
 	bed.play(rng.randf_range(0.0, 6.0))
-	var crack := _p3(parent, "Outdoor", -8.0, 3.0, 35.0)
+	var crack := _p3(parent, "OutdoorSfx", -8.0, 3.0, 35.0)
 	crack.position = Vector3.UP * 0.4
 	return [bed, crack]
 
@@ -1120,7 +1120,7 @@ func _physics_process(dt: float) -> void:
 
 
 # ---- 身ぶりと声（emotes.gd の出来事） ------------------------------------------
-# 声は Voice、身ぶりの小さな音は Self（自分）か Others（人の）。人形の姿勢と同じコマで鳴らす
+# 声は Voice、身ぶりの小さな音は Self（自分）か OutdoorSfx（人の）。人形の姿勢と同じコマで鳴らす
 
 ## 身ぶりの何コマ目に、どの音を鳴らすか: [コマ, 名前, 数, 音量 dB, 高さ]
 const EMOTE_SOUNDS := {
@@ -1227,7 +1227,7 @@ func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, 
 		_shot2(p, s, db - 4.0, pitch)
 		p.finished.connect(p.queue_free)
 	elif plain:
-		var p := _p3(world, bus if bus != "" else "Outdoor", db, 5.0, 45.0)
+		var p := _p3(world, bus if bus != "" else "OutdoorSfx", db, 5.0, 45.0)
 		p.global_position = at
 		_shot(p, s, db, pitch)
 		p.finished.connect(p.queue_free)
@@ -1239,7 +1239,7 @@ func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, 
 		elif bus == "Voice":
 			p = _p3_other(world, "Voice", top, 5.0, 45.0, true)
 		else:
-			p = _p3_other(world, "Inside" if _zone_of(at) == 2 else "Others", top)   # 足音と同じく、ロッジの中の音は Inside で
+			p = _p3_other(world, "Inside" if _zone_of(at) == 2 else "OutdoorSfx", top)   # 足音と同じく、ロッジの中の音は Inside で
 		p.global_position = at
 		_shot_other(p, s, top, pitch)
 		p.finished.connect(p.queue_free)

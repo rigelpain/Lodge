@@ -2044,7 +2044,7 @@ func _apply_setting(key: String, v) -> void:
 		"vol_music":
 			_set_volume(["Music"], v)
 		"vol_sfx":
-			_set_volume(["SFX", "Wind", "Others"], v)   # 風とほかの人の外の音は Outdoor の処理を通したいので、バスの音量で合わせる
+			_set_volume(["SFX", "Wind", "OutdoorSfx"], v)   # 風と外の効果音は Outdoor の処理を通したいので、バスの音量で合わせる
 		"vol_voice":
 			_set_volume(["Voice"], v)
 		"bob":
