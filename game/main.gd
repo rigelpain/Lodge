@@ -290,6 +290,46 @@ static func snow_lift(x: float, z: float) -> float:
 	return lerpf(lerpf(drift(x0, z0), drift(x0 + 1, z0), fx), lerpf(drift(x0, z0 + 1), drift(x0 + 1, z0 + 1), fx), fz)
 
 
+static var _snow_cache := {}   # 格子の点 → 見た目の雪面の高さ（滑りあとが何度も同じ点を読むので覚えておく）
+
+static func _snow_vertex(x: float, z: float) -> float:
+	var key := Vector2i(int(x), int(z))
+	if _snow_cache.has(key):
+		return _snow_cache[key]
+	if _snow_cache.size() > 8192:
+		_snow_cache.clear()
+	var y := height(x, z) + drift(x, z)
+	_snow_cache[key] = y
+	return y
+
+
+## 見た目の雪面の、(x, z) の所の向きと高さ Vector4(法線 x, y, z, 高さ)。地面の三角と同じ割り方（格子の対角線は右上から左下）で求めるので、
+## 雪面にぴったり載る（滑りあと用）。snow_lift は格子の四隅をならした値なので、三角の中では数 cm ずれる
+static func snow_plane(x: float, z: float) -> Vector4:
+	var s := 2.0 if Grand.on_ground(x, z) else 1.0   # 大山の地面は 2 m おき
+	var gx := floorf(x / s) * s
+	var gz := floorf(z / s) * s
+	var tx := (x - gx) / s
+	var tz := (z - gz) / s
+	var y10 := _snow_vertex(gx + s, gz)
+	var y01 := _snow_vertex(gx, gz + s)
+	var dx: float
+	var dz: float
+	var y: float
+	if tx + tz <= 1.0:
+		var y00 := _snow_vertex(gx, gz)
+		dx = (y10 - y00) / s
+		dz = (y01 - y00) / s
+		y = y00 + dx * (x - gx) + dz * (z - gz)
+	else:
+		var y11 := _snow_vertex(gx + s, gz + s)
+		dx = (y11 - y01) / s
+		dz = (y11 - y10) / s
+		y = y11 - dx * (gx + s - x) - dz * (gz + s - z)
+	var n := Vector3(-dx, 1.0, -dz).normalized()
+	return Vector4(n.x, n.y, n.z, y)
+
+
 ## 小物を雪に立てる高さ: 根もと（半径 r）のまんなかとまわり 8 か所で、見た目の雪面（吹きだまりを含む）がいちばん低い所。
 ## 斜面でも根もとが雪から浮かない（上りの側は雪に埋まる）。地形を変えても、置く所の高さはここから取る
 static func foot_y(x: float, z: float, r := 0.3) -> float:
@@ -368,6 +408,7 @@ func _ready() -> void:
 		sled.main_color = Color.from_string(args["sled-color"], Color(0, 0, 0, 0))
 	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6 + sled.place_lift(), -3)   # 長いソリが坂に埋まらないように
 	sled.snow_lift = snow_lift
+	sled.snow_plane = snow_plane
 	sled.name = "Sled"   # 出来事（snow_buttons.gd の snip）は、ソリを名前で指す
 	add_child(sled)
 	if args.has("sled-yaw"):   # 確かめ用: 最初からソリを横や逆に向けておく

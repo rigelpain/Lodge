@@ -1049,6 +1049,7 @@ func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up
 	s.transform = Transform3D(_basis(yaw, up), at + up * 0.08)   # 床に少し浮かせて置く（めり込むと床の下へ押し出される）
 	if world and world.has_method("snow_lift"):
 		s.snow_lift = Callable(world, "snow_lift")
+		s.snow_plane = Callable(world, "snow_plane")
 	(world if world else get_parent()).add_child(s)
 	s.set_meta("craft_id", id)
 	if wait > 0:
