@@ -3,7 +3,7 @@ extends Node3D
 const Look := preload("res://look.gd")
 ## 原型の場面: こんもりした丘、ソリ、あなた（手だけ見える一人称）、押すのを手伝う仲間。
 ## 確かめ用の起動引数（-- のあとに付ける）:
-##   --bots=N      仲間の数（既定 1）
+##   --bots=N      ソリを押す仲間の数（既定 0。--lodge-bots か --no-player を書いたときは 1。通信ではホストの数。つなぐ側では効かない）
 ##   --no-player   あなたを出さず、仲間だけで押す（速さを比べる用）
 ##   --shot=PATH   数秒後に画面を PNG で保存して終わる
 ##   --log         ソリの高さを1秒ごとに出す
@@ -19,7 +19,9 @@ const Look := preload("res://look.gd")
 ##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
 ##   --bot-lanterns=形,形…  仲間の帯に提げるランタン（lantern.gd の LOOKS。ソリを押す仲間、ロッジの仲間の順に。確かめ用）
 ##   --spawn=lanterns  おじいさんの番台の横のランタン掛けの前から始める（F でランタンを買って提げ替える）
-##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
+##   --roam-bots=N  山をめぐる仲間の数（既定 5。--bots か --lodge-bots か --no-player を書いたときは 0）。自分で山を選んで登り、米袋で滑り降りて、別の山へ（bot.gd の roam）
+##   --roam-all-hill  確かめ用: 山をめぐる仲間をみんな丘のそばから始める
+##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 0。--bots か --no-player を書いたときは 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
 ##   --spawn=wardrobe  1 階の人台の前から始める（F で人形を選び直す）
 ##   --spawn=mirror    入口の横の大きな鏡の前から始める（F で自分の人形が映る）
 ##   --spawn=dye       2 階の染め桶の前から始める（F で服を染める）
@@ -52,6 +54,10 @@ const LODGE_POS := Vector2(-35, 98)          # (x, z)
 const LODGE_YAW := 2.7986                    # atan2(35, -98): 正面を頂上の向きへ
 const LODGE_PAD := Rect2(-32, -16, 57, 37)   # ならす範囲（ロッジの座標の x, z）。下屋から外階段の踊り場まで
 const LODGE_BLEND := 10.0                    # ならした所から丘へ戻るまでの幅 (m)
+
+## 山をめぐる仲間のはじめの所: [向かう山, (x, z)]。尾根の途中や麓に分けて、はじめからばらけて見える
+const ROAM_START := [["hill", Vector2(2, 41)], ["slope", Vector2(22, 262)], ["peak", Vector2(232, 96)], ["hill", Vector2(-30, -34)], ["slope", Vector2(32, 385)]]
+const ROAM_DOLLS := ["origami", "news", "robo", "ningyo", "golem"]
 
 const Sled := preload("res://sled.gd")
 const Mountain := preload("res://mountain.gd")
@@ -333,11 +339,11 @@ func _ready() -> void:
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	args.merge(Net.boot, true)   # スタート画面で選んだホスト・つなぐ
-	if args.has("host") or args.has("join"):
-		# 通信で遊ぶときは、仲間（CPU）を置かない（仲間はそれぞれの画面の中だけにいて、ほかの人には見えないので）
-		for k in ["bots", "lodge-bots"]:
-			if not args.has(k):
-				args[k] = "0"
+	if args.has("join"):
+		# 仲間（CPU）はホストの画面だけが動かす。つなぐ側には、ホストから姿が届く（net.gd の "cpu"）。数はホストの --roam-bots など（一人で遊ぶときと同じ）
+		args["bots"] = "0"
+		args["lodge-bots"] = "0"
+		args["roam-bots"] = "0"
 
 	_make_world()
 	_make_ground()
@@ -406,7 +412,32 @@ func _ready() -> void:
 		player.rotation.x = 0
 		_add_pals(player)
 
-	for i in int(args.get("bots", "1")):
+	# 山をめぐる仲間（bot.gd の roam）。1 人目はゆき。はじめから、ばらけた所にいる
+	var cast_named := args.has("bots") or args.has("lodge-bots") or args.has("no-player")   # 確かめの道具が仲間を指定している
+	var roamers := int(args.get("roam-bots", "0" if cast_named else "5"))
+	var pushers := int(args.get("bots", "1" if cast_named else "0"))
+	for i in roamers:
+		var spot: Array = ROAM_START[i % ROAM_START.size()]
+		var at: Vector2 = spot[1]
+		if args.has("roam-all-hill"):   # 確かめ用（いちばん重いとき）: みんな丘の、遊ぶ人のそばから
+			spot = ["hill", Vector2(2.0 + 3.0 * i, 41.0)]
+			at = spot[1]
+		var b := Bot.new()
+		b.sled = sled
+		b.player = player
+		b.roam = true
+		b.side = 1 if i % 2 == 0 else -1
+		if args.has("bot-dolls"):
+			var ds: PackedStringArray = String(args["bot-dolls"]).split(",")
+			b.doll_kind = ds[i % ds.size()]
+		else:
+			b.doll_kind = ROAM_DOLLS[i % ROAM_DOLLS.size()]
+		b.position = Vector3(at.x, height(at.x, at.y) + 0.2, at.y)
+		add_child(b)
+		b.roam_from(spot[0])
+		_bot_lantern(b, i)
+		_add_pals(b)
+	for i in pushers:
 		var b := Bot.new()
 		b.sled = sled
 		b.player = player
@@ -421,7 +452,7 @@ func _ready() -> void:
 		_add_pals(b)
 	if seats:
 		# ロッジでくつろぐ仲間: 食堂の空いた席に座った姿で始まる（bot.gd の lounge）
-		for i in int(args.get("lodge-bots", "2")):
+		for i in int(args.get("lodge-bots", "2" if cast_named else "0")):
 			var b := Bot.new()
 			b.sled = sled
 			b.player = player
@@ -431,13 +462,13 @@ func _ready() -> void:
 			b.lounge = true
 			b.position = get_node("Lodge").to_global(Vector3(6.0 + 3.0 * i, 0.6, -4.0))
 			add_child(b)
-			_bot_lantern(b, int(args.get("bots", "1")) + i)
+			_bot_lantern(b, pushers + i)
 			_add_pals(b)
 
 	if args.has("duel-bot"):
 		# 確かめ用: 雪合戦の対決をすぐ始められるように、あなたと最初の仲間に雪玉を 1 つ
 		for c in get_children():
-			if c.get_script() == Bot and not c.lounge:
+			if c.get_script() == Bot and not c.lounge:   # 山をめぐる仲間も
 				emotes._set_balls(c.id, 1)
 				break
 		if player:

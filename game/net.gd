@@ -10,6 +10,8 @@ const Pipe := preload("res://net_pipe.gd")
 ##   受けた画面は、その人の体（remote_person.gd）に写す。
 ## ソリ: ホストの物理が正。ホストがソリの姿と速さを 1 秒に SLED_HZ 回送り、つなぐ側のソリはそれへなめらかに寄せる
 ##   （sled.gd の net_follow）。押す・紐で引く・体重移動は、ホストの画面のその人の体がホストのソリにかける。
+## 仲間（CPU）: ホストの画面の bot.gd だけが動かす。姿は人と同じ形で 1 秒に SEND_HZ 回みんなへ送り、つなぐ側は届いたら体（remote_person.gd）を置く。
+##   身ぶり・対決・持ち物は、人と同じ出来事でホストから配られる。人が抜けても残る。ホストが抜けたら、人と同じくいなくなる。
 ## --lag=ミリ秒 で、届いたものをわざと遅らせる（同じ Mac で 2 つ動かして遅れを確かめる用。片道の遅れ）
 
 const PORT := 24680
@@ -17,14 +19,17 @@ const MAX_PEERS := 7          # ホストのほかにつなげる人数（人形
 const SEND_HZ := 20.0         # 自分の姿を送る回数（1 秒に）
 const SLED_HZ := 30.0         # ホストがソリの姿を送る回数（1 秒に）。止まっているソリは STILL_HZ
 const STILL_HZ := 2.0
+const FAR_EVERY := 4          # どの人からも遠い仲間の姿を、SEND_HZ の何回に 1 回送るか
 
 static var boot := {}         # スタート画面で選んだ始め方（{"host": "1"} か {"join": 番号}）。読み直した main.gd が引数に足す
 
 var main: Node3D
 var online := false
 var remotes := {}             # 通信の番号 → その人の体（remote_person.gd）
+var cpus := {}                # つなぐ側: 仲間の人の番号 → その体（remote_person.gd）。来ている人の数には入れない
 var lag := 0.0                # 届いたものを遅らせる (s)
 var _send_t := 0.0
+var _cpu_tick := 0
 var _port := PORT
 var _sled_t := {}             # ソリ → 送るまでの残り (s)
 
@@ -63,6 +68,9 @@ func receive(pid: int, m: Array) -> void:
 		"sled":
 			if from_host:
 				_sled(m[1], m[2], m[3], m[4])
+		"cpu":
+			if from_host:
+				_cpu(int(m[1]), m[2])
 		"up":
 			_up(pid, m[1], m[2], m[3])
 		"down":
@@ -77,6 +85,8 @@ func receive(pid: int, m: Array) -> void:
 				main.emotes.load_snapshot(m[2])
 				if main.get("damp"):
 					main.damp.load_snapshot(m[3])
+				if main.get("seats"):
+					main.seats.load_snapshot(m[4])
 		"told":
 			if from_host:
 				_told(m[1])
@@ -134,8 +144,7 @@ func follow(s: Node) -> void:
 
 
 func _on_node_added(n: Node) -> void:
-	if n.is_in_group("sleds"):
-		follow(n)
+	follow(n)   # あとから出たソリ（米袋など）。グループに入るのは _ready なので、ここでは見ない
 
 
 ## つなぐ側の、自分が来た順の小さな番号（1〜）。始める所を横へずらすのに使う
@@ -152,19 +161,25 @@ func sled_at(path: NodePath) -> RigidBody3D:
 func _on_peer(pid: int) -> void:
 	if remotes.has(pid):
 		return
+	remotes[pid] = _add_body(pid, "Remote%d" % pid)
+	print("来た: 番号 ", pid)
+	if is_host():
+		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot(), main.damp.snapshot() if main.get("damp") else {},
+			main.seats.snapshot() if main.get("seats") else {}])
+
+
+## ほかの人（仲間）の体を置く
+func _add_body(id: int, nm: String) -> RemotePerson:
 	var r := RemotePerson.new()
-	r.name = "Remote%d" % pid
-	r.peer = pid
+	r.name = nm
+	r.peer = id
 	r.net = self
 	r.position = main.START
 	main.add_child(r)
-	remotes[pid] = r
 	var au := main.get_node_or_null("Audio")
 	if au and au.has_method("add_walker"):   # 足音も、自分や仲間と同じ決まりで（audio.gd）
 		au.add_walker(r, true)
-	print("来た: 番号 ", pid)
-	if is_host():
-		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot(), main.damp.snapshot() if main.get("damp") else {}])
+	return r
 
 
 func _on_gone(pid: int) -> void:
@@ -173,6 +188,8 @@ func _on_gone(pid: int) -> void:
 	if r and is_instance_valid(r):
 		r._leave()
 		r.queue_free()
+	if main.get("seats"):
+		main.seats.forget(pid)
 	print("帰った: 番号 ", pid)
 
 
@@ -186,7 +203,8 @@ func _on_connected() -> void:
 
 func _on_failed() -> void:
 	print("つながらなかった")
-	_back_to_start("join")
+	if not _back_to_start("join"):
+		online = false   # 引数で始めたときは、一人で続ける
 
 
 ## スタート画面から始めた通信が切れたら、スタート画面へ戻る（つなぐの札に×）。引数で始めたときは、一人で続ける
@@ -225,6 +243,13 @@ func _on_host_gone() -> void:
 		return
 	for pid in remotes.keys():
 		_on_gone(pid)
+	for id in cpus:   # 仲間を動かしていたのはホストの画面
+		var r = cpus[id]
+		r._leave()
+		r.queue_free()   # 頭・肩の小物とミニオンも、持ち主が消えると消える（companions.gd）
+		if main.get("seats"):
+			main.seats.forget(id)
+	cpus.clear()
 	for s in get_tree().get_nodes_in_group("sleds"):
 		if "net_follow" in s:
 			s.net_follow = false   # ここからは自分の画面の物理で
@@ -254,9 +279,15 @@ func _physics_process(dt: float) -> void:
 	if not online or multiplayer.multiplayer_peer.get_connection_status() != MultiplayerPeer.CONNECTION_CONNECTED:
 		return
 	_send_t -= dt
-	if _send_t <= 0.0 and main.player:
+	if _send_t <= 0.0:
 		_send_t = 1.0 / SEND_HZ
-		_fast.rpc("_in", ["state", _my_state()])
+		if main.player:
+			_fast.rpc("_in", ["state", _my_state()])
+		if is_host() and not remotes.is_empty():
+			_cpu_tick += 1
+			for b in get_tree().get_nodes_in_group("bots"):
+				if not b.far or (_cpu_tick + b.id) % FAR_EVERY == 0:   # どの人からも遠い仲間は、回数を減らす
+					_fast.rpc("_in", ["cpu", b.id, _bot_state(b)])
 	if is_host():
 		for s in get_tree().get_nodes_in_group("sleds"):
 			var t: float = _sled_t.get(s, 0.0) - dt
@@ -271,8 +302,38 @@ func _physics_process(dt: float) -> void:
 ## 自分の姿（remote_person.gd の put が読む）。人形の姿勢は、自分の人形にいま入っている値をそのまま
 func _my_state() -> Dictionary:
 	var p: CharacterBody3D = main.player
+	var s := _body_state(p, int(p.mode))
+	match int(p.mode):
+		1:   # つかんでいる
+			s["h"] = p.handle
+			s["pd"] = p.push_world if p.pushing else Vector3.ZERO
+		2:   # 乗っている
+			s["st"] = p.seat
+			s["l"] = p.ride_lean
+		3:   # 紐
+			s["rh"] = p.rope_hand()
+	return s
+
+
+## 仲間の姿（ホスト。人の姿と同じ形で、remote_person.gd の put が読む）
+func _bot_state(b: CharacterBody3D) -> Dictionary:
+	var m: int = b.net_mode()
+	var s := _body_state(b, m)
+	s["wv"] = b.doll.waving
+	match m:
+		1:   # つかんでいる
+			s["h"] = b.handle
+			s["pd"] = b.push_world
+		2:   # 乗っている
+			s["st"] = b.seat
+			s["l"] = b.get("_lean_now")
+	return s
+
+
+## 人と仲間に共通の姿: 位置・向き・人形の姿勢・触っているソリ・紙の水
+func _body_state(p: CharacterBody3D, mode: int) -> Dictionary:
 	var d = p.doll
-	var s := {"p": p.global_position, "y": p.rotation.y, "m": int(p.mode), "d": d.kind,
+	var s := {"p": p.global_position, "y": p.rotation.y, "m": mode, "d": d.kind,
 		"e": d.effort, "dr": d.dragged, "air": d.airborne, "f": d.facing, "g": d.gaze, "ln": d.lean,
 		"c": d.crouch, "pt": d.point, "ps": d.point_sides, "ss": d.sit_stage, "sd": d.seat_drop, "se": d.seat_edge,
 		"so": d.seat_soft}
@@ -289,15 +350,6 @@ func _my_state() -> Dictionary:
 	# 体の調子: 紙の水（damp.gd、整数）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
 	if main.damp:
 		s["dw"] = int(roundf(main.damp.water_of(p.id)))
-	match int(p.mode):
-		1:   # つかんでいる
-			s["h"] = p.handle
-			s["pd"] = p.push_world if p.pushing else Vector3.ZERO
-		2:   # 乗っている
-			s["st"] = p.seat
-			s["l"] = p.ride_lean
-		3:   # 紐
-			s["rh"] = p.rope_hand()
 	return s
 
 
@@ -331,6 +383,10 @@ func _up(pid: int, what: String, ev: Dictionary, at: int) -> void:
 		"duel":
 			if main.get("duel"):
 				main.duel._apply(ev)
+		"seat":
+			if main.get("seats"):
+				main.seats.from_net(ev)
+				down("seat", ev)
 
 
 ## ホスト: 確かめた出来事を、つなぐ側の全員へ
@@ -349,6 +405,9 @@ func _down(what: String, ev: Dictionary, at: int) -> void:
 		"duel":
 			if main.get("duel"):
 				main.duel.from_host(ev)
+		"seat":
+			if main.get("seats") and int(ev.who) != multiplayer.get_unique_id():
+				main.seats.from_net(ev)
 		"craft":
 			main.craft.replay = true
 			if not main.craft._apply(ev):
@@ -375,6 +434,14 @@ func _state(pid: int, s: Dictionary) -> void:
 	if not remotes.has(pid):
 		_on_peer(pid)
 	remotes[pid].put(s)
+
+
+## 仲間の姿が届いた（はじめて届いたら、体を置く。あとから来た人にも、これで見える）。頭・肩の小物とミニオンも、ホストの画面と同じに
+func _cpu(id: int, s: Dictionary) -> void:
+	if not cpus.has(id):
+		cpus[id] = _add_body(id, "Cpu%d" % id)
+		main._add_pals(cpus[id])
+	cpus[id].put(s)
 
 
 ## ホストのソリの姿が届いた

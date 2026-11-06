@@ -1,7 +1,7 @@
 extends SceneTree
-## コンピューターの仲間と雪合戦を 2 戦する確かめ（ふつうに起動したときと同じ引数で。--duel-bot は付けない）。
-##   数字だけ: Godot --headless --fixed-fps 60 --path game -s res://tools/duel_cpu_check.gd -- --no-sound
-##   仲間が 2 人のとき（見ている相手だけが応じるか）は --bots=2 を足す
+## コンピューターの仲間と雪合戦を 2 戦する確かめ（ソリを押す仲間 --bots=1 を相手に。--duel-bot は付けない）。
+##   数字だけ: Godot --headless --fixed-fps 60 --path game -s res://tools/duel_cpu_check.gd -- --no-sound --bots=1
+##   仲間が 2 人のとき（見ている相手だけが応じるか）は --bots=2 にする
 ##   絵も撮る: Godot --fixed-fps 60 --path game --resolution 1280x720 -s res://tools/duel_cpu_check.gd -- --no-sound --hud-idle=0 --dir=/path/shots
 ## 遊ぶ人と同じ道を通す: しゃがんで雪玉を作る → 低い手のひら → 仲間が雪玉を作って握手しに来る → 掛金の画面 → 戦い。
 ## 1 戦目は立っているだけで負ける（仲間の雪玉で 3 つ減る）。2 戦目からは横へ歩きながら仲間をねらって投げて勝つ（負けたらもう 1 戦、5 戦まで）。
