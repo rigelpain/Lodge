@@ -196,20 +196,27 @@ const TRAIL_BURY_MIN := 4.0           # 消えていく時間の下限 (s)
 ## 消え方。"fray" ほつれる（撚りがゆるみ、繊維がまんなかから切れていく。2026-10-29 代表）、"bury" 雪に埋もれる（白くなって沈む）
 const TRAIL_FADE := "fray"
 var trail_fade := TRAIL_FADE          # 置く前に変えてよい（main.gd の --trail-fade=）
-const TRAIL_SCAN := 48                # 空いた目を探すとき、先へ見る数（多いほど正確、重い）
 const TRAIL_CHUNK := 100              # 歩みをこの数ずつの塊に分けて描く（塊の目の数は × per）。画面の外の塊は描かない
+const TRAIL_CHUNK_SPAN := 24.0        # 1 つの塊に入れる跡の広がり (m)。塊は続いた跡だけを持つ（離れた跡が混ざると、塊のまんなかが遠くなって丸ごと消える）
 const TRAIL_SEE := 45.0               # これより遠い塊は描かない (m)。糸は細いので、その先はほとんど見えない
+const TRAIL_MAKE := 130.0             # カメラからこれより遠いソリは、跡を作らない (m)。遠くのソリのぶん重くならないように（どうせ見えない）
+const TRAIL_SLOW := 0.25              # これより遅い動き (m/s) は歩みに数えない。止まっても前の目から続けて縫う
+const TRAIL_AIR := 0.6                # 滑り木の下がこれより空いていたら、宙を飛んでいるので縫わない (m)
+const TRAIL_JUMP := 2.0               # 1 コマでこれより動いたら、置き直されたので跡を切る (m)
+const TRAIL_LEN := Vector2(0.1, 0.9)  # 1 歩の長さがこの外なら縫わない (m)
 var _stitch: ArrayMesh                        # 1 目の形（塊どうしで共有。色と時計はここに入れる。粗い形は Look.stitch_mesh）
 var _trails: Array[MultiMeshInstance3D] = []  # 目の塊
-var _trail_i := 0
+var _chunk_i := 0                             # いま縫っている塊
+var _chunk_fill := 0                          # その塊に置いた目の数
+var _chunk_from := Vector3.ZERO               # その塊の最初の目の所
 var _trail_now := 0.0                         # 滑りあとの時計 (s)。確かめ用に進めてよい
 var _trail_end := PackedFloat32Array()        # 目ごとの、消えきる時刻
 var _chunk_end := PackedFloat32Array()        # 塊ごとの、目がすべて消えきる時刻（過ぎたら塊を描かない）
 var _trail_used := 0                          # 使ったことのある目の数
 var _trail_noise := FastNoiseLite.new()
-var _trail_dist := 0.0
-var _trail_last := Vector3.INF
-var _trail_flip := false
+var _trail_dist := [0.0, 0.0]                    # 左右それぞれ、前の歩みから滑った長さ
+var _trail_last := [Vector3.INF, Vector3.INF]    # 左右それぞれ、前のコマの滑り木の後ろ端
+var _trail_flip := [false, false]
 var _trail_holes := [Vector3.INF, Vector3.INF]   # 左右それぞれ、前の歩みの縫い目の中心
 var _trail_jit := [Vector3.ZERO, Vector3.ZERO]   # 左右それぞれ、前の針穴のばらつき
 var _st: Dictionary = STITCHES.zigzag            # いまの縫い目（STITCHES の 1 つ）
@@ -218,6 +225,7 @@ var _trail_n := TRAIL_N                          # 目の数（TRAIL_N × per）
 var _trail_chunk := TRAIL_CHUNK                  # 塊の目の数
 var _trail_rng := RandomNumberGenerator.new()
 var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定からずれる量。main が渡す
+var snow_plane := Callable()  # (x, z) → 見た目の雪面の向きと高さ Vector4(法線 x, y, z, 高さ)。main が渡す。なければ当たり判定＋snow_lift
 
 
 func _ready() -> void:
@@ -712,10 +720,24 @@ func _make_trail() -> void:
 	_trail_noise.seed = randi()
 
 
+## from の真下の地面。人や別のソリには縫わない（動かない物だけを地面とする）
 func _ground_hit(from: Vector3) -> Dictionary:
 	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 3.0)
-	q.exclude = [get_rid()]
-	return get_world_3d().direct_space_state.intersect_ray(q)
+	var skip: Array[RID] = [get_rid()]
+	var space := get_world_3d().direct_space_state
+	for i in 4:
+		q.exclude = skip
+		var h := space.intersect_ray(q)
+		if h.is_empty() or h.collider is StaticBody3D:
+			return h
+		skip.append(h.rid)
+	return {}
+
+
+## 当たったのが雪の地面（高さの表）か。ジャンプ台などは当たりと見た目が同じ形なので、吹きだまりを足さない
+static func _is_snow(h: Dictionary) -> bool:
+	var body: Node = h.collider
+	return body.get_child_count() > 0 and body.get_child(0) is CollisionShape3D and (body.get_child(0) as CollisionShape3D).shape is HeightMapShape3D
 
 
 ## 滑りあとの目が、消えるまでの時間のまんなか (s)。重いソリ（乗っている人も入れる）ほど長い
@@ -724,21 +746,50 @@ func trail_life() -> float:
 	return clampf(life, TRAIL_LIFE_RANGE.x, TRAIL_LIFE_RANGE.y)
 
 
-## 次の目を置く所: 先の TRAIL_SCAN 個のうち、消えきった目があればそれ、なければいちばん早く消える目
-func _trail_slot() -> int:
-	var best := _trail_i
-	var best_end := INF
-	for j in mini(TRAIL_SCAN, _trail_n):
-		var i := (_trail_i + j) % _trail_n
-		if _trail_end[i] <= _trail_now:
-			best = i
+## 次の目を置く番号。塊はいつも続いた跡だけを持つ。満ちたら、または離れた所へ来たら、次の塊へ移る
+func _trail_slot(a: Vector3) -> int:
+	var mm := _trails[_chunk_i].multimesh
+	if _chunk_fill >= mm.instance_count or (_chunk_fill > 0 and a.distance_to(_chunk_from) > TRAIL_CHUNK_SPAN):
+		_next_chunk()
+		mm = _trails[_chunk_i].multimesh
+	if _chunk_fill == 0:
+		_chunk_from = a
+	var slot := _chunk_i * _trail_chunk + _chunk_fill
+	_chunk_fill += 1
+	mm.visible_instance_count = _chunk_fill
+	_trail_used = maxi(_trail_used, slot + 1)
+	return slot
+
+
+## 次の塊へ: 先の塊から順に見て、消えきった塊。なければいちばん早く消える塊を丸ごと使い回す（跡のいちばん古い端が消える）
+func _next_chunk() -> void:
+	var n := _trails.size()
+	var best := (_chunk_i + 1) % n
+	for j in range(1, n + 1):
+		var c := (_chunk_i + j) % n
+		if _chunk_end[c] <= _trail_now:
+			best = c
 			break
-		if _trail_end[i] < best_end:
-			best_end = _trail_end[i]
-			best = i
-	_trail_i = (best + 1) % _trail_n
-	_trail_used = maxi(_trail_used, best + 1)
-	return best
+		if _chunk_end[c] < _chunk_end[best]:
+			best = c
+	_chunk_i = best
+	_chunk_fill = 0
+	_chunk_end[best] = -1.0
+	var mm := _trails[best].multimesh
+	mm.visible_instance_count = 0
+	mm.custom_aabb = AABB()
+	for i in mm.instance_count:
+		_trail_end[best * _trail_chunk + i] = -1.0
+
+
+## 塊の広がりに、目 a〜b を足す。描く・描かないは、塊のこの箱で決まる（エンジンに数えさせると、箱が世界の原点まで広がることがある）
+func _chunk_grow(mm: MultiMesh, a: Vector3, b: Vector3) -> void:
+	var one := AABB(a, Vector3.ZERO).expand(b).grow(0.3)
+	var box := mm.custom_aabb
+	if box.size == Vector3.ZERO:
+		mm.custom_aabb = one.grow(1.0)
+	elif not box.encloses(one):
+		mm.custom_aabb = box.merge(one.grow(1.0))
 
 
 func _update_trail(dt: float) -> void:
@@ -747,49 +798,78 @@ func _update_trail(dt: float) -> void:
 	_trail_now += dt
 	Look.stitch_set_time(_stitch, _trail_now)
 	for c in _trails.size():
-		if _trails[c].visible and _chunk_end[c] <= _trail_now:
+		if _trails[c].visible and _chunk_end[c] <= _trail_now and c != _chunk_i:
 			_trails[c].visible = false
-	# ステッチ: 動いている間、1 歩（TRAIL_STEP）ごとに左右の滑り木の後ろ端で雪面を探し、
-	# 前の歩みからそこまでを、ソリの縫い目（なみ縫い・くさり縫い・サドルステッチ…）で縫う
-	var v := Vector3(linear_velocity.x, 0, linear_velocity.z)
-	if v.length() < 0.25:
-		_trail_last = Vector3.INF
-		_trail_holes = [Vector3.INF, Vector3.INF]
+	# 遠くのソリは跡を作らない（レイも目も増やさない）
+	var cam := get_viewport().get_camera_3d()
+	var far := cam != null and cam.global_position.distance_squared_to(global_position) > TRAIL_MAKE * TRAIL_MAKE
+	# ステッチ: 左右の滑り木の後ろ端が滑った道のりを 1 歩（TRAIL_STEP）ずつに刻み、そのたびに雪面を探して、
+	# 前の歩みからそこまでを、ソリの縫い目（なみ縫い・くさり縫い・サドルステッチ…）で縫う。
+	# 速くてもコマの刻みに左右されず、どの目も同じ長さになる。遅いあいだは数えないだけで、また滑り出せば前の目から続く
+	for k in 2:
+		var w := to_global(Vector3(-RUNNER_X if k == 0 else RUNNER_X, 0.0, RUNNER_Z))
+		var last: Vector3 = _trail_last[k]
+		_trail_last[k] = w
+		if last == Vector3.INF:
+			continue
+		var move := w - last
+		var ln := move.length()
+		if far or ln > TRAIL_JUMP:
+			_trail_holes[k] = Vector3.INF
+			_trail_dist[k] = 0.0
+			continue
+		if ln < TRAIL_SLOW * dt:
+			continue
+		var next: float = TRAIL_STEP - _trail_dist[k]
+		while next <= ln:
+			_trail_step(k, last + move * (next / ln), move / ln)
+			next += TRAIL_STEP
+		_trail_dist[k] = ln - (next - TRAIL_STEP)
+
+
+## 滑り木 k の 1 歩: at（滑り木の後ろ端）の下の雪面を探し、前の歩みからそこまでを縫う。dir は滑る向き
+func _trail_step(k: int, at: Vector3, dir: Vector3) -> void:
+	_trail_flip[k] = not _trail_flip[k]
+	var h := _ground_hit(at + Vector3.UP * 0.8)
+	if h.is_empty() or at.y - float(h.position.y) > TRAIL_AIR:   # 宙を飛んでいる（着地したら、そこから縫い始める）
+		_trail_holes[k] = Vector3.INF
 		return
-	if _trail_last == Vector3.INF:
-		_trail_last = global_position
-	_trail_dist += global_position.distance_to(_trail_last)
-	_trail_last = global_position
-	var dir := v.normalized()
-	while _trail_dist >= TRAIL_STEP:
-		_trail_dist -= TRAIL_STEP
-		_trail_flip = not _trail_flip
-		for k in 2:
-			var sx := -RUNNER_X if k == 0 else RUNNER_X
-			var h := _ground_hit(to_global(Vector3(sx, 0.3, RUNNER_Z)) + Vector3.UP * 0.5)
-			if not h:
-				_trail_holes[k] = Vector3.INF
-				continue
-			var nn: Vector3 = h.normal
-			var d := (dir - nn * dir.dot(nn)).normalized()
-			var c: Vector3 = h.position
-			if snow_lift.is_valid():
-				c.y += snow_lift.call(c.x, c.z)
-			var jit: Vector3 = d.cross(nn) * _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER) + d * _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER)
-			var prev: Vector3 = _trail_holes[k]
-			var prev_jit: Vector3 = _trail_jit[k]
-			_trail_holes[k] = c
-			_trail_jit[k] = jit
-			if prev == Vector3.INF:
-				continue
-			var len := prev.distance_to(c)
-			if len < 0.1 or len > 0.6:
-				continue
-			_sew(prev, c, prev_jit, jit, nn)
+	var nn: Vector3 = h.normal
+	var c: Vector3 = h.position
+	var plane := Vector4.ZERO
+	var on_snow := _is_snow(h)
+	if on_snow and snow_plane.is_valid():   # 見た目の雪面の三角の上に載せる
+		plane = snow_plane.call(c.x, c.z)
+		nn = Vector3(plane.x, plane.y, plane.z)
+		c.y = plane.w
+	elif on_snow and snow_lift.is_valid():
+		c.y += snow_lift.call(c.x, c.z)
+	var d := (dir - nn * dir.dot(nn)).normalized()
+	var jit: Vector3 = d.cross(nn) * _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER) + d * _trail_rng.randf_range(-TRAIL_JITTER, TRAIL_JITTER)
+	var prev: Vector3 = _trail_holes[k]
+	var prev_jit: Vector3 = _trail_jit[k]
+	if prev == Vector3.INF:
+		_trail_holes[k] = c
+		_trail_jit[k] = jit
+		return
+	var len := prev.distance_to(c)
+	if len < TRAIL_LEN.x:
+		return                    # ほとんど進んでいない。次の歩みで縫う
+	_trail_holes[k] = c
+	_trail_jit[k] = jit
+	if len > TRAIL_LEN.y:
+		return
+	# 三角の継ぎ目で雪面が目のまんなかより高いときは、そのぶん糸を上げる（雪に潜らない）
+	var crown := 0.0
+	if plane != Vector4.ZERO:
+		var mid := (prev + c) * 0.5
+		var top: Vector4 = snow_plane.call(mid.x, mid.z)
+		crown = clampf(top.w - mid.y, 0.0, 0.12)
+	_sew(prev + Vector3.UP * crown, c + Vector3.UP * crown, prev_jit, jit, nn, k)
 
 
 ## 前の歩み p0 から p1 までを、いまの縫い目で縫う。j0・j1 は針穴のばらつき、nn は雪面の上
-func _sew(p0: Vector3, p1: Vector3, j0: Vector3, j1: Vector3, nn: Vector3) -> void:
+func _sew(p0: Vector3, p1: Vector3, j0: Vector3, j1: Vector3, nn: Vector3, k: int) -> void:
 	var f := (p1 - p0).normalized()        # 進む向き（雪面に沿う）
 	var side := f.cross(nn).normalized()
 	match _stitch_name:
@@ -808,7 +888,7 @@ func _sew(p0: Vector3, p1: Vector3, j0: Vector3, j1: Vector3, nn: Vector3) -> vo
 					var b := cm + side * (x0 + SADDLE_SLANT.x) + f * SADDLE_SLANT.y
 					_emit(a + j0 * 0.3, b + j1 * 0.3, nn, 0)
 		_:           # zigzag: 針穴を中心から左右交互にずらす
-			var s := TRAIL_ZIG if _trail_flip else -TRAIL_ZIG
+			var s := TRAIL_ZIG if _trail_flip[k] else -TRAIL_ZIG
 			_emit(p0 - side * s + j0, p1 + side * s + j1, nn, 0)
 
 
@@ -827,14 +907,14 @@ func _emit(a: Vector3, b: Vector3, nn: Vector3, bow: int) -> void:
 			+ TRAIL_SCATTER * _trail_rng.randf_range(-1.0, 1.0)
 	var life := trail_life() * maxf(f, 0.15)
 	var fade := maxf(life * TRAIL_BURY, TRAIL_BURY_MIN)
-	var slot := _trail_slot()
-	_trail_end[slot] = _trail_now + life
+	var slot := _trail_slot(a)
 	var ci := slot / _trail_chunk
+	_trail_end[slot] = _trail_now + life
 	_chunk_end[ci] = maxf(_chunk_end[ci], _trail_now + life)
 	var chunk := _trails[ci]
 	var mm := chunk.multimesh
 	var j := slot % _trail_chunk
-	mm.visible_instance_count = maxi(mm.visible_instance_count, j + 1)
+	_chunk_grow(mm, a, b)
 	mm.set_instance_transform(j, Transform3D(bs, a + nn * 0.012))
 	# y は 位相（0〜1）＋ 弧の向き（整数）
 	mm.set_instance_custom_data(j, Color(len, _trail_rng.randf() * 0.999 + bow, fade, _trail_now + life - fade))
