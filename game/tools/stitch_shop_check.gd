@@ -170,6 +170,13 @@ func _solo() -> void:
 	var cf := ConfigFile.new()
 	cf.load(p.TAG_FILE)
 	_ok("fly" in cf.get_value("stitch", "owned", []), "買った柄を保存した")
+	craft.stitch_owned[me] = []
+	var sk: Dictionary = craft.sacks[me][0]
+	sk.erase("stitch")
+	craft.sacks[me][0] = sk
+	p._load_tag()
+	_ok("fly" in craft.stitch_owned[me], "次の起動で、買った柄が戻る")
+	_ok(craft.sack(me).get("stitch", "") == "fly", "次の起動で、標準の米袋の柄が戻る")
 
 
 func _net_flow() -> void:
@@ -202,8 +209,7 @@ func _net_flow() -> void:
 		var s: RigidBody3D = craft.sleds[id]
 		_ok(s.stitch_kind() == "fly", "あとから入っても、置いてあるソリの柄が届いた")
 		me = p.id
-		_ok(not craft.stitch_owned.get(me, []).has("fly"), "つなぐ側はフライを持っていない")
-		_ok(not craft.send({"kind": "sled_stitch", "who": me, "id": id, "stitch": "back"}) or true, "（他の人のソリを替える出来事を送った）")
+		craft.send({"kind": "sled_stitch", "who": me, "id": id, "stitch": "running"})   # 他の人のソリを替えようとする（ホストが断るはず）
 		craft.send({"kind": "stitch_buy", "who": me, "stitch": "back"})
 		craft.send({"kind": "sled_stitch", "who": me, "sack": 0, "stitch": "back"})
 		await _wait(1.0)

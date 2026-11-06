@@ -131,5 +131,5 @@ func _report(sled: RigidBody3D, s: float) -> void:
 			gaps += 1
 	_worst_hidden = maxi(_worst_hidden, hidden)
 	_worst_spread = maxf(_worst_spread, spread)
-	print("%5.1f s  速さ=%5.1f m/s  位置=(%.0f,%.0f)  残っている目=%d  20m以内=%d  見えない目=%d  塊の広がり=%.0f m  抜け=%d  宙=%d  fps=%d" % [
-		s, sled.linear_velocity.length(), sled.global_position.x, sled.global_position.z, pos.size(), near, hidden, spread, gaps, off, Engine.get_frames_per_second()])
+	print("%5.1f s  速さ=%5.1f m/s  位置=(%.0f,%.0f)  残っている目=%d  20m以内=%d  見えない目=%d  塊の広がり=%.0f m  抜け=%d  宙=%d  fps=%d  三角=%d" % [
+		s, sled.linear_velocity.length(), sled.global_position.x, sled.global_position.z, pos.size(), near, hidden, spread, gaps, off, Engine.get_frames_per_second(), Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME)])

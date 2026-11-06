@@ -47,6 +47,7 @@ const SADDLE_ROW := 0.08      # サドルステッチの 2 列の、中心から
 const SADDLE_SLANT := Vector2(0.055, 0.095)   # サドルステッチの 1 目の、横と前後の半分の長さ (m)
 const ZIG := 0.045            # ジグザグの振れ幅（縫い目の中心から針穴まで, m）
 const W := 0.08               # 飾りの柄の、中心からの幅 (m)
+const ONE_MOTIF := ["kome", "asanoha", "crystal", "heart"]   # 2 歩に 1 つの大きな柄。画面の見本では 1 つを大きく描く
 
 
 static func has(name: String) -> bool:
@@ -83,10 +84,11 @@ static func standard() -> Array:
 static func draw_swatch(ci: CanvasItem, name: String, rect: Rect2, col: Color, a := 1.0) -> void:
 	if not LIST.has(name):
 		return
-	const SPAN := 1.2   # 見せる長さ (m)
 	const STEP := 0.3
+	var one: bool = name in ONE_MOTIF
+	var view := 0.8 if one else 1.32   # 見せる長さ (m)。4 歩が収まる長さか、大きな柄 1 つぶん
 	var spec: Dictionary = LIST[name]
-	var sc := rect.size.y / SPAN
+	var sc := rect.size.y / view
 	var c := rect.get_center()
 	var w: float = maxf(spec.radius * 2.0 * sc, 1.5)
 	var nn := Vector3.UP
@@ -102,15 +104,17 @@ static func draw_swatch(ci: CanvasItem, name: String, rect: Rect2, col: Color, a
 			var u := float(k) / n
 			var at := p + span * u + side * b * sin(PI * pow(u, 1.4))
 			var q2 := c + Vector2(at.x, at.z) * sc
-			if not rect.grow(-w).has_point(q2):   # 枠からはみ出す目は描かない
+			if not rect.grow(-1.0).has_point(q2):   # 枠からはみ出す目は描かない
 				return
 			pts.append(q2)
 		ci.draw_polyline(pts, under, w + 1.5, true)
 		ci.draw_polyline(pts, thread, w, true)
-	var n := int(round(SPAN / STEP))
-	for i in n:
-		var z := SPAN * 0.5 - i * STEP
-		sew(name, emit, Vector3(0, 0, z), Vector3(0, 0, z - STEP), Vector3.ZERO, Vector3.ZERO, Vector3.RIGHT, i + 1, 1.0)
+	if one:   # u = 1 が絵のまんなかに来る
+		sew(name, emit, Vector3(0, 0, STEP), Vector3.ZERO, Vector3.ZERO, Vector3.ZERO, Vector3.RIGHT, 0, 1.0)
+		return
+	for i in 4:
+		var z := STEP * 2.0 - i * STEP
+		sew(name, emit, Vector3(0, 0, z), Vector3(0, 0, z - STEP), Vector3.ZERO, Vector3.ZERO, Vector3.RIGHT, i, 1.0)
 
 
 ## 前の歩み p0 から p1 までを、柄 name で縫う。emit.call(a, b, bow) が糸の目を 1 つ置く（bow は 0 でまっすぐ、1・2 で左右にふくらむ弧）。
