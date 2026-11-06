@@ -1892,8 +1892,10 @@ const EMOTE_FRAMES := {
 	"high_five": 12, "shake": 24, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
 	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18, "eat": 16, "catch": 10,
 }
+## 雪合戦の決着の舞台（duel_stage.gd）だけの身ぶり。長さは len で渡す。ゲームの世界の人形には出さない
+const STAGE_EMOTES := ["stage_toss", "stage_flail", "stage_shrug"]
 ## 腕を使う身ぶり。このあいだは手の形を出さない
-const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit", "eat", "eat_t", "catch"]
+const ARM_EMOTES := ["high_five", "shake", "whiff", "clap", "make_ball", "windup", "throw", "hit", "eat", "eat_t", "catch", "stage_toss", "stage_flail", "stage_shrug"]
 
 
 ## いまの身ぶりと、始まってからのコマ数（このコマ）。終わっていたら消す
@@ -2019,6 +2021,35 @@ func _emote_body(kind_: String, k: int) -> float:
 			elif k < 14:
 				_em_head.x = 0.4 if k % 2 == 0 else -0.4
 			return 0.0
+		"stage_toss":
+			# 胴上げ: 手足を広げて、宙でふわふわ
+			var fl := 0.14 * sin(k * 1.1)
+			_turn_axis("thigh.R", X, -0.25 + fl)
+			_turn_axis("thigh.L", X, -0.25 - fl)
+			_turn_axis("thigh.R", Vector3.BACK, 0.32)
+			_turn_axis("thigh.L", Vector3.BACK, -0.32)
+			_turn_axis("shin.R", X, 0.3 - fl)
+			_turn_axis("shin.L", X, 0.3 + fl)
+			_em_head.y = 0.35
+			return -0.1
+		"stage_flail":
+			# ジタバタ: 足を 3 コマで交互に蹴り、首を振る
+			var s := 1.0 if k % 3 == 0 else (0.15 if k % 3 == 1 else -1.0)
+			var s2 := 1.0 if k % 4 < 2 else -1.0
+			_turn_axis("thigh.R", X, -0.55 - 0.55 * s)
+			_turn_axis("thigh.L", X, -0.55 + 0.55 * s)
+			_turn_axis("shin.R", X, 0.55 + 0.35 * s)
+			_turn_axis("shin.L", X, 0.55 - 0.35 * s)
+			_em_head.x = 0.5 * s2
+			_em_head.y = 0.1
+			return 0.0
+		"stage_shrug":
+			# 肩をすくめて、首をことんと傾ける（相手の側へ行ったり来たり）
+			var c := fposmod(k, 20.0) / 20.0
+			_em_roll = 0.32 * sin(c * TAU)
+			_em_head.y = 0.05
+			_turn_axis("chest", Vector3.BACK, -_em_roll * 0.2)
+			return -0.04
 		"wa":
 			if k < 2:
 				_em_head.y = -0.15
@@ -2139,6 +2170,18 @@ func _emote_arms(kind_: String, k: int) -> void:
 			elif k < 3:
 				_arm("R", Vector3(-0.1, -0.2, -1.0), Vector3(-0.25, -0.6, -0.8))   # 振り抜く
 			_arm("L", Vector3(0.3, -0.9, 0.2), Vector3(0.2, -1.0, 0.1))
+		"stage_toss":
+			var fl := 0.18 * sin(k * 0.9)
+			_arm("R", Vector3(0.9, 0.25 + fl, 0.1), Vector3(0.75, 0.6 - fl, 0.1))
+			_arm("L", Vector3(0.9, 0.25 - fl, 0.1), Vector3(0.75, 0.6 + fl, 0.1))
+		"stage_flail":
+			var s := 1.0 if k % 3 == 0 else (0.0 if k % 3 == 1 else -1.0)
+			_arm("R", Vector3(0.45, 0.25 + 0.65 * s, 0.75), Vector3(0.35, 0.55 + 0.6 * s, 0.75))
+			_arm("L", Vector3(0.45, 0.25 - 0.65 * s, 0.75), Vector3(0.35, 0.55 - 0.6 * s, 0.75))
+		"stage_shrug":
+			var lift := 0.08 * sin(fposmod(k, 20.0) / 20.0 * TAU)
+			_arm("R", Vector3(0.82, -0.42 + lift, 0.3), Vector3(0.72, 0.42 + lift, 0.45))
+			_arm("L", Vector3(0.82, -0.42 - lift, 0.3), Vector3(0.72, 0.42 - lift, 0.45))
 		"hit":
 			if k < 8:
 				# 両手がぱっと上がる（痛いのではなく、びっくりして楽しい）

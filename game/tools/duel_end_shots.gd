@@ -1,5 +1,5 @@
 extends SceneTree
-## 雪合戦の終わりの、勝敗の大きな表示と握手の案内（duel_hud.gd の _draw_end）を撮る。相手はコンピューターの仲間。窓を出す:
+## 雪合戦の終わりの、勝敗の舞台（duel_stage.gd）と握手の案内（duel_hud.gd の _draw_end）を撮る。相手はコンピューターの仲間。窓を出す:
 ##   Godot --path game --resolution 1280x720 -s res://tools/duel_end_shots.gd -- --no-sound --bots=1 --lodge-bots=0 --hud-idle=0 --dir=/path/shots
 ## 1 勝ち（3 発当てた）: 01 決まった瞬間 / 02 案内 / 2 キーを本当に押して 03 手を出した / 仲間と握手して 04 払ったあと（消える）
 ## 2 負け（3 発当てられた）: 05 決まった瞬間 / 06 案内 / 3 時間切れの勝ち: 07 / 4 時間切れの引き分け: 08 / 5 相手が抜けた: 09 決まった瞬間 / 10 案内
@@ -104,9 +104,13 @@ func _run() -> void:
 	# 勝ち
 	await _begin()
 	_strike_out(p.id, foe.id)
-	await _wait(0.5)
+	await _wait(0.3)
 	_ok(duel.of(p.id).get("phase", "") == "over" and int(duel.of(p.id).winner) == p.id, "勝ち: 決まった")
 	await _shot("01_win_big")
+	await _wait(0.3)
+	await _shot("01b_win_big")
+	await _wait(0.3)
+	await _shot("01c_win_big")
 	await _wait(ui.END_BIG_T + ui.END_MOVE_T)
 	await _shot("02_win_guide")
 	_key(KEY_2)
@@ -127,8 +131,10 @@ func _run() -> void:
 	# 負け
 	await _begin()
 	_strike_out(foe.id, p.id)
-	await _wait(0.5)
+	await _wait(0.3)
 	await _shot("05_lose_big")
+	await _wait(0.2)
+	await _shot("05b_lose_big")
 	await _wait(ui.END_BIG_T + ui.END_MOVE_T)
 	await _shot("06_lose_guide")
 	await _pay_now()
