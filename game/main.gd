@@ -85,7 +85,6 @@ const MountainGoods := preload("res://mountain_goods.gd")
 const SnowmanShop := preload("res://snowman_shop.gd")
 const FridgeDoor := preload("res://fridge_door.gd")
 const CookStation := preload("res://cook_station.gd")
-const MenuBoard := preload("res://menu_board.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const KotatsuFuton := preload("res://kotatsu_futon.gd")
@@ -1277,12 +1276,6 @@ func _furnish_lodge() -> void:
 		kitchen_slot.add_child(set_node)
 		_put_kitchen(kitchen_slot)
 		_put_snowman(kitchen_slot)
-		# 装置それぞれの真上に、その装置を通る料理の品書きの板（menu_board.gd）
-		var menu := MenuBoard.new()
-		menu.name = "MenuBoard"
-		menu.stations = KITCHEN
-		menu.lodge = lodge
-		kitchen_slot.add_child(menu)
 	# 1 階の暖炉と、まわりの居場所（ラグ・揺り椅子・ビーズクッション・大きなソファ。席の目印 nook_seat_* は seats.gd が拾う）
 	var hs := lodge.find_child("slot_hearth", true, false) as Node3D
 	if hs:

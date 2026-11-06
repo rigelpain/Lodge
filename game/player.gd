@@ -9,6 +9,7 @@ const Palm := preload("res://palm.gd")
 const SackLook := preload("res://sack_look.gd")
 const Seats := preload("res://seats.gd")
 const FoodMenu := preload("res://food.gd")
+const HoldTag := preload("res://hold_tag.gd")
 const TableEat := preload("res://table_eat.gd")
 const PropsLib := preload("res://props.gd")
 const Campfire := preload("res://campfire.gd")
@@ -162,6 +163,7 @@ var _drag_k := 0.0           # 引きずられている度合い（0→1 にな�
 var craft: Node              # 工房の配り役（main.gd の Craft）。財布と持ち物
 var shopping := false        # 売り台が開いている（craft_ui.gd）。歩かない
 var _held_fp: Node3D         # 一人称の右手に持った物の形
+var _hold_tag: Node3D        # 手の材料に吊る紙の札（hold_tag.gd。本人の画面だけ）
 var _held_key := ""
 const TABLE_EYE := 0.42       # 机のある席で、目が机の面より少なくともこれだけ上 (m)
 const HELD_TILT := 0.12      # 畳んだソリの包みの名札の面を、まっすぐより少し上へ傾ける (rad)
@@ -1308,6 +1310,7 @@ func _pose_hands(dt: float) -> void:
 	_face_held_fp()
 	_fp_table_step()
 	_place_shapes_fp(em)
+	_update_hold_tag(dt)
 
 
 ## 一人称の左の袖口のストックを、袖の筒の上で目のほうへ向ける（袖のどこが見えていても、雪玉の並びが見える）
@@ -2372,6 +2375,17 @@ func _place_held_fp(ball: bool) -> void:
 		(mi as MeshInstance3D).layers = 1 << 2
 	right.add_child(_held_fp)
 	_held_fp.set_meta("folded", it.get("kind") == "folded")
+
+
+## 手に材料（次に入れる装置がある食べ物）を持っているあいだ、紙の札を吊る。手が隠れているとき（手形を出す・机の席）は出さない
+func _update_hold_tag(dt: float) -> void:
+	var it := held()
+	var on: bool = _held_fp != null and _held_fp.visible and FoodMenu.next_station(it) != ""
+	if on and _hold_tag == null:
+		_hold_tag = HoldTag.new()
+		cam.add_child(_hold_tag)
+	if _hold_tag:
+		_hold_tag.step(it if on else {}, _held_fp.global_position if on and not third else Vector3.INF, dt)
 
 
 ## 畳んだソリの包みは、名札を貼った面を自分（カメラ）へ向けて、手の少し上・内側に持つ（毎コマ）
