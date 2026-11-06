@@ -4,10 +4,12 @@ extends Node3D
 ## 布の絵は札と同じ描き方で一度だけ焼く。旗に当たりはない（ほかの旗と同じ）。
 ## ロッジの前には、同じ布を切り抜いて貼った地図の看板を立てる（2026-11-04 代表「ロッジの前に大きな地図看板欲しいかも」）。
 ## 地図は areas.gd の表から描くので、山を足すと地図にも載る。文字は使わない
+## 地図の上に、いまいる人のまち針が刺さって動く（map_pins.gd）
 
 const Card := preload("res://elev_card.gd")
 const Icons := preload("res://hud_icons.gd")
 const Areas := preload("res://areas.gd")
+const MapPins := preload("res://map_pins.gd")
 
 const POLE_H := 7.0          # 棒の高さ (m)。丘のコースの旗（1.7 m）の 4 倍ほど。ロッジの前から見つかる大きさ
 const CLOTH := Vector2(3.6, 2.25)   # 布の大きさ (m)
@@ -26,6 +28,9 @@ const BOARD_AT := Vector2(-25.0, 31.0)   # 看板の場所（ロッジの座標�
 const MAP_TEX := Vector2i(1500, 1000)
 const LIT := Color(0.60, 0.60, 0.60, 1.0)   # 雪山の光で布が白く飛ぶので、札の色に見えるよう沈める
 const HILL_MAP_K := 1.35               # 地図の丘は実際より大きく（見つけやすいように。絵地図なので縮尺どおりにしない）
+const PIN_EDGE := 44.0                 # まち針が地図の縁の縫い目より外へ出ない幅（絵の上の画素）
+
+static var _box := Rect2()   # 地図に入れる世界の範囲（一度だけ測る）
 
 var main: Node3D
 var cloth := {}   # 範囲の名前 → 焼いた布の絵
@@ -71,6 +76,29 @@ class _Cloth extends Control:
 		Card.stitches(self, id, r.grow(u), 1.0, u)
 
 
+## 世界 (x, z) を地図の絵の上の位置へ（絵の大きさ size）。全部の範囲が入る縮尺
+static func map_point(p: Vector2, size: Vector2) -> Vector2:
+	if _box.size == Vector2.ZERO:
+		_box = Rect2(Vector2(-35, 98), Vector2.ZERO)   # ロッジ
+		for id in PLACES:
+			var f := Areas.info(id)
+			var t: Vector2 = f.top
+			var dir: Vector2 = f.dir
+			var side := Vector2(dir.y, -dir.x) * float(f.rx)
+			for q in [t + dir * float(f.rn) + side, t + dir * float(f.rn) - side, t - dir * float(f.rs) + side, t - dir * float(f.rs) - side]:
+				_box = _box.expand(q)
+		_box = _box.grow(50.0)
+	var k := minf(size.x / _box.size.x, size.y / _box.size.y)
+	return size / 2.0 + (p - _box.get_center()) * k
+
+
+## 世界 (x, z) を看板の上の位置 (x, y) へ。地図の外にいる人のまち針は、地図の縁の内側で止まる
+static func on_board(p: Vector2) -> Vector2:
+	var size := Vector2(MAP_TEX)
+	var at := map_point(p, size).clamp(Vector2.ONE * PIN_EDGE, size - Vector2.ONE * PIN_EDGE) / size
+	return Vector2((at.x - 0.5) * BOARD.x, BOARD_Y + (1.0 - at.y) * BOARD.y)
+
+
 ## 地図の絵を焼く
 func _bake_map() -> Texture2D:
 	if DisplayServer.get_name() == "headless":
@@ -81,6 +109,7 @@ func _bake_map() -> Texture2D:
 	vp.render_target_update_mode = SubViewport.UPDATE_ONCE
 	var c := _Map.new()
 	c.cloth = cloth
+	c.point = map_point
 	c.size = Vector2(MAP_TEX)
 	c.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	vp.add_child(c)
@@ -97,20 +126,10 @@ func _bake_map() -> Texture2D:
 ## 地図の絵: 上がロッジから丘の向き（北）。範囲の楕円を布から切り抜いて貼り、ロッジと、ロッジから山へ行く道を縫う
 class _Map extends Control:
 	var cloth := {}
+	var point: Callable   # map_point（中の class からは外の関数を呼べないので受け取る）
 
-	## 世界 (x, z) を絵の上の位置へ。全部の範囲が入る縮尺
 	func to_map(p: Vector2) -> Vector2:
-		var box := Rect2(Vector2(-35, 98), Vector2.ZERO)   # ロッジ
-		for id in cloth:
-			var f := Areas.info(id)
-			var t: Vector2 = f.top
-			var dir: Vector2 = f.dir
-			var side := Vector2(dir.y, -dir.x) * float(f.rx)
-			for q in [t + dir * float(f.rn) + side, t + dir * float(f.rn) - side, t - dir * float(f.rs) + side, t - dir * float(f.rs) - side]:
-				box = box.expand(q)
-		box = box.grow(50.0)
-		var k := minf(size.x / box.size.x, size.y / box.size.y)
-		return size / 2.0 + (p - box.get_center()) * k
+		return point.call(p, size)
 
 	func _draw() -> void:
 		Icons.screen()
@@ -197,6 +216,11 @@ func _put_map(tex: Texture2D) -> void:
 	face.material_override = m
 	face.position = Vector3(0, BOARD_Y + BOARD.y / 2.0, 0.09)
 	root.add_child(face)
+	var pins := MapPins.new()
+	pins.name = "MapPins"
+	pins.main = main
+	pins.to_board = on_board
+	root.add_child(pins)
 	# 脚の当たり（板は脚より上なので、脚だけ）
 	var body := StaticBody3D.new()
 	for sx in [-1.0, 1.0]:
