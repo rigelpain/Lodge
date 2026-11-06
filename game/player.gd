@@ -42,7 +42,7 @@ const Campfire := preload("res://campfire.gd")
 
 const SPEED := 2.0           # 雪の中をじりじり歩く速さ
 const DASH := 3.4            # Shift で走る速さ
-const SPEED_TAUT := 1.5      # 紐が張っているときの歩く速さ
+const SPEED_TAUT := 1.5      # 紐が張っているときの歩く速さ。ソリがこれより速く動いていれば、ついて行ける（sled.gd の taut_walk_speed）
 const SPEED_CROUCH := 0.8    # しゃがんで歩く速さ
 const CROUCH_EYE := 0.5      # しゃがむと目がこれだけ下がる (m)
 # ジャンプは雪の上でのその場跳びくらい: 高さ約 42 cm、宙にいるのは約 0.43 秒（2026-11-02 代表「ジャンプがふわっとしててリアルじゃない。
@@ -1034,6 +1034,8 @@ func _walk(dt: float, with_rope: bool) -> void:
 		if d.length() > sled.ROPE_LEN + 0.3:
 			global_position = anchor + d.normalized() * (sled.ROPE_LEN + 0.3) + Vector3(0, global_position.y - anchor.y, 0)
 	speed *= damp_k(false)   # 紙の体が湿ると遅く、パリッとすると速く（damp.gd）
+	if pulling:
+		speed = sled.taut_walk_speed(speed)
 	velocity.x = dir.x * speed
 	velocity.z = dir.z * speed
 	if is_on_floor():

@@ -48,6 +48,7 @@ const HELP_NEAR := 30.0      # そばの人がソリを押す・乗ると手伝�
 const HELP_KEEP := 6.0       # 人がソリから離れて、手伝いをやめるまで (s)
 const HELP_MAX := 2          # 手伝う仲間の数の上限
 const OFFER_FAR := 40.0      # 雪玉を持って低い手のひらで見ている人に、歩いて応じる距離 (m)
+const RIDE_BRAKE_NEAR := 40.0   # 滑る行き先からこの距離の内で「着いた」ら、後傾で止まる (m)
 const RIDE_MAX := 240.0      # 1 回の滑りの長さの上限 (s)。どこかに引っかかっても次へ進む
 const DUEL_NEAR := 40.0      # 仲間どうしで雪合戦に誘う距離 (m)。歩いて来て、向かい合って握手する
 const DUEL_ODDS := 0.5       # 近くに仲間がいたときに誘う割合（DUEL_LOOK ごと）
@@ -1097,6 +1098,8 @@ func _roam_ride(dt: float) -> void:
 			_kick_t = randf_range(0.5, 1.2)
 			if speed < 8.0 and sled.kind == "sack":
 				sled.kick(self)
+	elif to.length() < RIDE_BRAKE_NEAR:
+		sled.lean(0.0, false, true)   # 行き先のそばでは後傾で止まる（雪はよく滑るので、そのままだと大きく過ぎる）。滑り出しで向きが逆なだけのときは止めない
 	_still = _still + dt if speed < 0.4 else 0.0
 	if (arrived and _still > 0.8) or _still > 4.0 or _ride_t > RIDE_MAX:
 		_roam_get_off()
