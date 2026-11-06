@@ -29,6 +29,11 @@ const SackLook := preload("res://sack_look.gd")
 ## ほかの仲間の少ない山を選ぶので、ばらける。人のいる山に誰も向かっていなければ、そこを選ぶ（対決の相手が見つからなくならないように）。
 ## 歩いているあいだに、そばの人がソリを押す・乗ると、手伝いに来て一緒に押して乗る（先の PUSH・WAIT・RIDE。手伝うのは 2 人まで）。
 ## 人の FAR より遠くでは、当たりを見ずに地面の高さをなぞって間引いて歩く（重くしない）
+## 仲間どうし（2026-11-06 代表「CPU同士での雪合戦やCPU同士の協力してのソリ運びなどです」「ソリを買ったり」）:
+##   雪合戦: 近くの仲間と、雪玉を作って握手して対決する（人との対決と同じ出来事。掛金も賭ける）。
+##   ソリ運び: 次の山を選ぶときに、ソリがあれば近くの仲間を誘う。みんなでつかむまで待ち、尾根を押して登り、頂上で向きを変えて一緒に乗って滑る。
+##   使うソリは、自分のソリか、ロッジのソリ（人が近くにいなくて、誰も触っていないときだけ。丘の中だけで使う）。
+##   ソリを買う: 滑って拾ったボタンがたまったら、売り子のおじさんから小の型紙と布を買い、ミシンで縫う（人と同じ buy・sew の出来事。自分のソリを持つのは CPU_SLEDS まで）
 
 enum State { PUSH, WAIT, RIDE }
 
@@ -44,6 +49,23 @@ const HELP_KEEP := 6.0       # 人がソリから離れて、手伝いをやめ�
 const HELP_MAX := 2          # 手伝う仲間の数の上限
 const OFFER_FAR := 40.0      # 雪玉を持って低い手のひらで見ている人に、歩いて応じる距離 (m)
 const RIDE_MAX := 240.0      # 1 回の滑りの長さの上限 (s)。どこかに引っかかっても次へ進む
+const DUEL_NEAR := 40.0      # 仲間どうしで雪合戦に誘う距離 (m)。歩いて来て、向かい合って握手する
+const DUEL_ODDS := 0.5       # 近くに仲間がいたときに誘う割合（DUEL_LOOK ごと）
+const DUEL_LOOK := Vector2(3.0, 6.0)     # 誘うか見直す間 (s)
+const DUEL_COOL := Vector2(60.0, 150.0)  # 雪合戦を誘ってから、次に誘うまで (s)
+const TEAM_ODDS := 0.5       # 次の山を選ぶときに、ソリがあれば仲間と運ぶ割合
+const TEAM_COOL := Vector2(60.0, 150.0)  # 運び終えてから、次に運ぶまで (s)。いつも同じ組にならず、ばらける
+const TEAM_NEAR := 150.0     # 運ぶソリと、誘う仲間までの距離の上限 (m)
+const TEAM_MAX := 3          # 一緒に運ぶ人数の上限
+const LODGE_SLED_CLEAR := 40.0   # ロッジのソリは、人がこれより近くにいれば使わない (m)
+const TEAM_WAIT := 20.0      # みんながつかむのを待つ長さ (s)
+const TEAM_STALL := 30.0     # 押しても次の点へ近づけなければ、そこから滑る (s)
+const TEAM_TURN := 8.0       # 頂上で滑る向きへ回す長さの上限 (s)
+const TEAM_LOST := 60.0      # ソリまで歩いても着かなければ、抜ける (s)
+const TEAM_TWIST := 2.0      # 組でソリの向きを回す力（重さあたり）
+const SHED_EXIT := Vector2(8.0, 103.0)   # 下屋のミシンで縫ったソリの出口。北は暖簾の壁なので、東へ出てから進む
+const SLED_KIND := "small"   # 買うソリ（小。2 人乗り）
+const CPU_SLEDS := 2         # 自分のソリを持つ仲間の数の上限（雪山がソリだらけにならないように）
 ## 山ごとの滑り方: top 頂上、launch 米袋を広げる所、foot 滑って行く先、spread 滑る先の左右の広がり (m)。丘はどの向きにも滑れる（launch は向きごとに決める）
 const ROAM_AREAS := {
 	"hill": {"top": Vector2.ZERO},
@@ -76,6 +98,13 @@ var _far_acc := 0.0          # 間引いて動く時間のたまり (s)
 var _wp_best := INF          # いまの行き先に、いちばん近づいた距離
 var _wp_t := 0.0             # そこから近づけないでいる秒
 var _help_t := 0.0           # 手伝いの残り (s)
+var _duel_cool := 20.0       # 雪合戦を誘うまで (s)
+var _team_cool := 0.0        # 次に運ぶまで (s)
+var _team := {}              # 一緒に運ぶ組（みんなで同じ辞書を持つ）{sled, route, goal, area, members, go, turned, ...}。組がなければ空
+var _lost_t := 0.0           # ソリまで歩いている秒
+var own_sled: RigidBody3D    # 自分のソリ（買って縫った）
+var _errand := ""            # ソリを買う用事: "shop" 店へ行く、"sew" ミシンへ行く、"sewing" 縫い上がるのを待つ
+var _errand_t := 0.0         # 用事を待っている残り (s)
 var post: Node3D = null      # 持ち場（ミシンの足踏みなど）。あればソリを押さず、そこに立って post_look を向く
 var post_look := Vector3.INF
 var _col: CollisionShape3D
@@ -150,6 +179,9 @@ func _ready() -> void:
 func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != id:
 		return
+	if ev.kind == "sewn":
+		own_sled = craft.sleds.get(int(ev.get("id", -1)))
+		return
 	if ev.kind in ["dye", "outfit"] and String(ev.doll) == doll.kind:
 		doll.dress(craft.outfit_of(id, doll.kind))
 		return
@@ -200,6 +232,10 @@ func get_off() -> void:
 
 
 func _uphill(p: Vector3) -> Vector3:
+	if not _team.is_empty():   # 組: 次の点へ。頂上に着いたら、滑る向きへ
+		var w: Vector2 = _team.route[0] if not _team.route.is_empty() else _team.goal
+		var d := Vector3(w.x - p.x, 0, w.y - p.z)
+		return d.normalized() if d.length() > 0.1 else Vector3.FORWARD
 	var top := _top_of(p)
 	var u := Vector3(top.x - p.x, 0, top.y - p.z)
 	return u.normalized() if u.length() > 0.1 else Vector3.FORWARD
@@ -221,6 +257,9 @@ func damp_k(push: bool) -> float:
 
 func _physics_process(dt: float) -> void:
 	push_world = Vector3.ZERO
+	if roam:
+		_keep_sled()
+		_team_cool = maxf(0.0, _team_cool - dt)
 	_update_replies(dt)
 	_mind_lamp(dt)
 	_regrab = maxf(0.0, _regrab - dt)
@@ -238,12 +277,17 @@ func _physics_process(dt: float) -> void:
 	if state != State.RIDE and (_five_with > 0 or _rooted()):
 		_go_five(dt)
 		return
-	if roam and not _helping(dt):
+	var teamed := roam and not _team.is_empty()
+	if roam and not _helping(dt) and _team.is_empty():
 		if state == State.RIDE:
 			_roam_ride(dt)
 		else:
 			_roam_walk(dt)
 		return
+	if not _team.is_empty() and _team_step(dt):
+		return
+	if teamed:
+		to_top = 100.0   # 組のときは、頂上に着いたかを _team_step が見る
 
 	if state == State.RIDE:
 		global_position = sled.to_global(seat)
@@ -280,7 +324,12 @@ func _physics_process(dt: float) -> void:
 			var steer: float = clamp(err * 2.5 - sled.angular_velocity.y * 0.5, -1.0, 1.0)
 			var ahead: float = max(0.0, cos(err)) if abs(err) < deg_to_rad(60.0) else 0.0
 			var push_dir: Vector3 = fwd * ahead + sled.global_basis.x * steer * 1.2
-			if push_dir.length() > 0.05 and not sled.is_dragged(self):
+			if not _team.is_empty():   # 組: 小さなソリは縁を横に押すと横へ流れて回らないので、体で向きを回す
+				push_dir = fwd * ahead
+				if _team.go and absf(err) > 0.2:
+					sled.apply_torque(Vector3.UP * clampf(err, -1.0, 1.0) * sled.mass * TEAM_TWIST)
+			var waiting: bool = not _team.is_empty() and not _team.go   # みんながつかむまで押さない
+			if push_dir.length() > 0.05 and not sled.is_dragged(self) and not waiting:
 				push_world = push_dir.normalized()
 				sled.push(push_world, global_position + fwd * 0.6 + Vector3.UP * 0.4, self, damp_k(true))
 			debug = "err=%.0f° steer=%.2f ahead=%.2f 手=%s" % [rad_to_deg(err), steer, ahead, str(sled.to_local(global_position + fwd * 0.6 + Vector3.UP * 0.4).snapped(Vector3(0.1, 0.1, 0.1)))]
@@ -297,7 +346,7 @@ func _physics_process(dt: float) -> void:
 			var want: float = signf(lp0.x) if abs(lp0.x) > 0.05 else float(side)
 			if _post_taken(want):
 				want = -want
-			var stand_l := Vector3((sled.HALF.x + sled.STAND) * want, 0, 1.4)   # 後ろの角のつかみ所
+			var stand_l := Vector3((sled.HALF.x + sled.STAND) * want, 0, sled.HALF.y)   # 後ろの角のつかみ所
 			var post: Vector3 = sled.to_global(stand_l)
 			var to := post - global_position
 			to.y = 0
@@ -742,11 +791,14 @@ func _duel_step(dt: float) -> bool:
 		_duel_stake = -1
 		return false
 	var them: Node3D = hub.who_of(duel.opponent(d, id))
+	far = false
 	_duel_t -= dt
 	match String(d.phase):
 		"bet":
 			if _duel_stake < 0:   # 掛金の画面に入ったところ（前の対決で減った分は、ここで戻る）
 				_fill_wallet()
+				if _vs_bot(them) and id == int(d.a):   # 仲間どうし: 誘った側が額を出す
+					duel.send({"kind": "bet", "who": id, "n": randi_range(1, 3) * 5})
 			if int(d.stake) != _duel_stake:
 				_duel_stake = int(d.stake)
 				_duel_t = BET_WAIT
@@ -760,6 +812,9 @@ func _duel_step(dt: float) -> bool:
 			if _duel_stake >= 0:   # 始まったところ
 				_duel_stake = -1
 				_duel_t = START_WAIT
+				if _vs_bot(them):   # 仲間どうし: 円の向かい合う所を、同じ向きに回る
+					_orbit = float(d.id) * 1.7 + (PI if id == int(d.b) else 0.0)
+					_orbit_dir = 1.0 if int(d.id) % 2 == 0 else -1.0
 				_wind = -1.0
 				_catching = -1
 				_dodge_t = 0.0
@@ -785,7 +840,7 @@ func _duel_fight(d: Dictionary, them: Node3D, dt: float, duel: Node) -> void:
 		_duel_move(Vector3.ZERO, null, dt)
 		return
 	var at: Vector3 = d.at
-	if randf() < dt * 0.25:
+	if randf() < dt * 0.25 and not _vs_bot(them):
 		_orbit_dir = -_orbit_dir   # ときどき向きを変える
 	_orbit += dt * 0.32 * _orbit_dir
 	var goal := at + Vector3(cos(_orbit), 0, sin(_orbit)) * 3.2
@@ -853,10 +908,11 @@ func roam_from(area: String) -> void:
 	_route = _route_of(area)
 
 
-## 山へ行く道: 尾根を麓から頂上へ（いまの所にいちばん近い点から）→ 頂上 → 米袋を広げる所
-func _route_of(area: String) -> Array:
+## 山へ行く道: 尾根を麓から頂上へ（from にいちばん近い点から）→ 頂上 → 滑り出す所
+func _route_of(area: String, from_at := Vector3.INF) -> Array:
 	var a: Dictionary = ROAM_AREAS[area]
-	var at := Vector2(global_position.x, global_position.z)
+	var from3: Vector3 = global_position if from_at == Vector3.INF else from_at
+	var at := Vector2(from3.x, from3.z)
 	var out: Array = []
 	if a.has("ridge"):
 		var pts: Array = a.ridge.duplicate()
@@ -917,14 +973,21 @@ func _roam_walk(dt: float) -> void:
 		if _roam_rest > 0.0:
 			_settle_walk(Vector3.ZERO, dt)
 			return
+		if _try_errand() or _try_team():
+			return
 		_area = _pick_area()
 		_route = _route_of(_area)
 		_wp_best = INF
 		_wp_t = 0.0
 	if _route.is_empty():
+		if _errand != "":
+			_errand_step(dt)
+			_settle_walk(Vector3.ZERO, dt)
+			return
 		_roam_launch()
 		_settle_walk(Vector3.ZERO, dt)
 		return
+	_maybe_duel(dt)
 	var at := Vector2(global_position.x, global_position.z)
 	var w: Vector2 = _route[0]
 	var gap := at.distance_to(w)
@@ -1012,13 +1075,6 @@ func _roam_launch() -> void:
 
 ## 滑る: 行き先へ体重をかけ、足で漕ぐ。行き先を過ぎるか止まったら降りる（雪をかく力で、平らな段も越えられる）
 func _roam_ride(dt: float) -> void:
-	if sled == null or not is_instance_valid(sled) or sled.kind != "sack":   # 米袋が片付けられた
-		seat = Vector3.INF
-		sled = get_parent().get("sled")
-		_col.disabled = false
-		state = State.PUSH
-		_roam_done()
-		return
 	global_position = sled.to_global(seat)
 	_pose_doll()
 	_ride_t += dt
@@ -1039,14 +1095,14 @@ func _roam_ride(dt: float) -> void:
 		_kick_t -= dt
 		if _kick_t <= 0.0:
 			_kick_t = randf_range(0.5, 1.2)
-			if speed < 8.0:
+			if speed < 8.0 and sled.kind == "sack":
 				sled.kick(self)
 	_still = _still + dt if speed < 0.4 else 0.0
 	if (arrived and _still > 0.8) or _still > 4.0 or _ride_t > RIDE_MAX:
 		_roam_get_off()
 
 
-## 降りて、米袋を帯に戻す。次の山へ
+## 降りる。米袋なら帯に戻す。ソリならその場に置いて、次の山へ
 func _roam_get_off() -> void:
 	var gs := sled
 	var was := seat
@@ -1054,14 +1110,15 @@ func _roam_get_off() -> void:
 	seat = Vector3.INF
 	state = State.PUSH
 	_col.disabled = false
-	var at: Vector3 = gs.global_position + gs.global_basis.z * 0.7
+	var sack: bool = gs.kind == "sack"
+	var at: Vector3 = gs.global_position + (gs.global_basis.z * 0.7 if sack else gs.global_basis.x * (gs.HALF.x + 0.8) * side)
 	at.y = get_parent().height(at.x, at.z) + 0.2
 	global_position = at
 	velocity = Vector3.ZERO
-	SackLook.set_stage(gs, was, 0)
-	craft.send({"kind": "sack_in", "who": id})   # ソリの持ち物を戻す（craft.gd が sled を元のソリへ戻す）
-	if sled == gs:
-		sled = get_parent().get("sled")
+	if sack:
+		SackLook.set_stage(gs, was, 0)
+		craft.send({"kind": "sack_in", "who": id})   # ソリの持ち物を戻す（craft.gd が sled を元のソリへ戻す）
+	sled = get_parent().get("sled")
 	_roam_done()
 
 
@@ -1085,6 +1142,9 @@ func _helping(dt: float) -> bool:
 	if touched and (_help_t > 0.0 or (global_position.distance_to(home.global_position) < HELP_NEAR and _helpers() < HELP_MAX)):
 		_help_t = HELP_KEEP
 		far = false
+		if not _team.is_empty():   # 組で運んでいたロッジのソリを、人がつかんだ: 組をやめて、人を手伝う
+			_team.members.erase(self)
+			_team = {}
 		return true
 	if _help_t > 0.0:
 		_help_t -= dt
@@ -1106,6 +1166,301 @@ func _helpers() -> int:
 		if b != self and b._help_t > 0.0:
 			n += 1
 	return n
+
+
+# ---------------------------------------------------------------- 仲間どうし: ソリを手放したとき
+
+## 乗っているソリ・運んでいるソリがなくなった（片付けられた・立てかけ台へ戻された）・手放したら、もとのソリを見る
+func _keep_sled() -> void:
+	var home: RigidBody3D = get_parent().get("sled")
+	if not is_instance_valid(sled):
+		sled = home
+		seat = Vector3.INF
+		handle = Vector3.INF
+		_col.disabled = false
+		if state == State.RIDE or not _team.is_empty():
+			state = State.PUSH
+			_team = {}
+			_roam_done()
+	elif state != State.RIDE and _team.is_empty() and sled != home:
+		sled = home
+
+
+# ---------------------------------------------------------------- 仲間どうし: 雪合戦
+
+## 雪合戦に誘える（山めぐりの途中で、ほかのことをしていない）
+func _free_for_fun() -> bool:
+	return roam and state != State.RIDE and _team.is_empty() and _errand == "" and _five_with < 0 and _help_t <= 0.0
+
+
+func _vs_bot(them: Node3D) -> bool:
+	return them != null and them.is_in_group("bots")
+
+
+## 近くの仲間を、ときどき雪合戦に誘う。2 人とも雪玉を作って、向かい合って握手する（握手で対決が始まる。duel.gd）
+func _maybe_duel(dt: float) -> void:
+	_duel_cool -= dt
+	if _duel_cool > 0.0:
+		return
+	_duel_cool = randf_range(DUEL_LOOK.x, DUEL_LOOK.y)
+	var duel := get_parent().get_node_or_null("Duel")
+	if duel == null or not _free_for_fun() or not duel.of(id).is_empty() or get_parent().lodge_weight(global_position.x, global_position.z) < 1.0:
+		return
+	for b in get_tree().get_nodes_in_group("bots"):
+		if b == self or not b._free_for_fun() or not duel.of(b.id).is_empty() or b._duel_cool > DUEL_LOOK.y:
+			continue
+		if global_position.distance_to(b.global_position) < DUEL_NEAR:
+			if randf() < DUEL_ODDS:
+				_ask_duel(b.id)
+				b._ask_duel(id)
+			return
+
+
+func _ask_duel(with: int) -> void:
+	_duel_cool = randf_range(DUEL_COOL.x, DUEL_COOL.y)
+	far = false
+	_five_with = with
+	_five_shape = "low_R"
+	_five_until = Doll.frame_index() + 12 * 40   # 雪玉を作って、DUEL_NEAR を歩いて来られる長さ
+	_five_sent = false
+	_five_ball = true
+
+
+# ---------------------------------------------------------------- 仲間どうし: 協力してソリを運ぶ
+
+## 運ぶソリ: 自分のソリか、ロッジのソリ（人が近くになく、誰も触っていないときだけ。丘の中だけで使う）
+func _team_sled() -> RigidBody3D:
+	if is_instance_valid(own_sled) and _sled_free(own_sled) and global_position.distance_to(own_sled.global_position) < TEAM_NEAR:
+		return own_sled
+	var home: RigidBody3D = get_parent().get("sled")
+	if home == null or not _sled_free(home) or global_position.distance_to(home.global_position) > TEAM_NEAR:
+		return null
+	var a := Areas.of(Vector2(home.global_position.x, home.global_position.z))
+	if a != "hill" and a != Areas.NONE:
+		return null
+	for h in _humans():
+		if h.global_position.distance_to(home.global_position) < LODGE_SLED_CLEAR:
+			return null
+	return home
+
+
+func _sled_free(s: RigidBody3D) -> bool:
+	if not craft.rack_free(s) or s.racked:
+		return false
+	for b in get_tree().get_nodes_in_group("bots"):
+		if not b._team.is_empty() and b._team.sled == s:
+			return false
+	return true
+
+
+## 次の山を選ぶ前に: ソリがあれば、近くの仲間を誘って運ぶ。組ができたら true
+func _try_team() -> bool:
+	if _team_cool > 0.0 or randf() > TEAM_ODDS:
+		return false
+	var s := _team_sled()
+	if s == null:
+		return false
+	var mates: Array = []
+	for b in get_tree().get_nodes_in_group("bots"):
+		if b != self and b._free_for_fun() and b._team_cool <= 0.0 and b.global_position.distance_to(s.global_position) < TEAM_NEAR and not b._in_duel():
+			mates.append(b)
+	mates.sort_custom(func(a, b): return a.global_position.distance_squared_to(s.global_position) < b.global_position.distance_squared_to(s.global_position))
+	var room: int = mini(TEAM_MAX, s.SEATS.size()) - 1
+	mates = mates.slice(0, room)
+	if mates.is_empty() and s != own_sled:
+		return false   # ロッジのソリは、仲間と運ぶときだけ
+	make_team(s, mates, _pick_area() if s == own_sled else "hill")
+	return true
+
+
+## 組を作る（s をみんなで area へ運ぶ）
+func make_team(s: RigidBody3D, mates: Array, area: String) -> void:
+	var route := _route_of(area, s.global_position)
+	if s.global_position.x < SHED_EXIT.x - 2.0 and s.global_position.x > -32.0 and absf(s.global_position.z - SHED_EXIT.y) < 22.0:
+		route.push_front(SHED_EXIT)
+	var t := {"sled": s, "route": route, "goal": _ride_goal, "area": area, "members": [], "go": false, "turned": false,
+			"hold_t": 0.0, "stall": 0.0, "best": INF, "turn_t": 0.0}
+	for b in [self] + mates:
+		b._join_team(t)
+
+
+func _in_duel() -> bool:
+	var duel := get_parent().get_node_or_null("Duel")
+	return duel != null and not duel.of(id).is_empty()
+
+
+func _join_team(t: Dictionary) -> void:
+	_team = t
+	t.members.append(self)
+	_area = t.area
+	_route = []
+	_errand = ""
+	_ride_goal = t.goal
+	sled = t.sled
+	state = State.PUSH
+	far = false
+	_lost_t = 0.0
+
+
+## 組を抜ける（着けなかった・乗れなかった）
+func _leave_team() -> void:
+	let_go()
+	_team.members.erase(self)
+	_team = {}
+	state = State.PUSH
+	_roam_done()
+
+
+## 組の 1 コマ。動かしたら true（false ならソリを押す動きへ）
+func _team_step(dt: float) -> bool:
+	var t := _team
+	if int(t.get("tick", -1)) != Engine.get_physics_frames():   # 組の進み具合は 1 コマに 1 度（誰が見てもよい。誰かが人と握手しに行っても止まらない）
+		t["tick"] = Engine.get_physics_frames()
+		_team_lead(t, dt)
+	if t.turned:
+		_team_board(t, dt)
+		return true
+	_lost_t = 0.0 if handle != Vector3.INF else _lost_t + dt
+	if _lost_t > TEAM_LOST:
+		_leave_team()
+		_settle_walk(Vector3.ZERO, dt)
+		return true
+	return false
+
+
+## 組の先頭の人が、組の進み具合を見る（みんながつかんだか・次の点・頂上で向きを変える）
+func _team_lead(t: Dictionary, dt: float) -> void:
+	var s: RigidBody3D = t.sled
+	if not t.go:
+		var held := 0
+		for m in t.members:
+			if m.handle != Vector3.INF:
+				held += 1
+		if held > 0:
+			t.hold_t += dt
+		t.go = held == t.members.size() or t.hold_t > TEAM_WAIT
+		return
+	var at := Vector2(s.global_position.x, s.global_position.z)
+	if not t.route.is_empty():
+		var w: Vector2 = t.route[0]
+		var gap := at.distance_to(w)
+		t.stall += dt
+		if gap < t.best - 0.5:
+			t.best = gap
+			t.stall = 0.0
+		if gap < 5.0:
+			t.route.pop_front()
+			t.best = INF
+			t.stall = 0.0
+		elif t.stall > TEAM_STALL:
+			t.route.clear()   # 押しても上がらない: ここから滑る
+		return
+	t.turn_t += dt
+	var fwd := Emotes._flat(-s.global_basis.z).normalized()
+	var want := Vector3(t.goal.x - at.x, 0, t.goal.y - at.y).normalized()
+	if fwd.dot(want) > 0.92 or t.turn_t > TEAM_TURN:
+		t.turned = true
+
+
+## 頂上で向きが変わった: つかんでいた手を離して、みんなで乗る
+func _team_board(t: Dictionary, dt: float) -> void:
+	var s: RigidBody3D = t.sled
+	let_go()
+	if global_position.distance_to(s.global_position) > 4.5:
+		_leave_team()
+		_settle_walk(Vector3.ZERO, dt)
+		return
+	seat = s.mount(self)
+	if seat == Vector3.INF:
+		_leave_team()
+		_settle_walk(Vector3.ZERO, dt)
+		return
+	_col.disabled = true
+	state = State.RIDE
+	_team_cool = randf_range(TEAM_COOL.x, TEAM_COOL.y)
+	_ride_goal = t.goal
+	_ride_t = 0.0
+	_still = 0.0
+	_goal_best = INF
+	_goal_t = 0.0
+	_team = {}
+	global_position = s.to_global(seat)
+	_pose_doll()
+
+
+# ---------------------------------------------------------------- ソリを買う
+
+## 次の山を選ぶ前に: ボタンがたまっていて自分のソリがなければ、買いに行く
+func _try_errand() -> bool:
+	var w := get_parent()
+	if is_instance_valid(own_sled) or w.get("shopkeeper") == null or w.get("sewing") == null:
+		return false
+	if craft.wallet(id) < craft.PATTERN_PRICE[SLED_KIND] + craft.FABRIC_PRICE:
+		return false
+	var n := 0
+	for b in get_tree().get_nodes_in_group("bots"):
+		if b != self and (is_instance_valid(b.own_sled) or b._errand != ""):
+			n += 1
+	if n >= CPU_SLEDS:
+		return false
+	var at: Vector3 = w.shopkeeper.to_global(Vector3(0, 0, -1.9))
+	_errand = "shop"
+	_area = "errand"
+	_route = [Vector2(at.x, at.z)]
+	_wp_best = INF
+	_wp_t = 0.0
+	return true
+
+
+## 用事の所に着いた: 店で型紙と布を買う → ミシンへ → 縫う → 縫い上がったら終わり（人と同じ出来事。ソリは縫った人のもの）
+func _errand_step(dt: float) -> void:
+	var w := get_parent()
+	match _errand:
+		"shop":
+			var fabric: String = preload("res://fabrics.gd").ORDER[id % preload("res://fabrics.gd").ORDER.size()]
+			if not craft.send({"kind": "buy", "who": id, "item": {"kind": "pattern", "sled": SLED_KIND}}) \
+					or not craft.send({"kind": "buy", "who": id, "item": {"kind": "fabric", "fabric": fabric}}):
+				_errand_end()
+				return
+			hub.send({"kind": "un", "who": id})
+			var at: Vector3 = w.sewing.machine.to_global(w.sewing.get("_mark")["stand"])
+			_errand = "sew"
+			_errand_t = 30.0
+			_route = [Vector2(at.x, at.z)]
+			_wp_best = INF
+			_wp_t = 0.0
+		"sew":
+			_errand_t -= dt
+			if _errand_t <= 0.0:
+				_errand_end()
+			elif w.sewing.can_sew() and _sew():
+				_errand = "sewing"
+				_errand_t = 30.0
+			return
+		"sewing":
+			_errand_t -= dt
+			if is_instance_valid(own_sled) or _errand_t <= 0.0:
+				_errand_end()
+
+
+## 持ち物の型紙と布を 1 つずつ使って縫い始める
+func _sew() -> bool:
+	var bag: Array = craft.bags.get(id, [])
+	var ps := -1
+	var fs := -1
+	for i in bag.size():
+		if bag[i].get("kind") == "pattern" and ps < 0:
+			ps = i
+		elif bag[i].get("kind") == "fabric" and fs < 0:
+			fs = i
+	if ps < 0 or fs < 0:
+		return false
+	return craft.send({"kind": "sew", "who": id, "pattern": bag[ps].duplicate(), "fabric": bag[fs].duplicate(), "pattern_slot": ps, "fabric_slot": fs})
+
+
+func _errand_end() -> void:
+	_errand = ""
+	_roam_done()
 
 
 # ---------------------------------------------------------------- ロッジでくつろぐ
