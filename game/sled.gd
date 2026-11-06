@@ -4,6 +4,7 @@ const Props := preload("res://props.gd")
 const Look := preload("res://look.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Snowball := preload("res://snowball.gd")
+const Stitches := preload("res://stitches.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
 ## 誰も触れていない空のソリは、坂をゆっくりずり落ちる。速く下っているソリをつかむと引きずられ、
@@ -164,23 +165,9 @@ var hold_debug := ""
 # 足元の影と、滑り木の跡（ステッチ）
 const TRAIL_N := 1600         # 同時に残せる歩みの数（滑り木 2 本 × 800 歩 = 約 240 m、丘を 4 回ほど滑った長さ）。あふれたら、いちばん早く消える目から使い回す
 const TRAIL_STEP := 0.3       # 縫い目の 1 歩の長さ (m)。1 歩ごとに縫い目の形を 1 つ置く
-const TRAIL_ZIG := 0.045      # ジグザグの振れ幅（縫い目の中心から針穴まで, m）
 const TRAIL_JITTER := 0.012   # 針穴の位置のばらつき (m)。手で縫ったような揺れ
-## 縫い目の種類。per は 1 歩に置く糸の目の数、radius は糸の太さ（半径 m）。重いソリほど太く丈夫に
-##   running なみ縫い: 中心線に沿った破線。軽い
-##   zigzag  ジグザグ: 左右交互の針穴を渡る（はじめの滑りあと、PR #6）
-##   chain   くさり縫い: しずく形の輪が、前の輪の中から次の輪が出るようにつながる
-##   saddle  サドルステッチ: 太い糸の斜めの目が 2 列。いちばん丈夫
-const STITCHES := {
-	"running": {"per": 1, "radius": 0.02},
-	"zigzag": {"per": 1, "radius": 0.026},
-	"chain": {"per": 2, "radius": 0.021},
-	"saddle": {"per": 4, "radius": 0.025},
-}
-const RUNNING_DASH := 0.62    # なみ縫いの 1 歩のうち、糸が表に出ている割合
-const CHAIN_WIDTH := 0.052    # くさり縫いの輪の、ふくらんだ所の半分の幅 (m)
-const SADDLE_ROW := 0.08      # サドルステッチの 2 列の、中心からの距離 (m)
-const SADDLE_SLANT := Vector2(0.055, 0.095)   # サドルステッチの 1 目の、横と前後の半分の長さ (m)
+## 縫い目の種類（stitches.gd の表と形）。per は 1 歩に置く糸の目の数の目安、radius は糸の太さ（半径 m）
+const STITCHES := Stitches.LIST
 # ---- 滑りあとが消える（調整する値。意味は design/controls-and-physics.md）
 # 古い順に一列で消えるのでなく、縫い目ごとにばらばらの時刻で消えていく。
 # 重いソリ（ソリの重さ ＋ 乗っている人）の跡ほど深く、長く残る。消え方は TRAIL_FADE
@@ -216,7 +203,7 @@ var _trail_used := 0                          # 使ったことのある目の�
 var _trail_noise := FastNoiseLite.new()
 var _trail_dist := [0.0, 0.0]                    # 左右それぞれ、前の歩みから滑った長さ
 var _trail_last := [Vector3.INF, Vector3.INF]    # 左右それぞれ、前のコマの滑り木の後ろ端
-var _trail_flip := [false, false]
+var _trail_count := [0, 0]                       # 左右それぞれ、歩みの番号（柄の左右や周期に使う）
 var _trail_holes := [Vector3.INF, Vector3.INF]   # 左右それぞれ、前の歩みの縫い目の中心
 var _trail_jit := [Vector3.ZERO, Vector3.ZERO]   # 左右それぞれ、前の針穴のばらつき
 var _st: Dictionary = STITCHES.zigzag            # いまの縫い目（STITCHES の 1 つ）
@@ -300,6 +287,51 @@ func stitch_kind() -> String:
 	if STITCHES.has(stitch_override):
 		return stitch_override
 	return KINDS.get(kind, KINDS.mid).stitch
+
+
+## 滑りあとの縫い目を替える（置いたあとでも。"" で KINDS の既定）。もう残っている跡は前の柄のまま、消えるまで残る
+func set_stitch(name: String) -> void:
+	if name != "" and not STITCHES.has(name):
+		return
+	stitch_override = name
+	if _stitch == null or stitch_kind() == _stitch_name:
+		return
+	_retire_trail()
+	_make_trail()
+
+
+## 残っている跡を、ソリから切り離して消えるまで見守らせる
+func _retire_trail() -> void:
+	var end := _trail_now
+	for c in _chunk_end:
+		end = maxf(end, c)
+	var left := TrailLeft.new()
+	left.mesh = _stitch
+	left.now = _trail_now
+	left.end = end
+	get_parent().add_child(left)
+	for mi in _trails:
+		remove_child(mi)
+		left.add_child(mi)
+	_trails.clear()
+	_chunk_i = 0
+	_chunk_fill = 0
+	_trail_used = 0
+	_trail_holes = [Vector3.INF, Vector3.INF]
+	_trail_dist = [0.0, 0.0]
+
+
+## 替える前の柄の跡。時計を進め、全部の目が消えたら消える
+class TrailLeft extends Node:
+	var mesh: ArrayMesh
+	var now := 0.0
+	var end := 0.0
+
+	func _process(dt: float) -> void:
+		now += dt
+		Look.stitch_set_time(mesh, now)
+		if now >= end:
+			queue_free()
 
 
 ## いまのメインカラー
@@ -694,7 +726,7 @@ func _make_trail() -> void:
 	_trail_n = TRAIL_N * int(_st.per)
 	_trail_chunk = TRAIL_CHUNK * int(_st.per)
 	_stitch = Look.stitch_mesh(color())   # 糸はソリのメインカラー
-	Look.stitch_set_shape(_stitch, _st.radius, CHAIN_WIDTH)
+	Look.stitch_set_shape(_stitch, _st.radius, _st.bow)
 	Look.stitch_set_style(_stitch, 1 if trail_fade == "fray" else 0)
 	for c in ceili(float(_trail_n) / _trail_chunk):
 		var mi := MultiMeshInstance3D.new()
@@ -707,6 +739,7 @@ func _make_trail() -> void:
 		mi.multimesh = mm
 		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		mi.visibility_range_end = TRAIL_SEE
+		mi.lod_bias = 5.0 if _st.get("arc", false) else 1.0   # 弧の目は、粗い形だと角ばる
 		mi.top_level = true
 		mi.visible = false
 		add_child(mi)
@@ -829,7 +862,7 @@ func _update_trail(dt: float) -> void:
 
 ## 滑り木 k の 1 歩: at（滑り木の後ろ端）の下の雪面を探し、前の歩みからそこまでを縫う。dir は滑る向き
 func _trail_step(k: int, at: Vector3, dir: Vector3) -> void:
-	_trail_flip[k] = not _trail_flip[k]
+	_trail_count[k] += 1
 	var h := _ground_hit(at + Vector3.UP * 0.8)
 	if h.is_empty() or at.y - float(h.position.y) > TRAIL_AIR:   # 宙を飛んでいる（着地したら、そこから縫い始める）
 		_trail_holes[k] = Vector3.INF
@@ -868,28 +901,11 @@ func _trail_step(k: int, at: Vector3, dir: Vector3) -> void:
 	_sew(prev + Vector3.UP * crown, c + Vector3.UP * crown, prev_jit, jit, nn, k)
 
 
-## 前の歩み p0 から p1 までを、いまの縫い目で縫う。j0・j1 は針穴のばらつき、nn は雪面の上
+## 前の歩み p0 から p1 までを、いまの縫い目で縫う。j0・j1 は針穴のばらつき、nn は雪面の上。柄の形は stitches.gd
 func _sew(p0: Vector3, p1: Vector3, j0: Vector3, j1: Vector3, nn: Vector3, k: int) -> void:
-	var f := (p1 - p0).normalized()        # 進む向き（雪面に沿う）
-	var side := f.cross(nn).normalized()
-	match _stitch_name:
-		"running":   # 中心線に沿って、表に出る目と、裏に潜る隙間をくり返す
-			_emit(p0 + j0, p0.lerp(p1, RUNNING_DASH) + j1 * 0.5, nn, 0)
-		"chain":     # しずく形の輪: 根元から左右にふくらむ 2 本の弧。先は次の輪の根元の少し先
-			var tip := p1 + f * 0.04 + j1 * 0.5
-			_emit(p0 + j0 * 0.5, tip, nn, 1)
-			_emit(p0 + j0 * 0.5, tip, nn, 2)
-		"saddle":    # 斜めの短い目を 2 列。列どうしは半目ずらす
-			for row in 2:
-				var x0 := SADDLE_ROW * (1.0 if row == 0 else -1.0)
-				for sub in 2:
-					var cm := p0.lerp(p1, 0.25 + 0.5 * sub + (0.25 if row == 1 else 0.0) - 0.125)
-					var a := cm + side * (x0 - SADDLE_SLANT.x) - f * SADDLE_SLANT.y
-					var b := cm + side * (x0 + SADDLE_SLANT.x) + f * SADDLE_SLANT.y
-					_emit(a + j0 * 0.3, b + j1 * 0.3, nn, 0)
-		_:           # zigzag: 針穴を中心から左右交互にずらす
-			var s := TRAIL_ZIG if _trail_flip[k] else -TRAIL_ZIG
-			_emit(p0 - side * s + j0, p1 + side * s + j1, nn, 0)
+	var side := (p1 - p0).normalized().cross(nn).normalized()
+	Stitches.sew(_stitch_name, func(a: Vector3, b: Vector3, bow: int) -> void: _emit(a, b, nn, bow),
+			p0, p1, j0, j1, side, _trail_count[k], -1.0 if k == 0 else 1.0)
 
 
 ## 糸の目を 1 つ置く。a（入る針穴）から b（出る針穴）へ。bow は 0 でまっすぐ、1・2 で左・右にふくらむ弧（くさり縫いの輪）

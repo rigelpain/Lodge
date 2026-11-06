@@ -14,7 +14,7 @@ const Look := preload("res://look.gd")
 ##   --bot-lean=follow|off  一緒に乗った仲間が、あなたの体重移動に合わせるか（既定 follow）
 ##   --sled=KIND   ソリの大きさ（sack 米袋 1 人・small 2 人・mid 3 人（既定）・large 8 人）
 ##   --sled-color=色  ソリのメインカラー（ソリの主なフェルトと滑りあとの糸）。2F5DA8 のような 16 進か、white・navy などの色の名前
-##   --stitch=名前  滑りあとの縫い目の差し替え（running なみ縫い・zigzag・chain くさり縫い・saddle サドルステッチ）。既定はソリの大きさで決まる
+##   --stitch=名前  滑りあとの縫い目の差し替え（名前は stitches.gd の表。running なみ縫い・chain くさり縫い・fly フライ など）
 ##   --trail-fade=fray|bury  滑りあとの消え方（ほつれる・雪に埋もれる）
 ##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
 ##   --bot-lanterns=形,形…  仲間の帯に提げるランタン（lantern.gd の LOOKS。ソリを押す仲間、ロッジの仲間の順に。確かめ用）

@@ -8,6 +8,8 @@ extends CanvasLayer
 ##   売り台（おじさんに F）: 上の段に型紙 4 枚、下の段に布 6 色。どれも絵と、値段のボタンの数。
 ##     品物を押して選び、右の買うボタン（ボタン → 手袋）で買う。足りない品物は薄く、買えないときは買うボタンが震える。
 ##     閉じるのは右上の × の縫い目か、F か Esc
+##     左上の札で棚を替える: 型紙と布・滑りあとの柄（stitches.gd。2026-11-06 代表「滑り後のステッチをソリ屋で買ってインベントリでソリごとに設定できるようにして欲しい」）。
+##     柄は持ち物の場所を使わず、人ごとに一度買えばよい
 ##   ミシンの画面（ミシンの前で F か T）: 上に型紙の枠と布の枠、その右にできるソリ（広げた姿がくるくる回る）と縫うボタン。
 ##     下に自分の持ち物が 2 段（手持ち・かばん）で並び、押すと型紙は型紙の枠、布は布の枠に入る（枠を押すと外す）。開いたときは、手に持っている物か
 ##     最初の型紙・布が入っている。足りない枠は破線の空き枠で、おじさん（売り台の絵）を指す矢印が出る。
@@ -19,6 +21,7 @@ extends CanvasLayer
 ##     まんなかの段は名札: 左に大きく、右に部品（形・紙の色・縁の糸・吊るす糸・判子）の見本の列。名札の下に、どの名札を替えるかの札の列:
 ##     いつもの柄（針の印。これから縫うソリに付く）・自分のソリ（回る姿）・畳んだソリ・名札入れの外した名札。
 ##     押した札の名札だけが替わる（名札はソリごと。いつもの柄と名前と色は保存して、次に起動しても同じ）。
+##     名札の段の 5 つ目の札は滑りあとの柄: 下の札でソリ（米袋・置いてある自分のソリ・畳んだ自分のソリ）を選び、右の棚で柄を押す。替えられるのは持ち主だけ。
 ##     右の下に、手持ち（上の段）とかばん（下の段, 緑のフェルトの巾着）。引きずって入れ替える（行き先に物があれば入れ替わる）。
 ##     押して離すと上に小窓: できあがった料理なら食べる（おにぎり）、どれでも捨てる（編みかご）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
@@ -35,6 +38,7 @@ const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
 const Craft := preload("res://craft.gd")
 const Fabrics := preload("res://fabrics.gd")
+const Stitches := preload("res://stitches.gd")
 const Doll := preload("res://doll.gd")
 const PersonIcon := preload("res://person_icon.gd")
 const ABOVE_HOOP := 72.0   # 刺繍枠（自分の小窓）の上の縁から、I・N・R の札の下までの間（1080 で px）。上のねじ（30 px ほど）と、
@@ -90,6 +94,10 @@ const FLY_T := 0.75          # 財布まで飛ぶ秒
 const FLY_FRAMES := 9        # 体から財布まで飛ぶコマ（12 fps。FLY_T と同じ長さ）
 var _bar_a := 0.0
 var _goods: Array = []       # 売る品物の並び
+var shop_page := 0           # 売り台の開いている棚。0: 型紙と布、1: 滑りあとの柄
+var _stitch_goods: Array = []   # 売っている滑りあとの柄の名前
+var _tab_rects: Array = []   # 棚の札の場所
+var stitch_edit := {}        # 装備の画面で柄を替えているソリ: {sack}（米袋）・{id}（置いてある自分のソリ）・{slot}（畳んだソリ）
 var _rects: Array = []       # 品物の札の場所（画面の px）
 var _buy_rect := Rect2()
 var _close_rect := Rect2()
@@ -101,6 +109,7 @@ func _ready() -> void:
 		_goods.append({"kind": "pattern", "sled": k})
 	for f in Fabrics.ORDER:
 		_goods.append({"kind": "fabric", "fabric": f})
+	_stitch_goods = Stitches.for_sale()
 	_view = View.new()
 	_view.ui = self
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -158,6 +167,7 @@ func open_shop() -> void:
 	if shop_open or machine_open or gear_open or player == null:
 		return
 	shop_open = true
+	shop_page = 0
 	_sel = -1
 	_open_panel()
 	var sk = main.get("shopkeeper")
@@ -181,16 +191,92 @@ func buy() -> bool:
 	if _sel < 0:
 		_shake = 1.0
 		return false
-	var ok: bool = craft.send({"kind": "buy", "who": _who(), "item": _goods[_sel].duplicate()})
+	var ok: bool
+	if shop_page == 1:
+		ok = craft.send({"kind": "stitch_buy", "who": _who(), "stitch": _stitch_goods[_sel]})
+	else:
+		ok = craft.send({"kind": "buy", "who": _who(), "item": _goods[_sel].duplicate()})
 	if not ok:
 		_shake = 1.0
 	return ok
+
+
+## 売り台で選んでいる品物の値段（選んでいなければ 0）
+func sel_price() -> int:
+	if _sel < 0:
+		return 0
+	return Stitches.price(_stitch_goods[_sel]) if shop_page == 1 else Craft.price(_goods[_sel])
+
+
+## 売り台で選んでいる品物を、いま買えるか
+func sel_ready() -> bool:
+	if _sel < 0 or sel_price() > craft.wallet(_who()):
+		return false
+	if shop_page == 1:
+		return not _stitch_goods[_sel] in craft.stitch_owned.get(_who(), [])
+	return craft.free_slot(_who()) >= 0 or _goods[_sel].kind == "peg" and craft._peg_stack(_who()) >= 0
+
+
+## 柄を替えられるソリの並び [stitch_edit の値, 絵 {sled, fabric, folded?}, いまの柄の名前]: 持っている米袋・置いてある自分のソリ・畳んだ自分のソリ
+func stitch_targets() -> Array:
+	var who := _who()
+	var out: Array = []
+	var sacks: Array = craft.sacks.get(who, [])
+	for i in sacks.size():
+		out.append([{"sack": i}, {"sled": "sack", "fabric": sacks[i].get("fabric", "")}, _stitch_of("sack", sacks[i].get("stitch", ""))])
+	for id in craft.sleds:
+		var s = craft.sleds[id]
+		if is_instance_valid(s) and int(s.owner_id) == who:
+			out.append([{"id": id}, {"sled": s.kind, "fabric": s.fabric}, s.stitch_kind()])
+	var b: Array = craft.bag(who)
+	for i in b.size():
+		if b[i].get("kind") == "folded" and preload("res://sled_tags.gd").has_tag(b[i].get("tag", -1)):
+			out.append([{"slot": i}, {"sled": b[i].sled, "fabric": b[i].fabric, "folded": true}, _stitch_of(b[i].sled, b[i].get("stitch", ""))])
+	return out
+
+
+func _stitch_of(kind: String, override: String) -> String:
+	return override if Stitches.has(override) else String(preload("res://sled.gd").KINDS.get(kind, {}).get("stitch", "running"))
+
+
+## いま柄を替えているソリの [stitch_edit の値, 絵, 柄]。先がなくなっていれば、装備している米袋に戻す
+func stitch_target() -> Array:
+	var list := stitch_targets()
+	for t in list:
+		if t[0] == stitch_edit:
+			return t
+	stitch_edit = {"sack": craft.gear_index(_who(), "sack")}
+	for t in list:
+		if t[0] == stitch_edit:
+			return t
+	return list[0] if not list.is_empty() else [{}, {}, ""]
+
+
+## いま替えているソリの柄を替える（確かめ用の入口も兼ねる）
+func set_stitch(nm: String) -> bool:
+	var key: Dictionary = stitch_target()[0]
+	if key.is_empty() or not craft.stitch_can_use(_who(), nm):
+		_shake = 1.0
+		return false
+	var ev := {"kind": "sled_stitch", "who": _who(), "stitch": nm}
+	ev.merge(key)
+	return craft.send(ev)
 
 
 func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != _who():
 		return
 	match ev.kind:
+		"stitch_buy":
+			_coin_pop = 1.0
+			var sk = main.get("shopkeeper")
+			if sk:
+				sk.sold()
+			if player.has_method("save_tag"):
+				player.save_tag()
+		"sled_stitch":
+			if ev.has("sack") and player.has_method("save_tag"):
+				player.save_tag()
 		"earn":
 			# 3D のボタンがぽんと跳ね上がったところ（少しあと、少し上）から飛び出す
 			var at: Variant = ev.get("at", Vector3.INF)
@@ -580,7 +666,10 @@ func _gear_input(e: InputEvent) -> void:
 				return
 		for t in _edit_rects:
 			if (t[0] as Rect2).has_point(e.position):
-				tag_edit = t[1]
+				if tag_page == preload("res://sled_tags.gd").PAGES.size():
+					stitch_edit = t[1]
+				else:
+					tag_edit = t[1]
 				return
 		for o in _opt_rects:
 			if (o[0] as Rect2).has_point(e.position):
@@ -590,6 +679,8 @@ func _gear_input(e: InputEvent) -> void:
 						_opt_hover = -1
 					"_dice":
 						shuffle_tag()
+					"_stitch":
+						set_stitch(o[2])
 					_:
 						set_tag_part(o[1], o[2])
 				return
@@ -617,6 +708,12 @@ func _input(e: InputEvent) -> void:
 		elif _buy_rect.has_point(e.position):
 			buy()
 		else:
+			for k in _tab_rects.size():
+				if (_tab_rects[k] as Rect2).has_point(e.position) and k != shop_page:
+					shop_page = k
+					_sel = -1
+					_hover = -1
+					return
 			var i := _hit(e.position)
 			if i >= 0:
 				_sel = i
@@ -1094,7 +1191,8 @@ class View extends Control:
 		Icons.dashes(self, Icons.rr(r.position.x + 10 * u, r.position.y + 10 * u, w - 20 * u, h - 20 * u, 16.0 * u), Icons.CAP, 2.0 * u, 8.0 * u, 5.0 * u, 0.8, true)
 		var rects: Array = []
 		var area_w := w * 0.74
-		for i in ui._goods.size():
+		_draw_shop_tabs(u, r)
+		for i in (ui._goods.size() if ui.shop_page == 0 else 0):
 			var it: Dictionary = ui._goods[i]
 			var pattern: bool = it.kind != "fabric"   # 上の段: 型紙と焚き火セット。下の段: 布
 			var top_n: int = ui._goods.size() - Fabrics.ORDER.size()
@@ -1121,6 +1219,8 @@ class View extends Control:
 			if sel:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 16.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
+		if ui.shop_page == 1:
+			rects = _draw_stitch_shelf(u, r, area_w)
 		ui._rects = rects
 		# 右: 財布と買うボタン
 		var rx := r.position.x + area_w + 20.0 * u
@@ -1131,15 +1231,14 @@ class View extends Control:
 		var ww := _coins_w(coins, cr)
 		_coins(rx + rw / 2.0 - ww / 2.0, r.position.y + 250.0 * u, coins, cr, 1.0)
 		if ui._sel >= 0:   # 選んだ品物の値段のぶんを、上に赤い糸で示す
-			var need := Craft.price(ui._goods[ui._sel])
+			var need: int = ui.sel_price()
 			var short := need > coins
 			CraftIcons.price(self, Vector2(rx + rw / 2.0, r.position.y + 80.0 * u), need, 11.0 * u, 1.0, Icons.RED if short else CraftIcons.COIN)
 		var shake: float = sin(ui._shake * 40.0) * 10.0 * u * ui._shake
 		var bs := 150.0 * u
 		var bc := Vector2(rx + rw / 2.0 + shake, r.position.y + 420.0 * u)
 		ui._buy_rect = Rect2(bc - Vector2(bs, bs) / 2.0, Vector2(bs, bs))
-		var ready: bool = ui._sel >= 0 and Craft.price(ui._goods[ui._sel]) <= coins \
-				and (not full or ui._goods[ui._sel].kind == "peg" and craft._peg_stack(who) >= 0)
+		var ready: bool = ui.sel_ready()
 		var big := 1.06 if ui._hover_btn == "buy" else 1.0
 		Icons.screen()
 		Icons.patch(self, Icons.circ(bc, bs * 0.5 * big, 28), Icons.RED if ready else Icons.RED.lerp(Icons.PAPER_EDGE, 0.6), 1.0, true, Icons.CAP)
@@ -1158,6 +1257,108 @@ class View extends Control:
 		Icons._s = xs / 64.0
 		Icons.thread(self, PackedVector2Array([Vector2(-12, -12), Vector2(12, 12)]), Icons.THREAD, 4.0, 1.0)
 		Icons.thread(self, PackedVector2Array([Vector2(12, -12), Vector2(-12, 12)]), Icons.THREAD, 4.0, 1.0)
+
+	## 売り台の棚の札（左の上の外）。型紙の絵と、ジグザグの絵
+	func _draw_shop_tabs(u: float, r: Rect2) -> void:
+		var tabs: Array = []
+		for k in 2:
+			var on: bool = ui.shop_page == k
+			var tw := 86.0 * u
+			var th := 50.0 * u
+			var tr := Rect2(r.position.x + 30.0 * u + k * (tw + 8.0 * u), r.position.y - th + (6.0 if on else 12.0) * u, tw, th)
+			tabs.append(tr)
+			Icons.screen()
+			Icons.patch(self, Icons.rr(tr.position.x, tr.position.y, tw, th, 10.0 * u), Icons.CAP if on else Icons.PAPER_EDGE, 1.0, on, Icons.PAPER_EDGE)
+			if k == 0:
+				CraftIcons.item(self, {"kind": "pattern", "sled": "mid"}, tr.get_center() - Vector2(0, 2) * u, th * 0.8, 1.0 if on else 0.6)
+			else:
+				Stitches.draw_swatch(self, "cross", Rect2(tr.get_center() - Vector2(th, th) * 0.45, Vector2(th, th) * 0.9), Icons.RED, 1.0 if on else 0.6)
+			if on:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(tr.position.x - 2.0 * u, tr.position.y - 2.0 * u, tw + 4.0 * u, th + 4.0 * u, 11.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
+		ui._tab_rects = tabs
+
+	## 滑りあとの柄の棚: 7 列。安い順。雪の色の札に、柄と値段。買った柄は値段の代わりに赤い糸の印
+	func _draw_stitch_shelf(u: float, r: Rect2, area_w: float) -> Array:
+		var craft: Node = ui.craft
+		var who: int = ui._who()
+		var coins: int = craft.wallet(who)
+		var rects: Array = []
+		var cols := 7
+		var gap := 10.0 * u
+		var cw := (area_w - 40.0 * u - gap * (cols - 1)) / cols
+		var ch := 158.0 * u
+		var names: Array = ui._stitch_goods
+		for i in names.size():
+			var nm: String = names[i]
+			var card := Rect2(r.position.x + 30.0 * u + (i % cols) * (cw + gap), r.position.y + 34.0 * u + (i / cols) * (ch + gap), cw, ch)
+			var sel: bool = ui._sel == i
+			var hov: bool = ui._hover == i
+			if sel or hov:
+				card.position.y -= (6.0 if sel else 3.0) * u
+			rects.append(card)
+			var owned: bool = nm in craft.stitch_owned.get(who, [])
+			var price: int = Stitches.price(nm)
+			var can: bool = owned or price <= coins
+			var a := 1.0 if can else 0.45
+			Icons.screen()
+			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0 if can else 0.6, true, Icons.PAPER_EDGE)
+			var snow := Rect2(card.position + Vector2(5.0, 5.0) * u, Vector2(cw - 10.0 * u, ch - 52.0 * u))
+			draw_rect(snow, Color(0.82, 0.86, 0.94, a))
+			Stitches.draw_swatch(self, nm, snow, Color("D2553A"), a)
+			if owned:
+				Icons.screen()
+				Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch - 24.0 * u), 26.0 * u, 1.0)
+			else:
+				CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch - 24.0 * u), price, 8.0 * u, a)
+			if sel:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(card.position.x - 3 * u, card.position.y - 3 * u, cw + 6 * u, ch + 6 * u, 13.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
+		var named: int = ui._hover if ui._hover >= 0 and ui._hover < names.size() else ui._sel
+		if named >= 0 and named < names.size():
+			_name_tag(Stitches.ja(names[named]), Vector2(r.position.x + area_w / 2.0, r.end.y - 26.0 * u), u, 1.0)
+		return rects
+
+	## 装備の画面の、滑りあとの柄の棚（名札の 5 つ目のページ）。持っていない柄は薄く、木のボタンの印（ソリ屋で買う）
+	func _draw_stitch_page(u: float, x: float, y: float, right: float, opts: Array) -> void:
+		var craft: Node = ui.craft
+		var who: int = ui._who()
+		var t: Array = ui.stitch_target()
+		var names: Array = Stitches.standard() + Stitches.for_sale()
+		var cols := 8
+		var gap := 5.0 * u
+		var cw := (right - x - gap * (cols - 1)) / cols
+		var ch := 64.0 * u
+		var named := -1
+		for i in names.size():
+			var nm: String = names[i]
+			var sr := Rect2(x + (i % cols) * (cw + gap), y + (i / cols) * (ch + gap), cw, ch)
+			var can: bool = craft.stitch_can_use(who, nm)
+			Icons.screen()
+			draw_rect(sr, Color(0.82, 0.86, 0.94, 1.0 if can else 0.35))
+			Stitches.draw_swatch(self, nm, sr, _target_color(t), 1.0 if can else 0.35)
+			if not can:
+				var bc := Vector2(sr.end.x - 8.0 * u, sr.end.y - 8.0 * u)
+				Icons.screen()
+				draw_circle(bc, 6.5 * u, Icons.WOOD)
+				draw_arc(bc, 4.8 * u, 0.0, TAU, 14, Icons.WOOD.darkened(0.3), 1.0 * u, true)
+				draw_circle(bc + Vector2(-1.6, 0) * u, 1.0 * u, Color(0.25, 0.16, 0.10))
+				draw_circle(bc + Vector2(1.6, 0) * u, 1.0 * u, Color(0.25, 0.16, 0.10))
+			if nm == t[2]:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(sr.position.x - 2.0 * u, sr.position.y - 2.0 * u, sr.size.x + 4.0 * u, sr.size.y + 4.0 * u, 6.0 * u), Icons.RED, 2.6 * u, 5.0 * u, 3.0 * u, 1.0, true)
+			if ui._opt_hover == opts.size():
+				named = i
+			opts.append([sr, "_stitch", nm])
+		if named >= 0:
+			_name_tag(Stitches.ja(names[named]), Vector2((x + right) / 2.0, y - 12.0 * u), u, 1.0)
+
+	## 柄を替えているソリの糸の色
+	func _target_color(t: Array) -> Color:
+		var look: Dictionary = t[1]
+		if String(look.get("fabric", "")) != "":
+			return Fabrics.color(look.fabric)
+		return preload("res://sled.gd").KINDS.get(look.get("sled", "mid"), {}).get("color", Color("D2553A"))
 
 	## ミシンの画面
 	func _draw_machine(u: float) -> void:
@@ -1276,15 +1477,16 @@ class View extends Control:
 	## 名札入れの外した名札。どれも下に小さく、その名札。替えている札に赤い糸の印
 	func _draw_edit_row(u: float, r: Rect2) -> void:
 		var Tags := preload("res://sled_tags.gd")
-		var list: Array = ui.edit_targets()
+		var stitch_page: bool = ui.tag_page == Tags.PAGES.size()
+		var list: Array = ui.stitch_targets() if stitch_page else ui.edit_targets()
 		var gap := 6.0 * u
 		var cw := minf(62.0 * u, (r.size.x - gap * (list.size() - 1)) / maxf(list.size(), 1))
 		var rects: Array = []
 		for i in list.size():
 			var key: Dictionary = list[i][0]
-			var look: Dictionary = list[i][2]
+			var look: Dictionary = list[i][1] if stitch_page else list[i][2]
 			var card := Rect2(r.position.x + i * (cw + gap), r.position.y, cw, r.size.y)
-			var picked: bool = key == ui.tag_edit
+			var picked: bool = key == (ui.stitch_target()[0] if stitch_page else ui.tag_edit)
 			if picked:
 				card.position.y -= 6.0 * u
 			rects.append([card, key])
@@ -1302,7 +1504,12 @@ class View extends Control:
 			else:   # いつもの柄: 針の印（これから縫うソリ）
 				Icons.icon(self, "needle", top.get_center(), top.size.y * 1.05, 1.0)
 			var th := card.size.y * (0.62 if look.has("loose") else 0.34)
-			Tags.draw_tag(self, Rect2(card.position.x + 4.0 * u, card.end.y - th - 4.0 * u, cw - 8.0 * u, th), list[i][1], 1.0, false)
+			if stitch_page:   # 下に、そのソリのいまの柄
+				var sn := Rect2(card.position.x + 4.0 * u, card.end.y - th - 4.0 * u, cw - 8.0 * u, th)
+				draw_rect(sn, Color(0.82, 0.86, 0.94))
+				Stitches.draw_swatch(self, list[i][2], sn, _target_color(list[i]))
+			else:
+				Tags.draw_tag(self, Rect2(card.position.x + 4.0 * u, card.end.y - th - 4.0 * u, cw - 8.0 * u, th), list[i][1], 1.0, false)
 			if picked:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 3 * u, card.position.y - 3 * u, cw + 6 * u, card.size.y + 6 * u, 11.0 * u), Icons.RED, 2.6 * u, 6.0 * u, 3.5 * u, 1.0, true)
@@ -1416,12 +1623,20 @@ class View extends Control:
 		# 名札の下に、どの名札を替えるかの札の列（いつもの柄・自分のソリ・畳んだソリ・名札入れ）
 		var mine: Dictionary = ui.edit_design()
 		var ty := r.position.y + 218.0 * u
-		Tags.draw_tag(self, Rect2(x0 + 50.0 * u, ty + 26.0 * u, 210.0 * u, 128.0 * u), mine, 1.0, true)
+		var stitch_page: bool = ui.tag_page == Tags.PAGES.size()
+		if stitch_page:   # 替えているソリの柄を大きく
+			var big_r := Rect2(x0 + 50.0 * u, ty + 26.0 * u, 210.0 * u, 170.0 * u)
+			var tgt: Array = ui.stitch_target()
+			draw_rect(big_r, Color(0.82, 0.86, 0.94))
+			Stitches.draw_swatch(self, tgt[2], big_r, _target_color(tgt))
+			_name_tag(Stitches.ja(tgt[2]), Vector2(big_r.get_center().x, big_r.position.y + 2.0 * u), u, 1.0)
+		else:
+			Tags.draw_tag(self, Rect2(x0 + 50.0 * u, ty + 26.0 * u, 210.0 * u, 128.0 * u), mine, 1.0, true)
 		var opts: Array = []
 		var ox := x0 + 286.0 * u
 		var sw := 25.0 * u
 		# おまかせ（さいころ）: 名札の下
-		var dc := Vector2(x0 + 155.0 * u, ty + 196.0 * u)
+		var dc := Vector2(x0 + 155.0 * u, (ty + 196.0 * u) if not stitch_page else -1000.0)
 		var ds := 40.0 * u * (1.08 if ui._opt_hover >= 0 and ui._opt_hover < ui._opt_rects.size() and ui._opt_rects[ui._opt_hover][1] == "_dice" else 1.0)
 		Icons.screen()
 		Icons.patch(self, Icons.rr(dc.x - ds / 2.0, dc.y - ds / 2.0, ds, ds, ds * 0.22), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
@@ -1429,7 +1644,7 @@ class View extends Control:
 			draw_circle(dc + q * ds * 0.24, ds * 0.08, Icons.RED)
 		opts.append([Rect2(dc - Vector2(ds, ds) / 2.0, Vector2(ds, ds)), "_dice", 0])
 		# ページの札
-		var page: int = clampi(ui.tag_page, 0, Tags.PAGES.size() - 1)
+		var page: int = clampi(ui.tag_page, 0, Tags.PAGES.size())
 		var looks := [["shape", int(mine.get("shape", 0))], ["pattern", maxi(int(mine.get("pattern", 0)), 3) if int(mine.get("pattern", 0)) == 0 else int(mine.get("pattern", 0))],
 			["stitch", 3 if int(mine.get("stitch", 0)) == 1 else int(mine.get("stitch", 0))], ["motif", 2 if int(mine.get("motif", 0)) == 0 else int(mine.get("motif", 0))]]
 		for k in Tags.PAGES.size():
@@ -1441,10 +1656,21 @@ class View extends Control:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(tr.position.x - 2.0 * u, tr.position.y - 2.0 * u, tr.size.x + 4.0 * u, tr.size.y + 4.0 * u, 10.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
 			opts.append([tr, "_page", k])
+		# 5 つ目の札: 滑りあとの柄
+		var str_r := Rect2(ox + Tags.PAGES.size() * 54.0 * u, ty - (6.0 * u if stitch_page else 0.0), 48.0 * u, 38.0 * u)
+		Icons.screen()
+		Icons.patch(self, Icons.rr(str_r.position.x, str_r.position.y, str_r.size.x, str_r.size.y, 9.0 * u), Icons.CAP if stitch_page else Icons.PAPER_EDGE, 1.0 if stitch_page else 0.75, stitch_page, Icons.PAPER_EDGE)
+		Stitches.draw_swatch(self, "cross", str_r.grow(-3.0 * u), Icons.RED, 1.0 if stitch_page else 0.6)
+		if stitch_page:
+			Icons.screen()
+			Icons.dashes(self, Icons.rr(str_r.position.x - 2.0 * u, str_r.position.y - 2.0 * u, str_r.size.x + 4.0 * u, str_r.size.y + 4.0 * u, 10.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
+		opts.append([str_r, "_page", Tags.PAGES.size()])
 		# 部品の見本。まだ手に入れていない部品は薄く、木のボタンの印（あとで手に入る）
 		var per := maxi(1, int((r.end.x - 26.0 * u - ox) / (sw + 5.0 * u)))
 		var oy := ty + 50.0 * u
-		for part in Tags.PAGES[page]:
+		if stitch_page:
+			_draw_stitch_page(u, ox, oy, r.end.x - 26.0 * u, opts)
+		for part in ([] if stitch_page else Tags.PAGES[page]):
 			var n := Tags.part_count(part)
 			for i in n:
 				var sr := Rect2(ox + (i % per) * (sw + 5.0 * u), oy + (i / per) * (sw + 9.0 * u), sw + 2.0 * u, sw + 6.0 * u)

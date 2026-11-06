@@ -2611,6 +2611,11 @@ func _load_tag() -> bool:
 	if cf.has_section("profile"):
 		craft.send({"kind": "profile", "who": id, "name": String(cf.get_value("profile", "name", craft.name_of(id))),
 			"color": int(cf.get_value("profile", "color", craft.colors.get(id, 0)))})
+	if cf.has_section("stitch"):   # 買った滑りあとの柄を戻してから、標準の米袋の柄
+		for k in cf.get_value("stitch", "owned", []):
+			craft.send({"kind": "stitch_own", "who": id, "stitch": String(k)})
+		if String(cf.get_value("stitch", "sack", "")) != "":
+			craft.send({"kind": "sled_stitch", "who": id, "sack": 0, "stitch": String(cf.get_value("stitch", "sack", ""))})
 	if cf.has_section("lantern"):   # ランタン: 持っている形を戻してから、提げていた形を提げる（"" は外していた）
 		for k in cf.get_value("lantern", "owned", []):
 			craft.send({"kind": "lantern_own", "who": id, "look": String(k)})
@@ -2702,6 +2707,8 @@ func save_tag() -> void:
 	var owned: Dictionary = craft.tag_owned.get(id, {})
 	for part in owned:
 		cf.set_value("owned", part, owned[part])
+	cf.set_value("stitch", "owned", craft.stitch_owned.get(id, []))   # 買った滑りあとの柄（stitches.gd）
+	cf.set_value("stitch", "sack", String(craft.sacks.get(id, [{}])[0].get("stitch", "")))   # 標準の米袋の柄（縫ったソリと同じで、ほかのソリは持ち帰らない）
 	var looks: Array = []   # ランタン（lantern.gd）: 持っている形と、提げている形
 	for l in craft.lanterns.get(id, []):
 		looks.append(String(l.get("look", "")))
