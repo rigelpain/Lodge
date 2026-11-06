@@ -546,6 +546,8 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if p.has_method("mirror_near") and p.mirror_near():
 		_hint("mirror", ["F"], "mirror", main.mirror.hint_at())
 	# 1 階の人台: 桶を見下ろして F で服を染める。人形の高さを見て F で人形を選び直す（ハンガーと入れ替わる矢印の絵）
+	if p.has_method("book_near") and p.book_near() and not p.shopping:
+		_hint("sled_book", ["F"], "swatch_book", main.sled_book.hint_at(p))   # 布の見本帳: F でソリの色と滑りあとを替える
 	if p.has_method("dye_near") and p.dye_near() and not p.shopping:
 		_hint("dye", ["F"], "dye", main.dye_vat.hint_at(p))   # 染め桶: F で服を染める（桶と布の絵）
 	elif p.has_method("wardrobe_near") and p.wardrobe_near() and not p.shopping:

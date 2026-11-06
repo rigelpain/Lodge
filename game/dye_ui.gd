@@ -16,11 +16,11 @@ const Doll := preload("res://doll.gd")
 const Outfit := preload("res://outfit.gd")
 const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
+const ColorWheel := preload("res://color_wheel.gd")
 
 const SHOT := Vector2i(300, 420)   # 札の中の絵の大きさ (px)
-const RINGS := 6             # 色の輪の、外へ向かう段の数
-const SEGS := 48             # 色の輪の、まわりの分け数
-const V_MIN := 0.12          # 明るさの帯のいちばん暗い所
+const SEGS := ColorWheel.SEGS
+const V_MIN := ColorWheel.V_MIN
 const BLINK := 1.3           # 輪郭の内側の微光が 1 回点滅する秒。動きはなめらか（art-concept: 12 コマは人の姿勢だけ）
 const RING_CORE := 2.6       # 輪郭の芯（生成りの糸）の太さ (u)
 const RING_EDGE := 1.5       # 芯の外側の、墨の縁の太さ (u)
@@ -383,55 +383,13 @@ func _swatch(ci: CanvasItem, sr: Rect2, i: int, u: float) -> void:
 			Icons.RED, 3.0 * u, 9.0 * u, 5.0 * u, 1.0 if i == _cloth else 0.4, true)
 
 
-## 色の輪: まわりで色合い、外ほど鮮やか（明るさは帯の値）。フェルトの毛羽を重ねる。いまの色の所に糸の輪
+## 色の輪と明るさの帯（color_wheel.gd。ソリの見本帳と同じ物）
 func _wheel(ci: CanvasItem, u: float) -> void:
-	var felt := Icons.felt()
-	Icons.screen()
-	ci.draw_colored_polygon(Icons.circ(_wheel_c + Vector2(2, 3) * u, _wheel_r + 3.0 * u, 48), Color(Icons.SHADOW, 0.3))
-	for ri in RINGS:
-		var s0 := float(ri) / RINGS
-		var s1 := float(ri + 1) / RINGS
-		for k in SEGS:
-			var a0 := TAU * k / SEGS
-			var a1 := TAU * (k + 1) / SEGS
-			var pts := PackedVector2Array([_polar(a0, s0), _polar(a0, s1), _polar(a1, s1), _polar(a1, s0)])
-			var cols := PackedColorArray([_wheel_col(a0, s0), _wheel_col(a0, s1), _wheel_col(a1, s1), _wheel_col(a1, s0)])
-			var uv := PackedVector2Array()
-			for p in pts:
-				uv.append(p / (40.0 * u))
-			ci.draw_polygon(pts, cols, uv, felt)
-	Icons.dashes(ci, Icons.circ(_wheel_c, _wheel_r - 5.0 * u, 48), Color(Icons.CAP, 0.7), 1.6 * u, 6.0 * u, 4.0 * u, 1.0, true)
-	var at := _polar(_hsv.x * TAU, _hsv.y)
-	ci.draw_circle(at, 11.0 * u, Color(Icons.SHADOW, 0.3))
-	ci.draw_circle(at, 10.0 * u, Color.from_hsv(_hsv.x, _hsv.y, _hsv.z))
-	ci.draw_arc(at, 10.0 * u, 0, TAU, 20, Icons.CAP, 3.0 * u, true)
-	ci.draw_arc(at, 13.0 * u, 0, TAU, 20, Icons.THREAD, 1.6 * u, true)
+	ColorWheel.wheel(ci, _wheel_c, _wheel_r, _hsv, u)
 
 
-func _polar(a: float, s: float) -> Vector2:
-	return _wheel_c + Vector2(cos(a), -sin(a)) * s * _wheel_r
-
-
-func _wheel_col(a: float, s: float) -> Color:
-	return Color.from_hsv(a / TAU, s, _hsv.z)
-
-
-## 明るさの帯: 上ほど明るい。いまの色合いと鮮やかさで。いまの明るさの所に赤い糸の結び目
 func _value(ci: CanvasItem, u: float) -> void:
-	var r := _value_rect
-	Icons.screen()
-	ci.draw_rect(Rect2(r.position + Vector2(2, 3) * u, r.size), Color(Icons.SHADOW, 0.3))
-	var top := Color.from_hsv(_hsv.x, _hsv.y, 1.0)
-	var bot := Color.from_hsv(_hsv.x, _hsv.y, V_MIN)
-	var pts := PackedVector2Array([r.position, Vector2(r.end.x, r.position.y), r.end, Vector2(r.position.x, r.end.y)])
-	var uv := PackedVector2Array()
-	for p in pts:
-		uv.append(p / (40.0 * u))
-	ci.draw_polygon(pts, PackedColorArray([top, top, bot, bot]), uv, Icons.felt())
-	ci.draw_rect(r, Color(Icons.THREAD, 0.6), false, 1.2 * u)
-	var y := r.end.y - (_hsv.z - V_MIN) / (1.0 - V_MIN) * r.size.y
-	Icons.dashes(ci, PackedVector2Array([Vector2(r.position.x - 8.0 * u, y), Vector2(r.end.x + 8.0 * u, y)]), Icons.RED, 3.0 * u, 7.0 * u, 3.0 * u, 1.0)
-	ci.draw_circle(Vector2(r.end.x + 10.0 * u, y), 5.5 * u, Icons.RED)
+	ColorWheel.value_bar(ci, _value_rect, _hsv, u)
 
 
 ## 部位 i の脱色（もとの色に戻す）: もとの色の小さな丸い布と、戻る矢印。染めてある（選んでいる色がある）ときだけ濃い
@@ -514,12 +472,10 @@ func _hit(p: Vector2) -> String:
 
 func _drag_to(p: Vector2) -> void:
 	if _drag == "wheel":
-		var d := p - _wheel_c
-		_hsv.x = fposmod(atan2(-d.y, d.x) / TAU, 1.0)
-		_hsv.y = clampf(d.length() / _wheel_r, 0.0, 1.0)
+		_hsv = ColorWheel.pick_wheel(_wheel_c, _wheel_r, p, _hsv)
 		_set_from_hsv()
 	elif _drag == "value":
-		_hsv.z = clampf(V_MIN + (_value_rect.end.y - p.y) / _value_rect.size.y * (1.0 - V_MIN), V_MIN, 1.0)
+		_hsv = ColorWheel.pick_value(_value_rect, p, _hsv)
 		_set_from_hsv()
 
 

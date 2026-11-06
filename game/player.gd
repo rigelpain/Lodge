@@ -445,6 +445,9 @@ func _unhandled_input(e: InputEvent) -> void:
 				if mode == Mode.WALK and shop_near():
 					get_parent().craft_ui.open_shop()   # 売り子のおじさんに話しかける
 					return
+				if mode == Mode.WALK and book_near():
+					get_parent().sled_book_ui.open()   # 布の見本帳: 自分のソリの色と滑りあとを替える
+					return
 				var rt := rack_target()
 				if not rt.is_empty():   # ソリの立てかけ台: 自分のソリを戻す・持ち出す
 					craft.send({"kind": rt[1], "who": id, "id": craft.sled_id(rt[0])})
@@ -2333,6 +2336,11 @@ func paper_shop_near() -> bool:
 	var pl = get_parent().get("paper_lady")
 	return pl != null and get_parent().get("paper_shop_ui") != null and not menu_open and pl.can_use(self)
 ## 1 階の人台の桶を見下ろしているか
+func book_near() -> bool:
+	var v = get_parent().get("sled_book")
+	return v != null and get_parent().get("sled_book_ui") != null and not menu_open and v.can_use(self)
+
+
 func dye_near() -> bool:
 	var v = get_parent().get("dye_vat")
 	return v != null and get_parent().get("dye_ui") != null and not menu_open and v.can_use(self)
@@ -2632,6 +2640,8 @@ func _load_tag() -> bool:
 			craft.send({"kind": "stitch_own", "who": id, "stitch": String(k)})
 		if String(cf.get_value("stitch", "sack", "")) != "":
 			craft.send({"kind": "sled_stitch", "who": id, "sack": 0, "stitch": String(cf.get_value("stitch", "sack", ""))})
+		if String(cf.get_value("stitch", "sack_color", "")) != "":   # 見本帳で染めた標準の米袋の色（値はここでは取らない）
+			craft.send({"kind": "sled_dye_own", "who": id, "sack": 0, "color": String(cf.get_value("stitch", "sack_color", ""))})
 	if cf.has_section("lantern"):   # ランタン: 持っている形を戻してから、提げていた形を提げる（"" は外していた）
 		for k in cf.get_value("lantern", "owned", []):
 			craft.send({"kind": "lantern_own", "who": id, "look": String(k)})
@@ -2724,6 +2734,8 @@ func save_tag() -> void:
 	for part in owned:
 		cf.set_value("owned", part, owned[part])
 	cf.set_value("stitch", "owned", craft.stitch_owned.get(id, []))   # 買った滑りあとの柄（stitches.gd）
+	var sack0: Dictionary = craft.sacks.get(id, [{}])[0]
+	cf.set_value("stitch", "sack_color", String(sack0.get("fabric", "")) if preload("res://fabrics.gd").is_dyed(String(sack0.get("fabric", ""))) else "")
 	cf.set_value("stitch", "sack", String(craft.sacks.get(id, [{}])[0].get("stitch", "")))   # 標準の米袋の柄（縫ったソリと同じで、ほかのソリは持ち帰らない）
 	var looks: Array = []   # ランタン（lantern.gd）: 持っている形と、提げている形
 	for l in craft.lanterns.get(id, []):

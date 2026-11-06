@@ -109,6 +109,7 @@ var fabric := "":
 			set_main_color(Fabrics.color(v))
 		else:
 			main_color = Fabrics.color(v)
+var base_fabric := ""          # 見本帳で染めたソリ（fabric が "#RRGGBB"）の、元の布の名前。脱色で戻す（sled_book_ui.gd・craft.gd の sled_dye）
 var crafted := false           # ミシンで縫った・広げたソリ（畳んで持てる。craft.gd）
 var tag: Variant = 0           # 名札の柄（sled_tags.gd）。ソリごとの名札（辞書）か、ロッジの名札（0）。-1 は名札なし。手すりの前の結び目から小さく吊るす。
                                # 米袋には付けない（2026-10-31 代表「タグは米袋には要らない」）
@@ -361,6 +362,21 @@ func set_main_color(c: Color) -> void:
 		Props.recolor(_body, KINDS[kind].color, color(), KINDS[kind].get("whole", false))
 	if _stitch:
 		Look.stitch_set_color(_stitch, color())
+
+
+## 見本帳で染める。hex は "#RRGGBB"、"" なら元の布の色に戻す。ソリと滑りあとの糸がすぐその色になる（もう残っている跡も）
+func dye_to(hex: String) -> void:
+	if hex != "":
+		if not Fabrics.is_dyed(fabric):
+			base_fabric = fabric
+		fabric = hex
+		return
+	if Fabrics.is_dyed(fabric):
+		var b := base_fabric
+		base_fabric = ""
+		fabric = b
+		if b == "":
+			set_main_color(Color(0, 0, 0, 0))
 
 
 ## dir は押す向き（水平）、at は手が触れた所（世界座標）、who は押した人（引きずられている人は押せない）。
