@@ -73,6 +73,7 @@ func _ready() -> void:
 			var src := mi.mesh.surface_get_material(i)
 			if src and mats.has(src.resource_name):
 				mi.set_surface_override_material(i, mats[src.resource_name])
+	_hide_plain_boards()
 
 	for e in find_children("light_*", "", true, false):
 		var l := OmniLight3D.new()
@@ -389,6 +390,22 @@ static func _metal() -> StandardMaterial3D:
 
 ## 開き戸の板（glb の swingdoor_<名前>・swingdoor_<名前>_glass）を、蝶番の目印（hinge_swingdoor_<名前>）の軸のまわりに回せるよう、
 ## 軸に置いた回し台の下へ移す。名前の最後の _<番号> を除いたものが 1 つの戸（両開きなら 2 枚）
+## 厨房の上の無地の板 3 枚（lodge/build_lodge.py の menu_board。内装の形の felt_green の面）を描かない。
+## 調理の案内は手の材料に吊る札（hold_tag.gd）。glb は書き出し直していない
+func _hide_plain_boards() -> void:
+	var mi := find_child("lodge_props_interior", true, false) as MeshInstance3D
+	if mi == null:
+		return
+	for s in mi.mesh.get_surface_count():
+		var m := mi.mesh.surface_get_material(s)
+		if m and m.resource_name == "felt_green":
+			var sh := Shader.new()
+			sh.code = "shader_type spatial;\nrender_mode unshaded;\nvoid fragment() { discard; }\n"
+			var hide := ShaderMaterial.new()
+			hide.shader = sh
+			mi.set_surface_override_material(s, hide)
+
+
 func _make_swing_doors() -> void:
 	var groups := {}
 	for h in find_children("hinge_swingdoor_*", "Node3D", true, false):

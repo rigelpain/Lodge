@@ -1004,7 +1004,7 @@ def build_interior():
     for z in (0.5, 1.0, 1.5):   # 棚板の縁（口は西）
         C.box(RENTAL["x0"] - 0.04, RENTAL["y0"] - 0.02, z, RENTAL["x0"], RENTAL["y1"] + 0.02, z + 0.03)
     C.done(bevel=0.012)
-    mb = M("menu_board", "felt_green", "interior")   # 色あせたフェルトの案内板（ゲームでは隠し、装置ごとの品書きの板を吊る: game/menu_board.gd）
+    mb = M("menu_board", "felt_green", "interior")   # 色あせたフェルトの案内板（ゲームでは隠す。game/lodge/lodge.gd の _hide_plain_boards。調理の案内は game/hold_tag.gd）
     mid = (BACK["x0"] + BACK["x1"]) / 2
     for k in (-1, 0, 1):   # 3 枚並べて吊る
         mb.box(mid + k * 1.6 - 0.65, MENU_Y - 0.03, FL1 + 2.6, mid + k * 1.6 + 0.65, MENU_Y + 0.01, FL1 + 3.4)

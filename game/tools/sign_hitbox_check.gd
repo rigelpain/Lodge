@@ -140,7 +140,6 @@ func _run() -> void:
 	for b in ["Bandai_counter_patch", "Bandai_counter_indigo"]:
 		_report("番台 " + b, main.find_child(b, true, false))
 	_report("雪だるまの冷蔵庫", main.find_child("SnowmanFridge", true, false))
-	_report("厨房の品書きの板", main.find_child("MenuBoard", true, false))
 	var f := FileAccess.open(_dir().path_join("sign_hitbox.txt"), FileAccess.WRITE)
 	f.store_string("\n".join(lines) + "\n")
 	f.close()
