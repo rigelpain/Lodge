@@ -2212,7 +2212,8 @@ func shop_near() -> bool:
 
 
 ## 立てかけ台の前で F を押すと何が起きるか: [ソリ, "rack_out" か "rack_in"]。何もなければ []。
-## 台の自分のソリの方を見ていれば持ち出す。でなければ、触られていない自分のソリのうち、いちばん遠いものを台へ戻す。
+## 台の自分のソリの方を見ていれば持ち出す。でなければ、自分のソリのうち、いちばん遠いものを台へ戻す。
+## だれも触っていないソリが先で、なければほかの人が触っているソリ（その人は降りる・手が離れる）。
 ## 戻す物がなければ、台にある自分のソリのうち、いちばん向いているものを持ち出す
 const RACK_LOOK := 0.92   # 台のソリの方を見ている（見ている向きとソリの方向の合い具合）
 
@@ -2234,7 +2235,7 @@ func rack_target() -> Array:
 		return []   # 手の届くソリがあれば、F はつかむほう（持ち出したソリをつかもうとして、台へ戻してしまわないように）
 	var far: Node3D = null
 	var far_d := -1.0
-	for s in l.free:
+	for s in l.free if not l.free.is_empty() else l.touched:
 		var d: float = (s as Node3D).global_position.distance_to(global_position)
 		if d > far_d:
 			far = s
@@ -2244,13 +2245,13 @@ func rack_target() -> Array:
 	return [best, "rack_out"] if best else []
 
 
-## 立てかけ台の前で、自分のソリがみな触られていて（ペグで留めてあって）戻せず、持ち出せる物もないか（F の代わりに「いまは呼べない」の絵を出す）
+## 立てかけ台の前で、自分のソリがみなペグで留めてあって戻せず、持ち出せる物もないか（F の代わりに「いまは呼べない」の絵を出す）
 func rack_refused() -> bool:
 	var r = get_parent().get("sled_rack")
 	if r == null or craft == null or mode != Mode.WALK or menu_open or shopping or not r.can_use(self):
 		return false
 	var l: Dictionary = craft.rack_list(id)
-	return l.on.is_empty() and l.free.is_empty() and not l.busy.is_empty() and not _sled_in_reach()
+	return l.on.is_empty() and l.free.is_empty() and l.touched.is_empty() and not l.busy.is_empty() and not _sled_in_reach()
 
 
 ## F でつかめる（紐の先か、つかむ所に手が届く）ソリがそばにあるか

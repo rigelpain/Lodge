@@ -58,7 +58,8 @@ extends Node
 ##   peg       {slot, sled, at}  手のペグの束から 1 本を、ソリ（sled は main からのパス）の前の雪の at に刺し、引き紐の先を結ぶ。
 ##                             ソリはそこに留まる（sled.gd の peg_to）。束の本数が 0 になれば持ち物から消える。ev.color に玉の色
 ##   unpeg     {sled}            ソリのペグを抜く（誰でも。抜いたペグは使い切りで消える）。ソリはまた滑れる
-##   rack_in   {id, u}         自分のソリ（id）を立てかけ台（sled_rack.gd）へ戻す。乗っている・つかんでいる・紐を持っている・ペグで留めている間は断る。
+##   rack_in   {id, u}         自分のソリ（id）を立てかけ台（sled_rack.gd）へ戻す。ほかの人が乗っている・つかんでいる・紐を持っていても戻せて、その人たちはその場で降りる・手が離れる
+##                             （2026-11-06 代表）。ペグで留めている間は断る。
 ##                             ソリはその場で折り紙に畳まれて消え、台に現れる。u は台の置き場（ホストが決める）。名札のないソリは対象外
 ##   rack_out  {id, at, yaw}   台の自分のソリを、前の雪の上へ持ち出す（ホストが空いた所を決める）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
@@ -865,8 +866,8 @@ func _apply(ev: Dictionary) -> bool:
 			var rack: Node3D = world.get("sled_rack") if world else null
 			if s == null or not is_instance_valid(s) or rack == null or int(s.owner_id) != who or s.kind == "sack":
 				return false
-			if not replay:   # ホストが確かめる: だれも触っていない・台の前にいる・台に空きがある
-				if not rack_free(s) or racked.has(id) or not rack.in_reach(_person(who)):
+			if not replay:   # ホストが確かめる: ペグで留めていない・台の前にいる・台に空きがある
+				if is_instance_valid(s.peg) or racked.has(id) or not rack.in_reach(_person(who)):
 					return false
 				var u: float = rack.fit(s.kind, _rack_taken())
 				if is_nan(u):
@@ -975,15 +976,16 @@ func _free(s: Node3D) -> bool:
 	return rack_free(s) and not s.racked
 
 
-## 立てかけ台へ戻せるか: だれも触っていなくて、ペグで留めていない（2026-11-04 代表: ペグで留めたソリは呼べない）
+## だれも触っていなくて、ペグで留めていない（畳む・仲間が使う・立てかけ台へ先に呼ぶソリ。2026-11-04 代表: ペグで留めたソリは呼べない）
 func rack_free(s: Node3D) -> bool:
 	return s.riders.is_empty() and s.holders.is_empty() and s.rope_holder == null and not is_instance_valid(s.peg)
 
 
-## 自分のソリのうち、台に立てかけてあるもの・台へ戻せるもの・いま触られていて戻せないもの {"on": [...], "free": [...], "busy": [...]}。
+## 自分のソリのうち、台に立てかけてあるもの・だれも触っていないもの・ほかの人が触っているもの（どちらも戻せる）・ペグで留めてあって戻せないもの
+## {"on": [...], "free": [...], "touched": [...], "busy": [...]}。
 ## 名札のないソリ（持ち主なし）とロッジのソリは対象外
 func rack_list(who: int) -> Dictionary:
-	var out := {"on": [], "free": [], "busy": []}
+	var out := {"on": [], "free": [], "touched": [], "busy": []}
 	for id in sleds:
 		var s: Node3D = sleds[id]
 		if not is_instance_valid(s) or s.is_queued_for_deletion() or int(s.owner_id) != who or s.kind == "sack":
@@ -991,7 +993,7 @@ func rack_list(who: int) -> Dictionary:
 		if racked.has(id):
 			out.on.append(s)
 		elif not s.racked:   # 台から降りている途中は数えない
-			out["free" if rack_free(s) else "busy"].append(s)
+			out["free" if rack_free(s) else "busy" if is_instance_valid(s.peg) else "touched"].append(s)
 	return out
 
 
