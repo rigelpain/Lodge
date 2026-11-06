@@ -347,6 +347,12 @@ func _body_state(p: CharacterBody3D, mode: int) -> Dictionary:
 		s["rp"] = d.rock_at
 		s["rt"] = d.rock_turns
 		s["rr"] = d.rock_roll
+	if d.flung != 0:   # ソリに轢かれて吹き飛んでいる（flung.gd）。回る角は送らず、それぞれの人形がコマで数える
+		s["fl"] = d.flung
+		s["fd"] = d.flung_dir
+		s["fs"] = d.flung_spin
+		s["fn"] = d.flung_n
+		s["fh"] = d.flung_hops
 	# 体の調子: 紙の水（damp.gd、整数）。ホストの画面で押す力に効き、ほかの画面で人形の見た目に出る
 	if main.damp:
 		s["dw"] = int(roundf(main.damp.water_of(p.id)))

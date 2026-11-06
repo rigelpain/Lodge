@@ -111,6 +111,19 @@ var _roll: Node3D            # 丸めた米袋（帯か右手）
 var _roll_hip: Node3D
 var _roll_hand: Node3D
 var airborne := false
+var flung := 0               # ソリに轢かれて吹き飛んでいる（flung.gd）: 0 ふだん、1 飛んでいる、2 倒れている、3 起き上がる（持ち主が毎フレーム入れる）
+var flung_dir := Vector3.ZERO   # 飛ぶ向き（世界、水平）
+var flung_spin := 0.0        # 飛んでいるあいだ 1 コマに回る量 (rad)
+var flung_n := Vector3.UP    # 倒れている所の雪の向き
+var flung_hops := 0          # 跳ねた回数（増えたら雪の粉を出す）
+var _tumble := 0.0           # いま体ごと回っている角 (rad)。コマで刻む。0 で立つ、π/2 で仰向け
+var _lay := 0.0              # 倒れている割合（0 立つ 〜 1 雪の上）。体の中心が雪の近くまで下がる
+var _lay_n := Vector3.UP     # 倒れている雪の向き（コマで刻む）
+var _fl_axis := Vector3.RIGHT   # 体ごと回る軸（世界）
+var _fl_frame := -1          # 回す量を最後に数えたコマ
+var _fl_stage := 0           # 前のコマの flung
+var _fl_k := 0               # いまの段に入ってからのコマ数
+var _fl_hops := 0
 var _air_n := 0               # 宙にいるコマの数
 var _land := 0                # 着地の膝の曲げの残りコマ（2 → 1 → 0）
 var waving := false
@@ -323,6 +336,9 @@ func play(ev: Dictionary) -> void:
 		var h: Array = Palm.HANDS.get(ev.hands, ["", ""])
 		hand_shapes = [h[0], h[1]]
 		_hands_frame = int(ev.frame)
+		return
+	if ev.kind == "flung":
+		emote = {}   # 吹き飛ぶ姿勢は flung が決める（途中の身ぶりはやめる）
 		return
 	if ev.kind == "breath_end":
 		if emote.get("kind", "") == "breath":
@@ -973,7 +989,7 @@ func _drum_sprawl() -> float:
 ## 胴の中で、手足と頭を戸の向き（spin_axis）のまわりに flop の角だけ振る（前腕とすねは少し遅れて半ばほど）
 func _flop_limbs() -> void:
 	if _foot_shade:
-		_foot_shade.visible = spin_axis == Vector3.ZERO
+		_foot_shade.visible = spin_axis == Vector3.ZERO and _tumble == 0.0 and _lay == 0.0
 	if spin_axis == Vector3.ZERO or flop.is_empty():
 		return
 	var f := (skel.global_transform.basis.inverse() * spin_axis).normalized()
@@ -1130,7 +1146,7 @@ func _physics_process(dt: float) -> void:
 		pos = rock_at + r * (pos - rock_at) + ax.cross(Vector3.UP).normalized() * (rock_roll * rock)
 	if drum_fit != 1.0:
 		b = b.scaled(Vector3.ONE * drum_fit)
-	global_transform = Transform3D(b, pos)
+	global_transform = _flung_xform(b, pos) if _tumble != 0.0 or _lay > 0.0 else Transform3D(b, pos)
 
 	# 歩みは進んだ道のりで刻む（足と地面のずれを小さく）
 	if _last == Vector3.INF:
@@ -1223,6 +1239,7 @@ func _pose() -> void:
 	var amp := asin(clampf(stride / (4.0 * maxf(leg, 0.1)), 0.0, 0.7)) if _speed > 0.25 else 0.0
 	if dragged and act == Act.PUSH:
 		amp = 0.0   # 引きずられているときは歩かない（足は雪をすべる）
+	_flung_step()
 	var ph := _phase
 	var bend := 0.0
 	var X := Vector3.RIGHT
@@ -1292,7 +1309,9 @@ func _pose() -> void:
 			elif sit_stage == 2:
 				bend = _drum_sprawl() if spin_axis != Vector3.ZERO else _sit_chair()
 		_:
-			if airborne:
+			if flung != 0:
+				bend = _flung_legs()
+			elif airborne:
 				for s in ["L", "R"]:
 					_turn_axis("thigh." + s, X, 0.5 if s == "L" else 0.15)
 					_turn_axis("shin." + s, X, -0.9)
@@ -1401,8 +1420,10 @@ func _pose() -> void:
 
 	if em[1] >= 0:
 		_emote_arms(em[0], em[1])
+	if flung != 0:
+		_flung_arms()
 	_plan_palms(em[0], em[1])
-	if em[1] < 0 and waving and _hold[1] == null and hand_shapes[0] == "":
+	if em[1] < 0 and waving and _hold[1] == null and hand_shapes[0] == "" and flung == 0:
 		# 右手を上げて振る。4 コマで 1 往復
 		var k: float = [0.55, 0.1, -0.35, 0.1][_frame % 4]
 		_aim(_id("upper_arm.R"), Vector3(0.7, 0.65, -0.15))
@@ -1414,6 +1435,8 @@ func _pose() -> void:
 		var hp := skel.global_transform * _head_of(hi)
 		# 見ている所が決まっていなければ、指している所を見る（あなたは顔と指さしを別々に向けられる）
 		var look := gaze if gaze != Vector3.INF else (point if point != Vector3.INF else hp + global_basis * Vector3(0, -0.05, -1))
+		if flung != 0:
+			look = hp + global_basis * Vector3(0, -0.05, -1)   # 吹き飛んでいるあいだは、首は体のまま（見回さない）
 		if spin_axis != Vector3.ZERO:
 			look = hp + spin_axis * 6.0   # 乾燥機の胴の中: 顔を丸い戸の窓へ（外から顔が見える）
 		# 顔の向きは相互行為の手がかり。首と頭で大きく回し、届かない分は胸も少し回す
@@ -1523,6 +1546,123 @@ func _grip_points() -> Array:
 			p.y = 0.48
 		pts.append(p)
 	return pts
+
+
+# ---------------------------------------------------------------- ソリに轢かれて吹き飛ぶ（動きは flung.gd）
+
+## 体ごとの回りと、倒れる割合を 1 コマ進める。どの画面の人形も、届いた段からここで数える（回る角までは送らない）
+func _flung_step() -> void:
+	var host := get_parent() as Node3D
+	var n := maxi(_frame - _fl_frame, 1) if _fl_frame >= 0 else 1
+	_fl_frame = _frame
+	if flung != _fl_stage:
+		if _fl_stage == 1 and flung == 2:
+			_flung_puff(host)
+		if flung == 1:
+			_fl_hops = 0
+			_tumble = wrapf(_tumble, -PI, PI)
+		_fl_stage = flung
+		_fl_k = 0
+	else:
+		_fl_k += n
+	if flung_dir != Vector3.ZERO:
+		var ax := Vector3.UP.cross(flung_dir)
+		if ax.length() > 0.01:
+			_fl_axis = ax.normalized()   # この軸で正に回すと、頭が飛ぶ向きへ倒れる
+	match flung:
+		1:
+			_tumble += flung_spin * n
+			_lay = 0.0
+			if flung_hops != _fl_hops:
+				_fl_hops = flung_hops
+				_flung_puff(host)
+		2:
+			# 着いた: 仰向け（π/2）へ、残りを近い向きから寄せる。体の中心は雪の近くまで
+			var err := wrapf(PI * 0.5 - _tumble, -PI, PI)
+			_tumble = PI * 0.5 - err + clampf(err, -1.1 * n, 1.1 * n)
+			_tumble = wrapf(_tumble, -PI, PI)
+			_lay = move_toward(_lay, 1.0, 0.5 * n)
+			_lay_n = flung_n
+		_:
+			# 起き上がる（6 コマ）。出来事の順が前後して flung が 0 に戻っていても、ここで立つ
+			var step := (PI * 0.5 / 6.0) * n
+			_tumble = move_toward(wrapf(_tumble, -PI, PI), 0.0, step)
+			_lay = move_toward(_lay, 0.0, n / 6.0)
+			if _lay > 0.0:
+				_lay_n = flung_n
+
+
+## 回っている・倒れている体の姿。体のまんなかを中心に回し、倒れた分だけ中心を雪の近くへ下げる
+func _flung_xform(b: Basis, pos: Vector3) -> Transform3D:
+	var h := height()
+	var r := Basis(_fl_axis, _tumble)
+	if _lay > 0.0:
+		var tilt := Vector3.UP.cross(_lay_n)
+		if tilt.length() > 0.001:
+			r = Basis(tilt.normalized(), asin(clampf(tilt.length(), 0.0, 1.0)) * _lay) * r
+	var c := pos + Vector3.UP * lerpf(h * 0.5, FLUNG_LIE_H * _scale, _lay)
+	return Transform3D(r * b, c + r * (Vector3.DOWN * h * 0.5))
+
+
+const FLUNG_LIE_H := 0.16   # 倒れているとき、体のまんなかを雪からこれだけ上に (m)
+
+
+func _flung_puff(host: Node3D) -> void:
+	var w := host.get_parent() as Node3D
+	if w:
+		preload("res://snowball.gd").splat_at(w, host.global_position + Vector3.UP * 0.1, Vector3.UP)
+
+
+## 脚（コマで刻む）。胸の曲げを返す
+func _flung_legs() -> float:
+	var X := Vector3.RIGHT
+	var Z := Vector3.BACK
+	match flung:
+		1:
+			# 飛んでいる: 当たった所から体がくの字に折れ、脚がソリのほうへ残る。そのあと宙で脚をばたつかせる
+			var fold := clampf(1.0 - _fl_k / 3.0, 0.0, 1.0)
+			var k: float = [1.0, 0.3, -1.0, -0.3][_frame % 4]
+			_turn_axis("thigh.L", X, 0.85 + 0.5 * fold + 0.4 * k)
+			_turn_axis("thigh.R", X, 0.85 + 0.5 * fold - 0.4 * k)
+			_turn_axis("shin.L", X, -0.5 - 0.35 * k)
+			_turn_axis("shin.R", X, -0.5 + 0.35 * k)
+			_turn_axis("thigh.L", Z, -0.18)
+			_turn_axis("thigh.R", Z, 0.18)
+			return 0.2 + 0.5 * fold
+		2:
+			# 大の字: 脚を開いて雪の上に。着いて 2 コマは、はずみで脚が浮く
+			var land := 0.5 if _fl_k < 2 else 0.0
+			_turn_axis("thigh.L", Z, -0.32)
+			_turn_axis("thigh.R", Z, 0.32)
+			_turn_axis("thigh.L", X, 0.1 + land)
+			_turn_axis("thigh.R", X, 0.1 + land * 0.6)
+			_turn_axis("shin.L", X, -0.15 - land * 0.5)
+			_turn_axis("shin.R", X, -0.15)
+			return -0.05 + land * 0.5
+		_:
+			# 起き上がる: 膝を立てて、上半身から起きる
+			var k := clampf(1.0 - _fl_k / 6.0, 0.0, 1.0)
+			_turn_axis("thigh.L", X, 1.2 * k)
+			_turn_axis("thigh.R", X, 0.85 * k)
+			_turn_axis("shin.L", X, -1.5 * k)
+			_turn_axis("shin.R", X, -1.2 * k)
+			return 0.55 * k
+
+
+## 腕（コマで刻む）。飛んでいるあいだは、体に遅れてソリのほうへ残り、ばたつく。倒れると大の字
+func _flung_arms() -> void:
+	match flung:
+		1:
+			var k: float = [1.0, 0.3, -1.0, -0.3][_frame % 4]
+			_arm("R", Vector3(0.6, 0.35 + 0.3 * k, -0.7), Vector3(0.45, 0.65 + 0.4 * k, -0.6))
+			_arm("L", Vector3(0.6, 0.35 - 0.3 * k, -0.7), Vector3(0.45, 0.65 - 0.4 * k, -0.6))
+		2:
+			_arm("R", Vector3(0.95, 0.3, 0.1), Vector3(0.9, 0.42, 0.12))
+			_arm("L", Vector3(0.95, 0.25, 0.05), Vector3(0.92, 0.32, 0.1))
+		_:
+			var k := clampf(1.0 - _fl_k / 6.0, 0.0, 1.0)
+			_arm("R", Vector3(0.5, -0.75, 0.3 * k), Vector3(0.35, -0.85, 0.25 * k))
+			_arm("L", Vector3(0.5, -0.75, 0.3 * k), Vector3(0.35, -0.85, 0.25 * k))
 
 
 # ---------------------------------------------------------------- 足もとの影

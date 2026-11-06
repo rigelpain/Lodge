@@ -522,7 +522,7 @@ func _update_walkers(dt: float) -> void:
 				_play_step(who, w, _push_name(who), db_step + 1.0 + 4.0 * k, rng.randf_range(0.8, 0.88))
 				w.acc = 0.0   # 着いた足から歩みを数えなおす
 			w.air = 0.0
-		if free and speed > 0.5 and grounded:
+		if free and speed > 0.5 and grounded and who.doll.flung == 0:   # 吹き飛んで雪をすべるあいだは、足音を出さない
 			w.acc += speed * dt
 			var stride := STRIDE + 0.3 * clampf((speed - 4.0) / 3.0, 0.0, 1.0)
 			if w.acc >= stride:
@@ -1130,6 +1130,7 @@ const EMOTE_SOUNDS := {
 	"huh": [[2, "voice_unq", 3, -5.0, 1.0]],
 	"oi": [[2, "voice_oi", 3, -1.0, 1.0]],    # 遠くまで届く（_emote_sound で、届く距離を長く）
 	"hit": [[0, "voice_surprise", 3, -4.0, 1.0]],   # 雪玉が当たって、わっ
+	"flung": [[0, "voice_surprise", 3, -2.0, 1.08], [0, "till_snow", 3, -8.0, 0.8]],   # ソリに轢かれて、わっ（flung.gd）
 	"whiff": [[2, "swish", 2, -10.0, 1.0]],
 	"throw": [[0, "swish", 2, -8.0, 1.15]],
 	"clap": [[2, "felt_pat", 3, -12.0, 1.3], [6, "felt_pat", 3, -12.0, 1.25], [10, "felt_pat", 3, -12.0, 1.3], [14, "felt_pat", 3, -12.0, 1.2]],
@@ -1169,7 +1170,7 @@ func _on_emote(ev: Dictionary) -> void:
 			return
 	if who == null or not EMOTE_SOUNDS.has(ev.kind):
 		return
-	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "oi", "hit", "breath"]
+	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "oi", "hit", "flung", "breath"]
 	for s in EMOTE_SOUNDS[ev.kind]:
 		var p: float = s[4] * (rng.randf_range(0.98, 1.02) if voice else rng.randf_range(0.95, 1.05))
 		# 声（voice_*）はその人形の 1 つ。ほかの音は毎回選ぶ

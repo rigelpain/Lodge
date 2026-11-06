@@ -1,6 +1,7 @@
 extends CharacterBody3D
 
 const Doll := preload("res://doll.gd")
+const Flung := preload("res://flung.gd")
 const Emotes := preload("res://emotes.gd")
 const Palm := preload("res://palm.gd")
 const Seats := preload("res://seats.gd")
@@ -93,6 +94,7 @@ const ROAM_AREAS := {
 }
 
 var sled: RigidBody3D
+var fling: Flung             # ソリに轢かれて吹き飛ぶ（flung.gd）
 var player: Node3D          # この画面で遊ぶ人。いないとき（確かめ用）は仲間だけで滑る
 var side := 1
 var state := State.PUSH
@@ -174,6 +176,7 @@ const HEARTH_LIKE := 0.7     # 次の席を選ぶとき、暖炉のまわりか�
 
 func _ready() -> void:
 	add_to_group("bots")
+	fling = Flung.new(self)
 	_col = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -258,6 +261,24 @@ func get_off() -> void:
 	state = State.PUSH
 
 
+## ソリに轢かれて吹き飛ぶ（flung.gd）。吹き飛んでいるあいだは、ほかのことをしない。起き上がれば、いまの役目に戻る
+func _run_over_step(dt: float) -> bool:
+	if not fling.active():
+		if lounge or seat_i >= 0 or state == State.RIDE:
+			return false
+		var hit := fling.find_hit(sled if handle != Vector3.INF else null)   # つかんでいるソリには飛ばされない（引きずられる）
+		if hit.is_empty():
+			return false
+		if handle != Vector3.INF:
+			let_go()
+			_regrab = REGRAB_WAIT
+		fling.start(hit)
+	fling.step(dt)
+	_pose_doll()
+	fling.pose()
+	return true
+
+
 func _uphill(p: Vector3) -> Vector3:
 	if not _team.is_empty():   # 組: 次の点へ。頂上に着いたら、滑る向きへ
 		var w: Vector2 = _team.route[0] if not _team.route.is_empty() else _team.goal
@@ -290,6 +311,8 @@ func _physics_process(dt: float) -> void:
 	_update_replies(dt)
 	_mind_lamp(dt)
 	_regrab = maxf(0.0, _regrab - dt)
+	if _run_over_step(dt):
+		return
 	if lounge:
 		_lounge(dt)
 		return
@@ -599,7 +622,7 @@ func _on_emote(ev: Dictionary) -> void:
 		if ev.kind == "hit" and handle != Vector3.INF:
 			let_go()   # びっくりして手を離す
 			_regrab = REGRAB_WAIT
-		if ev.kind == "hit":
+		if ev.kind == "hit" or ev.kind == "flung":
 			_wind = -1.0   # 振りかぶっていても、のけぞって投げられない
 		if ev.kind == "hit" and randf() < 0.6:
 			_reply(randf_range(0.7, 1.0), {"kind": "wa"})   # 当たっても楽しい

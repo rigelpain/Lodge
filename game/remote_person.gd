@@ -237,6 +237,12 @@ func _pose_doll() -> void:
 	doll.effort = bool(_s.get("e", false))
 	doll.dragged = bool(_s.get("dr", false))
 	doll.airborne = bool(_s.get("air", false))
+	doll.flung = int(_s.get("fl", 0))   # ソリに轢かれて吹き飛んでいる（flung.gd）
+	if doll.flung != 0:
+		doll.flung_dir = _s.get("fd", Vector3.ZERO)
+		doll.flung_spin = float(_s.get("fs", 0.0))
+		doll.flung_n = _s.get("fn", Vector3.UP)
+		doll.flung_hops = int(_s.get("fh", 0))
 	doll.facing = _s.get("f", Vector3.ZERO)
 	doll.gaze = _s.get("g", Vector3.INF)
 	doll.rope_hand = rope_hand() if mode == Mode.ROPE else Vector3.INF

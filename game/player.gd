@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
+const Flung := preload("res://flung.gd")
 const FpHands := preload("res://fp_hands.gd")
 const Emotes := preload("res://emotes.gd")
 const EmoteRing := preload("res://emote_ring.gd")
@@ -65,6 +66,8 @@ const LET_GO_SPEED := 5.0    # 紐を持っていて、ソリがこれより速�
 enum Mode { WALK, GRIP, RIDE, ROPE, SIT, DRUM }
 
 var sled: RigidBody3D
+var fling: Flung             # ソリに轢かれて吹き飛ぶ（flung.gd）
+var _fl_drop := 0.0          # 三人称のカメラの中心を下げている量（倒れているあいだ）
 var cam: Camera3D
 var hands: Array[Node3D] = []
 var doll: Doll               # 自分の体（笠と千代紙の人形）。一人称には映さず、右上の映像と三人称と影に出る
@@ -192,6 +195,7 @@ var _sit_keys_free := false  # 座ってから、移動キーをいったん離�
 
 
 func _ready() -> void:
+	fling = Flung.new(self)
 	_col = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -387,6 +391,8 @@ func _unhandled_input(e: InputEvent) -> void:
 		_pan_hand(e.delta)
 	elif e is InputEventMagnifyGesture and not menu_open:
 		_pinch(e.factor)
+	elif fling.active() and (e is InputEventMouseButton and e.pressed and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or e is InputEventKey and e.pressed and e.physical_keycode != KEY_C):
+		pass   # 吹き飛んでいるあいだは、見回す・視点を替えるだけ
 	elif e is InputEventMouseButton and e.pressed:
 		if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]:
 			var step := -1 if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_LEFT] else 1
@@ -824,6 +830,7 @@ func _physics_process(dt: float) -> void:
 
 	if mode == Mode.WALK:
 		_pick_sled()
+	_check_run_over()
 	match mode:
 		Mode.RIDE:
 			global_position = sled.to_global(seat)
@@ -836,8 +843,11 @@ func _physics_process(dt: float) -> void:
 			_walk(dt, true)
 			_keep_above_ground(FALL_NET)
 		Mode.WALK:
-			_walk(dt, false)
-			_keep_above_ground(FALL_NET)
+			if fling.active():
+				fling.step(dt)
+			else:
+				_walk(dt, false)
+				_keep_above_ground(FALL_NET)
 		Mode.SIT:
 			_sit_step(dt)
 		Mode.DRUM:
@@ -849,6 +859,26 @@ func _physics_process(dt: float) -> void:
 	_tag_hold_step(dt)
 	_pose_hands(dt)
 	_pose_doll()
+
+
+## 動いているソリに当たったら吹き飛ぶ（flung.gd）。乗っている・座っている人は飛ばない。つかんでいるソリには飛ばされない（引きずられる）。
+## 別のソリに当たったら、持っているソリや紐から手を離して飛ぶ
+func _check_run_over() -> void:
+	if mode != Mode.WALK and mode != Mode.GRIP and mode != Mode.ROPE:
+		return
+	var hit := fling.find_hit(sled if mode == Mode.GRIP else null)
+	if hit.is_empty():
+		return
+	if mode != Mode.WALK:
+		let_go()
+	if pointing:
+		_stop_point()
+	if hands_name != "":
+		set_height("")
+	_winding = false
+	_eating = false
+	_fall_v = 0.0
+	fling.start(hit)
 
 
 ## 人形に、いまの動きを伝える（姿勢は人形が 12 コマで刻む）。Q を押しているあいだ手を振る（仮のキー）
@@ -919,6 +949,7 @@ func _pose_doll() -> void:
 		# 帯の左のランタン
 		doll.lantern = craft.lantern(id).get("look", "")
 		doll.lantern_lit = craft.lamp_on(id)
+	fling.pose()
 
 
 ## 右クリックで指さしを入れたり切ったりする。入れているあいだ、腕はいま見ている先（画面のまんなかが当たる所）を追う。
@@ -1139,8 +1170,9 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 		jolt = (0.015 if f % 2 == 0 else -0.015) * _drag_k * calm
 		reel = sin(f * 0.55) * 0.09 * _drag_k * calm
 		dip = (0.1 if f % 14 < 3 else 0.0) * _drag_k * calm
+	var fv := fling.view(Doll.frame_index(), 1.0 if bob_enabled else 0.3)   # 吹き飛んでいるあいだ、視点が回って低くなる（flung.gd）
 	if not third:
-		var eye := Vector3(0, eye_y - 0.3 * _drag_k - dip + jolt, -0.35 * _drag_k)
+		var eye := Vector3(0, eye_y - 0.3 * _drag_k - dip + jolt - fv.z, -0.35 * _drag_k)
 		if mode == Mode.RIDE and doll.sack_seated():
 			# 乗っているときは、座った人形の目の所（席や人形が変わっても合う）。ソリが傾けば一緒に傾く。
 			# 乗り降りは同じ lerp で、すっと立ち上がる・腰を下ろす。米袋は、袋を広げ終えて腰を下ろしてから下がる
@@ -1165,7 +1197,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
 		_dip_shown = _land_dip(dt)
 		cam.position.y -= _dip_shown
-		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0)
+		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5 + fv.y, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0 + fv.x)
 		return
 	# 三人称: 頭の少し上を中心に、後ろからカメラの距離と高さで見る。マウスの上下で回り込む。
 	# 頭からカメラへ玉を滑らせて、壁・天井・地面・ソリに当たる手前で止める（埋まらない）。
@@ -1173,7 +1205,8 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	# カメラは頭のまわりをマウスの上下で回り、頭を見る向き（basis）を決める。そのあと、人形の目の高さの線が画面の cam_frame の
 	# 高さに来るよう、カメラを自分の上下の向きに平行にずらす（見下ろす角度は変えない。Camera3D の v_offset と同じ）
 	_dip_shown = 0.0   # 着地の沈みは一人称だけ（三人称は人形の膝で見せる）
-	var pivot := Vector3(0, 1.6, 0)
+	_fl_drop = move_toward(_fl_drop, fling.pivot_drop(), dt * 3.0)
+	var pivot := Vector3(0, 1.6 - _fl_drop, 0)
 	if mode == Mode.DRUM:
 		pivot = to_local(_drum.drum_center())   # 乾燥機の中: 胴の真ん中を見る（カメラは戸の前へ出る）
 	elif mode == Mode.SIT and _sit_stage > 0:
@@ -1771,6 +1804,8 @@ func emote(kind: String) -> void:
 
 ## その場でする身ぶりの途中か（歩けない、つかめない）
 func rooted() -> bool:
+	if fling.active():
+		return true   # 吹き飛んでいる途中
 	if Doll.frame_index() < busy_until:   # 裁ちばさみで糸を切っているあいだ
 		return true
 	if _em.is_empty():
@@ -1798,6 +1833,8 @@ func _on_emote(ev: Dictionary) -> void:
 			# びっくりしてソリの縁や紐から手を離す（乗っている人は降ろさない）。止めるにはもう一度 F
 			if mode == Mode.GRIP or mode == Mode.ROPE:
 				let_go()
+		"flung":
+			_winding = false   # 手を離すのは _check_run_over で済んでいる
 
 
 ## 持っている雪玉の数（配り役が数える。左の袖のストックと右手の分を合わせて）
