@@ -4,18 +4,25 @@ extends SceneTree
 ## --at=x,z で遊ぶ人の立つ所を替える（既定はスタート）。--near を足すと、遊ぶ人をゆきのそばに置き続ける（当たりを見て歩く道も試す）。
 ## --rich を足すと、はじめから財布に 200 入れる（ソリを買うのを早く見る）。仲間どうしの雪合戦・ソリ運び・買い物も 1 行ずつ出す。
 ## 出来事ごとに 1 行、60 秒ごとに全員の表、最後に山ごとの回数。
+## 詰まりの数（最後の「詰まり:」の行）: 頂上以外で米袋を広げた回数、短い滑り（米袋で SHORT_RIDE m 未満）、諦めた点（着かずに次の点へ進んだ）、
+## 動けなくなった回数（歩いているのに STUCK_T 秒で 1 m も動かない）、組から抜けた回数（ソリまで着けなかった）、当たりを消して抜けた回数（閉じた所に入り込んだ）。--seed=n で乱数を固定する。
 
 var args := {}
 var main: Node3D
 var _was := {}
 var _stats := {}
 var count := {}
+const SHORT_RIDE := 30.0     # これより短い米袋の滑りは「短い滑り」(m)
+const STUCK_T := 10.0        # 歩いているのに、これだけ 1 m も動かなければ「動けない」(s)
+const OFF_TOP := 10.0        # 頂上か広げる所からこれより離れて広げたら「頂上以外」(m)
 
 
 func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
+	if args.has("seed"):
+		seed(int(args.seed))
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
 	current_scene = main
@@ -77,6 +84,10 @@ func _run() -> void:
 		if b.global_position.y < -20.0:
 			bad += 1
 	_say("数: %s" % str(count))
+	var sacks := 0
+	for b in bots:
+		sacks += (_stats[b].rides as Array).filter(func(r): return r.sack).size()
+	_say("詰まり: 米袋で滑った %d 回 / 頂上以外で広げた %d / 短い滑り %d / 諦めた点 %d / 動けなくなった %d / 組から抜けた %d / 当たりを消して抜けた %d" % [sacks, int(count.get("off_top", 0)), int(count.get("short", 0)), int(count.get("skip", 0)), int(count.get("stuck", 0)), int(count.get("left", 0)), bots.reduce(func(n, b): return n + int(b.get("give_ups") if b.get("give_ups") != null else 0), 0)])
 	for b in bots:
 		_say("%s 財布 %d 自分のソリ %s" % [_name(b), main.craft.wallet(b.id), str(is_instance_valid(b.own_sled))])
 	_say("おわり")
@@ -110,7 +121,7 @@ func _watch(b) -> void:
 		count["team"] = int(count.get("team", 0)) + 1
 	if not team and w.get("team", false):
 		var s = b.sled
-		_say("組おわり %s %s: ソリの所 (%.0f, %.1f, %.0f)" % [_name(b), "乗った" if ride else "抜けた", s.global_position.x, s.global_position.y, s.global_position.z])
+		_say("組おわり %s %s: ソリの所 (%.0f, %.1f, %.0f)、%s の所 (%.1f, %.1f)" % [_name(b), "乗った" if ride else "抜けた", s.global_position.x, s.global_position.y, s.global_position.z, s.kind, b.global_position.x, b.global_position.z])
 		count["board" if ride else "left"] = int(count.get("board" if ride else "left", 0)) + 1
 	w["team"] = team
 	if b._area != w.area:
@@ -122,16 +133,67 @@ func _watch(b) -> void:
 		w.t = _now()
 		w.top_v = 0.0
 		w.ride_area = b._area
-		_say("%s が %s の頂上で米袋を広げた 高さ %.1f 行き先 (%.0f, %.0f)" % [_name(b), b._area, b.global_position.y, b._ride_goal.x, b._ride_goal.y])
+		w.ride_sack = b.sled.kind == "sack"
+		var off := _off_top(b)
+		_say("%s が %s の頂上で%sを広げた 高さ %.1f 所 (%.0f, %.0f) 行き先 (%.0f, %.0f) 頂上から %.0f m%s" % [_name(b), b._area, "米袋" if w.ride_sack else "ソリ", b.global_position.y, b.global_position.x, b.global_position.z, b._ride_goal.x, b._ride_goal.y, off, " ※頂上以外" if off > OFF_TOP else ""])
+		if w.ride_sack and off > OFF_TOP:
+			count["off_top"] = int(count.get("off_top", 0)) + 1
 	if ride and is_instance_valid(b.sled):
 		w.top_v = maxf(w.top_v, b.sled.linear_velocity.length())
 		w.last = b.global_position
 	if w.ride and not ride:
 		var p: Vector3 = w.last
-		var r := {"area": w.ride_area, "dist": Vector2(p.x - w.start.x, p.z - w.start.z).length(), "drop": w.start.y - p.y, "t": _now() - w.t, "top_v": w.top_v, "end": Vector2(p.x, p.z)}
+		var r := {"sack": w.ride_sack, "area": w.ride_area, "dist": Vector2(p.x - w.start.x, p.z - w.start.z).length(), "drop": w.start.y - p.y, "t": _now() - w.t, "top_v": w.top_v, "end": Vector2(p.x, p.z)}
 		_stats[b].rides.append(r)
+		if r.sack and r.dist < SHORT_RIDE:
+			count["short"] = int(count.get("short", 0)) + 1
 		_say("%s が滑り終えた %s: %.0f m、%.1f m 下へ、%.0f 秒、上限 %.1f m/s" % [_name(b), r.area, r.dist, r.drop, r.t, r.top_v])
 	w.ride = ride
+	_watch_stuck(b, w, ride, team)
+
+
+## 頂上か広げる所までの距離（山の道の終わりに着いていれば小さい）
+func _off_top(b) -> float:
+	var a: Dictionary = b.ROAM_AREAS.get(b._area, {})
+	if a.is_empty():
+		return 0.0
+	var at := Vector2(b.global_position.x, b.global_position.z)
+	var d: float = at.distance_to(a.top)
+	if a.has("launch"):
+		d = minf(d, at.distance_to(a.launch))
+	return d
+
+
+## 歩いているのに動かない・着かずに次の点へ進んだのを数える（動けなければ、まわりの物を 1 度だけ出す）
+func _watch_stuck(b, w: Dictionary, ride: bool, team: bool) -> void:
+	var at := Vector2(b.global_position.x, b.global_position.z)
+	var walking: bool = not ride and not team and b._area != "" and not b._route.is_empty() and b.handle == Vector3.INF and b._five_with < 0 and not b._in_duel() and b._help_t <= 0.0
+	var n: int = b._route.size()
+	if walking and n == int(w.get("route_n", -1)) - 1 and (w.wp as Vector2).distance_to(at) > 2.5:
+		count["skip"] = int(count.get("skip", 0)) + 1
+		_say("%s 着かずに次の点へ: 所 (%.1f, %.1f, %.1f) 点 (%.0f, %.0f) 山 %s 残り %d%s" % [_name(b), at.x, b.global_position.y, at.y, w.wp.x, w.wp.y, b._area, n, " 遠い" if b.far else ""])
+	w["route_n"] = n
+	if n > 0:
+		w["wp"] = b._route[0]
+	if not walking or at.distance_to(w.get("still_at", Vector2.INF)) > 1.0:
+		w["still_at"] = at
+		w["still_t"] = _now()
+		w["still_said"] = false
+	elif _now() - float(w.still_t) > STUCK_T and not w.still_said:
+		w["still_said"] = true
+		count["stuck"] = int(count.get("stuck", 0)) + 1
+		_say("%s 動けない: 所 (%.1f, %.1f, %.1f) 点 (%.0f, %.0f) 山 %s 残り %d 当たり %s" % [_name(b), at.x, b.global_position.y, at.y, w.wp.x, w.wp.y, b._area, n, _touching(b)])
+
+
+## いま当たっている物の名前
+func _touching(b) -> String:
+	var out := []
+	for i in b.get_slide_collision_count():
+		var c: KinematicCollision3D = b.get_slide_collision(i)
+		var o = c.get_collider()
+		if o is Node and absf(c.get_normal().y) < 0.7:
+			out.append("%s%s" % [(o as Node).name, (c.get_position() as Vector3).snapped(Vector3(0.1, 0.1, 0.1))])
+	return str(out)
 
 
 func _table(bots: Array) -> void:
