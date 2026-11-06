@@ -443,7 +443,7 @@ func _physics_process(dt: float) -> void:
 		if h.t <= 0.0:
 			_parked.erase(bid)
 			if guarded(int(h.who)):   # 待つあいだに別の玉が当たっていた: 崩れるだけ
-				hub._emit({"kind": "splat", "frame": Doll.frame_index(), "point": h.point, "normal": -(h.dir as Vector3)})
+				hub._emit({"kind": "splat", "frame": Doll.frame_index(), "point": h.point, "normal": -(h.dir as Vector3), "by": int(h.by)})
 			else:
 				hub.hit_person(int(h.by), int(h.who), h.point, h.dir)
 	var now := Doll.frame_index()

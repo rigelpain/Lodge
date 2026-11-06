@@ -100,7 +100,7 @@ func _on_body(body: Node) -> void:
 	if hit:
 		p = hit.position
 		n = hit.normal
-	hub.ball_splat(p, n, body)
+	hub.ball_splat(p, n, body, thrower)
 	queue_free()
 
 

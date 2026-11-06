@@ -7,10 +7,10 @@ const Craft := preload("res://craft.gd")
 ## 場にあるものしか鳴らさない。外は響かない。言葉はない（声は言葉にならない「ワ〜」「ウン」「ンーン」だけ）。
 ##
 ## wav は sound/wav/ から実行時に読む（原型なので res:// の外。書き出すときは res:// に写す）。
-## バス: Outdoor（外。ロッジの中ではこもる）← Speaker（柱の曲）、Wind（風）
+## バス: Outdoor（外。ロッジの中ではこもる）← Speaker（柱の曲）、Wind（風）、Others（ほかの人の外の音）
 ##       Inside（ロッジの中。短い残響。外からは壁ごしにこもる）、Self（自分の足あと、戸）
 ## main.gd の _make_volume_buses() が、このあとに設定の音量バスを挿す:
-##       Speaker → Music → Outdoor、Inside・Self → SFX → Master（Wind は Outdoor のまま、音量だけ SFX と同じ）、
+##       Speaker → Music → Outdoor、Inside・Self → SFX → Master（Wind と Others は Outdoor のまま、音量だけ SFX と同じ）、
 ##       息・声・スタンプの声は Voice → Master。バスの名前は設定が引くので変えない
 
 const C_SOUND := 340.0          # 音の速さ (m/s)。柱ごとの遅れに使う
@@ -29,6 +29,14 @@ const VEST := Vector3(-13.4, 0.0, 15.2)   # 風除室の中心（glb の座標�
 const VEST_HALF := Vector2(4.0, 2.5)
 const STRIDE := 2.0             # 一歩の長さ (m)
 const STEP_FOOT := 0.13         # ロッジの当たりのこの高さ（ロッジの座標）より下は、段の外の雪の上（いちばん下の段の上面は 0.15）
+## ほかの人（つないだ人・CPU）の音の決まり（2026-11-06 代表「自分以外のキャラの足音などが大きく聞こえる」）。自分の音はこの決まりの外。
+## - 大きさは、同じ音を自分で鳴らすときより OTHER_DROP だけ下から始める。すぐそばでも、それより上がらない（max_db で頭を押さえる）
+## - 外の音は Others のバス（設定の「効果音」が効く）を通す。Outdoor に直に流すと設定の音量が効かず、自分の音より大きくなっていた
+## - 体の音（足音・息・身ぶり・ソリ）は OTHER_UNIT から先、距離が 2 倍になるごとに 12 dB 減り、OTHER_MAX で切れる。
+##   声だけは呼びかけなので遠くまで届く（2 倍で 6 dB）。_emote_sound
+const OTHER_DROP := 3.0         # 自分の音より何 dB 下から始めるか。3D の音はまんなかで聞くと左右それぞれさらに 3 dB 小さいので、聞こえる大きさは約 6 dB 下
+const OTHER_UNIT := 3.0         # この距離 (m) まで同じ大きさ
+const OTHER_MAX := 30.0         # ここ (m) から先は鳴らさない
 
 var world: Node3D
 var sled: RigidBody3D
@@ -54,6 +62,8 @@ var _rush_gate := 1.0
 
 var _runner_fast: AudioStreamPlayer3D
 var _creak: AudioStreamPlayer3D
+var _runner_other: AudioStreamPlayer3D   # 自分が触っていないソリの滑り木ときしみ（ほかの人の音の決まり）
+var _creak_other: AudioStreamPlayer3D
 var _wind_calm: AudioStreamPlayer
 var _wind_rush: AudioStreamPlayer
 var _self_step: AudioStreamPlayer
@@ -145,6 +155,21 @@ func _p3(parent: Node3D, bus: String, db: float, unit := 6.0, max_dist := 60.0) 
 	return p
 
 
+## ほかの人の音の口（上の OTHER_ の決まり）。far なら声のなだらかな減り方
+func _p3_other(parent: Node3D, bus: String, db: float, unit := OTHER_UNIT, max_dist := OTHER_MAX, far := false) -> AudioStreamPlayer3D:
+	var p := _p3(parent, bus, db, unit, max_dist)
+	if not far:
+		p.attenuation_model = AudioStreamPlayer3D.ATTENUATION_INVERSE_SQUARE_DISTANCE
+	p.max_db = db
+	return p
+
+
+## ほかの人の音を鳴らす。どんなに近くても db より大きくならない
+func _shot_other(p: AudioStreamPlayer3D, s: AudioStreamWAV, db: float, pitch := 1.0) -> void:
+	p.max_db = db
+	_shot(p, s, db, pitch)
+
+
 func _shot(p: AudioStreamPlayer3D, s: AudioStreamWAV, db: float, pitch := 1.0) -> void:
 	if s == null:
 		return
@@ -171,6 +196,7 @@ func _make_buses() -> void:
 	_bus("Outdoor", "Master", [lp_out])
 	_bus("Speaker", "Outdoor", [])
 	_bus("Wind", "Outdoor", [])
+	_bus("Others", "Outdoor", [])
 	var rv := AudioEffectReverb.new()   # 木の部屋。短く
 	rv.room_size = 0.25
 	rv.damping = 0.6
@@ -328,20 +354,36 @@ func _make_sled() -> void:
 	_runner_fast.stream = _wav("runner_fast_loop")
 	_runner_fast.play()
 	_creak = _p3(sled, "Outdoor", -14, 4.0, 30.0)
+	_runner_other = _p3_other(sled, "Others", -80)
+	_runner_other.stream = _runner_fast.stream
+	_runner_other.play()
+	_creak_other = _p3_other(sled, "Others", -14.0 - OTHER_DROP)
+
+
+## 自分が押している・引いている・乗っているソリか。それ以外のソリの音は、ほかの人の音の決まりで
+func _sled_is_mine() -> bool:
+	return player == null or (player.sled == sled and player.mode in [player.Mode.GRIP, player.Mode.RIDE, player.Mode.ROPE])
 
 
 func _update_sled(dt: float) -> void:
 	# 滑り木は「しゃー」の 1 本だけ。止まりかけの「ざ、ざ」は代表が要らないと言ったので外した（2026-10-27）
 	var v := sled.linear_velocity.length()
 	var fast := lerpf(-60.0, -6.0, clampf((v - 0.4) / 7.2, 0.0, 1.0)) if v > 0.3 else -80.0
-	_runner_fast.volume_db = lerpf(_runner_fast.volume_db, fast, minf(1.0, dt * 8.0))
+	var mine := _sled_is_mine()
+	_runner_fast.volume_db = lerpf(_runner_fast.volume_db, fast if mine else -80.0, minf(1.0, dt * 8.0))
+	_runner_other.volume_db = lerpf(_runner_other.volume_db, -80.0 if mine else fast - OTHER_DROP, minf(1.0, dt * 8.0))
+	_runner_other.max_db = _runner_other.volume_db
 	_runner_fast.pitch_scale = clampf(0.85 + 0.04 * v, 0.85, 1.25)
+	_runner_other.pitch_scale = _runner_fast.pitch_scale
 	# 押す力が入った瞬間に、まれに木がきしむ
 	_timers.creak -= dt
 	if sled.pushers > 0 and v < 1.5 and _timers.creak <= 0.0:
 		_timers.creak = rng.randf_range(0.5, 1.5)
 		if rng.randf() < 0.12:
-			_shot(_creak, _pick("sled_creak", 3), -14.0, rng.randf_range(0.95, 1.05))
+			if mine:
+				_shot(_creak, _pick("sled_creak", 3), -14.0, rng.randf_range(0.95, 1.05))
+			else:
+				_shot_other(_creak_other, _pick("sled_creak", 3), -14.0 - OTHER_DROP, rng.randf_range(0.95, 1.05))
 
 
 # ---- 風と、滑り出す一瞬 ----------------------------------------------------------------
@@ -423,13 +465,13 @@ func _make_walkers() -> void:
 
 
 ## 歩く人を足す（仲間、通信でつないでいるほかの人。net.gd が来た人を足す）。
-## 足音はその人の所から、外なら Outdoor、ロッジの中なら Inside（短い残響）で鳴らす。remote は届いた姿を写す体（remote_person.gd）
+## 足音はその人の所から、外なら Others、ロッジの中なら Inside（短い残響）で鳴らす。remote は届いた姿を写す体（remote_person.gd）
 func add_walker(who: Node3D, remote := false) -> void:
 	if _walkers.has(who):
 		return
 	_walkers[who] = {"acc": rng.randf(), "push_t": rng.randf(), "breath_t": rng.randf_range(1.0, 3.0), "pushing": 0.0,
-			"step": _p3(who, "Outdoor", -8, 4.0, 40.0), "step_in": _p3(who, "Inside", -8, 4.0, 40.0),
-			"breath": _p3(who, "Voice", -16, 3.0, 20.0), "remote": remote, "last": who.global_position}
+			"step": _p3_other(who, "Others", -10.0 - OTHER_DROP), "step_in": _p3_other(who, "Inside", -10.0 - OTHER_DROP),
+			"breath": _p3_other(who, "Voice", -16.0 - OTHER_DROP, OTHER_UNIT, 20.0), "remote": remote, "last": who.global_position}
 
 
 func _update_walkers(dt: float) -> void:
@@ -460,7 +502,7 @@ func _update_walkers(dt: float) -> void:
 		grounded = not who.doll.airborne if remote else who.is_on_floor()
 		# 引きずられている: かかとが雪をすべる「ざざざ」。踏ん張りの音を速く、速いほど大きく高く。息も上がる
 		var dragged: bool = who.doll.dragged if remote else who.handle != Vector3.INF and sled.is_dragged(who)
-		var db_step := -10.0 if is_player else -8.0
+		var db_step := -10.0   # 自分の大きさ。ほかの人は _play_step で下げる
 		if dragged:
 			var sl: RigidBody3D = who.sled if remote and who.sled else sled
 			var sv := sl.linear_velocity.length()
@@ -508,7 +550,7 @@ func _update_walkers(dt: float) -> void:
 				if is_player:
 					_shot2(w.breath, s, -16.0, rng.randf_range(0.95, 1.05))
 				else:
-					_shot(w.breath, s, -14.0, rng.randf_range(0.9, 1.1))
+					_shot_other(w.breath, s, -16.0 - OTHER_DROP, rng.randf_range(0.9, 1.1))
 		else:
 			w.pushing = maxf(0.0, w.pushing - dt * 2.0)   # 休むと息が落ち着く
 			w.push_t = minf(w.push_t, 0.4)
@@ -660,8 +702,8 @@ func eat(who: Node3D, name_: String, count := 1, me := false) -> void:
 		_shot2(p, _pick(name_, count) if count > 1 else _wav(name_ + "_01"), -10.0, rng.randf_range(0.95, 1.05))
 		p.finished.connect(p.queue_free)
 	else:
-		var p3 := _p3(who, "Inside", -14.0, 2.0, 15.0)
-		_shot(p3, _pick(name_, count) if count > 1 else _wav(name_ + "_01"), -14.0, rng.randf_range(0.95, 1.05))
+		var p3 := _p3_other(who, "Inside", -10.0 - OTHER_DROP - 1.0, 2.0, 15.0)
+		_shot_other(p3, _pick(name_, count) if count > 1 else _wav(name_ + "_01"), -10.0 - OTHER_DROP - 1.0, rng.randf_range(0.95, 1.05))
 		p3.finished.connect(p3.queue_free)
 
 
@@ -698,24 +740,25 @@ func reward(count: int, brass: bool) -> void:
 ## 雪に縫い留められたボタン（snow_buttons.gd が呼ぶ）。frame は出来事のコマ。その場所から鳴らす。
 ## what: "snap" 糸がぷつん / "pop" ボタンがぽん / "land" 降ってきて雪にぽふ / "sew" 糸がするっと縫い付く /
 ##       "take" 取った（tier: 0 木のコッ・1 真鍮のチン・2 白蝶貝のシャラン・3 螺鈿） / "shears" 裁ちばさみのシャキン / "swish" はさみを出す
-func button(what: String, at: Vector3, frame: int, tier := 0) -> void:
+## other: ほかの人が取っている（ほかの人の音の決まりで）。自分が取るときと、だれのものでもない音（降ってくる）は、その場所からそのままの大きさで
+func button(what: String, at: Vector3, frame: int, tier := 0, other := false) -> void:
 	var ev := {"frame": frame}
 	match what:
 		"snap":
-			_emote_sound(ev, 0, "button_snap", 3, -4.0, rng.randf_range(0.95, 1.08), at, false)
+			_emote_sound(ev, 0, "button_snap", 3, -4.0, rng.randf_range(0.95, 1.08), at, false, "", "", not other)
 		"pop":
-			_emote_sound(ev, 0, "button_pop", 3, -2.0, rng.randf_range(0.94, 1.06), at, false)
+			_emote_sound(ev, 0, "button_pop", 3, -2.0, rng.randf_range(0.94, 1.06), at, false, "", "", not other)
 		"land":
-			_emote_sound(ev, 0, "button_land", 2, -12.0, rng.randf_range(0.9, 1.1), at, false)
+			_emote_sound(ev, 0, "button_land", 2, -12.0, rng.randf_range(0.9, 1.1), at, false, "", "", not other)
 		"sew":
-			_emote_sound(ev, 0, "button_sew", 1, -14.0, rng.randf_range(0.95, 1.05), at, false)
+			_emote_sound(ev, 0, "button_sew", 1, -14.0, rng.randf_range(0.95, 1.05), at, false, "", "", not other)
 		"take":
 			var name_: String = ["button_take_wood", "button_take_brass", "button_take_pearl", "button_take_raden"][clampi(tier, 0, 3)]
-			_emote_sound(ev, 0, name_, 1, [-4.0, -3.0, -2.0, 0.0][clampi(tier, 0, 3)], 1.0, at, false)
+			_emote_sound(ev, 0, name_, 1, [-4.0, -3.0, -2.0, 0.0][clampi(tier, 0, 3)], 1.0, at, false, "", "", not other)
 		"shears":
-			_emote_sound(ev, 0, "shears", 2, -3.0, rng.randf_range(0.96, 1.05), at, false)
+			_emote_sound(ev, 0, "shears", 2, -3.0, rng.randf_range(0.96, 1.05), at, false, "", "", not other)
 		"swish":
-			_emote_sound(ev, 0, "swish", 2, -14.0, rng.randf_range(1.3, 1.45), at, false)
+			_emote_sound(ev, 0, "swish", 2, -14.0, rng.randf_range(1.3, 1.45), at, false, "", "", not other)
 
 
 # ---- 売り台で買う・厨房で調理する（2026-11-01 代表「購入音、ミシンでの制作音、食べ物の調理音をしっかり作ってほしい」） --------
@@ -765,12 +808,13 @@ func _on_craft(ev: Dictionary) -> void:
 	var n: int = int(ev.get("n", ev.get("count", 1)))
 	if shop != "snow":
 		n = Craft.pieces(paid).size() if paid > 0 else 1
-	purchase(shop, at, n, Craft.pieces(paid) if paid > 0 else [])
+	purchase(shop, at, n, Craft.pieces(paid) if paid > 0 else [], buyer != null and buyer != player)
 
 
 ## 買ったときの音。shop は SHOP_SOUNDS の店、near は店が見つからないときに鳴らす所、count は払いの粒の数、
-## looks は払ったボタンの段（"wood" "brass" "pearl" "raden"。真鍮・白蝶貝の粒はその素材の音で落ちる）
-func purchase(shop: String, near: Vector3, count := 1, looks := []) -> void:
+## looks は払ったボタンの段（"wood" "brass" "pearl" "raden"。真鍮・白蝶貝の粒はその素材の音で落ちる）、
+## other はほかの人が買った（ほかの人の音の決まりで）
+func purchase(shop: String, near: Vector3, count := 1, looks := [], other := false) -> void:
 	var s: Array = SHOP_SOUNDS.get(shop, SHOP_SOUNDS.patch)
 	var at := near
 	if lodge:
@@ -785,11 +829,11 @@ func purchase(shop: String, near: Vector3, count := 1, looks := []) -> void:
 		if s[0] == "pay_button":   # 01〜03 木・04〜05 真鍮・06 白蝶貝（螺鈿も貝の音）
 			pick = {"wood": rng.randi_range(1, 3), "brass": rng.randi_range(4, 5)}.get(look, 6)
 		var name_: String = "%s_%02d" % [s[0], pick] if pick > 0 else _pick_name(s[0], s[1])
-		_one_shot(at, name_, -10.0 - 1.0 * i, rng.randf_range(0.94, 1.06), t)
+		_one_shot(at, name_, -10.0 - 1.0 * i, rng.randf_range(0.94, 1.06), t, other)
 		t += PAY_GAP * rng.randf_range(0.8, 1.25)
 	t += TILL_AFTER
-	_one_shot(at, _pick_name(s[2], 3), -6.0, rng.randf_range(0.98, 1.02), t)
-	_one_shot(at, _pick_name(s[3], 3), -9.0, rng.randf_range(0.95, 1.05), t + WRAP_AFTER)
+	_one_shot(at, _pick_name(s[2], 3), -6.0, rng.randf_range(0.98, 1.02), t, other)
+	_one_shot(at, _pick_name(s[3], 3), -9.0, rng.randf_range(0.95, 1.05), t + WRAP_AFTER, other)
 
 
 ## 厨房の装置の音（雪だるまの食べ物屋の調理が呼ぶ）。device は "iron"（アイロン台）・"press"（プレス機）・
@@ -833,11 +877,11 @@ func cook(device: String, step: String, at: Variant) -> void:
 
 
 ## 1 回だけ鳴らす 3D の音（delay 秒あとに、at で）。鳴り終わったら消える
-func _one_shot(at: Vector3, name_: String, db: float, pitch := 1.0, delay := 0.0) -> void:
+func _one_shot(at: Vector3, name_: String, db: float, pitch := 1.0, delay := 0.0, other := false) -> void:
 	var s := _wav(name_)
 	if s == null:
 		return
-	var p := _p3(world, "Inside", db, 3.0, 35.0)
+	var p := _p3_other(world, "Inside", db - OTHER_DROP) if other else _p3(world, "Inside", db, 3.0, 35.0)
 	p.global_position = at
 	p.stream = s
 	p.pitch_scale = pitch
@@ -851,13 +895,13 @@ func _one_shot(at: Vector3, name_: String, db: float, pitch := 1.0, delay := 0.0
 		go.call()
 
 
-## 足の音を 1 つ鳴らす。自分は耳元（Self）、人はその人の所から（ロッジの中なら Inside、外なら Outdoor）
+## 足の音を 1 つ鳴らす。db は自分の大きさ。自分は耳元（Self）、人はその人の所から OTHER_DROP だけ下げて（ロッジの中なら Inside、外なら Others）
 func _play_step(who: Node3D, w: Dictionary, name_: String, db: float, pitch: float) -> void:
 	var s := _wav(name_)
 	if who == player:
 		_shot2(w.step, s, db, pitch)
 	else:
-		_shot(w.step_in if _zone_of(who.global_position) == 2 else w.step, s, db, pitch)
+		_shot_other(w.step_in if _zone_of(who.global_position) == 2 else w.step, s, db - OTHER_DROP, pitch)
 	if log_on:
 		played.append({"t": Engine.get_physics_frames() / float(Engine.physics_ticks_per_second), "name": name_,
 				"near": who == player, "dist": 0.0 if who == player else _listener().distance_to(who.global_position),
@@ -1076,7 +1120,7 @@ func _physics_process(dt: float) -> void:
 
 
 # ---- 身ぶりと声（emotes.gd の出来事） ------------------------------------------
-# 声は Voice、身ぶりの小さな音は Self（自分）か Outdoor（人の）。人形の姿勢と同じコマで鳴らす
+# 声は Voice、身ぶりの小さな音は Self（自分）か Others（人の）。人形の姿勢と同じコマで鳴らす
 
 ## 身ぶりの何コマ目に、どの音を鳴らすか: [コマ, 名前, 数, 音量 dB, 高さ]
 const EMOTE_SOUNDS := {
@@ -1119,7 +1163,9 @@ func _on_emote(ev: Dictionary) -> void:
 			_emote_sound(ev, 0, "swish", 2, -16.0, rng.randf_range(1.3, 1.5), who.global_position + Vector3.UP * 1.0, is_self)
 			return
 		"splat":
-			_emote_sound(ev, 0, "snow_splat", 3, -6.0, rng.randf_range(0.9, 1.1), ev.point, false)
+			# 自分の雪玉は、その場所からそのままの大きさで。ほかの人の雪玉は、ほかの人の音の決まりで
+			var me_id: int = int(player.get("id")) if player and player.get("id") != null else -99
+			_emote_sound(ev, 0, "snow_splat", 3, -6.0, rng.randf_range(0.9, 1.1), ev.point, false, "", "", int(ev.get("by", -1)) == me_id)
 			return
 	if who == null or not EMOTE_SOUNDS.has(ev.kind):
 		return
@@ -1160,7 +1206,9 @@ func _note(name_: String, near: bool, at: Vector3) -> void:
 				"dist": 0.0 if near else _listener().distance_to(at), "wind": _wind_rush.volume_db if _wind_rush else -80.0})
 
 
-func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "", fixed := "") -> void:
+## near でなければ、ほかの人の音（上の OTHER_ の決まり。自分が耳元で鳴らす db - 4 より下から始める）。声は遠くまで、呼ぶ声はもっと遠くまで届く。
+## plain は、耳元でないがほかの人のものでもない音（自分が取ったボタン、自分の雪玉）: その場所から、db のままで
+func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, pitch: float, at: Vector3, near: bool, bus := "", fixed := "", plain := false) -> void:
 	var tps := Engine.physics_ticks_per_second
 	var tick := (int(ev.frame) + k) * tps / Doll.FPS
 	var wait := maxf(0.0, float(tick - Engine.get_physics_frames()) / tps)
@@ -1178,10 +1226,20 @@ func _emote_sound(ev: Dictionary, k: int, name_: String, count: int, db: float, 
 		add_child(p)
 		_shot2(p, s, db - 4.0, pitch)
 		p.finished.connect(p.queue_free)
-	else:
-		# 呼ぶ声は遠くまで届く（ほかの音は 45 m で消える）
-		var far := name_ == "voice_oi"
-		var p := _p3(world, bus if bus != "" else "Outdoor", db, 14.0 if far else 5.0, 120.0 if far else 45.0)
+	elif plain:
+		var p := _p3(world, bus if bus != "" else "Outdoor", db, 5.0, 45.0)
 		p.global_position = at
 		_shot(p, s, db, pitch)
+		p.finished.connect(p.queue_free)
+	else:
+		var top := db - 4.0 - OTHER_DROP
+		var p: AudioStreamPlayer3D
+		if name_ == "voice_oi":   # 呼ぶ声は遠くまで届く
+			p = _p3_other(world, "Voice", top, 14.0, 120.0, true)
+		elif bus == "Voice":
+			p = _p3_other(world, "Voice", top, 5.0, 45.0, true)
+		else:
+			p = _p3_other(world, "Inside" if _zone_of(at) == 2 else "Others", top)   # 足音と同じく、ロッジの中の音は Inside で
+		p.global_position = at
+		_shot_other(p, s, top, pitch)
 		p.finished.connect(p.queue_free)
