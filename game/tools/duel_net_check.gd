@@ -3,6 +3,7 @@ extends SceneTree
 ## 段取りは実時間で進めるので、--fixed-fps は付けない（ゲームの時間が先へ進んで、インターバルや制限時間が合わなくなる）。
 ##   Godot --headless --path game -s res://tools/duel_net_check.gd -- --host --port=24731 --no-sound --bots=0 --lodge-bots=0
 ##   Godot --headless --path game -s res://tools/duel_net_check.gd -- --join=127.0.0.1 --port=24731 --no-sound --bots=0 --lodge-bots=0
+## 窓を出して --dir=/path/shots を足すと、勝敗・握手の案内・払ったあとをそれぞれの画面で撮る（--headless を外す）。
 ## 握手 → つなぐ側が掛金 20 を出し、ホストが受ける → 戦い: つなぐ側が 1 発（続けて投げても 2 発目は出ない）、ホストが 2 発当てる → ホストの雪玉をつなぐ側が取る →
 ## （両方の画面に紙吹雪）→ ホストが 3 発目 → 2 人で握手して払う。1 秒ごとに両方の画面の対決（段・当てた数・残りの秒・雪玉・財布）を出す
 
@@ -53,6 +54,12 @@ func _throw(a: Node3D, b: Node3D) -> void:
 	var t := flat.length() / 12.0
 	var vel := flat.normalized() * 12.0 + Vector3.UP * ((target.y - origin.y + 4.9 * t * t) / t)
 	main.emotes.send({"kind": "throw", "who": a.id, "origin": origin, "velocity": vel})
+
+
+func _shot(name: String) -> void:
+	await process_frame
+	await process_frame
+	root.get_texture().get_image().save_png(String(args.dir).path_join("%s_%s.png" % ["host" if _host() else "join", name]))
 
 
 func _line(tag: String) -> void:
@@ -163,6 +170,10 @@ func _run() -> void:
 			await physics_frame
 	await _until(13.0)
 	_line("決まった")
+	if args.has("dir"):   # 窓を出して撮る: 勝敗の大きな表示と握手の案内（duel_hud.gd の _draw_end）を、それぞれの画面で
+		await _shot("result")
+		await _wait(3.0)
+		await _shot("guide")
 	# 払いの握手
 	if _host():
 		_place(p, AT, AT + Vector3(0, 0, 1))
@@ -176,6 +187,8 @@ func _run() -> void:
 		w += 0.5
 	await _wait(1.0)
 	_line("払った")
+	if args.has("dir"):
+		await _shot("paid")
 	await _wait(2.0)
 	quit()
 

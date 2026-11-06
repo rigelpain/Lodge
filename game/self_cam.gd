@@ -44,6 +44,7 @@ var vp: SubViewport
 var hidden := false           # 画面に出していない（設定で消している、か、雪合戦のあいだ）
 var _want_shown := true       # 遊ぶ人の選び（設定の「刺繍枠」）
 var _focus_off := false       # 雪合戦のあいだ、選びとは別によける（main.gd の set_duel_focus）
+var stitch_col := Icons.RED   # 枠の内のランニングステッチの色
 var plain_frame := false      # true なら、木の輪とねじは描かない（hud_plates.gd の立体の刺繍枠を重ねる）。赤い糸の縁取りだけ
 
 var _frame: Control
@@ -558,7 +559,7 @@ class Frame extends Control:
 		var r := size.x / 2.0
 		Icons.screen()
 		if sc.plain_frame:
-			Icons.dashes(self, Icons.circ(c, r * HOOP_IN - 7.0 * u, 72), Icons.RED, 1.8 * u, 6.0 * u, 4.0 * u, 0.95, true)   # 外枠の内に縫う
+			Icons.dashes(self, Icons.circ(c, r * HOOP_IN - 7.0 * u, 72), sc.stitch_col, 1.8 * u, 6.0 * u, 4.0 * u, 0.95, true)   # 外枠の内に縫う
 			return
 		# 落ち影（輪の外側だけ。窓の絵の上には重ねない）
 		draw_arc(c + Vector2(1.5, 3.0) * u, r + 5.5 * u, 0.0, TAU, 64, Color(Icons.SHADOW, 0.22), 11.0 * u, true)
@@ -570,7 +571,7 @@ class Frame extends Control:
 		# 内の輪（細い）
 		draw_arc(c, r - 0.5 * u, 0.0, TAU, 64, Icons.WOOD.lightened(0.15), 2.6 * u, true)
 		# 赤い糸のランニングステッチ（あなたの色）
-		Icons.dashes(self, Icons.circ(c, r - 7.0 * u, 72), Icons.RED, 1.8 * u, 6.0 * u, 4.0 * u, 0.95, true)
+		Icons.dashes(self, Icons.circ(c, r - 7.0 * u, 72), sc.stitch_col, 1.8 * u, 6.0 * u, 4.0 * u, 0.95, true)
 		# 枠のねじ（上）: 輪の切れ目の 2 枚の耳と、真鍮のねじ
 		var top := c + Vector2(0, -(r + 5.0 * u))
 		for s in [-1.0, 1.0]:

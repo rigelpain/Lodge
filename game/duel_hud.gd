@@ -12,16 +12,23 @@ extends CanvasLayer
 ##     投げたあと次を投げられるまで（duel.gd の THROW_GAP）は、藍のフェルトの丸に赤い糸の輪。糸が 1 コマに 1 目ずつ抜け、
 ##     抜けきると、まんなかに綿の雪玉が跳ねて消える（2026-11-05 代表「雪合戦中の投げCTって表示されてますっけ」「なかったらあったほうが嬉しい」）
 ##   勝ち負けのあと（over）: 枠に金の糸（払うまでの 30 秒）、まんなかに勝った人の色のロゼット。下に握手の手袋（握手で払う）と掛金の山
+##     決まった瞬間、画面のまんなかに大きな刺繍枠（duel_stage.gd）を出し、自分の人形の動きで見せる（勝ちは胴上げ、負けはジタバタ、引き分けは肩すくめ）。
+##     字は使わない（海外対応のため。2026-11-06 代表）。END_BIG_T たつと右下の小窓へ小さくなって消え、握手の案内（2 キー → 低い手のひら → 近づく → 握手）の札を出す。
+##     握手で払うと対決が消えるので、札も一緒に消える（2026-11-06 代表「①勝敗結果が大きく表示されて欲しい②互いに２キーを押して近づいて握手をして終わることを促す表示が欲しい」）
 ## 自分が戦っているあいだ（fight）は、ふだんの HUD をよけて一人称に固定する（main.gd の set_duel_focus。2026-11-05 代表「集中して戦いたいので」）
 
 const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
 const Doll := preload("res://doll.gd")
 const Duel := preload("res://duel.gd")
+const Stage := preload("res://duel_stage.gd")
 const Snowball := preload("res://snowball.gd")
 
 const STEPS := [[1, "wood"], [10, "brass"], [100, "pearl"]]
 const GOLD := Color(0.86, 0.66, 0.26)
+const END_BIG_T := 3.0       # 勝敗の舞台を画面のまんなかに大きく出しておく (s)
+const END_MOVE_T := 0.35     # 舞台が右下の小窓へ小さくなって消えるまで (s)
+const STAGE_D := 460.0       # 舞台の刺繍枠の直径（1080p の px）
 const GAP_R := 44.0          # 投げの間の糸の輪の半径（1080p の px。雪玉のストックのすぐ上の左）
 
 var main: Node
@@ -34,6 +41,8 @@ var _pop := {}               # 何 → 跳ねの残り（1→0）。"lost_me" "l
 var _hover := ""
 var _rects := {}             # 押せる所の名前 → Rect2
 var _shake := 0.0
+var _stage: Control          # 勝敗の舞台（出ているあいだだけ）
+var _end_t := 0.0            # 勝ち負けが決まってからの秒
 var _gap_was := 0            # 前のコマの、次を投げられるまでの残り（明けた瞬間を見つける）
 
 
@@ -75,6 +84,7 @@ func _on_duel(ev: Dictionary) -> void:
 			_pop["lost"] = 1.0
 		"end":
 			_pop["end"] = 1.0
+			_end_t = 0.0
 	_sync_bet()
 	_view.queue_redraw()
 
@@ -102,12 +112,14 @@ func _process(dt: float) -> void:
 	for k in _pop.keys():
 		_pop[k] = maxf(0.0, _pop[k] - dt * 1.6)
 	_shake = maxf(0.0, _shake - dt * 2.5)
+	_end_t += dt
 	var wait: int = duel.throw_wait(me()) if duel else 0
 	if _gap_was > 0 and wait <= 0:
 		_pop["gap"] = 1.0
 	_gap_was = wait
 	_sync_bet()
 	_sync_focus()
+	_sync_stage()
 	if not mine().is_empty() or bet_open:
 		_view.queue_redraw()
 
@@ -118,6 +130,58 @@ func _sync_focus() -> void:
 	if on != focus:
 		focus = on
 		main.set_duel_focus(on)
+
+
+## 勝敗の舞台を出す・動かす・消す
+func _sync_stage() -> void:
+	var d := mine()
+	var showing: bool = not d.is_empty() and d.phase == "over" and _end_t < END_BIG_T + END_MOVE_T
+	if not showing:
+		if _stage:
+			_stage.queue_free()
+			_stage = null
+		return
+	if _stage == null:
+		_stage = _make_stage(d)
+		add_child(_stage)
+	var view: Vector2 = _view.size
+	var u := Icons.ui_scale(view.y)
+	var big := STAGE_D * u * (1.0 + 0.12 * sin(clampf(_end_t / 0.3, 0.0, 1.0) * PI))
+	var at := Vector2(view.x / 2.0, view.y * 0.45)
+	var small := big * 0.3
+	var to := Vector2(view.x - 200.0 * u, view.y - 180.0 * u)
+	var sc = main.get("self_cam")
+	if sc and not sc.get("hidden") and sc.get("_frame"):
+		var fr: Control = sc._frame
+		to = fr.position + fr.size / 2.0
+		small = fr.size.x
+	var move := smoothstep(END_BIG_T, END_BIG_T + END_MOVE_T, _end_t)
+	_stage.place(at.lerp(to, move), lerpf(big, small, move), 1.0 - smoothstep(0.7, 1.0, move))
+
+
+func _make_stage(d: Dictionary) -> Control:
+	var my := me()
+	var them := Duel.opponent(d, my)
+	var hub = main.get("emotes")
+	var craft = main.get("craft")
+	var other: Node3D = hub.who_of(them) if hub else null
+	var s: Control = Stage.new()
+	s.result = "draw" if int(d.winner) < 0 else ("win" if int(d.winner) == my else "lose")
+	if other == null:
+		s.sub = "gone"
+	elif Duel.lives_of(d, my) > 0 and Duel.lives_of(d, them) > 0:
+		s.sub = "time"
+	s.mine = _doll_of(my, player, craft)
+	if other:
+		s.theirs = _doll_of(them, other, craft)
+	s.mitten_col = _color(them)
+	s.main_env = main.get("env")
+	return s
+
+
+func _doll_of(who: int, body: Node3D, craft: Node) -> Dictionary:
+	var kind: String = body.doll.kind if body.get("doll") else "kasa"
+	return {"kind": kind, "outfit": craft.outfit_of(who, kind) if craft else []}
 
 
 ## 掛金を足す・引く（step は 1・10・100、sign は 1 か -1）
@@ -183,6 +247,8 @@ class View extends Control:
 		if d.phase == "fight":
 			_draw_gap(u)
 			_draw_catch(d, u)
+		elif d.phase == "over":
+			_draw_end(d, u)
 
 	# ---- 掛金の画面
 
@@ -332,10 +398,12 @@ class View extends Control:
 		if not over:
 			_map(d, mc, 52 * u, them)
 		else:
-			# 握手で払う（手袋の握手）と、勝った人に行く掛金
-			Icons.screen()
-			Icons.patch(self, Icons.circ(mc, 34 * u, 24), Icons.CAP, 1.0, true)
-			_shake_hands(mc, 0.95 * u, Icons.RED)
+			# 握手で払う（手袋の握手）と、勝った人に行く掛金。相手が抜けたら握手はない
+			var hub = ui.main.get("emotes")
+			if hub == null or hub.who_of(them) != null:
+				Icons.screen()
+				Icons.patch(self, Icons.circ(mc, 34 * u, 24), Icons.CAP, 1.0, true)
+				_shake_hands(mc, 0.95 * u, Icons.RED)
 			if int(d.stake) > 0:
 				CraftIcons.price(self, mc + Vector2(80 * u, 0), int(d.stake) * 2, 10 * u)
 
@@ -420,6 +488,53 @@ class View extends Control:
 			uv.append((q - c) / (r * 1.6))
 		draw_colored_polygon(pts, Color(0.98, 0.98, 0.96), uv, Icons.felt())
 		draw_arc(c + Vector2(0, r * 0.15), r * 0.8, 0.3, PI - 0.3, 10, Color(0.72, 0.80, 0.92, 0.45), r * 0.25, true)
+
+	# ---- 握手の案内
+
+	func _draw_end(d: Dictionary, u: float) -> void:
+		var hub = ui.main.get("emotes")
+		var them := Duel.opponent(d, ui.me())
+		if hub == null or hub.who_of(them) == null or ui._end_t < END_BIG_T:   # 相手が抜けたら握手はない
+			return
+		_shake_guide(Vector2(size.x / 2.0, size.y * 0.68), u, them, clampf((ui._end_t - END_BIG_T) / END_MOVE_T, 0.0, 1.0))
+
+	## 字を使わない握手の案内: [2] → 低い手のひら → 2 人が近づく → 手袋の握手。手を出したら、キーが押された形になって ✓
+	func _shake_guide(c: Vector2, u: float, them: int, a: float) -> void:
+		var low: bool = String(ui.player.get("hands_name")).begins_with("low")
+		var w := 500.0 * u
+		var h := 104.0 * u
+		var x := c.x - w / 2.0
+		Icons.screen()
+		Icons.patch(self, Icons.rr(x, c.y - h / 2.0, w, h, 18.0 * u), Icons.PAPER, a, true, Icons.PAPER_EDGE)
+		if a < 1.0:
+			return
+		var y := c.y
+		Icons.keycap(self, "2", Vector2(x + 52.0 * u, y), 52.0 * u, 1.0, low)
+		if low:
+			_check(Vector2(x + 52.0 * u, y + 40.0 * u), 16.0 * u)
+		Icons.screen()
+		Icons.chevron(self, Vector2(x + 100.0 * u, y), 13.0 * u, Icons.THREAD, 0.7, 0.0, 2.4 * u)
+		# 低い手のひら（自分の色）
+		Icons._o = Vector2(x + 146.0 * u, y + 2.0 * u)
+		Icons._s = 2.3 * u
+		Icons.mitten(self, Vector2.ZERO, 0.5, ui._color(ui.me()), 1.0, true, 1.0)
+		Icons.screen()
+		Icons.chevron(self, Vector2(x + 192.0 * u, y), 13.0 * u, Icons.THREAD, 0.7, 0.0, 2.4 * u)
+		# 2 人が近づく
+		var feet := y + 34.0 * u
+		Icons._o = Vector2(x + 240.0 * u, feet)
+		Icons._s = 1.25 * u
+		Icons.doll(self, Vector2.ZERO, ui._color(ui.me()), "walk")
+		Icons._o = Vector2(x + 340.0 * u, feet)
+		Icons._s = 1.25 * u
+		Icons.doll(self, Vector2.ZERO, ui._color(them), "walk")
+		Icons.screen()
+		Icons.chevron(self, Vector2(x + 276.0 * u, y), 11.0 * u, Icons.RED, 0.9, 0.0, 2.4 * u)
+		Icons.chevron(self, Vector2(x + 304.0 * u, y), 11.0 * u, Icons.RED, 0.9, PI, 2.4 * u)
+		Icons.chevron(self, Vector2(x + 385.0 * u, y), 13.0 * u, Icons.THREAD, 0.7, 0.0, 2.4 * u)
+		# 握手
+		_shake_hands(Vector2(x + 440.0 * u, y), 1.5 * u, Icons.RED)
+		Icons.screen()
 
 	# ---- 投げの間
 
