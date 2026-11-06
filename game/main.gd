@@ -220,6 +220,15 @@ static func ground(x: float, z: float) -> float:
 	return hill(x, z) + bowl(x, z) + Mountain.lift(x, z) + Grand.lift(x, z)
 
 
+## 地面の端までの距離 (m)。地面は x ±128・z -128〜640 の長方形（丘と大きな山）と、東の大山の長方形。どちらにも入っていなければ負（一方の縁までの深さの大きいほう）
+static func edge_gap(x: float, z: float) -> float:
+	var hill_side := minf(minf(x + SIZE * 0.5, SIZE * 0.5 - x), minf(z - TILES_Z[0] + SIZE * 0.5, TILES_Z[TILES_Z.size() - 1] + SIZE * 0.5 - z))
+	var grand_side := minf(minf(x - Grand.GX0, Grand.GX1 - x), minf(z - Grand.GZ0, Grand.GZ1 - z))
+	# 2 つの長方形の重なる帯（丘の東の端から大山へ続く所）。継ぎ目は地面の端ではない
+	var joined := minf(minf(x + SIZE * 0.5, Grand.GX1 - x), minf(z - TILES_Z[0] + SIZE * 0.5, Grand.GZ1 - z))
+	return maxf(maxf(hill_side, grand_side), joined)
+
+
 ## ロッジの座標 (x, z) を世界の (x, z) へ
 static func lodge_to_world(l: Vector2) -> Vector2:
 	var c := cos(LODGE_YAW)
