@@ -4,7 +4,12 @@ const Doll := preload("res://doll.gd")
 const Emotes := preload("res://emotes.gd")
 const Palm := preload("res://palm.gd")
 const Seats := preload("res://seats.gd")
-## 押すのを手伝う仲間（通信を入れるまでの代わり）。
+const Areas := preload("res://areas.gd")
+const Mountain := preload("res://mountain.gd")
+const Grand := preload("res://grand_mountain.gd")
+const SackLook := preload("res://sack_look.gd")
+## 押すのを手伝う仲間（CPU）。動かすのは一人で遊ぶ画面かホストの画面だけ。つなぐ側へは姿が配られる（net.gd の "cpu"）。
+## 説明の「あなた」は、遊んでいる人（通信では、つないでいる人もみんな。_humans）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
 ## 身ぶりへの返し（確かめ用の簡単なもの）: あなたが近くで手のひらを掲げると、ソリを離して前まで来て、
 ## 同じ高さで掲げる（高ければハイタッチ、低ければ握手）。片手か両手かもまねる。
@@ -19,6 +24,11 @@ const Seats := preload("res://seats.gd")
 ## 雪合戦: 雪玉を持ったあなたに低い手のひらを差し出されると、しゃがんで雪玉を作ってから握手しに来る（握手で対決が始まる。duel.gd）。
 ## 掛金を受け、円の中を回りながら振りかぶって投げ、ときどきよけて、ときどき取る。なくなれば作る。ロッジでくつろぐ仲間はしない
 ## 財布はいつも金色の真鍮のボタン 5 枚以上（DUEL_BUTTONS）。掛金で減っても、次の握手で戻るので、賭けられなくならない
+## 山めぐり（roam。2026-11-06 代表「CPUは頂上に行って滑り降りて、また別の山に行って、とうろうろしてほしい。5人くらいいたら良いな」）:
+## 自分で山（丘・大きな山・大山）を選ぶ → 帯に米袋を提げて尾根を歩いて登る → 頂上で米袋を広げて滑り降りる → 帯に戻して次の山へ。
+## ほかの仲間の少ない山を選ぶので、ばらける。人のいる山に誰も向かっていなければ、そこを選ぶ（対決の相手が見つからなくならないように）。
+## 歩いているあいだに、そばの人がソリを押す・乗ると、手伝いに来て一緒に押して乗る（先の PUSH・WAIT・RIDE。手伝うのは 2 人まで）。
+## 人の FAR より遠くでは、当たりを見ずに地面の高さをなぞって間引いて歩く（重くしない）
 
 enum State { PUSH, WAIT, RIDE }
 
@@ -26,9 +36,23 @@ const SPEED := 2.4
 const REGRAB_WAIT := 1.5     # 雪玉が当たって手を離してから、つかみ直すまで (s)
 const LEAN_DELAY := 0.3      # 一緒に乗っているとき、あなたの体重移動に合わせるまでの遅れ (s)
 const GRAVITY := 24.0         # 落ちるときの重力（player.gd の FALL_GRAVITY と同じ。仲間は跳ばないので、下りだけ）
+const ROAM_SPEED := 3.0      # 山をめぐって歩く速さ (m/s)
+const FAR := 90.0            # どの人からもこれより遠ければ、間引いて動く (m)
+const FAR_STEP := 0.2        # 間引いて動くときの間 (s)
+const HELP_NEAR := 30.0      # そばの人がソリを押す・乗ると手伝いに行く距離 (m)
+const HELP_KEEP := 6.0       # 人がソリから離れて、手伝いをやめるまで (s)
+const HELP_MAX := 2          # 手伝う仲間の数の上限
+const OFFER_FAR := 40.0      # 雪玉を持って低い手のひらで見ている人に、歩いて応じる距離 (m)
+const RIDE_MAX := 240.0      # 1 回の滑りの長さの上限 (s)。どこかに引っかかっても次へ進む
+## 山ごとの滑り方: top 頂上、launch 米袋を広げる所、foot 滑って行く先、spread 滑る先の左右の広がり (m)。丘はどの向きにも滑れる（launch は向きごとに決める）
+const ROAM_AREAS := {
+	"hill": {"top": Vector2.ZERO},
+	"slope": {"top": Vector2(Mountain.SX, Mountain.SZ), "launch": Mountain.START, "foot": Vector2(Mountain.FACE_X, Mountain.BOTTOM_Z), "side": Vector2(1, 0), "spread": 20.0, "ridge": Mountain.RIDGE},
+	"peak": {"top": Vector2(Grand.SX, Grand.SZ), "launch": Grand.START, "foot": Vector2(Grand.BOTTOM_X, Grand.FACE_Z), "side": Vector2(0, 1), "spread": 40.0, "ridge": Grand.RIDGE},
+}
 
 var sled: RigidBody3D
-var player: Node3D          # いないとき（確かめ用）は仲間だけで滑る
+var player: Node3D          # この画面で遊ぶ人。いないとき（確かめ用）は仲間だけで滑る
 var side := 1
 var state := State.PUSH
 var seat := Vector3.INF
@@ -36,6 +60,22 @@ var handle := Vector3.INF   # つかんでいる所（ソリの座標）
 var doll: Doll               # 見た目の人形（右側の仲間は折り紙、左側は新聞紙。doll_kind で替えられる）
 var doll_kind := ""          # 始めの人形（doll.gd の KINDS。"" なら右は折り紙、左は新聞紙。main.gd が入れる）
 var debug := ""
+var roam := false            # 山をめぐる（main.gd が入れる）
+var far := false             # どの人からも遠い（間引いて動く。通信で送る回数も減らす）
+var _area := ""              # 向かっている山（ROAM_AREAS の名前）
+var _last_area := ""         # さっき滑った山
+var _route: Array = []       # これから歩く所 [Vector2]
+var _ride_goal := Vector2.ZERO   # 滑って行く先
+var _ride_t := 0.0           # 滑っている秒
+var _kick_t := 0.0           # 次に足で漕ぐまで (s)
+var _goal_best := INF        # 滑る行き先に、いちばん近づいた距離
+var _goal_t := 0.0           # そこから近づけないでいる秒
+var _roam_rest := 0.0        # 次の山へ歩き出すまで (s)
+var _far_t := 0.0            # 遠いかを見直すまで (s)
+var _far_acc := 0.0          # 間引いて動く時間のたまり (s)
+var _wp_best := INF          # いまの行き先に、いちばん近づいた距離
+var _wp_t := 0.0             # そこから近づけないでいる秒
+var _help_t := 0.0           # 手伝いの残り (s)
 var post: Node3D = null      # 持ち場（ミシンの足踏みなど）。あればソリを押さず、そこに立って post_look を向く
 var post_look := Vector3.INF
 var _col: CollisionShape3D
@@ -50,6 +90,8 @@ var _five_until := 0         # このコマまでに届かなければやめる
 var _five_sent := false      # もう手を上げた（あとは合うまで、相手の前へ寄り続ける）
 var _em := {}
 var _regrab := 0.0           # これが 0 になるまでつかまない
+var push_world := Vector3.ZERO   # このコマ押した向き（通信で配る。net.gd）
+var _caller: Node3D          # おーいと呼んだ人（_look_t のあいだ、そちらを見る）
 var lean_mode := "follow"    # 一緒に乗っているときの体重移動: "follow" あなたに合わせる、"off" しない（main.gd の --bot-lean=）
 var _lean_q: Array = []      # [時刻, あなたの体重移動]（遅れて合わせるため）
 var _lean_now := Vector3.ZERO
@@ -75,6 +117,7 @@ const HEARTH_LIKE := 0.7     # 次の席を選ぶとき、暖炉のまわりか�
 
 
 func _ready() -> void:
+	add_to_group("bots")
 	_col = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -157,8 +200,15 @@ func get_off() -> void:
 
 
 func _uphill(p: Vector3) -> Vector3:
-	var u := Vector3(-p.x, 0, -p.z)
+	var top := _top_of(p)
+	var u := Vector3(top.x - p.x, 0, top.y - p.z)
 	return u.normalized() if u.length() > 0.1 else Vector3.FORWARD
+
+
+## その所の山の頂上 (x, z)。どの山の範囲でもなければ丘（ふもとのくぼみの外も、丘へ押す）
+func _top_of(p: Vector3) -> Vector2:
+	var a := Areas.of(Vector2(p.x, p.z))
+	return ROAM_AREAS[a].top if ROAM_AREAS.has(a) else Vector2.ZERO
 
 
 ## 紙の体の湿り気（damp.gd）の倍率: push なら押す力、そうでなければ歩く速さ（player.gd と同じ）
@@ -170,6 +220,7 @@ func damp_k(push: bool) -> float:
 
 
 func _physics_process(dt: float) -> void:
+	push_world = Vector3.ZERO
 	_update_replies(dt)
 	_mind_lamp(dt)
 	_regrab = maxf(0.0, _regrab - dt)
@@ -182,10 +233,16 @@ func _physics_process(dt: float) -> void:
 	if _duel_step(dt):
 		return
 	var s := sled.global_position
-	var to_top := Vector2(s.x, s.z).length()
+	var to_top := Vector2(s.x, s.z).distance_to(_top_of(s))
 	_watch_offer()
 	if state != State.RIDE and (_five_with > 0 or _rooted()):
 		_go_five(dt)
+		return
+	if roam and not _helping(dt):
+		if state == State.RIDE:
+			_roam_ride(dt)
+		else:
+			_roam_walk(dt)
 		return
 
 	if state == State.RIDE:
@@ -224,7 +281,8 @@ func _physics_process(dt: float) -> void:
 			var ahead: float = max(0.0, cos(err)) if abs(err) < deg_to_rad(60.0) else 0.0
 			var push_dir: Vector3 = fwd * ahead + sled.global_basis.x * steer * 1.2
 			if push_dir.length() > 0.05 and not sled.is_dragged(self):
-				sled.push(push_dir.normalized(), global_position + fwd * 0.6 + Vector3.UP * 0.4, self, damp_k(true))
+				push_world = push_dir.normalized()
+				sled.push(push_world, global_position + fwd * 0.6 + Vector3.UP * 0.4, self, damp_k(true))
 			debug = "err=%.0f° steer=%.2f ahead=%.2f 手=%s" % [rad_to_deg(err), steer, ahead, str(sled.to_local(global_position + fwd * 0.6 + Vector3.UP * 0.4).snapped(Vector3(0.1, 0.1, 0.1)))]
 			var face := s - global_position
 			face.y = 0
@@ -271,7 +329,7 @@ func _physics_process(dt: float) -> void:
 					_col.disabled = true
 	elif state == State.WAIT:
 		_wait += dt
-		var rider_ok: bool = player == null or (player.get("seat") != null and player.seat != Vector3.INF)
+		var rider_ok: bool = _humans().is_empty() or _humans().any(func(h): return h.get("seat") != null and h.seat != Vector3.INF)
 		if rider_ok and _wait > 1.0 and global_position.distance_to(s) < 3.5:
 			seat = sled.mount(self)
 			if seat != Vector3.INF:
@@ -312,6 +370,36 @@ func _round_player(dir: Vector3) -> Vector3:
 var _rounding := false       # あなたのまわりを回っている途中
 
 
+## 遊んでいる人: この画面の人と、通信でつないでいる人。仲間は入らない
+func _humans() -> Array:
+	var out := [player] if player else []
+	var net := get_parent().get_node_or_null("Net")
+	if net:
+		out.append_array(net.remotes.values())
+	return out
+
+
+## いちばん近くの、遊んでいる人（いなければ null）
+func _nearest_human() -> Node3D:
+	var best: Node3D = null
+	var near := INF
+	for h in _humans():
+		var d: float = global_position.distance_squared_to(h.global_position)
+		if d < near:
+			near = d
+			best = h
+	return best
+
+
+## 通信で配る姿の段（remote_person.gd の Mode の並び）
+func net_mode() -> int:
+	if seat_i >= 0:
+		return 4
+	if state == State.RIDE:
+		return 2
+	return 1 if handle != Vector3.INF else 0
+
+
 func _player_within(m: float) -> bool:
 	return player != null and Emotes._flat(player.global_position - global_position).length() < m
 
@@ -319,12 +407,16 @@ func _player_within(m: float) -> bool:
 ## 一緒に乗っているあなたの体重移動に、少し遅れて合わせる
 func _follow_lean(dt: float) -> void:
 	_clock += dt
-	var riding_with: bool = player != null and player.get("mode") == player.Mode.RIDE and player.sled == sled
-	if lean_mode != "follow" or not riding_with:
+	var with_me = null
+	for h in _humans():
+		if h.get("mode") == h.Mode.RIDE and h.sled == sled:
+			with_me = h
+			break
+	if lean_mode != "follow" or with_me == null:
 		_lean_q.clear()
 		_lean_now = Vector3.ZERO
 		return
-	_lean_q.append([_clock, player.ride_lean])
+	_lean_q.append([_clock, with_me.ride_lean])
 	while not _lean_q.is_empty() and _clock - _lean_q[0][0] >= LEAN_DELAY:
 		_lean_now = _lean_q.pop_front()[1]
 	if _lean_now != Vector3.ZERO:
@@ -381,6 +473,10 @@ func _pose_doll() -> void:
 	if craft:
 		doll.lantern = craft.lantern(id).get("look", "")
 		doll.lantern_lit = craft.lamp_on(id)
+		var spec: Dictionary = craft.sack(id)   # 帯の丸めた米袋（player.gd と同じ）
+		doll.belt_sack = not spec.is_empty() and craft.sack_sled(id) == null
+		if not spec.is_empty():
+			doll.belt_color = preload("res://fabrics.gd").color(spec.fabric) if spec.fabric != "" else preload("res://sled.gd").KINDS["sack"].color
 	doll.grip = handle
 	doll.effort = handle != Vector3.INF and sled.pushers > 0
 	doll.dragged = handle != Vector3.INF and sled.is_dragged(self)
@@ -388,15 +484,16 @@ func _pose_doll() -> void:
 	# 顔の向き: あなたが指さしたら、指された所を一緒に見る。押していないときは、近くのあなたの顔を見る
 	doll.gaze = Vector3.INF
 	doll.waving = _wave_t > 0.0
-	if player and _look_t > 0.0:
-		doll.gaze = player.global_position + Vector3.UP * 1.25   # 呼ばれた人のほうを見る
-	elif player:
+	var person = _nearest_human()
+	if _look_t > 0.0 and is_instance_valid(_caller):
+		doll.gaze = _caller.global_position + Vector3.UP * 1.25   # 呼ばれた人のほうを見る
+	elif person:
 		var hub = get_parent().get_node_or_null("Emotes")   # あなたが指している所（配られた向きから。通信でも同じ）
-		var pt: Vector3 = hub.point_of(int(player.get("id"))) if hub and player.get("id") != null else player.point_at
+		var pt: Vector3 = hub.point_of(int(person.get("id"))) if hub and person.get("id") != null else person.point_at
 		if pt != Vector3.INF:
 			doll.gaze = pt
-		elif handle == Vector3.INF and global_position.distance_to(player.global_position) < 8.0:
-			doll.gaze = player.global_position + Vector3.UP * 1.25
+		elif handle == Vector3.INF and global_position.distance_to(person.global_position) < 8.0:
+			doll.gaze = person.global_position + Vector3.UP * 1.25
 
 
 # ---------------------------------------------------------------- 身ぶりへの返し
@@ -430,9 +527,10 @@ func _on_emote(ev: Dictionary) -> void:
 	if ev.kind == "throw":
 		_saw_throw(ev)
 	# 返すのは、あなた（人）の身ぶりにだけ（仲間どうしで返し合い続けないように）
-	if player == null or hub.who_of(who) != player:
+	var them = hub.who_of(who)
+	if them == null or not them in _humans():
 		return
-	var near := global_position.distance_to(player.global_position)
+	var near := global_position.distance_to(them.global_position)
 	match ev.kind:
 		"wa", "un", "nn":
 			if near < 15.0 and not ev.get("auto", false):
@@ -444,6 +542,7 @@ func _on_emote(ev: Dictionary) -> void:
 			# 呼ばれたら、そちらを見て、おーいと返すか、手を振る（遠くても届く）
 			if near < 100.0:
 				_look_t = 3.0
+				_caller = them
 				if randf() < 0.5 or handle != Vector3.INF:
 					_reply(randf_range(0.7, 1.1), {"kind": "oi"})
 				else:
@@ -461,7 +560,7 @@ func _on_emote(ev: Dictionary) -> void:
 				return
 			var parts := h.split("_")
 			var both := parts[1] == "both"
-			if h == "high_both" and state == State.RIDE and player.get("mode") == player.Mode.RIDE:
+			if h == "high_both" and state == State.RIDE and them.get("mode") == them.Mode.RIDE:
 				_reply(randf_range(0.1, 0.25), {"kind": "hands", "hands": "high_both"})   # 一緒に乗っていれば、一緒に万歳
 				_reply(randf_range(0.35, 0.5), {"kind": "wa"})
 				_lower_t = 3.0
@@ -570,19 +669,22 @@ func _offered_to_me(height: String, who: int) -> bool:
 
 ## 雪玉を持って低い手のひらを掲げたまま、こちらを見ている人（あとから近づいた・あとから向いた）にも応じる
 func _watch_offer() -> void:
-	if _five_with > 0 or player == null or state == State.RIDE or int(player.get("id")) < 0:
-		return
-	var who: int = player.id
-	var h: String = hub.hands.get(who, "")
 	var duel := get_parent().get_node_or_null("Duel")
-	if not h.begins_with("low") or hub.balls_of(who) < 1 or duel == null or not duel.of(id).is_empty():
+	if _five_with > 0 or state == State.RIDE or duel == null or not duel.of(id).is_empty():
 		return
-	if global_position.distance_to(player.global_position) < 7.0 and _offered_to_me("low", who):
-		_five_with = who
-		_five_shape = Palm.hands_name("low", "both" if h.ends_with("both") else "R")
-		_five_until = Doll.frame_index() + 12 * 8
-		_five_sent = false
-		_five_ball = _wants_ball("low", who)
+	for them in _humans():
+		var who := int(them.get("id"))
+		var h: String = hub.hands.get(who, "")
+		if who < 0 or not h.begins_with("low") or hub.balls_of(who) < 1:
+			continue
+		var d: float = global_position.distance_to(them.global_position)
+		if d < OFFER_FAR and _offered_to_me("low", who):
+			_five_with = who
+			_five_shape = Palm.hands_name("low", "both" if h.ends_with("both") else "R")
+			_five_until = Doll.frame_index() + 12 * maxi(8, int(d / SPEED) + 4)
+			_five_sent = false
+			_five_ball = _wants_ball("low", who)
+			return
 
 
 ## 低い手のひらを差し出した人が雪玉を持っていて、自分は持っていない: 握手で対決が始まるように作る（ロッジの床では始まらないので作らない）
@@ -743,6 +845,269 @@ func _duel_move(dir: Vector3, them: Node3D, dt: float) -> void:
 	_pose_doll()
 
 
+# ---------------------------------------------------------------- 山めぐり
+
+## はじめの山（main.gd。ばらけた所から始める）
+func roam_from(area: String) -> void:
+	_area = area
+	_route = _route_of(area)
+
+
+## 山へ行く道: 尾根を麓から頂上へ（いまの所にいちばん近い点から）→ 頂上 → 米袋を広げる所
+func _route_of(area: String) -> Array:
+	var a: Dictionary = ROAM_AREAS[area]
+	var at := Vector2(global_position.x, global_position.z)
+	var out: Array = []
+	if a.has("ridge"):
+		var pts: Array = a.ridge.duplicate()
+		pts.reverse()
+		var near := INF
+		var from := 0
+		for i in pts.size():
+			var d: float = at.distance_to(pts[i])
+			if d < near:
+				near = d
+				from = i
+		out = pts.slice(from)
+		out.append(a.top)
+		var side: Vector2 = a.side * randf_range(-1.0, 1.0)
+		out.append(a.launch + side * 3.0)
+		_ride_goal = a.foot + side * float(a.spread)
+	else:
+		out.append(a.top)
+		var dir := Vector2.from_angle(randf() * TAU)   # 丘はどの向きにも滑れる
+		out.append(a.top + dir * 6.0)
+		_ride_goal = a.top + dir * 58.0
+	return out
+
+
+## 次の山: 人のいる山に向かっている仲間がいなければ、そこへ（遊ぶ人が対決を申し込む相手が見つからなくならないように）。
+## それ以外は、さっきと別の、向かっている仲間が少ない山
+func _pick_area() -> String:
+	if get_parent().get("args") and get_parent().args.has("roam-all-hill"):
+		return "hill"
+	var count := {}
+	for k in ROAM_AREAS:
+		count[k] = 0
+	for b in get_tree().get_nodes_in_group("bots"):
+		if b != self and count.has(b._area):
+			count[b._area] += 1
+	for h in _humans():
+		var a := Areas.of(Vector2(h.global_position.x, h.global_position.z))
+		a = a if ROAM_AREAS.has(a) else "hill"
+		if count[a] == 0:
+			return a
+	var best: Array = []
+	var low := 999
+	for k in ROAM_AREAS:
+		if k == _last_area:
+			continue
+		if count[k] < low:
+			low = count[k]
+			best = []
+		if count[k] == low:
+			best.append(k)
+	return best[randi() % best.size()]
+
+
+## 次の山へ歩く。頂上の先（広げる所）まで来たら、米袋を広げて乗る
+func _roam_walk(dt: float) -> void:
+	if _area == "":
+		_roam_rest -= dt
+		if _roam_rest > 0.0:
+			_settle_walk(Vector3.ZERO, dt)
+			return
+		_area = _pick_area()
+		_route = _route_of(_area)
+		_wp_best = INF
+		_wp_t = 0.0
+	if _route.is_empty():
+		_roam_launch()
+		_settle_walk(Vector3.ZERO, dt)
+		return
+	var at := Vector2(global_position.x, global_position.z)
+	var w: Vector2 = _route[0]
+	var gap := at.distance_to(w)
+	_wp_t += dt
+	if gap < _wp_best - 0.5:
+		_wp_best = gap
+		_wp_t = 0.0
+	if gap < 1.5 or _wp_t > 20.0:   # 着いた。長く近づけなければ、次の点へ
+		_route.pop_front()
+		_wp_best = INF
+		_wp_t = 0.0
+		return
+	_far_t -= dt
+	if _far_t <= 0.0:
+		_far_t = randf_range(0.4, 0.6)
+		var h := _nearest_human()
+		far = h == null or global_position.distance_to(h.global_position) > FAR
+	var dir := Vector3(w.x - at.x, 0, w.y - at.y).normalized()
+	if far:
+		_far_acc += dt
+		if _far_acc < FAR_STEP:
+			return
+		var move := minf(ROAM_SPEED * _far_acc, gap)
+		_far_acc = 0.0
+		global_position += dir * move
+		global_position.y = get_parent().height(global_position.x, global_position.z) + 0.02
+		velocity = Vector3.ZERO
+		look_at(global_position + dir, Vector3.UP)
+		_pose_doll()
+		return
+	_settle_walk(_round_things(dir), dt)
+
+
+## 行き先へ近づけないでいるあいだだけ、まわり（人・ソリ・木・岩）をよけて回り込む（当たりを調べるのはそのときだけ）
+func _round_things(dir: Vector3) -> Vector3:
+	return _detour(dir, 0.6) if _wp_t > 1.0 else dir
+
+
+func _settle_walk(dir: Vector3, dt: float) -> void:
+	velocity.x = dir.x * ROAM_SPEED
+	velocity.z = dir.z * ROAM_SPEED
+	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
+	move_and_slide()
+	if dir.length() > 0.1:
+		look_at(global_position + dir, Vector3.UP)
+	_pose_doll()
+
+
+## 足もとに米袋を広げて乗る（あなたの N と同じ出来事。player.gd の summon_sack）。滑る向きへ少し勢いをつけて
+func _roam_launch() -> void:
+	far = false
+	var at2 := Vector2(global_position.x, global_position.z)
+	var to := (_ride_goal - at2).normalized()
+	var fwd := Vector3(to.x, 0, to.y)
+	look_at(global_position + fwd, Vector3.UP)
+	var q := PhysicsRayQueryParameters3D.create(global_position + Vector3.UP * 1.0, global_position + Vector3.DOWN * 2.0)
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	var at: Vector3 = hit.position if hit else global_position
+	var up: Vector3 = hit.normal if hit and hit.normal.y > 0.6 else Vector3.UP
+	var carry := fwd * 2.5
+	carry -= up * carry.dot(up)
+	if not craft.send({"kind": "sack_out", "who": id, "at": at, "yaw": rotation.y, "up": up, "v": carry}):
+		_roam_done()
+		return
+	var gs: RigidBody3D = craft.sack_sled(id)
+	if gs == null:
+		_roam_done()
+		return
+	sled = gs
+	seat = gs.mount(self)
+	if seat == Vector3.INF:
+		_roam_done()
+		return
+	_col.disabled = true
+	state = State.RIDE
+	handle = Vector3.INF
+	SackLook.set_stage(gs, seat, 2)
+	_ride_t = 0.0
+	_still = 0.0
+	_kick_t = 0.0
+	_goal_best = INF
+	_goal_t = 0.0
+
+
+## 滑る: 行き先へ体重をかけ、足で漕ぐ。行き先を過ぎるか止まったら降りる（雪をかく力で、平らな段も越えられる）
+func _roam_ride(dt: float) -> void:
+	if sled == null or not is_instance_valid(sled) or sled.kind != "sack":   # 米袋が片付けられた
+		seat = Vector3.INF
+		sled = get_parent().get("sled")
+		_col.disabled = false
+		state = State.PUSH
+		_roam_done()
+		return
+	global_position = sled.to_global(seat)
+	_pose_doll()
+	_ride_t += dt
+	var at := Vector2(global_position.x, global_position.z)
+	var to := _ride_goal - at
+	var speed: float = sled.linear_velocity.length()
+	var hv := Vector2(sled.linear_velocity.x, sled.linear_velocity.z)
+	_goal_t += dt
+	if to.length() < _goal_best - 3.0:   # 行き先のまわりを回って近づけないときも、着いたことにする
+		_goal_best = to.length()
+		_goal_t = 0.0
+	var arrived: bool = to.length() < 10.0 or (speed > 1.0 and hv.dot(to) < 0.0) or _goal_t > 8.0
+	if not arrived:
+		var fwd := Emotes._flat(-sled.global_basis.z).normalized()
+		var want := Vector3(to.x, 0, to.y).normalized()
+		var err := atan2(fwd.cross(want).y, fwd.dot(want))
+		sled.lean(clampf(-err * 1.5, -1.0, 1.0), true)
+		_kick_t -= dt
+		if _kick_t <= 0.0:
+			_kick_t = randf_range(0.5, 1.2)
+			if speed < 8.0:
+				sled.kick(self)
+	_still = _still + dt if speed < 0.4 else 0.0
+	if (arrived and _still > 0.8) or _still > 4.0 or _ride_t > RIDE_MAX:
+		_roam_get_off()
+
+
+## 降りて、米袋を帯に戻す。次の山へ
+func _roam_get_off() -> void:
+	var gs := sled
+	var was := seat
+	sled.dismount(self)
+	seat = Vector3.INF
+	state = State.PUSH
+	_col.disabled = false
+	var at: Vector3 = gs.global_position + gs.global_basis.z * 0.7
+	at.y = get_parent().height(at.x, at.z) + 0.2
+	global_position = at
+	velocity = Vector3.ZERO
+	SackLook.set_stage(gs, was, 0)
+	craft.send({"kind": "sack_in", "who": id})   # ソリの持ち物を戻す（craft.gd が sled を元のソリへ戻す）
+	if sled == gs:
+		sled = get_parent().get("sled")
+	_roam_done()
+
+
+func _roam_done() -> void:
+	_last_area = _area
+	_area = ""
+	_route = []
+	_roam_rest = randf_range(1.0, 4.0)
+
+
+## そばの人がソリを押す・乗っているあいだは、手伝う（true のあいだ、先の PUSH・WAIT・RIDE で動く）
+func _helping(dt: float) -> bool:
+	var home: RigidBody3D = get_parent().get("sled")
+	if home == null or sled != home:
+		return false
+	var touched := false
+	for h in _humans():
+		if h.get("sled") == home and int(h.get("mode")) in [1, 2, 3]:
+			touched = true
+			break
+	if touched and (_help_t > 0.0 or (global_position.distance_to(home.global_position) < HELP_NEAR and _helpers() < HELP_MAX)):
+		_help_t = HELP_KEEP
+		far = false
+		return true
+	if _help_t > 0.0:
+		_help_t -= dt
+		if _help_t > 0.0:
+			return true
+		# 人が離れた: 手伝いをやめて、山めぐりへ戻る（行く道は、いまの所から引き直す）
+		let_go()
+		if state == State.RIDE:
+			get_off()
+		state = State.PUSH
+		if _area != "":
+			_route = _route_of(_area)
+	return false
+
+
+func _helpers() -> int:
+	var n := 0
+	for b in get_tree().get_nodes_in_group("bots"):
+		if b != self and b._help_t > 0.0:
+			n += 1
+	return n
+
+
 # ---------------------------------------------------------------- ロッジでくつろぐ
 
 func _on_seat(ev: Dictionary) -> void:
@@ -764,11 +1129,19 @@ func _on_seat(ev: Dictionary) -> void:
 			_left = seat_i
 
 
-## あなたが座っている席（座っていなければ空）
+## 遊んでいる人が座っている席（何人か座っていれば、いちばん近くの人の席。座っていなければ空）
 func _player_seat() -> Dictionary:
-	if player == null or seats == null or int(player.get("seat_i")) < 0:
+	if seats == null:
 		return {}
-	return seats.seat(int(player.seat_i))
+	var best := {}
+	var near := INF
+	for h in _humans():
+		var i := int(seats.seat_of.get(int(h.get("id")), -1))
+		var d: float = global_position.distance_squared_to(h.global_position)
+		if i >= 0 and d < near:
+			near = d
+			best = seats.seat(i)
+	return best
 
 
 func _lounge(dt: float) -> void:
@@ -880,14 +1253,16 @@ var _turn_sign := 1.0        # 机をよけて回り込む向き（ふさがれ�
 
 
 ## 行きたい向き want の前がふさがっていれば（机など）、少しずつ向きを振って通れる向きを選ぶ。
-## 前に選んだ回り込みの向きを先に試すので、机の縁に沿って端まで回り込める
-func _detour(want: Vector3) -> Vector3:
-	if not test_move(global_transform, want * 0.35):
+## 前に選んだ回り込みの向きを先に試すので、机の縁に沿って端まで回り込める。lift は調べるときに体を持ち上げる高さ（坂の雪面を壁と見ないように）
+func _detour(want: Vector3, lift := 0.0) -> Vector3:
+	var at := global_transform
+	at.origin.y += lift
+	if not test_move(at, want * 0.35):
 		return want
 	for a in [0.6, 1.1, 1.6, 2.2]:
 		for sg in [_turn_sign, -_turn_sign]:
 			var d := want.rotated(Vector3.UP, a * sg)
-			if not test_move(global_transform, d * 0.35):
+			if not test_move(at, d * 0.35):
 				_turn_sign = sg
 				return d
 	return want

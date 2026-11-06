@@ -1,18 +1,21 @@
 extends CharacterBody3D
 
 const Doll := preload("res://doll.gd")
+const SackLook := preload("res://sack_look.gd")
 ## 通信でつないでいるほかの人の体（net.gd が置く）。動きはその人の画面が決め、ここは届いた姿を写す。
 ## ソリには、あなたや仲間と同じ口（take_handle・push・mount・lean・pull_rope）でかかわる。
 ## 力をかけるのはどの画面でも同じに呼ぶが、効くのはホストの画面だけ（つなぐ側のソリは、ホストのソリの姿を写しているので）。
 ## 体の当たりは持たない（届いた位置へ置き直すので、ソリや人を押してしまわないように）
 ## 体の調子（紙の湿り気・食べたぬくもり）もその人の画面が決めて届く。押す・引く力にはその値を掛ける（player.gd と同じ）
+## つなぐ側の画面の仲間（CPU）の体も、これ（cpu）。動かすのはホストの画面の bot.gd で、ここは届いた姿を写す。番号はホストの画面の番号
 
 enum Mode { WALK, GRIP, RIDE, ROPE, SIT, DRUM }   # player.gd の Mode と同じ並び
 const STALE := 0.5           # これより長く届かなければ、押す・引く・体重移動をやめる (s)
 const PULL := 12.0           # 届いた位置へ寄る速さ（1/s）
 const SNAP := 4.0            # これより離れていたら、寄らずに置き直す (m)
 
-var peer := 0                # この人の通信の番号
+var peer := 0                # この人の通信の番号（仲間は、ホストの画面での人の番号）
+var ride_lean := Vector3.ZERO   # 乗っているときの体重移動（一緒に乗った仲間が合わせる。bot.gd）
 var net: Node                # net.gd
 var doll: Doll
 var sled: RigidBody3D        # いま触っているソリ（来た姿の sled から）
@@ -78,6 +81,7 @@ func put(s: Dictionary) -> void:
 		_enter(m, h, s.get("st", Vector3.INF))
 	if mode == Mode.RIDE:
 		seat = s.get("st", seat)
+		ride_lean = s.get("l", Vector3.ZERO)
 		_yield_seat()
 	_s = s
 
@@ -143,6 +147,8 @@ func _leave() -> void:
 				sled.release_rope(self)
 			Mode.RIDE:
 				sled.dismount(self)
+				if sled.kind == "sack":
+					SackLook.set_stage(sled, seat, 0)
 	mode = Mode.WALK
 	handle = Vector3.INF
 	seat = Vector3.INF
@@ -160,6 +166,8 @@ func _enter(m: int, h: Vector3, st: Vector3) -> void:
 		Mode.RIDE:
 			sled.mount(self)            # 席はその人の画面で決まった所（st）に座る
 			seat = st
+			if sled.kind == "sack":     # 米袋は、座った所がへこむ（player.gd・bot.gd と同じ）
+				SackLook.set_stage(sled, seat, 2)
 	mode = m
 
 
@@ -244,6 +252,7 @@ func _pose_doll() -> void:
 	doll.rock_at = _s.get("rp", Vector3.ZERO)
 	doll.rock_roll = float(_s.get("rr", 0.0))   # 揺り椅子: 弓が床を転がる
 	doll.rock_turns = bool(_s.get("rt", false))   # ビーズクッション: その人の見ている向き（f）へ、12 コマで回る
+	doll.waving = bool(_s.get("wv", false))   # 呼ばれて手を振る（仲間。bot.gd）
 	doll.spin_axis = Vector3.ZERO
 	doll.drum_fit = 1.0
 	if _drum:   # 乾燥機の中: 届いた姿でなく、この画面の乾燥機のコマで（player.gd の _pose_doll と同じ）

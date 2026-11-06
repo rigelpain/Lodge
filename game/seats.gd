@@ -6,7 +6,8 @@ const Doll := preload("res://doll.gd")
 ## 中身は数だけにして、そのまま通信に乗せられるようにする。seat は席の番号（seats の並び。同じ glb なら全員の画面で同じ）。
 ##   sit   {seat}   その席に座る（空いていなければ断る）
 ##   stand {seat}   その席から立つ
-## いまは一人の画面の中だけ: send() がすぐ frame を付けて配る。通信を入れたら、ホストが席の空きを確かめてから全員に配る。
+## send() がすぐ frame を付けて配る。通信では、どの席が埋まっているかだけをほかの画面へも知らせる（from_net）。
+## 座る動きはその人の姿で届くので、ここが動かすのは空きの札だけ。同時に同じ席へ座ると、先に座った札が残る（どちらも座れてしまう）。
 ##
 ## 席はロッジの glb（lodge/build_lodge.py）の座面（素材 cushion の面）から、ゲームを始めたときに見つける。
 ## 家具は 1 つの形にまとめて書き出されていて、椅子ごとの名前がないので、面をつながったかたまりに分け、高さと形で見分ける。
@@ -72,7 +73,46 @@ func send(ev: Dictionary) -> bool:
 	ev = ev.duplicate()
 	ev["frame"] = Doll.frame_index() + 1
 	happened.emit(ev)
+	var net := get_parent().get_node_or_null("Net")
+	if net and net.online:
+		if net.is_host():
+			net.down("seat", ev)
+		else:
+			net.up("seat", ev)
 	return true
+
+
+## ほかの画面で座った・立った（net.gd）。札が先に埋まっていれば、そのまま（この画面で座っている人が立てなくならないように）
+func from_net(ev: Dictionary) -> void:
+	var s := int(ev.seat)
+	var who := int(ev.who)
+	if ev.kind == "sit":
+		if not taken.has(s):
+			taken[s] = who
+		seat_of[who] = s
+	elif ev.kind == "stand":
+		if taken.get(s, -1) == who:
+			taken.erase(s)
+		if seat_of.get(who, -1) == s:
+			seat_of.erase(who)
+
+
+## 帰った人の席を空ける（net.gd）
+func forget(who: int) -> void:
+	if seat_of.has(who):
+		if taken.get(seat_of[who], -1) == who:
+			taken.erase(seat_of[who])
+		seat_of.erase(who)
+
+
+## いま埋まっている席（あとから来た人へ、ホストが渡す）
+func snapshot() -> Dictionary:
+	return {"taken": taken, "seat_of": seat_of}
+
+
+func load_snapshot(d: Dictionary) -> void:
+	taken.merge(d.get("taken", {}), true)
+	seat_of.merge(d.get("seat_of", {}), true)
 
 
 func seat(i: int) -> Dictionary:
