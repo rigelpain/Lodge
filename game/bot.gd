@@ -29,6 +29,8 @@ const SackLook := preload("res://sack_look.gd")
 ## ほかの仲間の少ない山を選ぶので、ばらける。人のいる山に誰も向かっていなければ、そこを選ぶ（対決の相手が見つからなくならないように）。
 ## 歩いているあいだに、そばの人がソリを押す・乗ると、手伝いに来て一緒に押して乗る（先の PUSH・WAIT・RIDE。手伝うのは 2 人まで）。
 ## 人の FAR より遠くでは、当たりを見ずに地面の高さをなぞって間引いて歩く（重くしない）
+## 物をよける: 少し先に物があるか、点へ近づけないでいるときだけ、まわりの当たりを格子に調べて回り込む（_steer_to。ソリ・木・ロッジ）。
+## 着いていない点は飛ばさない（頂上でない所で米袋を広げない）。閉じた所に入り込んだら、当たりを消して外へ歩く（_ghost）
 ## 仲間どうし（2026-11-06 代表「CPU同士での雪合戦やCPU同士の協力してのソリ運びなどです」「ソリを買ったり」）:
 ##   雪合戦: 近くの仲間と、雪玉を作って握手して対決する（人との対決と同じ出来事。掛金も賭ける）。
 ##   ソリ運び: 次の山を選ぶときに、ソリがあれば近くの仲間を誘う。みんなでつかむまで待ち、尾根を押して登り、頂上で向きを変えて一緒に乗って滑る。
@@ -61,9 +63,25 @@ const LODGE_SLED_CLEAR := 40.0   # ロッジのソリは、人がこれより近
 const TEAM_WAIT := 20.0      # みんながつかむのを待つ長さ (s)
 const TEAM_STALL := 30.0     # 押しても次の点へ近づけなければ、そこから滑る (s)
 const TEAM_TURN := 8.0       # 頂上で滑る向きへ回す長さの上限 (s)
-const TEAM_LOST := 60.0      # ソリまで歩いても着かなければ、抜ける (s)
+const TEAM_LOST := 30.0      # ソリへ歩いても近づけないでいるのがこれだけ続いたら、抜ける (s)
+const TEAM_NEAR_WAIT := 4.0  # ソリのそばで、持ち場へ寄れないでいるのがこれだけ続いたら、回り込む道を探す (s)
+const TEAM_REACH := 2.0      # 持ち場へ寄れないときは、ここまで近ければつかむ (m)
 const TEAM_TWIST := 2.0      # 組でソリの向きを回す力（重さあたり）
+const NAV_AFTER := 1.0       # 行き先へ近づけないでいるのがこれだけ続いたら、回り込む道を探す (s)
+const NAV_SIZES := [12, 40]  # 道を探す範囲（自分のまわりの半分の幅。m）。狭い範囲で近づけなければ広げる。ソリは狭いほう、ロッジは広いほう
+const NAV_CELL := 0.5        # 道を探す格子の幅 (m)。体の幅（0.7 m）より細かくして、薄い壁を挟んだ 2 ますがつながって見えないように
+const NAV_BUDGET := 400      # 1 コマに調べるます数の目安（広い範囲でも、1 コマを重くしない）
+const NAV_ARM := 0.4         # ますの中心から十字に伸ばす光線の長さ (m)。体の半径より少し長く
+const NAV_STEP_T := 2.0      # 道の次の点へ着けなければ、探し直す (s)
+const NAV_RETRY := 3.0       # 道が見つからなかったとき、探し直すまで (s)
+const NAV_GAIN := 3.0        # 行き先へこれだけ近づけない道は、道と見なさない (m)
+const WP_NEAR := 5.0         # 物が置いてあって点へ寄れないとき、ここまで近ければ着いたことにする (m)
+const WP_NEAR_T := 6.0       # そのそばで待つ長さ (s)
+const WP_GIVE_UP := 45.0     # 点へ近づけないでいるのがこれだけ続いたら、閉じた所に入り込んだと見て、当たりを消して抜ける (s)
+const NAV_AHEAD := 0.7       # まっすぐ歩くとき、地面の高さで先を調べる距離 (m)。ロッジの床の段へ上がらず、手前で回り込む
 const SHED_EXIT := Vector2(8.0, 103.0)   # 下屋のミシンで縫ったソリの出口。北は暖簾の壁なので、東へ出てから進む
+const LODGE_BOX := AABB(Vector3(-62, 0, 78), Vector3(66, 1, 40))   # ロッジを包む箱（x, z）。ソリを運ぶ道がここを横切ると、壁に突き当たって止まる
+const LODGE_PASS := [SHED_EXIT, Vector2(-66, 100)]                # 東と西の脇の点
 const SLED_KIND := "small"   # 買うソリ（小。2 人乗り）
 const CPU_SLEDS := 2         # 自分のソリを持つ仲間の数の上限（雪山がソリだらけにならないように）
 ## 山ごとの滑り方: top 頂上、launch 米袋を広げる所、foot 滑って行く先、spread 滑る先の左右の広がり (m)。丘はどの向きにも滑れる（launch は向きごとに決める）
@@ -97,6 +115,14 @@ var _far_t := 0.0            # 遠いかを見直すまで (s)
 var _far_acc := 0.0          # 間引いて動く時間のたまり (s)
 var _wp_best := INF          # いまの行き先に、いちばん近づいた距離
 var _wp_t := 0.0             # そこから近づけないでいる秒
+var give_ups := 0            # 当たりを消して抜けた回数（確かめ用）
+var _ghost := false          # 閉じた所に入り込んだ: 当たりを消して、遠いときと同じ歩き方で外へ出る
+var _nav: Array = []         # 回り込む道 [Vector2]
+var _nav_t := 0.0            # 道の次の点へ向かっている秒
+var _nav_job := {}           # 調べている途中の範囲 {grid, row, size, to, lift}
+var _nav_wait := 0.0         # 次に道を探すまで (s)
+var _nav_q: PhysicsShapeQueryParameters3D
+var _nav_ray: PhysicsRayQueryParameters3D
 var _help_t := 0.0           # 手伝いの残り (s)
 var _duel_cool := 20.0       # 雪合戦を誘うまで (s)
 var _team_cool := 0.0        # 次に運ぶまで (s)
@@ -371,8 +397,12 @@ func _physics_process(dt: float) -> void:
 			to.y = 0
 			dir = _round_player(to.normalized()) if to.length() > 0.2 else up
 			debug = "持ち場まで%.2f" % (post - global_position).length()
-			# あなたが持ち場のそばに立っていて寄れなければ、少し遠くからつかむ
-			if (post - global_position).length() < (1.4 if _player_within(1.0) else 0.8) and _regrab <= 0.0:
+			var reach := 1.4 if _player_within(1.0) else 0.8   # あなたが持ち場のそばに立っていて寄れなければ、少し遠くからつかむ
+			if not _team.is_empty():
+				dir = _team_walk(dir, post, dt)
+				if _lost_t > TEAM_NEAR_WAIT:
+					reach = TEAM_REACH
+			if (post - global_position).length() < reach and _regrab <= 0.0:
 				if sled.take_handle(self, stand_l):
 					handle = stand_l
 					_col.disabled = true
@@ -995,18 +1025,21 @@ func _roam_walk(dt: float) -> void:
 	if gap < _wp_best - 0.5:
 		_wp_best = gap
 		_wp_t = 0.0
-	if gap < 1.5 or _wp_t > 20.0:   # 着いた。長く近づけなければ、次の点へ
-		_route.pop_front()
-		_wp_best = INF
-		_wp_t = 0.0
+	if gap < 1.5 or (gap < WP_NEAR and _wp_t > WP_NEAR_T):   # 着いた（物が置いてあって寄れなければ、そばまでで）
+		_next_point()
 		return
+	if _wp_t > WP_GIVE_UP and not _ghost:   # 回り込んでも着けない（点は飛ばさない。頂上でない所で広げないように）
+		give_ups += 1
+		_ghost = true
+		_col.disabled = true
+		_nav_clear()
 	_far_t -= dt
 	if _far_t <= 0.0:
 		_far_t = randf_range(0.4, 0.6)
 		var h := _nearest_human()
 		far = h == null or global_position.distance_to(h.global_position) > FAR
 	var dir := Vector3(w.x - at.x, 0, w.y - at.y).normalized()
-	if far:
+	if far or _ghost:
 		_far_acc += dt
 		if _far_acc < FAR_STEP:
 			return
@@ -1017,13 +1050,167 @@ func _roam_walk(dt: float) -> void:
 		velocity = Vector3.ZERO
 		look_at(global_position + dir, Vector3.UP)
 		_pose_doll()
+		if _ghost and not _ground_blocked(global_position, false):
+			_ghost = false
+			_col.disabled = false
+			_wp_best = INF
+			_wp_t = 0.0
 		return
-	_settle_walk(_round_things(dir), dt)
+	_settle_walk(_steer_to(w, dt), dt)
 
 
-## 行き先へ近づけないでいるあいだだけ、まわり（人・ソリ・木・岩）をよけて回り込む（当たりを調べるのはそのときだけ）
-func _round_things(dir: Vector3) -> Vector3:
-	return _detour(dir, 0.6) if _wp_t > 1.0 else dir
+func _next_point() -> void:
+	_route.pop_front()
+	_wp_best = INF
+	_wp_t = 0.0
+	_nav_clear()
+
+
+func _nav_clear() -> void:
+	_nav = []
+	_nav_job = {}
+	_nav_wait = 0.0
+
+
+## ここに地面の高さで立つと、何かに当たるか（床の段も当たる。people なら人と仲間も見る）
+func _ground_blocked(at: Vector3, people := true) -> bool:
+	_nav_ready()
+	var p := Vector3(at.x, get_parent().height(at.x, at.z) + 0.05 + (_col.shape as CapsuleShape3D).height * 0.5, at.z)
+	_nav_q.transform = Transform3D(Basis.IDENTITY, p)
+	return _nav_blocked(get_world_3d().direct_space_state, p, people)
+
+
+## w へ歩く向き。ふだんはまっすぐ。近づけないでいる（_wp_t）あいだだけ、まわりの当たりを調べて回り込む道をたどる（ソリ・ロッジ・木・立っている人）。
+## 探している数コマは、その場で待つ（Vector3.ZERO）
+func _steer_to(w: Vector2, dt: float) -> Vector3:
+	var at := Vector2(global_position.x, global_position.z)
+	_nav_wait -= dt
+	while not _nav.is_empty():
+		var to: Vector2 = _nav[0] - at
+		if to.length() > 0.4:
+			_nav_t += dt
+			if _nav_t <= NAV_STEP_T:
+				return Vector3(to.x, 0, to.y).normalized()
+			_nav = []   # 何かにふさがれた: 探し直す
+			break
+		_nav.pop_front()
+		_nav_t = 0.0
+	if _nav_job.is_empty():
+		var dir := Vector3(w.x - at.x, 0, w.y - at.y).normalized()
+		if _nav_wait > 0.0:
+			return dir
+		# 床の上にいないときは、少し先も見る（ぶつかってからでは、ロッジの出入り口から上がってしまう）
+		var on_ground: bool = global_position.y - get_parent().height(global_position.x, global_position.z) < 0.25
+		if _wp_t <= NAV_AFTER and not (on_ground and _ground_blocked(global_position + dir * NAV_AHEAD, false)):
+			return dir
+		_nav_begin(w, 0)
+	_nav_scan()
+	return Vector3.ZERO
+
+
+## 自分のまわりの格子を用意する（NAV_CELL おき。ますの番号は、座標を NAV_CELL で割った数。当たりは 1 コマに少しずつ調べる）
+func _nav_begin(w: Vector2, size: int) -> void:
+	var half := int(NAV_SIZES[size] / NAV_CELL)
+	var g := AStarGrid2D.new()
+	g.region = Rect2i(_nav_cell_of(Vector2(global_position.x, global_position.z)) - Vector2i(half, half), Vector2i(half, half) * 2 + Vector2i.ONE)
+	g.diagonal_mode = AStarGrid2D.DIAGONAL_MODE_ONLY_IF_NO_OBSTACLES   # 角を斜めに抜けない
+	g.update()
+	# 床の上（ロッジの縁の段）に乗っていれば、その高さで調べる。床の段を壁と見ないように
+	var ground: float = get_parent().height(global_position.x, global_position.z)
+	_nav_job = {"grid": g, "row": g.region.position.y, "size": size, "to": w, "lift": maxf(0.05, global_position.y - ground)}
+
+
+func _nav_cell_of(at: Vector2) -> Vector2i:
+	return Vector2i((at / NAV_CELL).round())
+
+
+func _nav_ready() -> void:
+	if _nav_q == null:
+		_nav_q = PhysicsShapeQueryParameters3D.new()
+		_nav_q.shape = _col.shape
+		_nav_q.exclude = [get_rid()]
+		_nav_ray = PhysicsRayQueryParameters3D.new()
+		_nav_ray.exclude = [get_rid()]
+
+
+func _nav_scan() -> void:
+	var g: AStarGrid2D = _nav_job.grid
+	_nav_ready()
+	var space := get_world_3d().direct_space_state
+	var r := g.region
+	var half_h: float = (_col.shape as CapsuleShape3D).height * 0.5
+	for _i in maxi(1, NAV_BUDGET / r.size.x):
+		var row: int = _nav_job.row
+		if row >= r.end.y:
+			_nav_solve()
+			return
+		for col in range(r.position.x, r.end.x):
+			var x := col * NAV_CELL
+			var z := row * NAV_CELL
+			var y: float = get_parent().height(x, z) + _nav_job.lift + half_h
+			_nav_q.transform = Transform3D(Basis.IDENTITY, Vector3(x, y, z))
+			g.set_point_solid(Vector2i(col, row), _nav_blocked(space, Vector3(x, y, z), true))
+		_nav_job.row = row + 1
+
+
+## 体を置くと、何かに当たるか（地面は見ない）。壁のメッシュは裏から見ると当たらないので（体の中心が薄い壁の厚みの中にあると空いて見える）、十字の光線でも確かめる
+func _nav_blocked(space: PhysicsDirectSpaceState3D, at: Vector3, people: bool) -> bool:
+	for hit in space.intersect_shape(_nav_q, 8):
+		if not _nav_is_ground(hit.collider) and (people or not hit.collider is CharacterBody3D):
+			return true
+	for arm in [Vector3(NAV_ARM, 0, 0), Vector3(0, 0, NAV_ARM)]:
+		_nav_ray.from = at - arm
+		_nav_ray.to = at + arm
+		var hit := space.intersect_ray(_nav_ray)
+		if hit and not _nav_is_ground(hit.collider) and (people or not hit.collider is CharacterBody3D):
+			return true
+	return false
+
+
+func _nav_is_ground(c: Object) -> bool:
+	return c is StaticBody3D and (c as Node).get_child_count() > 0 and (c as Node).get_child(0) is CollisionShape3D \
+			and ((c as Node).get_child(0) as CollisionShape3D).shape is HeightMapShape3D
+
+
+## 調べ終えた格子で、行き先にいちばん近づける所までの道を探す。十分に近づけなければ、範囲を広げる
+func _nav_solve() -> void:
+	var g: AStarGrid2D = _nav_job.grid
+	var w: Vector2 = _nav_job.to
+	var size: int = _nav_job.size
+	var at := Vector2(global_position.x, global_position.z)
+	_nav_job = {}
+	var from: Variant = _nav_free_cell(g, at)
+	var aim: Vector2 = at + (w - at).limit_length(float(NAV_SIZES[size]) - 1.0)
+	var path: Array = Array(g.get_id_path(from, _nav_cell_of(aim), true)) if from != null else []
+	if not path.is_empty():
+		var end := Vector2(path[-1]) * NAV_CELL
+		if end.distance_to(w) < at.distance_to(w) - NAV_GAIN or end.distance_to(w) < 1.5:
+			_nav = path.map(func(c): return Vector2(c) * NAV_CELL)
+			_nav_t = 0.0
+			return
+	if size + 1 < NAV_SIZES.size():
+		_nav_begin(w, size + 1)
+	else:
+		_nav_wait = NAV_RETRY
+
+
+## 歩き始めるます: 自分のいる所にいちばん近い空いたますのうち、薄い壁の向こうでない所（壁に体を寄せていると、自分のますがふさがって見える）。なければ null
+func _nav_free_cell(g: AStarGrid2D, at: Vector2) -> Variant:
+	var c := _nav_cell_of(at)
+	var near: Array = []
+	for dz in range(-3, 4):
+		for dx in range(-3, 4):
+			var p := c + Vector2i(dx, dz)
+			if g.is_in_boundsv(p) and not g.is_point_solid(p):
+				near.append(p)
+	near.sort_custom(func(a, b): return (Vector2(a) * NAV_CELL).distance_squared_to(at) < (Vector2(b) * NAV_CELL).distance_squared_to(at))
+	var from := global_transform
+	from.origin.y += 0.2   # 坂の雪面を壁と見ないように
+	for p in near:
+		var to: Vector2 = Vector2(p) * NAV_CELL - at
+		if to.length() < 0.05 or not test_move(from, Vector3(to.x, 0, to.y)):
+			return p
+	return null
 
 
 func _settle_walk(dir: Vector3, dt: float) -> void:
@@ -1126,6 +1313,10 @@ func _roam_done() -> void:
 	_last_area = _area
 	_area = ""
 	_route = []
+	_nav_clear()
+	if _ghost:
+		_ghost = false
+		_col.disabled = false
 	_roam_rest = randf_range(1.0, 4.0)
 
 
@@ -1190,7 +1381,7 @@ func _keep_sled() -> void:
 
 ## 雪合戦に誘える（山めぐりの途中で、ほかのことをしていない）
 func _free_for_fun() -> bool:
-	return roam and state != State.RIDE and _team.is_empty() and _errand == "" and _five_with < 0 and _help_t <= 0.0
+	return roam and state != State.RIDE and _team.is_empty() and _errand == "" and _five_with < 0 and _help_t <= 0.0 and not _ghost
 
 
 func _vs_bot(them: Node3D) -> bool:
@@ -1276,12 +1467,22 @@ func _try_team() -> bool:
 ## 組を作る（s をみんなで area へ運ぶ）
 func make_team(s: RigidBody3D, mates: Array, area: String) -> void:
 	var route := _route_of(area, s.global_position)
+	var at := Vector2(s.global_position.x, s.global_position.z)
 	if s.global_position.x < SHED_EXIT.x - 2.0 and s.global_position.x > -32.0 and absf(s.global_position.z - SHED_EXIT.y) < 22.0:
 		route.push_front(SHED_EXIT)
+	elif _crosses_lodge(at, route[0]):
+		for p in LODGE_PASS:
+			if not _crosses_lodge(at, p) and not _crosses_lodge(p, route[0]):
+				route.push_front(p)
+				break
 	var t := {"sled": s, "route": route, "goal": _ride_goal, "area": area, "members": [], "go": false, "turned": false,
 			"hold_t": 0.0, "stall": 0.0, "best": INF, "turn_t": 0.0}
 	for b in [self] + mates:
 		b._join_team(t)
+
+
+func _crosses_lodge(a: Vector2, b: Vector2) -> bool:
+	return LODGE_BOX.intersects_segment(Vector3(a.x, 0.5, a.y), Vector3(b.x, 0.5, b.y)) != null
 
 
 func _in_duel() -> bool:
@@ -1300,6 +1501,9 @@ func _join_team(t: Dictionary) -> void:
 	state = State.PUSH
 	far = false
 	_lost_t = 0.0
+	_wp_best = INF
+	_wp_t = 0.0
+	_nav_clear()
 
 
 ## 組を抜ける（着けなかった・乗れなかった）
@@ -1320,12 +1524,27 @@ func _team_step(dt: float) -> bool:
 	if t.turned:
 		_team_board(t, dt)
 		return true
-	_lost_t = 0.0 if handle != Vector3.INF else _lost_t + dt
+	_lost_t = 0.0 if handle != Vector3.INF else _lost_t + dt   # 近づいているあいだは _team_walk が 0 に戻す
 	if _lost_t > TEAM_LOST:
 		_leave_team()
 		_settle_walk(Vector3.ZERO, dt)
 		return true
 	return false
+
+
+## 組で、つかむ所まで歩く向き。ソリのそばは dir（ソリの縁を回る道）のまま。遠いときと、そばで寄れないでいるときは、物を回り込んで歩く
+func _team_walk(dir: Vector3, post: Vector3, dt: float) -> Vector3:
+	var w := Vector2(post.x, post.z)
+	var gap := Vector2(global_position.x, global_position.z).distance_to(w)
+	_wp_t += dt
+	if gap < _wp_best - 0.5:
+		_wp_best = gap
+		_wp_t = 0.0
+		_lost_t = 0.0
+	if gap > 4.0 or _lost_t > TEAM_NEAR_WAIT:
+		return _steer_to(w, dt)
+	_nav_clear()
+	return dir
 
 
 ## 組の先頭の人が、組の進み具合を見る（みんながつかんだか・次の点・頂上で向きを変える）
@@ -1336,8 +1555,11 @@ func _team_lead(t: Dictionary, dt: float) -> void:
 		for m in t.members:
 			if m.handle != Vector3.INF:
 				held += 1
-		if held > 0:
-			t.hold_t += dt
+		var coming := false
+		for m in t.members:
+			coming = coming or (m.handle == Vector3.INF and m._lost_t < 3.0)
+		if held > 0:   # まだ歩いて来ている仲間がいれば、長めに待つ（押し始めると追いつけない）
+			t.hold_t += dt * (0.25 if coming else 1.0)
 		t.go = held == t.members.size() or t.hold_t > TEAM_WAIT
 		return
 	var at := Vector2(s.global_position.x, s.global_position.z)
@@ -1608,10 +1830,9 @@ var _turn_sign := 1.0        # 机をよけて回り込む向き（ふさがれ�
 
 
 ## 行きたい向き want の前がふさがっていれば（机など）、少しずつ向きを振って通れる向きを選ぶ。
-## 前に選んだ回り込みの向きを先に試すので、机の縁に沿って端まで回り込める。lift は調べるときに体を持ち上げる高さ（坂の雪面を壁と見ないように）
-func _detour(want: Vector3, lift := 0.0) -> Vector3:
+## 前に選んだ回り込みの向きを先に試すので、机の縁に沿って端まで回り込める
+func _detour(want: Vector3) -> Vector3:
 	var at := global_transform
-	at.origin.y += lift
 	if not test_move(at, want * 0.35):
 		return want
 	for a in [0.6, 1.1, 1.6, 2.2]:
