@@ -160,20 +160,36 @@ func _run() -> void:
 	await _wait(0.2)
 	var rt: Array = p.rack_target()
 	_say(rt.size() == 2 and rt[0] == s and rt[1] == "rack_in", "台の前で F: 山のソリを戻す案内")
-	# 触っていると断る
+	# ほかの人が触っていても、持ち主は呼べる（断るのはペグだけ）
+	for how in ["乗っている", "つかんでいる", "紐を持っている"]:
+		if how == "乗っている":
+			s.riders.append(bot)
+		elif how == "つかんでいる":
+			s.holders[bot] = Vector3.ZERO
+		else:
+			s.rope_holder = bot
+		rt = p.rack_target()
+		_say(rt.size() == 2 and rt[0] == s and rt[1] == "rack_in" and not p.rack_refused(), "%s人がいても戻す案内（『いま呼べない』の絵は出ない）" % how)
+		s.riders.erase(bot)
+		s.holders.erase(bot)
+		s.rope_holder = null
+	# 何台もあれば、だれも触っていないソリが先（遠くても近くても）
+	var near_spot := _lodge(-30.0, -10.0)
+	near_spot.y = main.height(near_spot.x, near_spot.z) + 0.3
+	craft.send({"kind": "sewn", "who": p.id, "sled": "small", "fabric": "", "at": near_spot, "yaw": 0.0})
+	var idle: RigidBody3D = craft.sleds[craft.sleds.keys().back()]
 	s.riders.append(bot)
-	_say(not craft.send({"kind": "rack_in", "who": p.id, "id": id}), "乗っている人がいると断る")
-	_say(p.rack_refused(), "そのときは『いま呼べない』の絵")
+	await _wait(0.1)
+	rt = p.rack_target()
+	_say(rt.size() == 2 and rt[0] == idle and idle != s, "遠いソリに人が乗っていて、近いソリが空なら、空のソリを先に戻す案内")
 	s.riders.erase(bot)
-	s.holders[bot] = Vector3.ZERO
-	_say(not craft.send({"kind": "rack_in", "who": p.id, "id": id}), "つかんでいる人がいると断る")
-	s.holders.erase(bot)
-	s.rope_holder = bot
-	_say(not craft.send({"kind": "rack_in", "who": p.id, "id": id}), "紐を持っている人がいると断る")
-	s.rope_holder = null
+	craft.sleds.erase(craft.sled_id(idle))
+	idle.queue_free()
+	await _wait(0.1)
 	s.peg = Node3D.new()
 	s.add_child(s.peg)
 	_say(not craft.send({"kind": "rack_in", "who": p.id, "id": id}), "ペグで留めていると断る")
+	_say(p.rack_refused(), "そのときは『いま呼べない』の絵")
 	s.peg.free()
 	s.peg = null
 	_say(s.global_position.distance_to(far) < 2.0, "断られたソリは山のまま（動かない）")

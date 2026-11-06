@@ -74,6 +74,8 @@ func put(s: Dictionary) -> void:
 		_set_doll(kind)
 	var sl: RigidBody3D = net.sled_at(s.get("sl", NodePath())) if net else null
 	var m := int(s.get("m", Mode.WALK))
+	if sl and sl.racked and m in [Mode.GRIP, Mode.ROPE, Mode.RIDE]:
+		m = Mode.WALK   # 立てかけ台へ呼ばれる前に送られた姿: 台のソリには触れないので、体を台へ飛ばさない（その人の画面にも、すぐ届く）
 	var h: Vector3 = s.get("h", Vector3.INF)
 	if sl != sled or m != mode or (m == Mode.GRIP and h != handle):
 		_leave()

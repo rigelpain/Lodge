@@ -507,7 +507,7 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var si: int = p.seat_near()
 	if si >= 0 and not p.rooted():
 		_hint("sit", ["F"], "sit", p.seats.seat(si).pos + Vector3.UP * 0.85)
-	# ソリの立てかけ台: F で自分のソリを戻す（山から呼ぶ）・持ち出す。触られていて呼べないときは、F なしで「いまは呼べない」の絵
+	# ソリの立てかけ台: F で自分のソリを戻す（山から呼ぶ）・持ち出す。ペグで留めてあって呼べないときは、F なしで「いまは呼べない」の絵
 	if p.has_method("rack_target") and not p.rooted():
 		var rt: Array = p.rack_target()
 		if not rt.is_empty():
