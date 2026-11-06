@@ -361,6 +361,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"pal_shoulder": _pals(ci, a, tint, "shoulder")
 		"pal_pet": _pals(ci, a, tint, "pet")
 		"dye": _dye(ci, a, tint)
+		"swatch_book": _swatch_book(ci, a)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
 		"person_sit": doll(ci, Vector2(0, 22), tint, "sit", a)
 		_:   # 工房の絵（型紙・布・畳む・広げる。craft_icons.gd）
@@ -876,6 +877,15 @@ static func _tiny_bird(ci: CanvasItem, c: Vector2, k: float, a: float) -> void:
 	patch(ci, circ(c + Vector2(5, -5) * k, 3.6 * k, 12), RED, a, false)
 	patch(ci, PackedVector2Array([c + Vector2(8, -6) * k, c + Vector2(12, -4.5) * k, c + Vector2(8, -3.5) * k]), MUSTARD, a, false)   # くちばし
 	ci.draw_circle(o + (c + Vector2(6, -6) * k) * s, 1.0 * k * s, Color(0.1, 0.08, 0.08, a))
+
+
+## 布の見本帳: 真鍮の輪で綴じて扇に開いたフェルトの布
+static func _swatch_book(ci: CanvasItem, a: float) -> void:
+	var cols := [Color("D2553A"), Color("D8A43E"), Color("3F6B4A"), Color("2F7F8F"), Color("34477E"), Color("7A4A6E")]
+	for i in cols.size():
+		var ang: float = lerpf(-1.05, 1.05, float(i) / (cols.size() - 1))
+		patch(ci, xf(rr(-7, 0, 14, 40, 2), ang, Vector2(0, -20)), cols[i], a, false)
+	patch(ci, circ(Vector2(0, -20), 5.0, 12), Color(0.82, 0.66, 0.30), a, false)
 
 
 ## 小さな折り紙の子狐（座って右を向く）
