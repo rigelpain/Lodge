@@ -7,6 +7,8 @@ extends SceneTree
 ##   --far=7 --near=2.6 --walk-s=1.5 --stay-s=3 --back=1   歩く距離と時間（--back=0 で戻らない）
 ##   --side=1.2 --cam-back=4.5 --cam-h=1.6 --look-h=1.2    カメラの置き場（施設の座標。--side は横へ、--cam-back は正面へ）
 ##   --person=1  歩くあなたの人形も写す（既定は写さない）
+##   --sew=1     ミシン: 歩いたあとに縫い始める（針の上下、できた物が台から床へ下りるまでを撮る）
+## 終わりに、見本帳・染台・双眼鏡台が止まっているか（動きが残っていないか）を書き出す。
 
 var args := {}
 var main: Node3D
@@ -102,9 +104,6 @@ func _run() -> void:
 			d.visible = false
 	if args.has("still"):
 		await create_timer(_num("still", 4.0)).timeout
-		if args.get("what") == "machine":
-			var sew: Node3D = main.sewing
-			print("天板の高さ ", sew.machine.find_child("mv_table", true, false).get_child(0).get_aabb() if false else "", " 針の下 ", sew.machine.to_global(sew._mark["work"]).y - ground.y, " 立つ所 ", sew._mark["stand"], " 人形の背 ", who.doll.height() if who.get("doll") else 0.0, " ", who.doll.kind if who.get("doll") else "")
 		root.get_texture().get_image().save_png(_dir().path_join(args.get("name", name_) + ".png"))
 		print("保存: ", name_)
 		quit()
@@ -123,8 +122,16 @@ func _run() -> void:
 		elif back and t > walk + stay:
 			d = lerpf(near, far, minf(1.0, (t - walk - stay) / walk))
 		at.call(d)
+		if args.has("sew") and k == int(walk * 12.0):
+			print("縫い始め ", main.sewing.use())
 		await create_timer(1.0 / 12.0).timeout
 		root.get_texture().get_image().save_png(_dir().path_join("%s_%03d.png" % [name_, k]))
+	if main.sled_book:
+		print("見本帳 動いている ", main.sled_book._moving)
+	if main.dye_vat:
+		print("染台 コマ ", main.dye_vat._stage, " 目標 ", main.dye_vat._goal, " 輪 ", main.dye_vat._rings.filter(func(r): return r.visible).size())
+	for st in main.binocular_stands:
+		print("双眼鏡台 ", st.index, " 動いている ", st._moving, " 上げ ", st._pitch.rotation.x)
 	print("draw calls ", RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME))
 	print("保存: ", frames, " コマ ", _dir())
 	quit()

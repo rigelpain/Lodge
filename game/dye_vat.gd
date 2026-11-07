@@ -40,14 +40,13 @@ const POSES := [
 ## コマごとの、布の持ち上がりの丸み: 真ん中が上がり、両の耳は液の近くに残る（0 で布の幅じゅう同じ高さ）
 const DOME := [0.0, 0.8, 0.8, 0.75, 0.7, 0.65, 0.5, 0.35, 0.08, 0.0, 0.0, 0.0]
 ## 布が上がるあいだに落ちるしずく: [落ち始めのコマ, 落ちるコマ数, 桶の前からの角, 落ちる所の r, 落ち始めの高さ]。落ちた所に輪が広がる
-const DROPS := [[3, 2, -0.2, 1.56, 1.2], [4, 2, 0.17, 1.6, 1.42], [5, 2, -0.05, 1.62, 1.4], [6, 2, 0.26, 1.6, 1.1]]
-const RING_FRAMES := 5       # 輪が広がるコマ数
+const DROPS := [[3, 2, -0.2, 1.56, 1.2], [4, 2, 0.17, 1.6, 1.42], [5, 2, -0.05, 1.62, 1.4], [5, 1, 0.26, 1.6, 1.1]]
+const RING_FRAMES := 4       # 輪が広がるコマ数（最後の輪も、垂れきるコマより前に消える）
 const SPLASH_STAGE := 8      # 布が桶の外を打つコマ
 
 var player: Node3D           # main.gd が入れる
 var craft: Node              # main.gd が入れる（だれかが染めたら、液の色を変える）
 var main: Node               # main.gd が入れる
-var force := -1              # 確かめ用: コマの番号で止める（人を見ない）
 var _liquid: StandardMaterial3D
 var _cloth: StandardMaterial3D
 var _from := START
@@ -59,6 +58,7 @@ var _meshes := {}            # コマ → 布の形（一度作ったら使い�
 var _stage := 0
 var _goal := 0
 var _frame := -1
+var _tick := 0
 var _check := 0.0
 var _drops: Array[MeshInstance3D] = []
 var _rings: Array[MeshInstance3D] = []
@@ -144,8 +144,8 @@ func _process(dt: float) -> void:
 	_check -= dt
 	if _check <= 0.0:
 		_check = Sense.CHECK
-		_goal = (POSES.size() - 1 if Sense.someone_near(main, self, SENSE_R, get_parent().BACK_LIMIT) else 0) if force < 0 else force
-	if _stage != _goal or _rings_busy():
+		_goal = POSES.size() - 1 if Sense.nearest(main, self, SENSE_R, get_parent().BACK_LIMIT) else 0
+	if _stage != _goal:
 		var f := Doll.frame_index()
 		if f != _frame:
 			_frame = f
@@ -157,10 +157,6 @@ func _process(dt: float) -> void:
 	_liquid.albedo_color = c
 	_cloth.albedo_color = c
 	_ring_mat.albedo_color = c.lightened(0.25)
-
-
-func _rings_busy() -> bool:
-	return _stage >= POSES.size() - 1 and _rings.any(func(r): return r.visible)
 
 
 ## 12 コマ／秒のコマごと: 上がるときは 1 コマずつ、沈むときは 2 コマに 1 つずつ
@@ -177,9 +173,6 @@ func _step() -> void:
 		_cloth_mi.mesh = _cloth_mesh(_stage)
 	for i in DROPS.size():
 		_show_drop(i)
-
-
-var _tick := 0
 
 
 ## しずく i: 上がるあいだだけ落ちる。落ちたら輪が広がる（沈むあいだは出さない）

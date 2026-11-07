@@ -30,7 +30,6 @@ const FLAP_MAX := 0.5
 const STILL := 0.002         # これより小さな動きになったら止める (rad)
 
 var main: Node               # main.gd が入れる
-var force := -1.0            # 確かめ用: 0 で閉じ、1 で開く（人を見ない）
 var _felt: MultiMesh
 var _trim: Array[MultiMesh] = []
 var _a := PackedFloat32Array()      # 布ごとの角
@@ -101,7 +100,7 @@ func _process(dt: float) -> void:
 	_check -= dt
 	if _check <= 0.0:
 		_check = Sense.CHECK
-		var want := force > 0.5 if force >= 0.0 else Sense.someone_near(main, self, SENSE_R, -0.4)
+		var want := Sense.nearest(main, self, SENSE_R, -0.4) != null
 		if want != _want:
 			_set_want(want)
 	if not _moving:

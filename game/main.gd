@@ -1382,6 +1382,7 @@ func _furnish_lodge() -> void:
 		var bs: Node3D = preload("res://binocular_stand.gd").new()
 		bs.name = "BinocularStand%d" % i
 		bs.craft = craft
+		bs.main = self
 		bs.index = i
 		bs.position = Vector3(float(BINOCULARS[i][0]), BINOCULAR_FLOOR, -float(BINOCULARS[i][1]))
 		bs.rotation.y = float(BINOCULARS[i][2])
