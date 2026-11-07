@@ -25,6 +25,7 @@ const Look := preload("res://look.gd")
 ##   --spawn=wardrobe  1 階の人台の前から始める（F で人形を選び直す）
 ##   --spawn=mirror    入口の横の大きな鏡の前から始める（F で自分の人形が映る）
 ##   --spawn=dye       2 階の染め桶の前から始める（F で服を染める）
+##   --spawn=book      ミシンの近くの布の見本帳の前から始める（F で自分のソリの色と滑りあとを替える）
 ##   --doll=人形   あなたの始めの人形（doll.gd の KINDS: kasa・origami・news・robo・musha・ningyo・golem）。保存した人形より勝つ
 ##   --bot-dolls=人形,人形…  ソリを押す仲間の人形（既定は右が origami、左が news）
 ##   --lodge-dolls=人形,人形…  ロッジでくつろぐ仲間の人形（既定は robo・ningyo・golem・musha の順）
@@ -85,7 +86,6 @@ const MountainGoods := preload("res://mountain_goods.gd")
 const SnowmanShop := preload("res://snowman_shop.gd")
 const FridgeDoor := preload("res://fridge_door.gd")
 const CookStation := preload("res://cook_station.gd")
-const MenuBoard := preload("res://menu_board.gd")
 const SnowButtons := preload("res://snow_buttons.gd")
 const Seats := preload("res://seats.gd")
 const KotatsuFuton := preload("res://kotatsu_futon.gd")
@@ -103,6 +103,9 @@ const Pals := preload("res://pals.gd")
 const PAPER_LADY_AT := Vector2(-19.5, -5.85)
 const DyeVat := preload("res://dye_vat.gd")
 const DyeUi := preload("res://dye_ui.gd")
+const SledBookUi := preload("res://sled_book_ui.gd")
+## 布の見本帳（sled_book.gd）の立つ所（ロッジの座標 (x, y)）。ミシンと番台の前、立てかけ台の前の通り道の南。下屋の外の雪の上で、正面は西
+const SLED_BOOK_AT := Vector2(-30.3, -3.3)
 const Net := preload("res://net.gd")
 const Start := preload("res://start.gd")
 ## 染めと着替えの人台（wardrobe.gd と子の dye_vat.gd）の真ん中（ロッジの座標 (x, y)）。1 階の南西の隅。もとはソリ屋（ミシン・番台・貸出の棚）のあった所。
@@ -192,6 +195,8 @@ var paper_shop_ui: CanvasLayer   # 提灯と頭・肩の小物を買って付け
 var minion_ui: CanvasLayer    # 山師が育てているミニオンを買って連れ替える画面（pals_ui.gd の連れの段。山師の売り場の「連れ」の札から）
 var dye_vat: Node3D           # 人台の桶の染め液（dye_vat.gd）
 var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
+var sled_book: Node3D         # 布の見本帳（sled_book.gd）
+var sled_book_ui: CanvasLayer # ソリの色と滑りあとを替える画面（sled_book_ui.gd）
 var snow_buttons: Node3D      # 斜面の雪に縫い留められたボタン（snow_buttons.gd）。滑り木で糸を切ると財布に入る
 var damp: Damp                # 紙の人形の「よれ」（湿り気）の配り役（damp.gd）。人より先に置く。人が名前（"Damp"）で探す
 var badges: Badges            # 体の調子のバッジ（badges.gd）。湿り気・ご飯の効き目などが入れ、hud.gd が描く
@@ -663,6 +668,15 @@ func _ready() -> void:
 		dye_ui.craft = craft
 		dye_ui.player = player
 		add_child(dye_ui)
+		sled_book_ui = SledBookUi.new()
+		sled_book_ui.main = self
+		sled_book_ui.craft = craft
+		sled_book_ui.player = player
+		add_child(sled_book_ui)
+		if args.get("spawn", "") == "book" and sled_book:   # --spawn=book: 見本帳の前から始める
+			player.global_position = sled_book.to_global(Vector3(0, 0.1, 2.6))
+			var to := sled_book.global_position
+			player.rotation.y = atan2(-(to.x - player.global_position.x), -(to.z - player.global_position.z))
 		if args.get("spawn", "") == "dye" and dye_vat:   # --spawn=dye: 人台の桶を見下ろして始める
 			var at := dye_vat.to_global(Vector3(0, 0.1, 2.6))
 			player.global_position = at
@@ -1327,12 +1341,6 @@ func _furnish_lodge() -> void:
 		kitchen_slot.add_child(set_node)
 		_put_kitchen(kitchen_slot)
 		_put_snowman(kitchen_slot)
-		# 装置それぞれの真上に、その装置を通る料理の品書きの板（menu_board.gd）
-		var menu := MenuBoard.new()
-		menu.name = "MenuBoard"
-		menu.stations = KITCHEN
-		menu.lodge = lodge
-		kitchen_slot.add_child(menu)
 	# 1 階の暖炉と、まわりの居場所（ラグ・揺り椅子・ビーズクッション・大きなソファ。席の目印 nook_seat_* は seats.gd が拾う）
 	var hs := lodge.find_child("slot_hearth", true, false) as Node3D
 	if hs:
@@ -1363,6 +1371,12 @@ func _furnish_lodge() -> void:
 		sled_rack = preload("res://sled_rack.gd").new()
 		sled_rack.name = "SledRack"
 		rack_slot.add_child(sled_rack)
+	# ミシンの近くの、布の見本帳（前で F を押して、自分のソリの色と滑りあとを替える）
+	sled_book = preload("res://sled_book.gd").new()
+	sled_book.name = "SledBook"
+	sled_book.position = Vector3(SLED_BOOK_AT.x, 0.0, -SLED_BOOK_AT.y)
+	sled_book.rotation.y = -PI / 2.0
+	lodge.add_child(sled_book)
 	if not args.has("no-lean-lights"):   # 下屋の吊り灯り（ソリ屋と立てかけ台の上。lean_lights.gd）
 		var lean_lights: Node3D = preload("res://lean_lights.gd").new()
 		lean_lights.name = "LeanLights"

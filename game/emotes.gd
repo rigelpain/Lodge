@@ -35,6 +35,7 @@ const KINDS := {
 	"windup": {"frames": 0, "root": false},       # 雪玉を振りかぶる（離すまで）
 	"throw": {"frames": 7, "root": false},
 	"hit": {"frames": 16, "root": false},         # 雪玉が当たってのけぞる
+	"flung": {"frames": 12, "root": false},       # ソリに轢かれて吹き飛んだ（flung.gd。動きは体を動かす画面が決める。ここでは雪の粉と声、ソリの反動）
 	"wa": {"frames": 14, "root": false},          # 声「ワ〜」うれしい
 	"un": {"frames": 7, "root": false},           # 声「ウン」うなずく
 	"nn": {"frames": 14, "root": false},          # 声「ンーン」いやいや
@@ -178,6 +179,10 @@ func _apply(ev: Dictionary) -> void:
 			_next_ball += 1
 		"catch":
 			return   # 取れたかは対決の配り役（duel.gd）が決めて出す
+		"flung":   # 人を飛ばした反動で、ソリが遅くなる（ソリの物理はホストが正）
+			var s = get_parent().get_node_or_null(ev.get("sled", NodePath()))
+			if s is RigidBody3D:
+				preload("res://flung.gd").slow_sled(s, float(ev.get("closing", 0.0)))
 		"spend":   # 雪だるまの店で、雪玉で払う（craft.gd の food_buy が呼ぶ。足りなければ払わない。通信ではホストの craft が呼ぶ）
 			if balls_of(ev.who) < int(ev.n):
 				ev["ok"] = false
@@ -204,6 +209,9 @@ func _emit(ev: Dictionary) -> void:
 		_making.erase(ev.who)   # びっくりして、丸めていた雪玉は崩れる
 		if ev.get("star", false):
 			Palm.star(self, _hit_star_at(ev), _seen_size(int(ev.who)))   # 雪合戦の対決で雪玉が当たった: 紙の星（2026-11-05 代表）
+	if ev.kind == "flung":
+		_making.erase(ev.who)
+		preload("res://snowball.gd").splat_at(get_parent(), ev.point, -(ev.dir as Vector3))   # 当たった所に雪の粉
 	if ev.kind == "catch":   # 取られた雪玉は、どの画面でも消える
 		var b := ball(int(ev.get("ball", -1)))
 		if b:

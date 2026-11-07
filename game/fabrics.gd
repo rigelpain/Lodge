@@ -16,8 +16,21 @@ const COLORS := {
 }
 
 
+## 見本帳（sled_book_ui.gd）で染めた色は "#RRGGBB" の名前で持つ。売っている布と同じ道（置き直し・畳んだ包み・立てかけ台・
+## あとから入った人へ送る状態・札の絵）をそのまま通るように。元の布は sled.gd の base_fabric・持ち物の base に残す（脱色で戻す）
 static func color(fabric: String) -> Color:
+	if is_dyed(fabric):
+		return Color.html(fabric)
 	return COLORS.get(fabric, COLORS["red"])
+
+
+static func is_dyed(fabric: String) -> bool:
+	return fabric.begins_with("#") and Color.html_is_valid(fabric)
+
+
+## 色 c の名前（"#RRGGBB"。透明は持たない）
+static func dyed_name(c: Color) -> String:
+	return "#" + Color(c, 1.0).to_html(false).to_upper()
 
 
 ## ソリの形だけ（本物のソリでない、見せる・畳む動きの形）を布の色にする。sled.gd の _make_body と同じ差し替え

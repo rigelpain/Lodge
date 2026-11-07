@@ -238,6 +238,30 @@ static func dye_colors(kind: String, cols: Array) -> Array:
 
 ## 染め代: cols（部位ごとの色）のうち、いまの色 old から別の色に染める部位の数で決まる。
 ## もとの色に戻す（脱色。""）部位は数えない（2026-11-03 代表「脱色はただに」）
+## ソリの染め代: 布の多さで、服の部位の数に見立てる（DYE_PRICES の 1・1・2・4 部位ぶん）。元の色に戻すのはただ
+const SLED_DYE_PARTS := {"sack": 1, "small": 1, "mid": 2, "large": 4}
+const SLED_DYE_STILL := 0.5      # これより速く動いているソリは染めない (m/s)
+
+
+static func sled_dye_price(kind: String) -> int:
+	return DYE_PRICES[mini(int(SLED_DYE_PARTS.get(kind, 1)), DYE_PRICES.size() - 1)]
+
+
+## ソリがいま染められない（人が乗っている・つかまれている・紐を持たれている・動いている）。立てかけ台のソリは止まっているのでよい。
+## ペグで留めてあるだけなら染められる。安全なほうに倒して、使っているあいだは替えない
+func sled_busy(s: Node3D) -> bool:
+	if s == null or not is_instance_valid(s):
+		return false
+	if racked.has(s.get_meta("craft_id", -1)) or s.racked:
+		return false
+	return not s.riders.is_empty() or not s.holders.is_empty() or s.rope_holder != null or s.linear_velocity.length() > SLED_DYE_STILL
+
+
+## 出してある装備の米袋のうち、米袋の i 番のもの（なければ null）
+func _sack_out_at(who: int, i: int) -> Node3D:
+	return sack_sled(who) if i == gear_index(who, "sack") else null
+
+
 static func dye_price(cols: Array, old: Array) -> int:
 	var n := 0
 	for i in cols.size():
@@ -427,7 +451,7 @@ func snapshot() -> Dictionary:
 	for id in sleds:
 		var s: Node3D = sleds[id]
 		if is_instance_valid(s):
-			var one := {"id": id, "kind": s.kind, "fabric": s.fabric, "at": s.global_transform, "tag": s.tag, "owner": s.owner_id, "stitch": s.stitch_override}
+			var one := {"id": id, "kind": s.kind, "fabric": s.fabric, "at": s.global_transform, "tag": s.tag, "owner": s.owner_id, "stitch": s.stitch_override, "base": s.base_fabric}
 			if racked.has(id):
 				one["rack"] = racked[id]
 			placed.append(one)
@@ -435,7 +459,7 @@ func snapshot() -> Dictionary:
 	for who in sack_out:
 		var gs := sack_sled(who)
 		if gs:
-			out[who] = {"fabric": gs.fabric, "at": gs.global_transform, "stitch": gs.stitch_override}
+			out[who] = {"fabric": gs.fabric, "at": gs.global_transform, "stitch": gs.stitch_override, "base": gs.base_fabric}
 	var lit := []
 	for f in fires.values():
 		if is_instance_valid(f):
@@ -463,7 +487,7 @@ func load_snapshot(d: Dictionary) -> void:
 	racked.clear()
 	for p in d.get("sleds", []):
 		_next_sled = int(p.id)
-		_place(p.kind, p.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, p.tag, false, int(p.owner), String(p.get("stitch", "")))
+		_place(p.kind, p.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, p.tag, false, int(p.owner), String(p.get("stitch", "")), String(p.get("base", "")))
 		var s: Node3D = sleds[int(p.id)]
 		s.global_transform = p.at
 		if p.has("rack"):
@@ -472,7 +496,7 @@ func load_snapshot(d: Dictionary) -> void:
 	_next_sled = int(d.get("next_sled", _next_sled))
 	for who in d.get("sack_out", {}):
 		var spec: Dictionary = d.sack_out[who]
-		var gid := _place("sack", spec.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, -1, false, int(who), String(spec.get("stitch", "")))
+		var gid := _place("sack", spec.fabric, Vector3.ZERO, 0.0, 0, Vector3.UP, -1, false, int(who), String(spec.get("stitch", "")), String(spec.get("base", "")))
 		var gs: RigidBody3D = sleds[gid]
 		sleds.erase(gid)
 		_next_sled -= 1   # 装備の米袋はソリの番号を使わない（ホストでは出したときに使ったが、その番号は上の next_sled に入っている）
@@ -630,7 +654,7 @@ func _apply(ev: Dictionary) -> bool:
 			var spec := sack(who)
 			if spec.is_empty() or sack_sled(who) != null:
 				return false
-			var gid := _place("sack", spec.fabric, ev.at, ev.yaw, 0, ev.get("up", Vector3.UP), -1, false, who, String(spec.get("stitch", "")))
+			var gid := _place("sack", spec.fabric, ev.at, ev.yaw, 0, ev.get("up", Vector3.UP), -1, false, who, String(spec.get("stitch", "")), String(spec.get("base", "")))
 			var gs: RigidBody3D = sleds[gid]
 			sleds.erase(gid)   # 装備の米袋は畳むソリの数に入れない
 			gs.crafted = false
@@ -678,6 +702,73 @@ func _apply(ev: Dictionary) -> bool:
 				return false
 			if not nm in stitch_owned[who]:
 				stitch_owned[who].append(nm)
+		"sled_dye", "sled_dye_own":     # sled_dye_own は、前に染めた標準の米袋の色を戻す（起動したとき。値はここでは取らない。player.gd の _load_tag）。見本帳でソリを染める（color は "#RRGGBB"。"" は元の色に戻す）。持ち主だけ。相手は id（置いてある・立てかけ台のソリ）・slot（畳んだ包み）・sack（米袋）
+			var hex := String(ev.get("color", ""))
+			if hex != "" and not Fabrics.is_dyed(hex):
+				return false
+			var kind := ""
+			var now := ""
+			var s: Node3D = null
+			var spec: Dictionary = {}
+			var i := -1
+			if ev.has("id"):
+				s = sleds.get(int(ev.id))
+				if s == null or not is_instance_valid(s) or int(s.owner_id) != who:
+					return false
+				kind = s.kind
+				now = s.fabric
+			elif ev.has("slot"):
+				var b: Array = bags[who]
+				i = int(ev.slot)
+				if i < 0 or i >= b.size() or b[i].get("kind", "") != "folded" or not preload("res://sled_tags.gd").has_tag(b[i].get("tag", -1)):
+					return false
+				kind = b[i].sled
+				now = String(b[i].get("fabric", ""))
+			elif ev.has("sack"):
+				var list: Array = sacks.get(who, [])
+				i = int(ev.sack)
+				if i < 0 or i >= list.size():
+					return false
+				kind = "sack"
+				now = String(list[i].get("fabric", ""))
+				s = _sack_out_at(who, i)
+			else:
+				return false
+			if not replay and sled_busy(s):   # 乗っている・つかまれている・動いているソリは替えない
+				return false
+			if hex == now or (hex == "" and not Fabrics.is_dyed(now)):
+				return false   # 変わらない
+			if ev.kind == "sled_dye_own" and not ev.has("sack"):
+				return false
+			var cost := 0 if hex == "" or ev.kind == "sled_dye_own" else sled_dye_price(kind)
+			if wallets[who] < cost:
+				return false
+			wallets[who] -= cost
+			ev["price"] = cost
+			if s:
+				s.dye_to(hex)
+			if ev.has("slot"):
+				var b: Array = bags[who]
+				var it: Dictionary = b[i].duplicate()
+				if hex == "":
+					it["fabric"] = String(it.get("base", ""))
+					it.erase("base")
+				else:
+					if not Fabrics.is_dyed(now):
+						it["base"] = now
+					it["fabric"] = hex
+				b[i] = it
+			elif ev.has("sack"):
+				var list: Array = sacks[who]
+				var one: Dictionary = list[i].duplicate()
+				if hex == "":
+					one["fabric"] = String(one.get("base", ""))
+					one.erase("base")
+				else:
+					if not Fabrics.is_dyed(now):
+						one["base"] = now
+					one["fabric"] = hex
+				list[i] = one
 		"sled_stitch":  # ソリの滑りあとの柄を替える。名札と同じで、持ち主だけ（ロッジのソリ・名札を外したソリは替えられない）
 			var nm := String(ev.get("stitch", ""))
 			if not stitch_can_use(who, nm):
@@ -947,7 +1038,7 @@ func _apply(ev: Dictionary) -> bool:
 			var s: Node3D = sleds.get(int(ev.id))
 			if s == null or not is_instance_valid(s) or not foldable(s.kind) or free_slot(who) < 0 or not (_free(s) or replay):
 				return false
-			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag, "stitch": s.stitch_override}   # 名札と柄はソリごと（外したソリは -1 のまま）
+			ev["item"] = {"kind": "folded", "sled": s.kind, "fabric": s.fabric, "tag": s.tag, "stitch": s.stitch_override, "base": s.base_fabric}   # 名札と柄はソリごと（外したソリは -1 のまま）
 			ev["at"] = s.global_position
 			ev["yaw"] = s.rotation.y
 			sleds.erase(int(ev.id))
@@ -961,7 +1052,7 @@ func _apply(ev: Dictionary) -> bool:
 			# 名札は包みに付いていた名札。名札のない（持ち主をやめた）ソリは、広げても持ち主のいないソリのまま
 			var t = ev.item.get("tag", -1)
 			var Tags := preload("res://sled_tags.gd")
-			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, t, true, who if Tags.has_tag(t) else -1, String(ev.item.get("stitch", "")))
+			ev["id"] = _place(ev.item.sled, ev.item.fabric, ev.at, ev.yaw, UNFOLD_FRAMES, up, t, true, who if Tags.has_tag(t) else -1, String(ev.item.get("stitch", "")), String(ev.item.get("base", "")))
 			_origami(ev, true, Transform3D(_basis(ev.yaw, up), ev.at))
 	happened.emit(ev)
 	var net := _net()
@@ -1086,7 +1177,7 @@ func _sled_at(path: String) -> RigidBody3D:
 
 
 ## 実寸のソリを置く。wait コマのあいだは止めておく（広げる動きのあいだ）
-func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP, tag: Variant = 0, room := true, owner_id := -1, stitch := "") -> int:
+func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up := Vector3.UP, tag: Variant = 0, room := true, owner_id := -1, stitch := "", base := "") -> int:
 	var id := _next_sled
 	_next_sled += 1
 	var s := Sled.new()
@@ -1096,6 +1187,7 @@ func _place(kind: String, fabric: String, at: Vector3, yaw: float, wait: int, up
 	s.tag = tag
 	s.owner_id = owner_id
 	s.stitch_override = stitch
+	s.base_fabric = base
 	s.name = "MadeSled%d" % id
 	s.transform = Transform3D(_basis(yaw, up), at + up * 0.08)   # 床に少し浮かせて置く（めり込むと床の下へ押し出される）
 	if world and world.has_method("snow_lift"):

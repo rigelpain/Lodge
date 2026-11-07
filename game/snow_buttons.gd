@@ -26,6 +26,8 @@ extends Node3D
 ## 取得音: 財布に入る瞬間に、素材ごとの音（木「コッ」・真鍮「チン」・白蝶貝「シャラン」・螺鈿）を耳元で鳴らす（craft_ui.gd が
 ##   audio.gd の coin を呼ぶ）。ソリで取っても、はさみで取っても、滑った分でも同じ。その場では、糸が切れる「ぷつん」と「ぽん」だけ
 ##   分け方は雪のボタンと同じ。
+## ジャンプ台（2026-11-06 代表「ジャンプ台でお金もらえる」）: 乗ってジャンプ台（mountain.gd・grand_mountain.gd の KICKERS）の縁から飛ぶと、
+##   宙にいた時間に応じたボタンが、着地のあと続けて速さの表示の糸に縫い込まれる（滑った分と同じ流れ。止まると財布へ）。着地の先に紙吹雪
 ##
 ## 出来事（craft.gd・emotes.gd と同じ形。中身は数・文字・Vector3 だけ）。ホストが決めて配る:
 ##   drop   {id, tier, at, up, yaw, color, end}      ボタンが降る（tier は TIERS の番号）（frame から降り始める。end は埋もれきるコマ）
@@ -37,6 +39,7 @@ extends Node3D
 ##   ride_pay  {sled, dist, wood, speed, brass, value, acc, sewn, gives: {番号: 数}}  一回の滑りが終わった（まとめ）。滑った長さ（m）、
 ##                                                   距離の分と速さの分（倍率を掛けたあと）、コンボの真鍮の数。sewn は縫い込んだ順のボタンの並び。
 ##                                                   gives は手伝った人の分
+##   ride_jump {sled, air, value, at}                ジャンプ台から飛んで着地した。宙にいた時間 (s)、もらえる分（木の何個分。倍率を掛けたあと）、紙吹雪を出す所
 ##   ride_combo {sled, n}                            止まらずに滑って、距離の節目でコンボが n 段になった（n = 0 は切れた。速さの表示の結び目と音）
 ##   ride_carry {who, carry}                         乗っていた人の持ち越しの端数が変わった（斜面のボタンを倍率つきで取った）
 ##   ride_lint {sled, frac}                          滑った分のうち、まだ一つ分に満たない端数（一つ分に対する割合 0〜1）。速さの表示の糸の上に糸くずとして積もる
@@ -139,6 +142,14 @@ const MAP_RATE := {"hill": 1.0, "mountain": 1.5, "grand": 1.5}   # 山ごと: �
 const ALT_RATE := 0.03
 ## 一緒に乗っている人数のおまけ: 2 人目から 1 人ごとに一人ひとりの取り分が +CREW_BONUS（大に 8 人で +70%）
 const CREW_BONUS := 0.1
+## ジャンプ台: 宙にいた 1 秒ごとに木 JUMP_PER_SEC 個分 × 倍率（乗り物 × 人数のおまけ × 山 × 着地の高さ）。
+## 一回の跳び（宙 0.7〜1.4 秒）が、その場所の斜面のボタン 1〜2 個ぶんになるように（小 65〜81・中 117〜166・大 222〜292、大きな山の 1 つ目の台で）
+const JUMP_PER_SEC := 10.0
+const JUMP_MIN_AIR := 0.45     # これより短い宙は跳びに数えない (s)。測った中でいちばん短いのは、遅い小の 0.55 秒
+const JUMP_CLEAR := 0.35       # ソリの中心が下の面からこれより高ければ宙にいる (m)。tools/kicker_check.gd と同じ
+const JUMP_AGAIN := 20.0       # 同じソリが同じ台でもう一度もらえるまで (s)。台のまわりを行き来して稼がないように
+const JUMP_SEW_GAP := 0.06     # 着地のあと、ボタンを一つずつ糸に縫い込む間 (s)
+const JUMP_CONFETTI := 2.2     # 着地の紙吹雪の大きさと勢い（ふつうの紙吹雪の何倍か）。速く通り過ぎるので大きめに
 const RIDE_STOP_T := 1.0       # 0.5 m/s より遅いのがこれだけ続いたら、滑り終わり (s)
 const HELPER_SHARE := 1.0 / 3.0   # 押して手伝ったけれど乗らなかった人に届く割合
 const HELP_WINDOW := 120.0     # 滑る前のこの秒のうちに押した人を、手伝った人にする（ソリの時計 sled._trail_now）
@@ -231,6 +242,10 @@ class Btn:
 	var cut_bits := false       # 切れた糸の残り（跳ねたあと、しばらく雪に残る）
 
 
+var _kicks := []                 # ジャンプ台の一覧（_kickers）
+var _jump_last := {}             # 「ソリ:台」→ 最後にもらった時刻（_clock）
+
+
 func _ready() -> void:
 	name = "SnowButtons"
 	_rng.randomize()
@@ -268,6 +283,9 @@ func _apply(ev: Dictionary) -> void:
 				return
 			b.state = "shear"
 			_start_shears(b, who, int(ev.frame))
+		"ride_jump":
+			var value: float = ev.value
+			_confetti(ev.at, 2 if value >= 100.0 else (1 if value >= 30.0 else 0), JUMP_CONFETTI)
 		"share":
 			pass   # 財布へは craft.gd の earn。ここは見た目だけ（いまはなし。HUD は earn を聞く）
 	happened.emit(ev)
@@ -466,7 +484,7 @@ func _track_runs(dt: float) -> void:
 			if riding and v > 1.5:
 				run = {"top": sled.global_position.y, "cells": {}, "dist": 0.0, "best": 0.0, "riders": {}, "slow": 0.0,
 						"wood": 0.0, "speed": 0.0, "combo": 0, "combo_d": 0.0, "combos": 0, "sewn": [], "on": {}, "name": String(sled.name),
-						"acc": 0.0, "whole": 0, "acc_at": {}}
+						"acc": 0.0, "whole": 0, "acc_at": {}, "jump": {}, "jump_q": 0.0, "jump_t": 0.0, "jump_value": 0.0}
 				_runs[sled] = run
 			else:
 				continue
@@ -516,6 +534,8 @@ func _track_runs(dt: float) -> void:
 					var more: float = 10.0 * run.combo * (float(RIDE_RATE.get(sled.kind, 1.0)) - 1.0)   # 乗り物の倍率で増えた分
 					if more > 0.0:
 						_ride_add(sled, run, more, v, mult)
+			_track_jump(sled, run)
+			_jump_sew(sled, run, v, dt, mult)
 		run.slow = run.slow + dt if (v < 0.5 or not riding) else 0.0
 		if run.slow >= RIDE_STOP_T:
 			var drop := (float(run.top) - sled.global_position.y) / maxf(1.0, world.height(0.0, 0.0))
@@ -530,6 +550,95 @@ func _track_runs(dt: float) -> void:
 			for id in run.on.keys():
 				_rider_pay(run, id, Vector3.INF, true)
 			_runs.erase(s)
+
+
+## ジャンプ台の一覧: {key, lip, f}（山の名前と番号、縁の点、飛ぶ向き）
+func _kickers() -> Array:
+	if _kicks.is_empty():
+		for i in Mountain.KICKERS.size():
+			var k := Mountain.kicker(i)
+			_kicks.append({"key": "m%d" % i, "lip": k.lip, "f": k.f})
+		for i in Grand.KICKERS.size():
+			var k := Grand.kicker(i)
+			_kicks.append({"key": "g%d" % i, "lip": k.lip, "f": k.f})
+	return _kicks
+
+
+## 踏み切りの坂を縁へ向かって上っているソリの台（なければ空）
+func _ramp_under(sled: RigidBody3D) -> Dictionary:
+	var p := Vector2(sled.global_position.x, sled.global_position.z)
+	var vel := Vector2(sled.linear_velocity.x, sled.linear_velocity.z)
+	for k in _kickers():
+		var d: Vector2 = p - k.lip
+		if d.length_squared() > 49.0 or vel.dot(k.f) <= 0.0:
+			continue
+		var along: float = d.dot(k.f)
+		if along > -Mountain.KICK_L and along < 0.0 and absf(d.cross(k.f)) < Mountain.KICK_W * 0.5 + 0.5:
+			return k
+	return {}
+
+
+## 跳びを見張る: 坂を上って縁を越え、宙に出て、下の面に戻ったら着地。ただ台の脇を通っただけでは数えない
+func _track_jump(sled: RigidBody3D, run: Dictionary) -> void:
+	var j: Dictionary = run.jump
+	if j.is_empty():
+		var k := _ramp_under(sled)
+		if not k.is_empty():
+			run.jump = {"key": k.key, "lip": k.lip, "f": k.f, "air": 0.0}
+		return
+	var p := sled.global_position
+	var along: float = (Vector2(p.x, p.z) - (j.lip as Vector2)).dot(j.f)
+	if float(j.air) <= 0.0 and (along < -Mountain.KICK_L - 1.0 or along > Mountain.KICK_L + 4.0):
+		run.jump = {}   # 飛ばないまま坂から出た
+		return
+	var q := PhysicsRayQueryParameters3D.create(p + Vector3.UP * 0.05, p + Vector3.DOWN * 40.0)
+	q.exclude = [sled.get_rid()]
+	var hit := sled.get_world_3d().direct_space_state.intersect_ray(q)
+	var below: float = hit.position.y if not hit.is_empty() else world.height(p.x, p.z)
+	if p.y - below > JUMP_CLEAR:
+		j.air = float(j.air) + get_physics_process_delta_time()
+	elif float(j.air) > 0.0:
+		run.jump = {}
+		if float(j.air) >= JUMP_MIN_AIR:
+			_jump_pay(sled, run, j)
+
+
+## 着地した跳びの分を、縫い込む番に入れる。紙吹雪はソリの少し先（乗っている人の目の前を流れる）
+func _jump_pay(sled: RigidBody3D, run: Dictionary, j: Dictionary) -> void:
+	var key := "%d:%s" % [sled.get_instance_id(), j.key]
+	if _clock - float(_jump_last.get(key, -INF)) < JUMP_AGAIN:
+		return
+	_jump_last[key] = _clock
+	var p := sled.global_position
+	var value: float = float(j.air) * JUMP_PER_SEC * ride_mult(sled) * place_rate(p)
+	run.jump_q += value
+	run.jump_value += value
+	var vel := Vector3(sled.linear_velocity.x, 0.0, sled.linear_velocity.z)
+	send({"kind": "ride_jump", "sled": String(sled.name), "air": j.air, "value": value, "at": p + vel * 0.5 + Vector3.UP * 0.5})
+
+
+## 跳びの分を一つずつ糸に縫い込む。100 個分は白蝶貝、10 個分は真鍮、残りは滑った分の端数へ
+func _jump_sew(sled: RigidBody3D, run: Dictionary, v: float, dt: float, mult: float) -> void:
+	if float(run.jump_q) <= 0.0:
+		return
+	run.jump_t -= dt
+	if float(run.jump_t) > 0.0:
+		return
+	run.jump_t = JUMP_SEW_GAP
+	var q: float = run.jump_q
+	var val := 100 if q >= 100.0 else (10 if q >= 10.0 else 0)
+	if val == 0:
+		run.jump_q = 0.0
+		_ride_add(sled, run, q, v, mult)
+		return
+	run.jump_q = q - val
+	_ride_sew(sled, run, LOOK_OF[val], 1, v)
+
+
+## まだ縫い込んでいない跳びの分を、端数へ移す（降りた・止まった。端数はそのときボタンにして入る）
+func _jump_flush(run: Dictionary) -> void:
+	run.acc += float(run.jump_q)
+	run.jump_q = 0.0
 
 
 ## いまの倍率: 乗り物の倍率 × 人数のおまけ（いま乗っている人数で）
@@ -570,6 +679,7 @@ func _ride_sew(sled: RigidBody3D, run: Dictionary, look: String, n: int, v: floa
 ## 乗っていた一人 id に、乗ってから縫い込まれた分を入れる（降りた・止まった）。番号のない人（確かめの人形）には入れない。
 ## 木 1 個に満たない端数は、その人が次の滑りへ持ち越す（ride_carry）。持ち越しが 1 を超えたら、木を足して入れる
 func _rider_pay(run: Dictionary, id: int, at: Vector3, left: bool) -> void:
+	_jump_flush(run)
 	var from: int = run.on.get(id, 0)
 	var acc0: float = run.acc_at.get(id, 0.0)
 	run.on.erase(id)
@@ -785,7 +895,7 @@ func _ride_pay(sled: RigidBody3D, run: Dictionary) -> void:
 			helpers[who] = g.gives[who]
 	# wood は滑った距離の分、speed は速さの分（どちらも倍率を掛けたあと、端数こみ）、brass はコンボの真鍮の数。
 	# value は縫い込んだ値打ち（端数 acc は持ち越しの元）
-	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": run.wood, "speed": run.speed, "brass": run.combos,
+	send({"kind": "ride_pay", "sled": String(sled.name), "dist": dist, "wood": run.wood, "speed": run.speed, "brass": run.combos, "jump": run.jump_value,
 			"value": n, "acc": run.acc, "sewn": run.sewn, "gives": helpers})
 	_pay(helpers, sled.global_position)
 
@@ -1388,7 +1498,7 @@ static func _tube(m: ImmediateMesh, pts: PackedVector3Array, rad: float) -> void
 # ---------------------------------------------------------------- 粒と音
 
 ## 小さな紙吹雪: 色とりどりの紙の切れはしが、ぱっと舞って、ひらひら落ちる
-func _confetti(at: Vector3, tier := 0) -> void:
+func _confetti(at: Vector3, tier := 0, big := 1.0) -> void:
 	var p := CPUParticles3D.new()
 	p.one_shot = true
 	p.amount = 22 + 14 * tier   # 値打ちが高いほど多く
@@ -1397,8 +1507,8 @@ func _confetti(at: Vector3, tier := 0) -> void:
 	p.local_coords = false
 	p.direction = Vector3.UP
 	p.spread = 50.0
-	p.initial_velocity_min = 1.8
-	p.initial_velocity_max = 3.4
+	p.initial_velocity_min = 1.8 * big
+	p.initial_velocity_max = 3.4 * big
 	p.gravity = Vector3(0, -2.2, 0)
 	p.damping_min = 1.6
 	p.damping_max = 2.6
@@ -1414,7 +1524,7 @@ func _confetti(at: Vector3, tier := 0) -> void:
 	cr.interpolation_mode = Gradient.GRADIENT_INTERPOLATE_CONSTANT
 	p.color_initial_ramp = cr
 	var q := QuadMesh.new()
-	q.size = Vector2(0.07, 0.045)
+	q.size = Vector2(0.07, 0.045) * big
 	if _confetti_mat == null:
 		_confetti_mat = StandardMaterial3D.new()
 		_confetti_mat.vertex_color_use_as_albedo = true
