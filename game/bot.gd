@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 const Doll := preload("res://doll.gd")
 const Flung := preload("res://flung.gd")
+const Rolled := preload("res://rolled.gd")
 const Emotes := preload("res://emotes.gd")
 const Palm := preload("res://palm.gd")
 const Seats := preload("res://seats.gd")
@@ -95,6 +96,7 @@ const ROAM_AREAS := {
 
 var sled: RigidBody3D
 var fling: Flung             # ソリに轢かれて吹き飛ぶ（flung.gd）
+var rolled: Rolled           # 転がる大玉に取り込まれる（rolled.gd）
 var player: Node3D          # この画面で遊ぶ人。いないとき（確かめ用）は仲間だけで滑る
 var side := 1
 var state := State.PUSH
@@ -177,6 +179,7 @@ const HEARTH_LIKE := 0.7     # 次の席を選ぶとき、暖炉のまわりか�
 func _ready() -> void:
 	add_to_group("bots")
 	fling = Flung.new(self)
+	rolled = Rolled.new(self)
 	_col = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -263,9 +266,28 @@ func get_off() -> void:
 
 ## ソリに轢かれて吹き飛ぶ（flung.gd）。吹き飛んでいるあいだは、ほかのことをしない。起き上がれば、いまの役目に戻る
 func _run_over_step(dt: float) -> bool:
+	if rolled.active():
+		# 大玉の中: ひとりでに暴れて崩す（rolled.gd）。崩れたら放り出されて、吹き飛んだのと同じに
+		rolled.step(dt)
+		if rolled.active():
+			rolled.bot_struggle(dt)
+		_pose_doll()
+		fling.pose()
+		rolled.pose()
+		return true
 	if not fling.active():
 		if lounge or seat_i >= 0 or state == State.RIDE:
 			return false
+		var rh := rolled.find_hit()   # 速く転がる大玉に当たると、取り込まれる
+		if not rh.is_empty():
+			if handle != Vector3.INF:
+				let_go()
+				_regrab = REGRAB_WAIT
+			rolled.start(rh)
+			_pose_doll()
+			fling.pose()
+			rolled.pose()
+			return true
 		var hit := fling.find_hit(sled if handle != Vector3.INF else null)   # つかんでいるソリには飛ばされない（引きずられる）
 		if hit.is_empty():
 			return false
@@ -277,6 +299,11 @@ func _run_over_step(dt: float) -> bool:
 	_pose_doll()
 	fling.pose()
 	return true
+
+
+## 入っていた大玉が崩れた（emotes.gd が出来事 ball_break で呼ぶ）: 放り出されて飛ぶ
+func ball_out() -> void:
+	rolled.out()
 
 
 ## 乗っているソリが木にぶつかって、放り投げられる（ホストが配った向きと強さで。flung.gd・emotes.gd）。起き上がれば、次の山へ
@@ -628,6 +655,8 @@ var _wave_t := 0.0           # 呼ばれて、手を振っているあいだ (s)
 func _on_emote(ev: Dictionary) -> void:
 	var who: int = ev.get("who", -1)
 	if who == id:
+		if ev.kind in Emotes.BALL_EVENTS:
+			return
 		if ev.kind == "hands":
 			_shape = ev.hands
 			doll.play(ev)

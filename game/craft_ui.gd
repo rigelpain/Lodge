@@ -25,6 +25,7 @@ extends CanvasLayer
 ##     右の下に、手持ち（上の段）とかばん（下の段, 緑のフェルトの巾着）。引きずって入れ替える（行き先に物があれば入れ替わる）。
 ##     押して離すと上に小窓: できあがった料理なら食べる（おにぎり）、どれでも捨てる（編みかご）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
+##     右上（× の下）は持っている雪玉ころがしの手袋（山師の棚で買ったもの。gloves.gd）。押すとはめ、はめているのをもう一度押すと外す
 ##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: ボタンが画面を飛んで財布へ入り、
 ##     財布がぽんと跳ねる。雪のボタンを切って取った分は、3D のボタンが体（胸）に飛び込み終えた次のコマに、体の画面の位置から
 ##     飛び出す（一人称では胸は画面の下の外なので、画面の下の縁から。snow_buttons.gd の into_body。2026-11-02 代表「ボタンが体に
@@ -53,6 +54,8 @@ var gear_open := false
 var _gear_rects: Array = []  # 装備の画面の、持っている米袋の札
 var _lamp_rects: Array = []  # 装備の画面の、持っているランタンの札
 var _lamp_hover := -1
+var _glove_rects: Array = [] # 装備の画面の、持っている手袋の札（右上。gloves.gd）
+var _glove_hover := -1
 var _opt_rects: Array = []   # 装備の画面の、名札の部品の見本 [Rect2, 部品, 番号]（部品 "_page" はページの札、"_dice" はおまかせ）
 var tag_page := 0            # 装備の画面で開いている、名札の部品のページ（sled_tags.gd の PAGES）
 var tag_edit := {}           # 装備の画面で替えている名札: {}（いつもの柄）か {id}（置いてある自分のソリ）・{slot}（畳んだソリ）・{loose}（名札入れ）
@@ -277,6 +280,9 @@ func _on_craft(ev: Dictionary) -> void:
 		"sled_stitch":
 			if ev.has("sack") and player.has_method("save_tag"):
 				player.save_tag()
+		"equip":   # はめた手袋は、次に起動しても同じ（gloves.gd）
+			if ev.get("gear", "") == "gloves" and player.has_method("save_tag"):
+				player.save_tag()
 		"earn":
 			# 3D のボタンがぽんと跳ね上がったところ（少しあと、少し上）から飛び出す
 			var at: Variant = ev.get("at", Vector3.INF)
@@ -321,7 +327,10 @@ func _on_craft(ev: Dictionary) -> void:
 				_flies.append(fl)
 			_pending += flown
 		"buy", "fold":
-			_pop[int(ev.slot)] = 1.0
+			if int(ev.slot) >= 0:
+				_pop[int(ev.slot)] = 1.0
+			elif ev.kind == "buy" and player.has_method("save_tag"):   # 雪玉ころがしの手袋は装備なので持ち物の場所に入らない（slot -1）。次に起動しても同じ
+				player.save_tag()
 			_coin_pop = 1.0 if ev.kind == "buy" else _coin_pop
 			if ev.kind == "buy" and ev.item.get("kind", "") in ["pattern", "fabric"]:   # 山男の棚の品物は、山男がうなずく（mountain_man.gd）
 				var sk = main.get("shopkeeper")
@@ -642,6 +651,10 @@ func _gear_input(e: InputEvent) -> void:
 		for i in _lamp_rects.size():
 			if (_lamp_rects[i] as Rect2).has_point(e.position):
 				_lamp_hover = i
+		_glove_hover = -1
+		for i in _glove_rects.size():
+			if (_glove_rects[i] as Rect2).has_point(e.position):
+				_glove_hover = i
 		_hover_btn = "close" if _close_rect.has_point(e.position) else ""
 		_opt_hover = -1
 		for i in _opt_rects.size():
@@ -659,6 +672,10 @@ func _gear_input(e: InputEvent) -> void:
 		for i in _lamp_rects.size():
 			if (_lamp_rects[i] as Rect2).has_point(e.position):
 				equip(-1 if i == craft.gear_index(_who(), "lantern") else i, "lantern")   # 提げているのを押すと外す
+				return
+		for i in _glove_rects.size():
+			if (_glove_rects[i] as Rect2).has_point(e.position):
+				equip(-1 if i == craft.gear_index(_who(), "gloves") else i, "gloves")   # はめているのを押すと外す
 				return
 		for c in _color_rects:
 			if (c[0] as Rect2).has_point(e.position):
@@ -1258,6 +1275,41 @@ class View extends Control:
 		Icons.thread(self, PackedVector2Array([Vector2(-12, -12), Vector2(12, 12)]), Icons.THREAD, 4.0, 1.0)
 		Icons.thread(self, PackedVector2Array([Vector2(12, -12), Vector2(-12, 12)]), Icons.THREAD, 4.0, 1.0)
 
+	## 装備の画面の右上（閉じる × の下）: 持っている雪玉ころがしの手袋（gloves.gd）。押すとはめ、はめているのをもう一度押すと外す。
+	## はめていると、しゃがんで F を押し続けて大玉を置け、大玉を押せる。持っていなければ、破線の空き札に薄い手袋（山師の棚で買うと入る）
+	func _draw_gloves_row(u: float, r: Rect2) -> void:
+		var craft: Node = ui.craft
+		var who: int = ui._who()
+		var list: Array = craft.gear_list(who, "gloves")
+		var on: int = craft.gear_index(who, "gloves")
+		var gw := 92.0 * u
+		var gh := 104.0 * u
+		var gap := 10.0 * u
+		var n := maxi(list.size(), 1)
+		var y := r.position.y + 78.0 * u
+		var x := r.end.x - 30.0 * u - n * gw - (n - 1) * gap
+		var rects: Array = []
+		if list.is_empty():
+			Icons.screen()
+			Icons.dashes(self, Icons.rr(x, y, gw, gh, 12.0 * u), Icons.CAP, 2.5 * u, 8.0 * u, 5.0 * u, 0.6, true)
+			CraftIcons._at(Vector2(x + gw / 2.0, y + gh / 2.0), gw * 0.9)
+			preload("res://gloves.gd").icon(self, "gloves", 0.3)
+		for i in list.size():
+			var card := Rect2(x + i * (gw + gap), y, gw, gh)
+			var picked := i == on
+			if picked or ui._glove_hover == i:
+				card.position.y -= (8.0 if picked else 4.0) * u
+			rects.append(card)
+			Icons.screen()
+			Icons.patch(self, Icons.rr(card.position.x, card.position.y, gw, gh, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+			CraftIcons._at(card.get_center(), gw * 0.95)
+			preload("res://gloves.gd").icon(self, String(list[i].get("grade", "gloves")), 1.0)
+			if picked:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, gw + 8 * u, gh + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
+				Icons.chevron(self, Vector2(card.get_center().x, card.position.y - 14.0 * u), 18.0 * u, Icons.RED, 1.0, PI / 2, 3.0 * u)
+		ui._glove_rects = rects
+
 	## 売り台の棚の札（左の上の外）。型紙の絵と、ジグザグの絵
 	func _draw_shop_tabs(u: float, r: Rect2) -> void:
 		var tabs: Array = []
@@ -1619,6 +1671,7 @@ class View extends Control:
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
 				Icons.chevron(self, Vector2(card.get_center().x, card.position.y - 14.0 * u), 18.0 * u, Icons.RED, 1.0, PI / 2, 3.0 * u)
 		ui._gear_rects = rects
+		_draw_gloves_row(u, r)
 		# まんなか: 替えている名札（左に大きく）と、部品の見本（押すと替わる）。部品は 4 ページ（形と素材・模様・縁と糸・飾りと判子）。
 		# 名札の下に、どの名札を替えるかの札の列（いつもの柄・自分のソリ・畳んだソリ・名札入れ）
 		var mine: Dictionary = ui.edit_design()

@@ -1,7 +1,8 @@
 extends CanvasLayer
 ## 山男の売り場（山男に F）。文字は使わない。おじいさんの売り台（craft_ui.gd）・雪だるまの店（food_ui.gd）と同じ作り:
 ## フェルトの板（山男の上着の藍）、クリーム色のカード、赤い丸の買うボタン、右上の × の縫い目。
-##   左: 棚の品物のカード（mountain_goods.gd の SHELF の順。焚き火セット・ペグ）。カードの下に値段のボタン。
+##   左: 棚の品物のカード（mountain_goods.gd の SHELF の順。焚き火セット・ペグ・双眼鏡・雪玉ころがしの手袋）。カードの下に値段のボタン。
+##       手袋は装備なので持ち物がいっぱいでも買え、持っている段は値段の代わりに針の印（もう買えない）
 ##       まだ売っていない品目は、薄い絵を麻ひもで十字に縛ったカード（選べない。値段も出さない）
 ##   右の上: 財布のボタン。品物を選ぶと、その値段を上に赤い糸（足りないとき）で
 ##   右の下: 買うボタン（ボタン → 矢印 → 手袋）。買えないときは震える
@@ -12,6 +13,7 @@ extends CanvasLayer
 const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
 const Goods := preload("res://mountain_goods.gd")
+const Gloves := preload("res://gloves.gd")
 
 const FELT := Color(0.22, 0.28, 0.48)   # 山男の上着の藍
 
@@ -152,6 +154,10 @@ class View extends Control:
 		if ui.is_open:
 			_draw_shop(Icons.ui_scale(size.y))
 
+	## 雪玉ころがしの手袋を、その段でもう持っているか
+	func _owned(kind: String) -> bool:
+		return Gloves.is_gloves(kind) and ui.craft.gloves_index(ui._who(), kind) >= 0
+
 	func _draw_shop(u: float) -> void:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
@@ -192,7 +198,8 @@ class View extends Control:
 			var e: Dictionary = Goods.SHELF[i]
 			var on := Goods.sold(e.item.kind)
 			var cost: int = Goods.price(e.item.kind)
-			var can := on and cost <= coins and not full
+			var owned := _owned(String(e.item.kind))
+			var can := on and cost <= coins and (not full or Gloves.is_gloves(String(e.item.kind))) and not owned
 			var card := Rect2(r.position.x + left + (i % per) * (cw + gap), r.position.y + 50.0 * u + (i / per) * (ch + gap), cw, ch)
 			var sel: bool = ui._sel == i
 			if on and (sel or ui._hover == i):
@@ -204,7 +211,9 @@ class View extends Control:
 			var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
 			CraftIcons.item(self, e.item, card.position + Vector2(cw / 2.0, ch * 0.4), minf(cw, ch * 0.7) * 0.8 * pop, a)
 			Icons.screen()
-			if on:
+			if owned:   # 持っている手袋: 値段の代わりに針の印
+				Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.85), 34.0 * u, 1.0)
+			elif on:
 				CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.85), cost, 13.0 * u, a)
 			else:   # まだ売っていない: 麻ひもで十字に縛った包み
 				var hemp := Color(0.78, 0.66, 0.46)
@@ -235,7 +244,10 @@ class View extends Control:
 		var bs := 150.0 * u
 		var bc := Vector2(rx + rw / 2.0 + shake, r.position.y + 440.0 * u)
 		ui._buy_rect = Rect2(bc - Vector2(bs, bs) / 2.0, Vector2(bs, bs))
-		var ready: bool = ui._sel >= 0 and Goods.price(Goods.SHELF[ui._sel].item.kind) <= coins and not full
+		var ready: bool = ui._sel >= 0 and Goods.price(Goods.SHELF[ui._sel].item.kind) <= coins
+		if ready:
+			var k := String(Goods.SHELF[ui._sel].item.kind)
+			ready = not _owned(k) if Gloves.is_gloves(k) else not full
 		var big := 1.06 if ui._hover_btn == "buy" else 1.0
 		Icons.screen()
 		Icons.patch(self, Icons.circ(bc, bs * 0.5 * big, 28), Icons.RED if ready else Icons.RED.lerp(Icons.PAPER_EDGE, 0.6), 1.0, true, Icons.CAP)

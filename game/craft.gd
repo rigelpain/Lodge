@@ -39,6 +39,8 @@ extends Node
 ##   lantern_buy {look}        1 階のテントの紙細工屋さん（paper_lady.gd）で、形違いのランタン（lantern.gd の LOOK）を買う。
 ##                             買ったらすぐ帯に提げる（ev に index が入る）。通信ではほかの人の画面でも、その人のランタンが替わる
 ##   lantern_own {look}        持っているランタンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
+##   gloves_own {grade}        持っている雪玉ころがしの手袋を戻す（保存から。値は取らない）。手袋は山師の棚の buy（{kind: "gloves" | "gloves_felt" | "gloves_leather"}。gloves.gd）で買う。
+##                             持ち物の場所は使わず、装備の枠に入ってすぐはまる（ev.slot は -1、ev.index に装備の番号）。equip の gear "gloves"（index -1 で外す）で替える
 ##   pal_buy   {key}           頭・肩の小物（1 階のテントの紙細工屋さん paper_lady.gd）かミニオン（1 階の山師）を買う（pals.gd）。買ったらすぐ身につける（ev に slot が入る）
 ##   pal_own   {key}           持っている小物・ミニオンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
 ##   pal_wear  {slot, key}     頭（head）・肩（shoulder）・連れ（pet）に、持っている物を付ける。key が "" なら外す。
@@ -124,7 +126,10 @@ var scope_paid := {}           # "人の番号:台の番号" → 双眼鏡台の
 var _next_sled := 1
 var fires := {}                # 焚き火の番号 → 組んだ焚き火（campfire.gd）
 var _next_fire := 1
-const GEARS := ["sack", "lantern"]   # 装備の種類（装備の画面の並び）
+const GEARS := ["sack", "lantern", "gloves"]   # 装備の種類（装備の画面の並び）
+## 雪玉ころがしの手袋（gloves.gd。2026-11-08 代表「性能差付けて山師に売らせよう」）。山師の棚で 3 段（毛糸・フェルト・革）を売る。
+## はめていると、しゃがんで F を押し続けて大玉の種を置け、大玉を押せる（player.gd。big_ball.gd）。段で押す力・育つ速さ・玉の丈夫さが違う
+const Gloves := preload("res://gloves.gd")
 var tag_designs := {}          # 人の番号 → 自分の名札（sled_tags.gd の部品の辞書）。通信では「誰が」の印として配る
 var tag_owned := {}            # 人の番号 → 手に入れた「あとで手に入る」名札の部品 {部品: [番号, ...]}（最初から使える部品は書かない）
 var stitch_owned := {}         # 人の番号 → 買った滑りあとの柄の名前の配列（stitches.gd。標準の柄は入れない）
@@ -140,6 +145,8 @@ var _sack_far := {}            # 人の番号 → 持ち主が離れていた秒
 var lanterns := {}             # 人の番号 → 持っているランタンの配列 [{look}]（0 番は標準）
 var lantern_sel := {}          # 人の番号 → 提げているランタンの番号（-1 は外している）
 var lamps := {}                # 人の番号 → ランタンが点いているか
+var gloves := {}               # 人の番号 → 持っている手袋の配列 [{grade}]（gloves.gd の段。買うまで空）
+var gloves_sel := {}           # 人の番号 → はめている手袋の番号（-1 は外している）
 var pals_owned := {}           # 人の番号 → 持っている頭・肩の小物とミニオンの名前の配列（pals.gd）
 var pals_wear := {}            # 人の番号 → {head, shoulder, pet} 身につけている物の名前（"" は付けていない）
 ## キャラの色（装備の画面で選ぶ。はじめは人の番号の順に、赤・藍・からし…）。フェルトの色で、名札の窓の生成りの上で見分けられる濃さ
@@ -171,6 +178,8 @@ func join(who: int) -> void:
 	lanterns[who] = [{"look": "box"}, {"look": "paper"}]
 	lantern_sel[who] = 0
 	lamps[who] = false
+	gloves[who] = []
+	gloves_sel[who] = -1
 	pals_owned[who] = Pals.START.duplicate()
 	pals_wear[who] = Pals.START_WEAR.duplicate()
 
@@ -192,6 +201,7 @@ func gear_list(who: int, gear: String) -> Array:
 	match gear:
 		"sack": return sacks.get(who, [])
 		"lantern": return lanterns.get(who, [])
+		"gloves": return gloves.get(who, [])
 	return []
 
 
@@ -199,6 +209,29 @@ func gear_index(who: int, gear: String) -> int:
 	match gear:
 		"sack": return int(sack_sel.get(who, 0))
 		"lantern": return int(lantern_sel.get(who, -1))
+		"gloves": return int(gloves_sel.get(who, -1))
+	return -1
+
+
+## 雪玉ころがしの手袋をはめているか
+func gloves_on(who: int) -> bool:
+	var i := int(gloves_sel.get(who, -1))
+	return i >= 0 and i < gloves.get(who, []).size()
+
+
+## はめている手袋の段（gloves.gd の GRADES の名前。はめていなければ ""）
+func glove_grade(who: int) -> String:
+	if not gloves_on(who):
+		return ""
+	return String(gloves[who][int(gloves_sel[who])].get("grade", "gloves"))
+
+
+## 持っている手袋の中の、段 grade の番号（持っていなければ -1）
+func gloves_index(who: int, grade: String) -> int:
+	var list: Array = gloves.get(who, [])
+	for i in list.size():
+		if String(list[i].get("grade", "")) == grade:
+			return i
 	return -1
 
 
@@ -498,7 +531,7 @@ func snapshot() -> Dictionary:
 			pegs.append({"sled": sled_path(s), "at": s.peg.global_position, "color": s.peg.color})
 	return {"pegs": pegs, "wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "stitch_owned": stitch_owned, "sacks": sacks,
 		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
-		"lantern_sel": lantern_sel, "lamps": lamps, "next_sled": _next_sled, "sleds": placed, "sack_out": out,
+		"lantern_sel": lantern_sel, "lamps": lamps, "gloves": gloves, "gloves_sel": gloves_sel, "next_sled": _next_sled, "sleds": placed, "sack_out": out,
 		"fires": lit, "next_fire": _next_fire, "scope_who": world.binocular_stands.map(func(st): return int(st.who)) if world else [], "scope_paid": _scope_paid_left()}
 
 
@@ -522,7 +555,7 @@ func load_snapshot(d: Dictionary) -> void:
 		for i in mini(scoped.size(), world.binocular_stands.size()):
 			world.binocular_stands[i].who = int(scoped[i])
 	for key in ["wallets", "bags", "hands", "tag_designs", "tag_owned", "stitch_owned", "sacks", "loose_tags", "names", "colors", "dolls",
-			"sack_sel", "lanterns", "lantern_sel", "lamps"]:
+			"sack_sel", "lanterns", "lantern_sel", "lamps", "gloves", "gloves_sel"]:
 		var mine: Dictionary = get(key)
 		mine.merge(d.get(key, {}), true)
 	for s in sleds.values():
@@ -574,17 +607,27 @@ func _apply(ev: Dictionary) -> bool:
 			var cost := price(item)
 			if MountainGoods.has(item.get("kind", "")) and not MountainGoods.sold(item.kind):
 				return false   # 山男の棚で、まだ売っていない品目
-			var stack := _peg_stack(who) if Peg.is_item(item) else -1
-			if wallets[who] < cost or free_slot(who) < 0 and stack < 0:
-				return false
-			wallets[who] -= cost
-			if stack >= 0:   # ペグは持っている束に足す（その束を手に持つ）
-				bags[who][stack]["n"] = int(bags[who][stack].get("n", 0)) + Peg.PACK
-				ev["slot"] = stack
-				if stack < HAND_SLOTS:
-					hands[who] = stack
+			if Gloves.is_gloves(String(item.get("kind", ""))):   # 雪玉ころがしの手袋は装備: 持ち物の場所は使わず、すぐはめる。同じ段は 1 つ
+				var g := String(item.kind)
+				if wallets[who] < cost or gloves_index(who, g) >= 0:
+					return false
+				wallets[who] -= cost
+				gloves[who].append({"grade": g})
+				gloves_sel[who] = gloves[who].size() - 1
+				ev["slot"] = -1
+				ev["index"] = gloves_sel[who]
 			else:
-				ev["slot"] = _put(who, item.duplicate())   # 買った物を手に持つ（手持ちがいっぱいなら、かばんへ）
+				var stack := _peg_stack(who) if Peg.is_item(item) else -1
+				if wallets[who] < cost or free_slot(who) < 0 and stack < 0:
+					return false
+				wallets[who] -= cost
+				if stack >= 0:   # ペグは持っている束に足す（その束を手に持つ）
+					bags[who][stack]["n"] = int(bags[who][stack].get("n", 0)) + Peg.PACK
+					ev["slot"] = stack
+					if stack < HAND_SLOTS:
+						hands[who] = stack
+				else:
+					ev["slot"] = _put(who, item.duplicate())   # 買った物を手に持つ（手持ちがいっぱいなら、かばんへ）
 		"hand":
 			var i := int(ev.slot)
 			if i >= HAND_SLOTS or (i >= 0 and (i >= bags[who].size() or bags[who][i].is_empty())):
@@ -964,10 +1007,11 @@ func _apply(ev: Dictionary) -> bool:
 		"equip":
 			var list := gear_list(who, String(ev.get("gear", "")))
 			var i := int(ev.index)
-			if i >= list.size() or i < (-1 if ev.gear == "lantern" else 0):
+			if i >= list.size() or i < (-1 if ev.gear in ["lantern", "gloves"] else 0):
 				return false
 			match ev.gear:
 				"sack": sack_sel[who] = i
+				"gloves": gloves_sel[who] = i
 				"lantern":
 					lantern_sel[who] = i
 					if i < 0:
@@ -1031,6 +1075,12 @@ func _apply(ev: Dictionary) -> bool:
 			lantern_sel[who] = lanterns[who].size() - 1   # 買ったらすぐ帯に提げる（点いていれば点いたまま）
 			lamps[who] = was_lit
 			ev["index"] = lantern_sel[who]
+		"gloves_own":
+			var g := String(ev.get("grade", ""))
+			if not Gloves.is_gloves(g):
+				return false
+			if gloves_index(who, g) < 0:
+				gloves[who].append({"grade": g})
 		"lantern_own":
 			var look := String(ev.get("look", ""))
 			if Lantern.price(look) < 0:

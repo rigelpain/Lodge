@@ -3,6 +3,7 @@ extends Node3D
 const Doll := preload("res://doll.gd")
 const Snowball := preload("res://snowball.gd")
 const Palm := preload("res://palm.gd")
+const BigBall := preload("res://big_ball.gd")
 ## 身ぶりと声（エモート）の配り役。身ぶりは「誰が・何を・いつ（姿勢の時計のコマ）」の短い出来事にする。
 ## 出来事は辞書 {kind, who, frame, ...}。中身は数・文字・Vector3 だけにして、そのまま通信に乗せられるようにする。
 ## who は人の番号（join で配る）。人の節点そのものは出来事に入れない。
@@ -55,6 +56,12 @@ const MAKE_READY := 16       # 雪玉ができて手に持つコマ（make_ball 
 const EXHALE_MAX := 5.0      # 息が続く長さ (s)
 const CATCH_BURST_FAR := 2.0  # 雪合戦の対決の紙吹雪・星の大きさ。その人自身の画面は 1、ほかの人の画面はこれ（5 m 先でも読める）
 const BALL_MAX := 5          # 持てる雪玉の数（右手に 1 つ、残りは左の袖に縫い付けたストック）
+## 転がす大玉（big_ball.gd・rolled.gd）の出来事。身ぶりではないので、人形は演じない（doll.gd の play・player.gd の _on_emote が飛ばす）
+##   roll_seed  しゃがんで F を押し続けて、丸めた雪玉を雪の上に置く（point）。ホストが番号（ball）を付け、全員の画面に大玉が生まれる
+##   ball_in    大玉に取り込まれた（その人の画面が決める。dir・up は取り込まれた所の向き、玉の座標）
+##   ball_kick  中の人が Space で暴れた（ホストが数え、足りたら崩す。k は崩れるまでの割合）
+##   ball_break 大玉が崩れた（ホストが決める。inside の人は、それぞれの体を動かす画面で放り出される）
+const BALL_EVENTS := ["roll_seed", "ball_in", "ball_kick", "ball_break"]
 
 var balls := {}              # 番号 → 持っている雪玉の数
 var _making := {}            # 番号 → 丸めている雪玉ができるコマ（MAKE_READY。それまでにのけぞると、できない）
@@ -64,6 +71,8 @@ var aims := {}               # 番号 → 指している向き {dir: 頭から�
 var hands := {}              # 番号 → いま掲げている手（HANDS の名前。"high_R" など）
 var _next_id := 1
 var _next_ball := 1          # 投げた雪玉の番号（ホストが付ける。どの画面でも同じ雪玉を指せる。対決のキャッチで使う）
+var big_balls := {}          # 大玉の番号 → 大玉（big_ball.gd）
+var _next_big := 1           # 大玉の番号（ホストが付ける）
 
 
 ## 人を登録して番号をもらう。通信で遊んでいるときは、通信の番号をそのまま人の番号にする（全員の画面で同じ番号になる。
@@ -143,6 +152,8 @@ func from_host(ev: Dictionary) -> void:
 	_emit(ev)
 	if ev.kind == "throw":
 		_spawn_ball(ev)   # 見た目の雪玉（当たりはホストの雪玉が決める）
+	if ev.kind == "roll_seed":
+		_spawn_big(ev)    # ホストの大玉の姿を写す大玉
 
 
 ## 持っている雪玉の数を決める（ホスト）。通信では全員に知らせる
@@ -168,9 +179,29 @@ func load_snapshot(d: Dictionary) -> void:
 func _apply(ev: Dictionary) -> void:
 	match ev.kind:
 		"make_ball":
-			if balls_of(ev.who) >= BALL_MAX:
-				return   # もう持てない
-			_making[ev.who] = int(ev.frame) + MAKE_READY
+			# もう持てなくても丸める（押し続けて大玉の種にできる。離せば、できた雪玉は持てずに崩れる）
+			if balls_of(ev.who) < BALL_MAX:
+				_making[ev.who] = int(ev.frame) + MAKE_READY
+		"roll_seed":   # 丸めている（できたばかりの）雪玉を、雪の上に置いて大玉の種にする
+			if _making.has(ev.who):
+				_making.erase(ev.who)
+			elif balls_of(ev.who) > 0:
+				_set_balls(ev.who, balls_of(ev.who) - 1)
+			else:
+				return
+			ev["ball"] = _next_big
+			_next_big += 1
+		"ball_in":
+			var b := big_ball(int(ev.ball))
+			if b == null:
+				return   # もう崩れている（その人の画面は、玉が消えたのを見て出てくる）
+		"ball_kick":
+			var b := big_ball(int(ev.ball))
+			if b == null or not b.inside.has(ev.who):
+				return
+			ev["k"] = b.kick()
+			if not is_instance_valid(b) or b.broken:
+				return   # この一押しで崩れた（崩れる出来事はもう配った）
 		"throw":
 			if balls_of(ev.who) <= 0 or not can_throw(ev.who):
 				return   # 投げる雪玉がない・雪合戦の対決で、投げたばかり（duel.gd）
@@ -202,6 +233,8 @@ func _apply(ev: Dictionary) -> void:
 	_emit(ev)
 	if ev.kind == "throw":
 		_spawn_ball(ev)
+	if ev.kind == "roll_seed":
+		_spawn_big(ev)
 
 
 func _emit(ev: Dictionary) -> void:
@@ -216,6 +249,28 @@ func _emit(ev: Dictionary) -> void:
 			var w := who_of(int(ev.who))
 			if w and w.has_method("thrown"):
 				w.thrown(ev)
+	if ev.kind == "ball_in":
+		var b := big_ball(int(ev.ball))
+		if b:
+			b.inside[int(ev.who)] = [ev.dir, ev.up]
+			b._set_r(b.r)   # 中の人の分だけ重く
+			_making.erase(ev.who)
+			preload("res://snowball.gd").splat_at(get_parent(), ev.point, ((ev.point as Vector3) - b.global_position).normalized(), false, 2.0)
+	if ev.kind == "ball_kick":
+		var b := big_ball(int(ev.ball))
+		if b:
+			b.wobble(float(ev.get("k", 0.3)))
+	if ev.kind == "ball_break":
+		var b := big_ball(int(ev.ball))
+		big_balls.erase(int(ev.ball))
+		if b:
+			b.crumble(ev)
+		else:
+			BigBall._leave_pile(get_parent(), ev.point, float(ev.r))
+		for id in ev.get("inside", []):   # 中の人は、体を動かす画面（その人の画面・ホストの仲間）で放り出される
+			var w := who_of(int(id))
+			if w and w.has_method("ball_out"):
+				w.ball_out()
 	if ev.kind == "crash":   # ソリが雪の塊や木にぶつかって打ち上がった
 		preload("res://sled_crash.gd").on_event(get_parent(), ev)
 	if ev.kind == "catch":   # 取られた雪玉は、どの画面でも消える
@@ -446,6 +501,52 @@ func _spawn_ball(ev: Dictionary) -> void:
 	add_child(ball)
 	ball.global_position = ev.origin
 	ball.linear_velocity = ev.velocity
+
+
+## 大玉を置く（どの画面でも。出来事 roll_seed で）。つなぐ側はホストの大玉の姿を写す
+func _spawn_big(ev: Dictionary) -> RigidBody3D:
+	var id := int(ev.get("ball", -1))
+	if id < 0 or big_balls.has(id):
+		return big_balls.get(id)
+	var b := BigBall.new()
+	b.name = "BigBall%d" % id
+	b.hub = self
+	b.ball_id = id
+	b.maker = int(ev.get("who", -1))
+	if ev.has("r"):
+		b.r = float(ev.r)
+	b.net_follow = _client()
+	var cr = get_parent().get("craft")
+	if cr and not _client():
+		b.pack = cr.glove_grade(b.maker)   # 置いた人の手袋で固めた種（big_ball.gd の pack）
+	get_parent().add_child(b)
+	b.global_position = (ev.point as Vector3) + Vector3.UP * b.r
+	big_balls[id] = b
+	if not _client():
+		# 置ける数を超えたら、古いものから崩れる
+		var ids := big_balls.keys()
+		ids.sort()
+		var live := ids.filter(func(k): return not big_balls[k].broken)
+		if live.size() > BigBall.MAX_BALLS:
+			big_balls[live[0]].break_now("many")
+	return b
+
+
+## 番号の大玉（崩れていないもの。なければ null）
+func big_ball(id: int) -> RigidBody3D:
+	var b = big_balls.get(id)
+	if b == null or not is_instance_valid(b) or b.broken:
+		return null
+	return b
+
+
+## その人が入っている大玉と、取り込まれた所 [大玉, 向き, 頭の向き]（入っていなければ空）。ほかの画面の人形が読む
+func rolled_in(id: int) -> Array:
+	for k in big_balls:
+		var b = big_balls[k]
+		if is_instance_valid(b) and not b.broken and b.inside.has(id):
+			return [b, b.inside[id][0], b.inside[id][1]]
+	return []
 
 
 ## 番号の雪玉（まだ飛んでいるもの。なければ null）
