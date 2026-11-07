@@ -64,6 +64,8 @@ extends Node
 ##   rack_out  {id, at, yaw}   台の自分のソリを、前の雪の上へ持ち出す（ホストが空いた所を決める）
 ##   scope_on  {stand}         テラスの双眼鏡台（binocular_stand.gd。stand は main.gd の binocular_stands の番号）をのぞき始める。だれかがのぞいていれば断る。台ごとに別の人が同時に使える。雪玉が 1 個あれば雪玉で、なければ木のボタン 1 枚で
 ##                             払う（2026-11-07 代表「双眼鏡台は木のボタン1枚か雪玉で起動してほしい」）。ev.paid に "ball" か "button" が入る。どちらもなければ断る
+##                             一度払うと、払った時から 60 秒（binoculars.gd の STAND_SECONDS）は、やめても時間が進み、同じ人が同じ台なら ev.paid が "" のただでのぞき直せる（2026-11-08 代表
+##                             「一度お金を払ったらそのお金で見れる時間制限中はなんどインタラクトしても支払いが起きないように」）。ev.left に残りの秒。ホストが決めて配る。払った時間は scope_paid
 ##   scope_off {stand}         双眼鏡台から離れる（のぞいている本人。時間が来たとき、F・Esc のとき。帰った人の分はホストが送る）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）。雪合戦の対決の払い（duel.gd）も、これで勝った人へ
@@ -118,6 +120,7 @@ var bags := {}                 # 人の番号 → 持ち物（SLOTS 個の場所
 var hands := {}                # 人の番号 → 手に持つ持ち物の番号（-1 は素手）
 var sleds := {}                # ソリの番号 → 縫った・広げたソリ（畳めるソリ）
 var racked := {}               # ソリの番号 → 立てかけ台の置き場（sled_rack.gd の X）
+var scope_paid := {}           # "人の番号:台の番号" → 双眼鏡台の払った時間が切れる時刻（この画面の Time.get_ticks_msec）
 var _next_sled := 1
 var fires := {}                # 焚き火の番号 → 組んだ焚き火（campfire.gd）
 var _next_fire := 1
@@ -436,6 +439,22 @@ func send(ev: Dictionary) -> bool:
 	return _apply(ev)
 
 
+## 双眼鏡台の払った時間の残り（秒）。人ごと、台ごと。切れていれば 0
+func scope_left(who: int, stand: int) -> float:
+	var key := _scope_key(who, stand)
+	if not scope_paid.has(key):
+		return 0.0
+	var ms: int = int(scope_paid[key]) - Time.get_ticks_msec()
+	if ms <= 0:
+		scope_paid.erase(key)
+		return 0.0
+	return ms / 1000.0
+
+
+func _scope_key(who: int, stand: int) -> String:
+	return "%d:%d" % [who, stand]
+
+
 ## 出来事の番号の双眼鏡台（なければ null）
 func _scope_stand(ev: Dictionary) -> Variant:
 	var i := int(ev.get("stand", -1))
@@ -480,12 +499,25 @@ func snapshot() -> Dictionary:
 	return {"pegs": pegs, "wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "stitch_owned": stitch_owned, "sacks": sacks,
 		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
 		"lantern_sel": lantern_sel, "lamps": lamps, "next_sled": _next_sled, "sleds": placed, "sack_out": out,
-		"fires": lit, "next_fire": _next_fire, "scope_who": world.binocular_stands.map(func(st): return int(st.who)) if world else []}
+		"fires": lit, "next_fire": _next_fire, "scope_who": world.binocular_stands.map(func(st): return int(st.who)) if world else [], "scope_paid": _scope_paid_left()}
+
+
+## 双眼鏡台の払った時間を、残りの秒にして渡す（あとから来た人の画面へ）
+func _scope_paid_left() -> Dictionary:
+	var out := {}
+	for key in scope_paid.keys():
+		var ms: int = int(scope_paid[key]) - Time.get_ticks_msec()
+		if ms > 0:
+			out[key] = ms / 1000.0
+	return out
 
 
 ## ホストから渡された持ち物と置いてあるソリで、この画面の工房を置き換える（つないだとき）。自分の人の番号の分もホストの値になる
 func load_snapshot(d: Dictionary) -> void:
 	if world:
+		var left_of: Dictionary = d.get("scope_paid", {})
+		for key in left_of:   # 時計は画面ごとなので、残りの秒で受け取る
+			scope_paid[key] = Time.get_ticks_msec() + int(float(left_of[key]) * 1000.0)
 		var scoped: Array = d.get("scope_who", [])
 		for i in mini(scoped.size(), world.binocular_stands.size()):
 			world.binocular_stands[i].who = int(scoped[i])
@@ -591,20 +623,27 @@ func _apply(ev: Dictionary) -> bool:
 				for other in world.binocular_stands:
 					if int(other.who) == who:
 						return false   # 別の台をのぞいている
-				var pay := {"kind": "spend", "who": who, "n": 1}
-				world.emotes.send(pay)
-				if pay.get("ok", false):
-					ev["paid"] = "ball"
-				elif wallets[who] >= 1:
-					ev["paid"] = "button"
+				var left := scope_left(who, int(st.index))
+				if left > 0.0:   # 払った時間の中: のぞき直しはただ。残りはそのまま続く
+					ev["paid"] = ""
+					ev["left"] = left
 				else:
-					return false
+					var pay := {"kind": "spend", "who": who, "n": 1}
+					world.emotes.send(pay)
+					if pay.get("ok", false):
+						ev["paid"] = "ball"
+					elif wallets[who] >= 1:
+						ev["paid"] = "button"
+					else:
+						return false
+					ev["left"] = preload("res://binoculars.gd").STAND_SECONDS
 			if String(ev.get("paid", "")) == "button":
 				wallets[who] -= 1
+			scope_paid[_scope_key(who, int(st.index))] = Time.get_ticks_msec() + int(float(ev.get("left", 0.0)) * 1000.0)
 			st.who = who
 			var person := _person(who)
-			if person:
-				st.drop_fee(String(ev.get("paid", "button")), person.global_position + Vector3.UP * 1.1)
+			if person and String(ev.get("paid", "")) != "":
+				st.drop_fee(String(ev.paid), person.global_position + Vector3.UP * 1.1)
 		"scope_off":
 			var st = _scope_stand(ev)
 			if st == null or (int(st.who) != who and not replay):

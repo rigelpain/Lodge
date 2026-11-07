@@ -515,11 +515,12 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			_hint(rt[1], ["F"], rt[1], at)
 		elif p.rack_refused():
 			_hint("rack_busy", [], "rack_busy", p.global_position + (-p.global_basis.z) * 2.2 + Vector3.UP * 1.2)
-	# テラスの双眼鏡台: 雪玉か木のボタンの絵と F。入れる物がなければ F なしで赤い ×
+	# テラスの双眼鏡台: 雪玉か木のボタンの絵と F。入れる物がなければ F なしで赤い ×。払った時間の中は値段の絵の代わりに残りの毛糸
 	if p.has_method("binocular_pay") and not p.rooted():
 		var how: String = p.binocular_pay()
 		if how != "":
 			var at_st: Vector3 = p.binocular_near().global_position + Vector3.UP * 1.65
+			preload("res://binoculars.gd").hint_left = p.binocular_left() / preload("res://binoculars.gd").STAND_SECONDS
 			_hint("scope_" + how, [] if how == "none" else ["F"], "scope_" + how, at_st)
 	# 手の双眼鏡: 左ボタンを押しているあいだのぞく
 	if p.has_method("held") and preload("res://binoculars.gd").is_item(p.held()) and not p.rooted():
