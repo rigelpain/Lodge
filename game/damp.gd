@@ -46,6 +46,7 @@ const HIT_WET := 8.0           # 雪玉が当たる（1 回）
 const BALL_WET := 3.0          # 雪玉を丸める（素手で雪をつかむ。1 回）
 const FALL_WET := 7.0          # 高い所から落ちて雪に突っ込む（転ぶ。1 回）
 const FALL_SPEED := 9.4        # 着いたときの下向きの速さがこれより速いと、転ぶ (m/s。下りの重力 24 で約 1.8 m 落ちた速さ。ふつうのジャンプは 4.5)
+const FLUNG_WET := 20.0        # 吹き飛んで雪に落ちる（ソリに轢かれた・木にぶつかって放り投げられた。1 回の吹き飛びに 1 度）。2026-11-07 代表「障害物にあたって吹き飛んだときにぬれるようにしてほしい」
 const CRISP_FADE := 0.22       # 火から離れると（ロッジの中でも外でも）、パリッとがこの速さで抜けて 0 に戻る（−40 から 0 まで 3 分）
 
 # 乾く
@@ -56,6 +57,7 @@ const HEARTH_R := 9.0          # 暖炉の暖かさが届く (m。temperature.gd
 const CRISP_FROM := 0.15       # 暖かさ（0 〜 1。火からの近さ）がこれを超えると、0 より下（パリッと）へ行く
 const CRISP_FULL := 0.6        # ここで −40 まで行く（火から 2 m）
 const DRYER_DRY := 140.0 / 6.0 # 乾燥機の中で乾く速さ（1 秒に。100 から −40 まで 6 秒。回る長さ cook_station.gd の RIDE_MIN・RIDE_MAX と合わせる）
+const CPU_DRY := DRY_ROOM      # 仲間（stays_dry）がひとりでに乾く速さ。ロッジへ乾かしに行かないので、濡れたままにならないように（20 なら 36 秒）
 
 const SEND_STEP := 2.0         # 値がこれだけ変わるか、段が変わったら配る
 const SEND_GAP := 0.25         # 配るのは多くても 1 秒に 4 回
@@ -144,6 +146,14 @@ func load_snapshot(s: Dictionary) -> void:
 	water.merge(s, true)
 
 
+## 吹き飛んで雪に落ちた（flung.gd が、1 回の吹き飛びに 1 度呼ぶ）。体を動かす画面（その人の画面・ホストの仲間）だけで呼ばれ、値は水のふつうの配り方で届く
+func flung_landed(id: int, who: Node3D) -> void:
+	var temp := get_node_or_null("/root/Temperature")
+	var zone := Audio.zone_at(temp._find_lodge(), who.global_position + Vector3.UP) if temp else 0
+	if zone == 0:
+		add_water(id, FLUNG_WET)
+
+
 func _on_emote(ev: Dictionary) -> void:
 	if not authority:
 		return
@@ -164,6 +174,8 @@ func _physics_process(dt: float) -> void:
 		# 一人プレイの仲間（bot.gd）は湿らない。通信の相手（remote_person.gd）の値は、その人の画面から届く
 		if authority and not who.get("stays_dry") and not who.get("damp_from_net"):
 			water[id] = clampf(water_of(id) + _rate(id, who, dt), CRISP, HI)
+		elif authority and who.get("stays_dry") and water_of(id) > 0.0:
+			water[id] = maxf(water_of(id) - CPU_DRY * dt, 0.0)   # 仲間は、雪玉や吹き飛びで濡れた分がひとりでに乾く
 		var d: Doll = who.get("doll")
 		if d and is_instance_valid(d):
 			d.damp = look_of(water_of(id))
@@ -211,7 +223,9 @@ func _rate(id: int, who: Node3D, dt: float) -> float:
 	# 転ぶ: 高い所から落ちて、雪に突っ込む
 	var body := who as CharacterBody3D
 	if body:
-		if not body.is_on_floor():
+		if who.get("fling") != null and who.fling.active():
+			_fall.erase(id)   # 吹き飛びの着地は flung_landed が濡らす（転ぶと二重に濡らさない）
+		elif not body.is_on_floor():
 			_fall[id] = -body.velocity.y
 		elif _fall.has(id):
 			if _fall[id] > FALL_SPEED and zone == 0:

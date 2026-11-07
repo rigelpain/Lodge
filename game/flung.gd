@@ -70,6 +70,7 @@ var _passing: Array = []     # 当たりを切っているソリ
 var _thru: Array = []        # 当たりを切っている木の体（放り投げられて飛び出すあいだ）
 var _thru_t := 0.0
 var _thrown := false         # 木にぶつかって放り投げられた（一人称の視点を穏やかに）
+var _soaked := false         # この吹き飛びで、もう雪に落ちて濡れた
 
 
 func _init(b: CharacterBody3D) -> void:
@@ -161,6 +162,7 @@ func start(hit: Dictionary) -> void:
 func _launch(to: Vector3, out: float, up: float) -> void:
 	stage = FLY
 	dir = to
+	_soaked = false
 	_t = 0.0
 	_air_t = 0.0
 	hops = 0
@@ -261,6 +263,7 @@ func _fly(dt: float) -> void:
 	if _air_t < 0.1:
 		return
 	if body.is_on_floor():
+		_soak()
 		if fall > HOP_MIN_FALL and hops == 0:
 			hops = 1
 			_v.y = fall * HOP_UP
@@ -271,6 +274,16 @@ func _fly(dt: float) -> void:
 		_lay_down()
 	elif _t > MAX_TIME:
 		_lay_down()
+
+
+## はじめて雪に落ちたときに濡れる（damp.gd の FLUNG_WET）。跳ねても 2 度は濡れない
+func _soak() -> void:
+	if _soaked:
+		return
+	_soaked = true
+	var dm := body.get_parent().get_node_or_null("Damp")
+	if dm:
+		dm.flung_landed(int(body.get("id")), body)
 
 
 func _lay_down() -> void:
