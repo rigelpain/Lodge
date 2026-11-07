@@ -91,10 +91,10 @@ func _host() -> void:
 	await _key(KEY_F)
 	_check("別の台をやめても、相手の台はふさがったまま", me.peek == "" and int(st2.who) < 0 and int(st.who) == r.id)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-	ok = await _wait(func() -> bool: return r != null and r.doll.peek == "hand")
+	ok = await _wait(func() -> bool: return r != null and r.doll.peek == "binoculars")
 	_check("相手の人形は手の双眼鏡を目に当てる", ok)
 	await create_timer(3.0).timeout   # 相手が指を離したあとも続いている
-	_check("相手が指を離したあとも、目に当てたまま", r.doll.peek == "hand")
+	_check("相手が指を離したあとも、目に当てたまま", r.doll.peek == "binoculars")
 	var eye_h: float = r.doll.eye_point(false).y
 	cam.look_at_from_position(r.global_position + r.global_basis * Vector3(0.55, eye_h - 0.12, -1.15), r.global_position + Vector3.UP * (eye_h - 0.05))
 	await _save("host_sees_hand")

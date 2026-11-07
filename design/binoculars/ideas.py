@@ -4,6 +4,7 @@
   B  糸巻きを 2 本並べた筒。毛糸を巻いた胴と、木のつばの目
   C  フェルトの庇つきの頭に、刺繍枠の目（となりのソリの立てかけ台と同じ枠）
   hand  持ち歩く双眼鏡の 3 案を並べる（A・B・C の順）
+  grades  手の双眼鏡の段（基本・遠見・夜目）を並べる（2026-11-08 代表「双眼鏡にグレード作って」）
 代表の選んだ形をゲームへ（2026-11-07 代表「双眼鏡台はまんなか、手持ち双眼鏡は左が良いかな」＝台は B、手持ちは hand_a）:
     /Applications/Blender.app/Contents/MacOS/Blender -b -P design/binoculars/ideas.py -- --what B --export game/props/binocular_stand
     /Applications/Blender.app/Contents/MacOS/Blender -b -P design/binoculars/ideas.py -- --what hand --export game/props/binoculars
@@ -27,7 +28,7 @@ import kit as K  # noqa: E402
 
 A = C.parse([("--what", dict(default="A"))])
 K.setup(A, fiber=2.0, scale=1.0, tris=12000)
-C.HEX.update({"felt_teal": "3F7F86", "felt_indigo": "2B3D68", "felt_ivory": "EEE6D4", "felt_dark": "23262E", "felt_snowball": "F4F4F0",
+C.HEX.update({"felt_teal": "3F7F86", "felt_indigo": "2B3D68", "felt_ivory": "EEE6D4", "felt_dark": "23262E", "felt_snowball": "F4F4F0", "felt_midnight": "171F3D", "felt_mustard": "C99A3A", "yarn_snowball": "F0EEE6",
               "yarn_teal": "3F7F86", "yarn_mustard": "C99A3A", "paper_kraft": "C7A676", "thread": "EEE6D4"})
 
 HEAD_Z = 1.20       # 頭の真ん中の高さ。人形の目は低い（笠 1.16 m、折り紙 1.36 m、小さい人形は 0.6〜0.8 m）。00-stands.jpg は 1.40 で描いた案
@@ -222,6 +223,48 @@ def hand_c(P, cx):
     strap(P, "yarn_mustard", cx, 0.03)
 
 
+def hand_far(P, cx, hang=False):
+    """遠見（倍率の高い段）: 太さを変えた筒を 3 段つないだ長い筒。藍のフェルトに山吹の帯、大きな木のボタンの目"""
+    z = 0.058
+    for sgn in (-1, 1):
+        x = cx + sgn * 0.054
+        y0 = 0.085
+        K.lathe(P, "felt_indigo", [(0, 0), (0.030, 0), (0.038, 0.006), (0.039, 0.060), (0, 0.060)], (x, y0, z), 24, False, ROLL)
+        K.lathe(P, "felt_mustard", [(0.039, 0.056), (0.045, 0.060), (0.045, 0.072), (0.039, 0.076)], (x, y0, z), 24, False, ROLL)
+        K.lathe(P, "felt_indigo", [(0, 0.070), (0.043, 0.070), (0.046, 0.150), (0, 0.150)], (x, y0, z), 24, False, ROLL)
+        K.lathe(P, "felt_mustard", [(0.046, 0.146), (0.052, 0.150), (0.052, 0.162), (0.046, 0.166)], (x, y0, z), 24, False, ROLL)
+        K.lathe(P, "felt_indigo", [(0, 0.160), (0.050, 0.160), (0.058, 0.215), (0.058, 0.228), (0, 0.228)], (x, y0, z), 24, False, ROLL)
+        K.stitch_ring(P, "thread", (x, y0 - 0.11, z), 0.0465, r=0.0018, axis="Y", dash=0.011)
+        K.stitch_ring(P, "thread", (x, y0 - 0.195, z), 0.0545, r=0.0018, axis="Y", dash=0.011)
+        button_eye(P, x, y0 - 0.228, z, 0.05)
+        K.disc(P, "felt_dark", (x, y0 + 0.001, z), 0.02, 0.003, axis="Y", segs=16)
+    K.pbox(P, "felt_mustard", (cx, 0.02, z + 0.024), (0.03, 0.05, 0.012), n=3.0, nz=2.4, c=6)
+    K.pbox(P, "felt_mustard", (cx, -0.08, z + 0.03), (0.03, 0.03, 0.012), n=3.0, nz=2.4, c=6)
+    (strap_hang(P, "yarn_mustard", cx) if hang else strap(P, "yarn_mustard", cx, 0.04))
+
+
+def hand_night(P, cx, hang=False):
+    """夜目（暗視の段）: 濃い藍のフェルトの筒に、白蝶貝のボタンの目。上に三日月と星の刺繍、白い毛糸のひも"""
+    z = 0.052
+    for sgn in (-1, 1):
+        x = cx + sgn * 0.048
+        K.lathe(P, "felt_midnight", [(0, 0), (0.036, 0), (0.044, 0.006), (0.046, 0.05), (0.052, 0.09), (0.052, 0.125), (0, 0.125)], (x, 0.065, z), 24, False, ROLL)
+        K.stitch_ring(P, "thread", (x, 0.065 - 0.03, z), 0.0465, r=0.0018, axis="Y", dash=0.011)
+        K.stitch_ring(P, "thread", (x, 0.065 - 0.105, z), 0.0528, r=0.0018, axis="Y", dash=0.011)
+        K.lathe(P, "pearl", [(0, 0), (0.043, 0), (0.044, 0.005), (0.041, 0.012), (0.031, 0.010), (0.030, 0.005), (0, 0.005)], (x, 0.065 - 0.125, z), 36, False, ROLL)
+        for i, j in ((-1, -1), (1, -1), (-1, 1), (1, 1)):
+            K.disc(P, "felt_midnight", (x + i * 0.0105, 0.065 - 0.1312, z + j * 0.0105), 0.005, 0.002, axis="Y", segs=10)
+        K.tube(P, "thread", [(x - 0.0105, 0.0635 - 0.1335, z - 0.0105), (x + 0.0105, 0.0635 - 0.1335, z + 0.0105)], 0.0018)
+        K.tube(P, "thread", [(x + 0.0105, 0.0635 - 0.1335, z - 0.0105), (x - 0.0105, 0.0635 - 0.1335, z + 0.0105)], 0.0018)
+        K.disc(P, "felt_dark", (x, 0.066, z), 0.022, 0.003, axis="Y", segs=16)
+    K.box(P, "felt_midnight", (cx, 0.0, z + 0.03), (0.056, 0.082, 0.016))
+    K.disc(P, "felt_snowball", (cx - 0.004, 0.0, z + 0.0395), 0.021, 0.002, segs=24)   # 三日月（白い丸に濃い丸を重ねる）
+    K.disc(P, "felt_midnight", (cx + 0.006, 0.004, z + 0.0412), 0.019, 0.002, segs=24)
+    for dx, dy in ((0.012, -0.024), (-0.014, 0.024), (0.016, 0.026)):   # 星の刺繍
+        K.disc(P, "felt_snowball", (cx + dx, dy, z + 0.0395), 0.0028, 0.002, segs=8)
+    (strap_hang(P, "yarn_snowball", cx) if hang else strap(P, "yarn_snowball", cx, 0.03))
+
+
 def import_glb(path):
     before = set(bpy.data.objects)
     bpy.ops.import_scene.gltf(filepath=path)
@@ -280,11 +323,19 @@ def export_stand():
 
 
 def export_hand():
-    """持ち歩く双眼鏡（左の案）。ひもは手の下へ短く垂らす。原点は筒の真ん中"""
+    """持ち歩く双眼鏡（基本・遠見・夜目）。ひもは手の下へ短く垂らす。原点は筒の真ん中"""
     h = K.Parts("binoculars", tris=3500)
     hand_a(h, 0.0, hang=True)
     h.transform(Matrix.Translation((0, 0, -0.052)))
     h.finish()
+    f = K.Parts("binoculars_far", tris=4500)
+    hand_far(f, 0.0, hang=True)
+    f.transform(Matrix.Translation((0, 0.03, -0.058)))
+    f.finish()
+    n = K.Parts("binoculars_night", tris=4500)
+    hand_night(n, 0.0, hang=True)
+    n.transform(Matrix.Translation((0, 0, -0.052)))
+    n.finish()
     K.export_all(A.export)
 
 
@@ -304,6 +355,14 @@ if what in FORM:
     doll("kasa", (-1.05, 0.1, 0), -0.5)
     cams = {"front": ((-1.5, -3.6, 1.8), (-0.3, 0, 0.92), 44), "back": ((-1.9, 3.6, 1.7), (-0.3, 0, 0.92), 44),
             "near": ((-0.45, -1.15, 1.55), (0, 0, 1.38), 46)}
+elif what == "grades":   # 段ごとの形: 基本・遠見・夜目
+    hand_a(P, -0.24)
+    hand_far(P, 0.0)
+    hand_night(P, 0.24)
+    P.finish(fuzz=0.002)
+    C.ground(30.0)
+    C.light(46.0, -30.0)
+    cams = {"front": ((-0.16, -0.72, 0.44), (0.0, -0.03, 0.04), 40), "back": ((0.12, 0.66, 0.46), (0.0, 0.0, 0.04), 40)}
 else:
     hand_a(P, -0.22)
     hand_b(P, 0.0)

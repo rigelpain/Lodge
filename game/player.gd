@@ -145,7 +145,9 @@ var _peek_open := 0.0        # 窓の開き（0〜1）
 var _peek_closing := false   # 台の時間が来て、窓がすぼんでいるところ
 var _peek_locked := false    # のぞくあいだ一人称に固定した
 var _peek_view: CanvasLayer  # 画面の窓（binocular_view.gd）
-var _peek_fov := {"hand": Binoculars.FOV_HAND, "stand": Binoculars.FOV_STAND}   # いまの画角。次にのぞくときも同じ倍率で
+var _peek_grade := ""        # のぞいている手の双眼鏡の段（品物の kind）。台なら "stand"
+var _peek_fov := {}          # 段ごとのいまの画角。次にのぞくときも同じ倍率で
+var _night_sight: CanvasLayer   # 夜目の双眼鏡の暗視（night_sight.gd）。この人の画面だけ
 var _eating := false         # 左ボタンを押しているあいだ、手の料理を 1 口ずつ食べ続ける
 var _bit_frame := -1         # ひと口を数えた身ぶりの始まりのコマ（同じひと口を 2 度数えない）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
@@ -956,7 +958,7 @@ func _pose_doll() -> void:
 			doll.rock = Seats.rock_of(st, Doll.frame_index(), _sit_frame, _stand_frame)
 	doll.seat_soft = mode == Mode.SIT and seats.seat(seat_i).kind == "zabuton"
 	doll.eat_table = table_ctx()
-	doll.peek = peek
+	doll.peek = _peek_grade if peek != "" else ""
 	if mode == Mode.DRUM:
 		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
 		doll.facing = pl.face
@@ -1322,7 +1324,7 @@ func _pose_hands(dt: float) -> void:
 	_save_cam(dt)
 	var fov := base_fov + (4.0 if working and fov_kick_enabled else 0.0)
 	if peek != "":
-		cam.fov = lerp(cam.fov, float(_peek_fov[peek]), min(1.0, dt * 9.0))   # 視野を狭めるだけ（描く物は増えない）
+		cam.fov = lerp(cam.fov, _peek_fov_now(), min(1.0, dt * 9.0))   # 視野を狭めるだけ（描く物は増えない）
 	else:
 		cam.fov = lerp(cam.fov, maxf(fov, minf(fov + ride_fov, FOV_CAP)), min(1.0, dt * 4.0))
 	var fi := Doll.frame_index()
@@ -1595,7 +1597,7 @@ func set_hands(name_: String) -> void:
 
 ## 左クリック: 雪玉があれば振りかぶる（離すと投げる。持ち物を手に持っていれば、しまって雪玉を出す）。高い両手のひらなら拍手
 func _left_click() -> void:
-	if craft and held().get("kind", "") == "binoculars":   # 手の双眼鏡: 押すとのぞき始める。指を離してものぞいたまま（雪玉は投げない）
+	if craft and Binoculars.is_item(held()):   # 手の双眼鏡（どの段でも）: 押すとのぞき始める。指を離してものぞいたまま（雪玉は投げない）
 		if mode == Mode.WALK or mode == Mode.SIT:
 			_peek_begin("hand", null)
 		return
@@ -2482,6 +2484,7 @@ func _peek_begin(kind: String, stand: Node3D) -> void:
 		rotation.y = stand.clamp_yaw(rotation.y)
 		stand.hide_head(true)
 	peek = kind
+	_peek_grade = "stand" if kind == "stand" else String(held().get("kind", Binoculars.KIND))
 	_peek_stand = stand
 	_peek_left = Binoculars.STAND_SECONDS
 	_peek_open = 0.0
@@ -2494,6 +2497,11 @@ func _peek_begin(kind: String, stand: Node3D) -> void:
 		_peek_view = preload("res://binocular_view.gd").new()
 		add_child(_peek_view)
 	_peek_hud(false)
+	if Binoculars.night(_peek_grade) and kind == "hand":
+		if _night_sight == null:
+			_night_sight = preload("res://night_sight.gd").new()
+			add_child(_night_sight)
+		_night_sight.begin(get_parent())
 	var hud = get_parent().get("hud")
 	if hud and kind == "hand":
 		hud.learn("scope_hand")
@@ -2505,6 +2513,8 @@ func peek_stop() -> void:
 		return
 	var was := peek
 	peek = ""
+	if _night_sight:
+		_night_sight.end()
 	if was == "stand" and _peek_stand:
 		_peek_stand.hide_head(false)
 		if craft:
@@ -2568,8 +2578,13 @@ func _peek_input(e: InputEvent) -> bool:
 
 ## 倍率を変える: いまの画角に k を掛ける（1 より小さいと寄る）
 func _peek_zoom(k: float) -> void:
-	var r := Binoculars.fov_range(peek)
-	_peek_fov[peek] = clampf(float(_peek_fov[peek]) * k, r.x, r.y)
+	var r := Binoculars.fov_range(_peek_grade)
+	_peek_fov[_peek_grade] = clampf(_peek_fov_now() * k, r.x, r.y)
+
+
+## いまのぞいている物の画角
+func _peek_fov_now() -> float:
+	return float(_peek_fov.get(_peek_grade, Binoculars.fov(_peek_grade)))
 
 
 ## 毎コマ: やめる条件・台の前の立ち位置・窓
@@ -2578,7 +2593,7 @@ func _update_peek(dt: float) -> void:
 		return
 	var ok := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not menu_open and not shopping and not fling.active()
 	if peek == "hand":
-		ok = ok and (mode == Mode.WALK or mode == Mode.SIT) and held().get("kind", "") == "binoculars"
+		ok = ok and (mode == Mode.WALK or mode == Mode.SIT) and String(held().get("kind", "")) == _peek_grade
 	else:
 		ok = ok and mode == Mode.WALK and is_instance_valid(_peek_stand)
 	if not ok:
@@ -2598,7 +2613,9 @@ func _update_peek(dt: float) -> void:
 	if peek == "stand":   # 終わりが近いと、穴がゆっくりすぼんでくる
 		open_goal = lerpf(Binoculars.STAND_NARROW, 1.0, clampf(_peek_left / Binoculars.STAND_NARROW_FROM, 0.0, 1.0))
 	_peek_open = move_toward(_peek_open, 0.0 if _peek_closing else open_goal, dt * (2.5 if _peek_closing else 7.0))
-	_peek_view.show_view(_peek_open, left, Binoculars.zoom_of(peek, float(_peek_fov[peek])), peek)
+	_peek_view.show_view(_peek_open, left, Binoculars.zoom_of(_peek_grade, _peek_fov_now()), peek)
+	if _night_sight:
+		_night_sight.step()
 	if _peek_closing and _peek_open <= 0.0:
 		peek_stop()
 
@@ -2674,8 +2691,8 @@ func _face_held_fp() -> void:
 ## 手に持った物の小さな形（一人称の右手と、確かめ用）
 ## fp: 一人称の手に持つ形（目の前で見るので大きく持つ）。人形の手に持たせるとき（小窓・鏡）は false
 static func held_shape(it: Dictionary, fp := true) -> Node3D:
-	if it.get("kind") == "binoculars":   # 持ち歩く双眼鏡: フェルトの筒に木のボタンの目（binoculars.gd）
-		var bino := Binoculars.shape()
+	if Binoculars.is_item(it):   # 持ち歩く双眼鏡: 段ごとの形（binoculars.gd）
+		var bino := Binoculars.shape(String(it.kind))
 		bino.rotation.x = 0.2
 		return bino
 	if it.get("kind") == "campfire":   # 焚き火セット: 毛糸で縛った薪の束（campfire.gd）

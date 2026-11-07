@@ -18,6 +18,8 @@ const SHELF := [
 	{"item": Campfire.ITEM, "price": Campfire.PRICE, "on": true},
 	{"item": {"kind": Peg.KIND, "n": Peg.PACK}, "price": Peg.PRICE, "on": true},   # Peg.item() と同じ 1 束
 	{"item": Binoculars.ITEM, "price": Binoculars.PRICE, "on": true},
+	{"item": {"kind": "binoculars_far"}, "price": 500, "on": true},     # 値段は binoculars.gd の GRADES と同じ
+	{"item": {"kind": "binoculars_night"}, "price": 1000, "on": true},
 ]
 
 ## 確かめ用: true なら on でない品目も売る（--shelf-all。main.gd が入れる）
@@ -52,8 +54,8 @@ static func item_name(it: Dictionary) -> String:
 			return Campfire.NAME
 		"peg":
 			return Peg.item_name(it)
-		"binoculars":
-			return Binoculars.NAME
+		"binoculars", "binoculars_far", "binoculars_night":
+			return Binoculars.item_name(it)
 	return ""
 
 
@@ -64,5 +66,5 @@ static func draw(ci: CanvasItem, it: Dictionary, a := 1.0) -> void:
 			Campfire.icon(ci, Vector2.ZERO, 1.0, a)
 		"peg":
 			Peg.icon(ci, it, a)
-		"binoculars":
-			Binoculars.icon(ci, a)
+		"binoculars", "binoculars_far", "binoculars_night":
+			Binoculars.icon(ci, a, String(it.kind))
