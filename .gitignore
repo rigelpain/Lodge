@@ -1,2 +1,9 @@
 .DS_Store
 build/
+
+# Python のキャッシュと Blender の控え
+__pycache__/
+*.blend1
+
+# キャラの絵は JPG を入れ、PNG の元絵は手元に置く
+person/ideas/characters/**/*.png

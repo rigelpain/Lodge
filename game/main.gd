@@ -1662,9 +1662,8 @@ func _make_snowfall(follow: Node3D) -> void:
 	pm.initial_velocity_min = 0.3
 	pm.initial_velocity_max = 0.7
 	pm.gravity = Vector3(0, -0.35, 0)
-	pm.turbulence_enabled = true
-	pm.turbulence_noise_strength = 0.6
-	pm.turbulence_noise_scale = 4.0
+	pm.turbulence_enabled = false   # 乱流は GPU で重い。横揺れは初速の広がりで出す
+	pm.spread = 40.0
 	pm.scale_min = 0.6
 	pm.scale_max = 1.4
 	p.process_material = pm
