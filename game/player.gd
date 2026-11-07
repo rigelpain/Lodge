@@ -2405,10 +2405,13 @@ func _mirror_f() -> bool:
 func paper_shop_near() -> bool:
 	var pl = get_parent().get("paper_lady")
 	return pl != null and get_parent().get("paper_shop_ui") != null and not menu_open and pl.can_use(self)
-## 1 階の人台の桶を見下ろしているか
+## 布の見本帳の前で、見本帳の方を向いているか。立てかけ台の F が届く所では台を優先する（F と案内を取り合わない）
 func book_near() -> bool:
 	var v = get_parent().get("sled_book")
-	return v != null and get_parent().get("sled_book_ui") != null and not menu_open and v.can_use(self)
+	if v == null or get_parent().get("sled_book_ui") == null or menu_open or not v.can_use(self):
+		return false
+	var r = get_parent().get("sled_rack")
+	return r == null or not r.in_reach(self)
 
 
 func dye_near() -> bool:

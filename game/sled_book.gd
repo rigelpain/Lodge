@@ -1,5 +1,5 @@
 extends Node3D
-## 布の見本帳（2026-11-06 代表「見本帖＋自由な色にしてほしい」）。ミシンの近く、下屋の前の雪の上に立つ。
+## 布の見本帳（2026-11-06 代表「見本帖＋自由な色にしてほしい」）。立てかけ台の北の端の横、下屋の屋根の下に立つ（main.gd の SLED_BOOK_AT）。
 ## ぎざぎざに切ったフェルトの布を真鍮の輪で綴じて扇に開いた形（design/sled-custom/build_book.py）。
 ## 前で F を押すと、自分のソリの色と滑りあとの縫い目を替える画面が開く（sled_book_ui.gd）。
 ## この節の +Z が見本帳の正面。
@@ -30,7 +30,7 @@ func can_use(p: Node3D) -> bool:
 	if absf(d.y) > 1.5:
 		return false
 	d.y = 0
-	return d.length() <= REACH and (-p.global_basis.z).dot(d.normalized()) > FACE
+	return to_local(p.global_position).z > 0.0 and d.length() <= REACH and (-p.global_basis.z).dot(d.normalized()) > FACE   # 前からだけ（裏は西のガラスの戸の側）
 
 
 func hint_at(_p: Node3D) -> Vector3:

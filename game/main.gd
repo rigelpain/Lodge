@@ -104,8 +104,9 @@ const PAPER_LADY_AT := Vector2(-19.5, -5.85)
 const DyeVat := preload("res://dye_vat.gd")
 const DyeUi := preload("res://dye_ui.gd")
 const SledBookUi := preload("res://sled_book_ui.gd")
-## 布の見本帳（sled_book.gd）の立つ所（ロッジの座標 (x, y)）。ミシンと番台の前、立てかけ台の前の通り道の南。下屋の外の雪の上で、正面は西
-const SLED_BOOK_AT := Vector2(-30.3, -3.3)
+## 布の見本帳（sled_book.gd）の立つ所（ロッジの座標 (x, y)）。立てかけ台の北の端の横で、台と同じ列に同じ西を向いて並ぶ（2026-11-07 代表
+## 「ソリ立ての横に並べるのが良いと思うんだけど」「ソリ立てちょっと幅減らしても良いかも」「見本帖の大きさ分」）。台を短くして空けた所（sled_rack.gd の LEN）
+const SLED_BOOK_AT := Vector2(-25.1, 9.7)
 const BINOCULAR_AT := Vector3(-13.0, -11.7, 6.1)   # テラスの双眼鏡台（ロッジの x, y, 床の高さ）。南の手すりの 1 m 手前で丘を向く。lodge/dims.py の BINOCULAR_STAND
 const Net := preload("res://net.gd")
 const Start := preload("res://start.gd")
@@ -1380,7 +1381,7 @@ func _furnish_lodge() -> void:
 	binocular_stand.position = Vector3(BINOCULAR_AT.x, BINOCULAR_AT.z, -BINOCULAR_AT.y)
 	binocular_stand.rotation.y = PI   # 景色の側（節の -Z）をロッジの南（glb の +Z）へ
 	lodge.add_child(binocular_stand)
-	# ミシンの近くの、布の見本帳（前で F を押して、自分のソリの色と滑りあとを替える）
+	# 立てかけ台の横の、布の見本帳（前で F を押して、自分のソリの色と滑りあとを替える）
 	sled_book = preload("res://sled_book.gd").new()
 	sled_book.name = "SledBook"
 	sled_book.position = Vector3(SLED_BOOK_AT.x, 0.0, -SLED_BOOK_AT.y)
