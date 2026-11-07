@@ -37,7 +37,7 @@
 
 ## 作り
 
-- 形: `ideas.py`（Blender）。`--what E --export game/props/dress_form` で `dress_form.glb` を書き出す（桶・人台・腰の輪・天井の輪と梁・長い布・櫂）
+- 形: `ideas.py`（Blender）。`--what E --export game/props/dress_form` で `dress_form.glb` を書き出す（桶・人台・腰の輪・天井の輪と梁・櫂。長い布は書き出さず `game/dress_form_cloth.gd` が作る）
 - ゲーム: `game/wardrobe.gd`（人台。glb・当たり・ハンガーと人形）と、子の `game/dye_vat.gd`（染め液と、近づくと上がる布。[design/stall-motion](../stall-motion/README.md)）。置く所は `main.gd` の `WARDROBE_AT`・`PAPER_LADY_AT`
 - F: 同じ所で、人形の高さを見て押すと着替え、桶を見下ろして押すと染める（`player.gd` の `looks_down`。約 17° より下）。後ろの長い布の側では人形は選べない
 - 確かめ: `game/tools/dress_form_shots.gd`

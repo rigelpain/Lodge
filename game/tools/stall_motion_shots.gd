@@ -129,6 +129,8 @@ func _run() -> void:
 	if main.sled_book:
 		print("見本帳 動いている ", main.sled_book._moving)
 	if main.dye_vat:
+		var cl: Node = main.wardrobe.get_node("LongCloth")
+		print("長い布 コマ ", cl._stage, " 人形の輪 速さ ", main.wardrobe._speed, " 止まり ", main.wardrobe._rested)
 		print("染台 コマ ", main.dye_vat._stage, " 目標 ", main.dye_vat._goal, " 輪 ", main.dye_vat._rings.filter(func(r): return r.visible).size())
 	for st in main.binocular_stands:
 		print("双眼鏡台 ", st.index, " 動いている ", st._moving, " 上げ ", st._pitch.rotation.x)

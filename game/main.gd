@@ -1404,6 +1404,7 @@ func _furnish_lodge() -> void:
 	wardrobe = Wardrobe.new()
 	wardrobe.name = "Wardrobe"
 	wardrobe.player = player
+	wardrobe.main = self
 	wardrobe.position = Vector3(WARDROBE_AT.x, LODGE_FLOOR, -WARDROBE_AT.y)
 	wardrobe.rotation.y = PI / 2.0   # 正面（+Z）を東へ
 	lodge.add_child(wardrobe)
