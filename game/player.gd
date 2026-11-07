@@ -145,6 +145,7 @@ var _peek_open := 0.0        # 窓の開き（0〜1）
 var _peek_closing := false   # 台の時間が来て、窓がすぼんでいるところ
 var _peek_locked := false    # のぞくあいだ一人称に固定した
 var _peek_view: CanvasLayer  # 画面の窓（binocular_view.gd）
+var _peek_fov := {"hand": Binoculars.FOV_HAND, "stand": Binoculars.FOV_STAND}   # いまの画角。次にのぞくときも同じ倍率で
 var _eating := false         # 左ボタンを押しているあいだ、手の料理を 1 口ずつ食べ続ける
 var _bit_frame := -1         # ひと口を数えた身ぶりの始まりのコマ（同じひと口を 2 度数えない）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
@@ -1293,7 +1294,7 @@ func _pose_hands(dt: float) -> void:
 	_save_cam(dt)
 	var fov := base_fov + (4.0 if working and fov_kick_enabled else 0.0)
 	if peek != "":
-		cam.fov = lerp(cam.fov, Binoculars.fov(peek), min(1.0, dt * 9.0))   # 視野を狭めるだけ（描く物は増えない）
+		cam.fov = lerp(cam.fov, float(_peek_fov[peek]), min(1.0, dt * 9.0))   # 視野を狭めるだけ（描く物は増えない）
 	else:
 		cam.fov = lerp(cam.fov, maxf(fov, minf(fov + ride_fov, FOV_CAP)), min(1.0, dt * 4.0))
 	var fi := Doll.frame_index()
@@ -2499,8 +2500,18 @@ func _peek_hud(on: bool) -> void:
 
 ## のぞいているあいだの入力。true で受け取った（ほかの操作に回さない）
 func _peek_input(e: InputEvent) -> bool:
+	if e is InputEventPanGesture:   # 二本指スクロール（Mac のトラックパッド）。上へ撫でると寄る。持ち替えはしない
+		_peek_zoom(exp(e.delta.y * 0.04))
+		return true
+	if e is InputEventMagnifyGesture:   # つまむ・広げる
+		_peek_zoom(1.0 / maxf(e.factor, 0.01))
+		return true
 	if e is InputEventMouseButton:
-		if e.button_index == MOUSE_BUTTON_LEFT and not e.pressed and peek == "hand":
+		if e.pressed and e.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_peek_zoom(1.0 / Binoculars.WHEEL_STEP)
+		elif e.pressed and e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_peek_zoom(Binoculars.WHEEL_STEP)
+		elif e.button_index == MOUSE_BUTTON_LEFT and not e.pressed and peek == "hand":
 			peek_stop()
 		return true
 	if e is InputEventKey and e.pressed and not e.echo:
@@ -2514,6 +2525,12 @@ func _peek_input(e: InputEvent) -> bool:
 			peek_stop()
 		return true
 	return false
+
+
+## 倍率を変える: いまの画角に k を掛ける（1 より小さいと寄る）
+func _peek_zoom(k: float) -> void:
+	var r := Binoculars.fov_range(peek)
+	_peek_fov[peek] = clampf(float(_peek_fov[peek]) * k, r.x, r.y)
 
 
 ## 毎コマ: やめる条件・台の前の立ち位置・窓
@@ -2539,7 +2556,7 @@ func _update_peek(dt: float) -> void:
 		if _peek_left <= 0.0:
 			_peek_closing = true
 	_peek_open = move_toward(_peek_open, 0.0 if _peek_closing else 1.0, dt * (2.5 if _peek_closing else 7.0))
-	_peek_view.show_view(_peek_open, left)
+	_peek_view.show_view(_peek_open, left, Binoculars.zoom_of(peek, float(_peek_fov[peek])))
 	if _peek_closing and _peek_open <= 0.0:
 		peek_stop()
 

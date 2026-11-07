@@ -10,8 +10,12 @@ const KIND := "binoculars"
 const NAME := "双眼鏡"
 const ITEM := {"kind": KIND}
 const PRICE := 30               # 木のボタンの何個分。ペグの束 6 と焚き火セット 15 より高く、何度でも使える
-const FOV_HAND := 24.0          # 持ち歩く双眼鏡の縦の画角（ふだんの 75° から約 3.5 倍）
-const FOV_STAND := 10.0         # テラスの台の縦の画角（約 8.5 倍。観光地のものらしく強め）
+## 縦の画角。のぞいている間にホイール・二本指スクロール・つまむ操作で変えられる（2026-11-07 代表「倍率変えれるようにしてほしい」）
+const FOV_HAND := 24.0          # 持ち歩く双眼鏡の始めの画角（ふだんの 75° から約 3.5 倍）
+const FOV_HAND_RANGE := Vector2(16.0, 40.0)    # 持ち歩く双眼鏡の幅（約 5.5 倍〜約 2 倍）
+const FOV_STAND := 10.0         # テラスの台の始めの画角（約 8.5 倍。観光地のものらしく強め）
+const FOV_STAND_RANGE := Vector2(5.0, 24.0)    # テラスの台の幅（約 17 倍〜約 3.5 倍）
+const WHEEL_STEP := 1.18        # ホイール 1 目盛りで画角を何倍にするか
 const STAND_SECONDS := 60.0     # テラスの台が 1 回で開いている長さ（秒）
 
 const FELT := Color(0.25, 0.50, 0.53)
@@ -21,6 +25,17 @@ const DARK := Color(0.14, 0.15, 0.18)
 
 static func fov(kind: String) -> float:
 	return FOV_STAND if kind == "stand" else FOV_HAND
+
+
+## 変えられる幅（x が最も寄った画角、y が最も引いた画角）
+static func fov_range(kind: String) -> Vector2:
+	return FOV_STAND_RANGE if kind == "stand" else FOV_HAND_RANGE
+
+
+## 画角の幅の中の位置（0 最も引いた … 1 最も寄った）。見た目の倍率に揃えるので対数で
+static func zoom_of(kind: String, fov_deg: float) -> float:
+	var r := fov_range(kind)
+	return clampf(log(r.y / fov_deg) / log(r.y / r.x), 0.0, 1.0)
 
 
 ## 手に持つ形（-Z が景色の側、原点は筒の真ん中）。glb は +Z が景色の側なので裏返す

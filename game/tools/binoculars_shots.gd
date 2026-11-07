@@ -77,6 +77,18 @@ func _mouse(down: bool) -> void:
 	await create_timer(0.15).timeout
 
 
+func _wheel(button: MouseButton, n: int) -> void:
+	for i in n:
+		var e := InputEventMouseButton.new()
+		e.button_index = button
+		e.pressed = true
+		Input.parse_input_event(e)
+		var u := e.duplicate()
+		u.pressed = false
+		Input.parse_input_event(u)
+	await create_timer(0.2).timeout
+
+
 func _stand_before() -> void:
 	p.global_position = st.to_global(Vector3(0, 0.1, 1.3))
 	p.rotation.y = st.global_rotation.y
@@ -131,6 +143,26 @@ func _run() -> void:
 	p._pitch = -0.1
 	# 横から撮る
 	await _from_side("04_stand_peek_side", st.to_global(Vector3(-1.7, 1.0, 1.7)), st.to_global(Vector3(0, 0.85, 0.1)))
+	# 倍率: ホイールと二本指スクロールで変わり、持ち替えない。幅に収まる
+	var fov0: float = p._peek_fov.stand
+	await _wheel(MOUSE_BUTTON_WHEEL_UP, 30)
+	_check("ホイールで寄り、幅で止まる", is_equal_approx(p._peek_fov.stand, 5.0))
+	p._pitch = 0.09
+	await create_timer(1.0).timeout
+	await _save("03d_stand_most")
+	await _wheel(MOUSE_BUTTON_WHEEL_DOWN, 30)
+	_check("ホイールで引き、幅で止まる", is_equal_approx(p._peek_fov.stand, 24.0))
+	await create_timer(1.0).timeout
+	await _save("03e_stand_least")
+	var fv: float = p._peek_fov.stand
+	var pan := InputEventPanGesture.new()
+	pan.delta = Vector2(0, -6)
+	Input.parse_input_event(pan)
+	await create_timer(0.2).timeout
+	_check("二本指スクロールで寄る", p._peek_fov.stand < fv and p.peek == "stand")
+	p._peek_fov.stand = fov0
+	p._pitch = -0.1
+	await create_timer(0.5).timeout
 	# 見回す: 台より横へは回らない
 	p.rotation.y = st.global_rotation.y + 3.0
 	await create_timer(0.5).timeout
@@ -192,6 +224,8 @@ func _run() -> void:
 	_check("左ボタンでのぞく", p.peek == "hand")
 	await create_timer(0.8).timeout
 	await _save("11_hand_peek")
+	await _wheel(MOUSE_BUTTON_WHEEL_UP, 2)
+	_check("手の双眼鏡もホイールで寄り、持ち替えない", p._peek_fov.hand < 24.0 and p.peek == "hand" and p.held().get("kind", "") == "binoculars")
 	# 横から撮る
 	await _mouse(false)
 	_check("離すとやめる", p.peek == "")
