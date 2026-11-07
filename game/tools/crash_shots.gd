@@ -35,6 +35,37 @@ func _save(im: Image, path: String) -> void:
 	print("撮った: ", path)
 
 
+## --marks: 形ごとに 1 つずつ、上に A〜D の札（代表に絵の位置で聞く用。ゲームには出さない）
+func _marks() -> void:
+	if not args.has("marks"):
+		return
+	var names := {"heap": "A", "cluster": "B", "bank": "C", "low": "D"}
+	var done := {}
+	for a in get_nodes_in_group("crash_lumps"):
+		var k: String = a.get_meta("kind", "")
+		if not names.has(k) or done.has(k):
+			continue
+		var p: Vector2 = Vector2(a.global_position.x, a.global_position.z)
+		if absf(_lodge_x(p)) > 22.0:
+			continue   # ソリの目線の絵にも写る、まんなか寄りの塊から選ぶ
+		done[k] = true
+		var l := Label3D.new()
+		l.text = names[k]
+		l.font_size = 220 if args.get("view", "") == "top" else 90
+		l.outline_size = 40
+		l.modulate = Color(0.85, 0.1, 0.1)
+		l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		l.no_depth_test = true
+		l.pixel_size = 0.01
+		main.add_child(l)
+		l.global_position = a.global_position + Vector3.UP * (3.2 if args.get("view", "") == "top" else 1.5)
+
+
+func _lodge_x(w: Vector2) -> float:
+	var d: Vector2 = w - main.LODGE_POS
+	return d.x * cos(main.LODGE_YAW) - d.y * sin(main.LODGE_YAW)
+
+
 func _run() -> void:
 	await create_timer(2.0).timeout
 	sled = main.sled
@@ -45,6 +76,26 @@ func _run() -> void:
 	cam.fov = 50.0
 	main.add_child(cam)
 	var view: String = args.get("view", "lump")
+	if view == "top" or view == "eye":
+		_marks()
+		var c: Vector2 = main.lodge_to_world(Vector2(-3.0, 35.0))
+		if view == "top":   # 上から（真上の平行な投影。上がロッジの側）
+			cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+			cam.size = 104.0
+			cam.global_position = Vector3(c.x, main.height(c.x, c.y) + 60.0, c.y)
+			var f: Vector2 = main.lodge_to_world(Vector2(-3.0, 0.0)) - c
+			cam.look_at(cam.global_position + Vector3.DOWN, Vector3(f.x, 0, f.y).normalized())
+		else:   # ソリの目線（丘からロッジへ滑り込む所。座った目の高さ）
+			var a: Vector2 = main.lodge_to_world(Vector2(-8.0, 60.0))
+			var b: Vector2 = main.lodge_to_world(Vector2(-6.0, 20.0))
+			cam.fov = 70.0
+			cam.global_position = Vector3(a.x, main.height(a.x, a.y) + 1.0, a.y)
+			cam.look_at(Vector3(b.x, main.height(b.x, b.y) + 0.6, b.y))
+		cam.make_current()
+		await create_timer(0.5).timeout
+		_save(await _grab(), args.get("out", "/tmp/c.jpg"))
+		quit()
+		return
 	if view == "row":
 		var a: Vector2 = main.lodge_to_world(Vector2(-13.0, 52.0))
 		var b: Vector2 = main.lodge_to_world(Vector2(-13.0, 25.0))
