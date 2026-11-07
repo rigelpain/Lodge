@@ -9,6 +9,8 @@ extends Node3D
 const Doll := preload("res://doll.gd")
 const Look := preload("res://look.gd")
 const Props := preload("res://props.gd")
+const Sense := preload("res://stall_sense.gd")
+const Cloth := preload("res://dress_form_cloth.gd")
 
 const BODY_GLB := "res://props/dress_form/dress_form.glb"
 const HOOP_R := 1.5          # 腰の輪の半径 (m)。design/dye-wardrobe/ideas.py と同じ
@@ -20,8 +22,28 @@ const REACH := 3.5           # 人台の真ん中からこの距離 (m) の内�
 const BACK_LIMIT := -0.8     # 人台の前からの位置がこれより後ろ（長い布の側）では、使えない
 const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、人形を掛ける
 const FRONT := Vector3.BACK  # 人台の正面（この節の座標）。ハンガーの節の +Z は、それぞれ外向き
+const SENSE_R := 8.0         # 人台の真ん中からこの距離に人が来ると、布が昇り、人形が回る (m)
+const SPIN_ACCEL := 0.024    # 人形の輪: 勢いの増え方・減り方（コマごと、rad）
+const SPIN_EASE := 0.14      # 人形の輪: 止まる所へ寄せる強さ
+const SPIN_TOP := 0.34       # 人形の輪: いちばん速いとき（コマごと、rad。12 コマで見て回るのが分かる速さ）
+const KEEP_SPEED := 0.05     # 回り続ける案の速さ（コマごと、rad。1 周 10 秒）
+const SWING := 1.3           # 回る速さのぶん、人形が外へ振れる
+const SWING_MAX := 0.42
+const TRAIL := 0.9           # 回る速さのぶん、人形が後ろへ遅れる
+const TWIRLS := 1.0          # 輪が 1 周するあいだに、人形がかぎのまわりで回る数
 
 var player: Node3D           # main.gd が入れる
+var main: Node               # main.gd が入れる
+var spin_keep := false       # 比べる案: 人がいるあいだゆっくり回り続ける（確かめの道具が入れる）
+var near := false            # 近くに人がいる（dress_form_cloth.gd も見る）
+var _wheel: Node3D           # ハンガーをまとめて回す節（人台の真ん中）
+var _turn := 0.0             # 輪の回った角 (rad)
+var _speed := 0.0
+var _goal := 0.0             # 輪を止める角（1 周ずつ増える）
+var _sense_t := 0.0
+var _cruise := false         # 回り続ける案で、同じ速さで回っているあいだ
+var _rested := true          # 人形が振れ終わった
+var _past: Array[float] = [] # 少し前までの輪の速さ（人形ごとの遅れに使う）
 var _hangers := {}           # 人形 → [ハンガーの節（竿で揺れる）, 人形の節]
 var _loaded := false
 var _frame := -1
@@ -51,6 +73,13 @@ func _ready() -> void:
 	col.position.y = 1.5
 	solid.add_child(col)
 	add_child(solid)
+	# 長い布（ふだんは液の中。近づくと昇る）
+	var cloth: Node3D = Cloth.new()
+	cloth.name = "LongCloth"
+	add_child(cloth)
+	_wheel = Node3D.new()
+	_wheel.name = "DollWheel"
+	add_child(_wheel)
 	# ハンガー（木の三角と、針金のかぎ）。腰の輪の前の側に並べ、外を向ける。人形は近づいてから掛ける
 	var wood := Look.wood(Color(0.50, 0.33, 0.20))
 	var n := Doll.KINDS.size()
@@ -60,7 +89,7 @@ func _ready() -> void:
 		var holder := Node3D.new()
 		holder.position = Vector3(sin(a), 0, cos(a)) * HOOP_R + Vector3.UP * RAIL_Y
 		holder.rotation.y = a
-		add_child(holder)
+		_wheel.add_child(holder)
 		var pivot := Node3D.new()
 		holder.add_child(pivot)
 		_hanger(pivot, wood)
@@ -159,14 +188,56 @@ func _process(dt: float) -> void:
 	if not _loaded:
 		return
 	_show_worn()
-	# 12 コマで、掛かった人形が少しずつ違う向きに揺れる
+	_sense_t -= dt
+	if _sense_t <= 0.0:
+		_sense_t = Sense.CHECK
+		var now := Sense.nearest(main, self, SENSE_R, BACK_LIMIT) != null
+		if now and not near:   # 来るたびに、1 周ぐるんと回る
+			_goal = (floorf(_turn / TAU) + 1.0) * TAU
+		near = now
+	if not near and is_zero_approx(_speed) and _rested:
+		return   # 遠くでは人形を動かさない
 	var f := Doll.frame_index()
 	if f == _frame:
 		return
 	_frame = f
+	_step_wheel()
 	var i := 0
 	for k in _hangers:
 		var pv: Node3D = _hangers[k][0]
 		var t := f / 12.0 + i * 1.7
-		pv.rotation = Vector3(0.035 * sin(t * 1.3), 0.12 * sin(t * 0.7), 0.025 * sin(t * 1.9))
+		# 人形ごとに少し遅れて、輪の勢いのぶん外へ振れ、後ろへ遅れ、かぎのまわりで回る
+		var v: float = _speed_at(i)
+		var twirl := _turn * TWIRLS - float(i) * 0.25 * clampf(absf(_speed) * 6.0, 0.0, 1.0)
+		pv.rotation = Vector3(0.035 * sin(t * 1.3) - minf(absf(v) * SWING, SWING_MAX),
+				twirl + 0.12 * sin(t * 0.7), 0.025 * sin(t * 1.9) - v * TRAIL)
 		i += 1
+
+
+## 人形 i が感じる輪の速さ（i コマ前の速さ）
+func _speed_at(i: int) -> float:
+	return _past[mini(i, _past.size() - 1)] if not _past.is_empty() else 0.0
+
+
+## 輪を 12 コマごとに進める。来るたびに 1 周: 勢いをつけて回り、止まる所を少し行き過ぎて戻る。
+## 回り続ける案（spin_keep）: 1 周のあと、人がいるあいだ同じ速さで回り、離れると次の 1 周の終わりで止まる
+func _step_wheel() -> void:
+	var left := _goal - _turn
+	if spin_keep and near and left < 1.0:
+		_goal += TAU
+		_cruise = true
+	var want := clampf(left * SPIN_EASE, -SPIN_TOP, SPIN_TOP)
+	if _cruise and near:
+		want = KEEP_SPEED
+	else:
+		_cruise = false
+	_speed = move_toward(_speed, want, SPIN_ACCEL)
+	_turn += _speed
+	if absf(_goal - _turn) < 0.004 and absf(_speed) < 0.004:
+		_turn = _goal
+		_speed = 0.0
+	_wheel.rotation.y = _turn
+	_past.push_front(_speed)
+	if _past.size() > _hangers.size():
+		_past.pop_back()
+	_rested = _past.all(func(x): return is_zero_approx(x))

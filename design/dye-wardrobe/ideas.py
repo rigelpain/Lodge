@@ -216,7 +216,8 @@ def long_cloth(P, what):
         K.box(P, "wood_dark", (0, 0, 5.17), (4.4, 0.34, 0.16))   # 天井の梁（上の面が 1 階の天井）
         for sx in (-1, 1):
             K.tube(P, "hemp", [(sx * R0, 0, 4.94), (sx * R0, 0, 5.1)], 0.014)
-        roles = ("felt_rust", "felt_mustard", "felt_madder", "felt_moss", "felt_rust")
+        # 長い布は、書き出すときは焼かない。近づくと液から昇るように、ゲームが作る（game/dress_form_cloth.gd。2026-11-07 代表）
+        roles = () if EX else ("felt_rust", "felt_mustard", "felt_madder", "felt_moss", "felt_rust")
         for k, role in enumerate(roles):   # 後ろの半分あまりに 5 枚。前はあける
             a0 = math.radians(150 + 48 * k)
             a1 = a0 + math.radians(40)
