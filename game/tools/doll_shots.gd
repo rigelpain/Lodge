@@ -5,7 +5,7 @@ extends SceneTree
 ## 向きを回す: --turn=180 で背中をこちらへ（立つ姿のとき）
 ## 息の見本: --pose=breath --close（顔の近くから）[--dark（うしろに暗い壁。ロッジの壁や木の前の見え方）] [--caller=0〜2]
 ## kasa は立ってこちらを見る、origami は手を振る、news は横へ歩く（--pose で全員を同じにもできる）
-## 指さしの見本: --pose=point（① が赤い玉を指し、② と ③ がそこを見る）
+## 指さしの見本: --pose=point（① が赤い玉を指し、② と ③ がそこを見る）、--pose=pointlook（① は指したまま顔をこちらへ）
 
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
@@ -64,16 +64,16 @@ func _initialize() -> void:
 	if args.has("dark"):
 		var wall := MeshInstance3D.new()
 		var bm := BoxMesh.new()
-		bm.size = Vector3(6, 4, 0.1)
+		bm.size = Vector3(6 if args.has("close") else 8, 4, 0.1)
 		wall.mesh = bm
 		var wm := StandardMaterial3D.new()
 		wm.albedo_color = Color(0.15, 0.18, 0.25)
 		wall.material_override = wm
-		wall.position = Vector3(-1.0, 1, -1.4)
+		wall.position = Vector3(-1.0, 1, -1.4) if args.has("close") else Vector3(0, 1.5, -1.6)
 		world.add_child(wall)
 	# 指さしの見本: 右前の地面に赤い玉を置き、① がそれを指し、② と ③ はそこへ顔を向ける
 	var target := Vector3(2.2, 0.15, 1.6)
-	if args.get("pose", "") == "point":
+	if args.get("pose", "").begins_with("point"):
 		var ball := MeshInstance3D.new()
 		var sm := SphereMesh.new()
 		sm.radius = 0.15
@@ -111,10 +111,12 @@ func _initialize() -> void:
 				walkers.append(host)
 			"call":
 				d.call_deferred("call_out")
-			"point":
+			"point", "pointlook":
 				d.facing = Vector3(0.3, 0, 1)
 				if k == 0:
 					d.point = target
+					if args["pose"] == "pointlook":
+						d.gaze = cam.position   # 指したまま、顔はこちらへ
 				else:
 					d.gaze = target
 			"breath":
