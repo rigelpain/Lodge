@@ -177,6 +177,7 @@ var _arm_base := {}          # コマで決めた腕の回転（毎フレーム�
 var _lod_dt := 0.0           # 遠くて間引いたあいだに進んだ時間（view_lod）
 var _lod_frame := -1
 var _lod_quiet := false
+var _pose_stale := false     # 見えないので姿勢を作らずにいる（当たりを聞かれたら _ensure_pose で作る）
 var _streams := {}           # 息の煙の出口: "small" ふだん、"big" 声、"long" B の長い息・おーい
 var _blow := {"small": 0.0, "big": 0.0}   # 吐き続ける残り (s)。0 になったら出すのをやめる（出た煙は流れ続ける）
 var _scale_base := {}        # 出口ごとの、粒の大きさ [最小, 最大]（寒さを掛ける前）
@@ -315,10 +316,23 @@ func _measure_body(inst: Node3D) -> void:
 
 
 ## 点 p（世界）が、いまの体の形の中（r だけふくらませて）に入るか。しゃがむ・座ると、頭の骨の下がった分だけ縮める
+## 見えないので姿勢を作らずにいた人形（view_lod）も、当たりや骨の位置を聞かれたら、いまの姿勢を作ってから答える。
+## 見える人形と同じ当たりにするため（誰も見ていない所の CPU どうしの雪合戦、つなぐ側の画面の外の当たり）
+func _ensure_pose(to_bones := false) -> void:
+	if not _g.is_empty() and not _pose_stale:
+		return
+	_pose_stale = false
+	_frame = frame_index()
+	_pose()
+	if to_bones:
+		_apply()
+
+
 func body_hit(p: Vector3, r: float) -> bool:
 	var c: Array = _body_cache.get(kind, [])
 	if c.is_empty():
 		return false
+	_ensure_pose()
 	var radii: PackedFloat32Array = c[0]
 	var top: float = c[1]
 	var head_now := (skel.global_transform * _head_of(_id("head"))).y - global_position.y
@@ -1042,6 +1056,7 @@ func chest_point() -> Vector3:
 	var i := _id("chest")
 	if skel == null or i < 0:
 		return global_position + Vector3.UP * 0.9 * _scale
+	_ensure_pose(true)
 	return skel.global_transform * skel.get_bone_global_pose(i).origin
 
 
@@ -1195,12 +1210,15 @@ func _physics_process(dt: float) -> void:
 			_lod_frame = fi
 			_lantern.follow(_lod_dt, _yaw)
 			_lod_dt = 0.0
+		if fi != _frame:
+			_pose_stale = true   # 当たりを聞かれたら作り直す（_ensure_pose）
 		if not _lod_quiet:
 			_lod_quiet = true
 			for key in _streams:
 				(_streams[key] as CPUParticles3D).emitting = false
 		return
 	_lod_quiet = false
+	_pose_stale = false
 	var posed := false
 	if fi != _frame and fi >= _pose_due:
 		# 湿っているとコマを飛ばす（12 → 10 → 8 fps）。飛ばしたぶんは次へ持ち越し、間隔をならす
