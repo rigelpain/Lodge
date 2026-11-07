@@ -106,6 +106,7 @@ const DyeUi := preload("res://dye_ui.gd")
 const SledBookUi := preload("res://sled_book_ui.gd")
 ## 布の見本帳（sled_book.gd）の立つ所（ロッジの座標 (x, y)）。ミシンと番台の前、立てかけ台の前の通り道の南。下屋の外の雪の上で、正面は西
 const SLED_BOOK_AT := Vector2(-30.3, -3.3)
+const BINOCULAR_AT := Vector3(-13.0, -11.7, 6.1)   # テラスの双眼鏡台（ロッジの x, y, 床の高さ）。南の手すりの 1 m 手前で丘を向く。lodge/dims.py の BINOCULAR_STAND
 const Net := preload("res://net.gd")
 const Start := preload("res://start.gd")
 ## 染めと着替えの人台（wardrobe.gd と子の dye_vat.gd）の真ん中（ロッジの座標 (x, y)）。1 階の南西の隅。もとはソリ屋（ミシン・番台・貸出の棚）のあった所。
@@ -186,6 +187,7 @@ var mountain_ui: CanvasLayer  # 山男の売り場（mountain_ui.gd）
 var craft: Node               # 工房の配り役（craft.gd）: 買う・縫う・畳む・広げるの出来事と、財布と持ち物
 var shopkeeper: Node3D        # 型紙と布の売り子（shopkeeper.gd）
 var sled_rack: Node3D         # ソリの立てかけ台（sled_rack.gd）
+var binocular_stand: Node3D   # テラスの双眼鏡台（binocular_stand.gd）
 var craft_ui: CanvasLayer     # 持ち物の列と売り台（craft_ui.gd）
 var wardrobe: Node3D          # 1 階の人台（wardrobe.gd）
 var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
@@ -1371,6 +1373,13 @@ func _furnish_lodge() -> void:
 		sled_rack = preload("res://sled_rack.gd").new()
 		sled_rack.name = "SledRack"
 		rack_slot.add_child(sled_rack)
+	# テラスの南の手すりの前の、双眼鏡台（前で F を押してのぞく。木のボタン 1 枚か雪玉 1 個。binocular_stand.gd）
+	binocular_stand = preload("res://binocular_stand.gd").new()
+	binocular_stand.name = "BinocularStand"
+	binocular_stand.craft = craft
+	binocular_stand.position = Vector3(BINOCULAR_AT.x, BINOCULAR_AT.z, -BINOCULAR_AT.y)
+	binocular_stand.rotation.y = PI   # 景色の側（節の -Z）をロッジの南（glb の +Z）へ
+	lodge.add_child(binocular_stand)
 	# ミシンの近くの、布の見本帳（前で F を押して、自分のソリの色と滑りあとを替える）
 	sled_book = preload("res://sled_book.gd").new()
 	sled_book.name = "SledBook"

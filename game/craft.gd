@@ -62,6 +62,9 @@ extends Node
 ##                             （2026-11-06 代表）。ペグで留めている間は断る。
 ##                             ソリはその場で折り紙に畳まれて消え、台に現れる。u は台の置き場（ホストが決める）。名札のないソリは対象外
 ##   rack_out  {id, at, yaw}   台の自分のソリを、前の雪の上へ持ち出す（ホストが空いた所を決める）
+##   scope_on  {}              テラスの双眼鏡台（binocular_stand.gd）をのぞき始める。だれかがのぞいていれば断る。雪玉が 1 個あれば雪玉で、なければ木のボタン 1 枚で
+##                             払う（2026-11-07 代表「双眼鏡台は木のボタン1枚か雪玉で起動してほしい」）。ev.paid に "ball" か "button" が入る。どちらもなければ断る
+##   scope_off {}              双眼鏡台から離れる（のぞいている本人。時間が来たとき、F・Esc のとき。帰った人の分はホストが送る）
 ##   earn      {n, at}         ボタンが n 個、財布に入る（雪に縫い留められたボタンを取った。snow_buttons.gd がホストとして分けて送る）。
 ##                             at は取った所（画面でそこから財布へ飛ぶ）。雪合戦の対決の払い（duel.gd）も、これで勝った人へ
 ##   stake     {n}             雪合戦の対決の掛金 n 個を、財布から預ける（duel.gd がホストとして出す。払いは earn）
@@ -471,11 +474,13 @@ func snapshot() -> Dictionary:
 	return {"pegs": pegs, "wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "stitch_owned": stitch_owned, "sacks": sacks,
 		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
 		"lantern_sel": lantern_sel, "lamps": lamps, "next_sled": _next_sled, "sleds": placed, "sack_out": out,
-		"fires": lit, "next_fire": _next_fire}
+		"fires": lit, "next_fire": _next_fire, "scope_who": int(world.binocular_stand.who) if world and world.get("binocular_stand") else -1}
 
 
 ## ホストから渡された持ち物と置いてあるソリで、この画面の工房を置き換える（つないだとき）。自分の人の番号の分もホストの値になる
 func load_snapshot(d: Dictionary) -> void:
+	if world and world.get("binocular_stand"):
+		world.binocular_stand.who = int(d.get("scope_who", -1))
 	for key in ["wallets", "bags", "hands", "tag_designs", "tag_owned", "stitch_owned", "sacks", "loose_tags", "names", "colors", "dolls",
 			"sack_sel", "lanterns", "lantern_sel", "lamps"]:
 		var mine: Dictionary = get(key)
@@ -568,6 +573,32 @@ func _apply(ev: Dictionary) -> bool:
 				return false
 			ev["item"] = b[i].duplicate()
 			_clear(who, i)
+		"scope_on":
+			var st = world.get("binocular_stand") if world else null
+			if st == null:
+				return false
+			if not replay:   # つなぐ側がなぞるときは、ホストがもう確かめて払っている
+				if int(st.who) >= 0 or world.get("emotes") == null:
+					return false
+				var pay := {"kind": "spend", "who": who, "n": 1}
+				world.emotes.send(pay)
+				if pay.get("ok", false):
+					ev["paid"] = "ball"
+				elif wallets[who] >= 1:
+					ev["paid"] = "button"
+				else:
+					return false
+			if String(ev.get("paid", "")) == "button":
+				wallets[who] -= 1
+			st.who = who
+			var person := _person(who)
+			if person:
+				st.drop_fee(String(ev.get("paid", "button")), person.global_position + Vector3.UP * 1.1)
+		"scope_off":
+			var st = world.get("binocular_stand") if world else null
+			if st == null or (int(st.who) != who and not replay):
+				return false
+			st.who = -1
 		"food_buy":
 			var dish: String = ev.item.get("dish", "")
 			if not Food.MENU.has(dish) or free_slot(who) < 0 or world == null or world.get("emotes") == null:

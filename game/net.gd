@@ -190,6 +190,8 @@ func _on_gone(pid: int) -> void:
 		r.queue_free()
 	if main.get("seats"):
 		main.seats.forget(pid)
+	if main.get("binocular_stand") and is_host() and int(main.binocular_stand.who) == pid:
+		main.craft.send({"kind": "scope_off", "who": pid})   # 双眼鏡台をのぞいたまま帰った人の分を空ける
 	print("帰った: 番号 ", pid)
 
 
@@ -336,7 +338,7 @@ func _body_state(p: CharacterBody3D, mode: int) -> Dictionary:
 	var s := {"p": p.global_position, "y": p.rotation.y, "m": mode, "d": d.kind,
 		"e": d.effort, "dr": d.dragged, "air": d.airborne, "f": d.facing, "g": d.gaze, "ln": d.lean,
 		"c": d.crouch, "pt": d.point, "ps": d.point_sides, "ss": d.sit_stage, "sd": d.seat_drop, "se": d.seat_edge,
-		"so": d.seat_soft}
+		"so": d.seat_soft, "pk": d.peek}
 	if p.sled and is_instance_valid(p.sled):
 		s["sl"] = main.get_path_to(p.sled)
 	if not d.eat_table.is_empty():   # 机のある席の料理（table_eat.gd）: 皿の所・品・食べた口数

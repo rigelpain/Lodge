@@ -6,15 +6,18 @@ extends RefCounted
 ## on は売るかどうか。on が false の品目は、棚に薄い絵だけ並び（まだ入荷していない札）、買えない（ホストも断る）。
 ##   焚き火セット  品目・名前・値段・絵は campfire.gd（組む・燃える・乾かすも）
 ##   ペグ          品目（3 本の束）・名前・値段・絵は peg.gd（刺してソリを留めるのも）
+##   双眼鏡        品目・名前・値段・絵は binoculars.gd（のぞくのは player.gd の peek）
 ## 品目を足すときも、ここに 1 行足し、絵を draw に足す（持ち物の列の絵も craft_icons.gd の item がここを呼ぶ）。
 
 const Icons := preload("res://hud_icons.gd")
 const Campfire := preload("res://campfire.gd")
 const Peg := preload("res://peg.gd")
+const Binoculars := preload("res://binoculars.gd")
 
 const SHELF := [
 	{"item": Campfire.ITEM, "price": Campfire.PRICE, "on": true},
 	{"item": {"kind": Peg.KIND, "n": Peg.PACK}, "price": Peg.PRICE, "on": true},   # Peg.item() と同じ 1 束
+	{"item": Binoculars.ITEM, "price": Binoculars.PRICE, "on": true},
 ]
 
 ## 確かめ用: true なら on でない品目も売る（--shelf-all。main.gd が入れる）
@@ -49,6 +52,8 @@ static func item_name(it: Dictionary) -> String:
 			return Campfire.NAME
 		"peg":
 			return Peg.item_name(it)
+		"binoculars":
+			return Binoculars.NAME
 	return ""
 
 
@@ -59,3 +64,5 @@ static func draw(ci: CanvasItem, it: Dictionary, a := 1.0) -> void:
 			Campfire.icon(ci, Vector2.ZERO, 1.0, a)
 		"peg":
 			Peg.icon(ci, it, a)
+		"binoculars":
+			Binoculars.icon(ci, a)
