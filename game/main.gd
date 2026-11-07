@@ -64,6 +64,7 @@ const Sled := preload("res://sled.gd")
 const Mountain := preload("res://mountain.gd")
 const Grand := preload("res://grand_mountain.gd")
 const TreeHits := preload("res://tree_hits.gd")
+const Crash := preload("res://sled_crash.gd")
 const Props := preload("res://props.gd")
 const Player := preload("res://player.gd")
 const Bot := preload("res://bot.gd")
@@ -1918,6 +1919,7 @@ func _make_hill_trees() -> void:
 		add_child(tree)
 		hits.add_tree(tree)
 	_make_slope_props()
+	Crash.build_lumps(self)
 	var flags := preload("res://area_flags.gd").new()   # 山の目印の大きな旗（標高の札と同じ布）
 	flags.name = "AreaFlags"
 	flags.main = self
