@@ -142,6 +142,8 @@ func _seed_case() -> void:
 	var at := Vector3(4.0, 0, 44.0)
 	at.y = main.height(at.x, at.z) + 0.1
 	_stand(p, at)
+	p.set_third(false)
+	p.set("_pitch", -0.6)   # 一人称で雪面を見下ろす（まっすぐ前では雪玉を丸められない。遊ぶ人の視点の設定によらず同じに）
 	await create_timer(0.6).timeout
 	await _key(KEY_CTRL, true)
 	await create_timer(0.4).timeout

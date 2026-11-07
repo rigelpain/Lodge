@@ -162,6 +162,8 @@ func _join_run() -> void:
 	p.global_position = SPOT + Vector3.UP * 0.1
 	p.velocity = Vector3.ZERO
 	p.rotation.y = 0.0   # -z を向く
+	p.set_third(false)
+	p.set("_pitch", -0.6)   # 一人称で雪面を見下ろす（まっすぐ前では雪玉を丸められない。遊ぶ人の視点の設定によらず同じに）
 	p.reset_physics_interpolation()
 	await create_timer(1.5).timeout
 	await _key(KEY_CTRL, true)
