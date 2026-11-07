@@ -14,6 +14,7 @@ const HoldTag := preload("res://hold_tag.gd")
 const TableEat := preload("res://table_eat.gd")
 const PropsLib := preload("res://props.gd")
 const Campfire := preload("res://campfire.gd")
+const Binoculars := preload("res://binoculars.gd")
 ## あなた。一人称で、見えるのは自分の人形と同じ柄の袖口と、紙の手だけ。
 ## ソリのまわりのどこからでも F でつかめる。
 ## つかんだまま WASD で、見ている向きを基準にソリへ力をかける（W 前へ押す、S 手前へ引く、A/D 左右へ）。
@@ -137,6 +138,14 @@ var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
 var _fp_rig: Node3D          # 机の皿と、一人称の手の道具を描く役（table_eat.gd の Rig）
 var _te_done := {}           # 机での食べ方: このひと口で済ませた音と数（コマ → true）
+var peek := ""               # 双眼鏡をのぞいている: "" / "hand"（手の双眼鏡。左ボタンを押しているあいだ）/ "stand"（テラスの台）
+var _peek_stand: Node3D      # のぞいている台
+var _peek_left := 0.0        # 台が閉じるまでの秒
+var _peek_open := 0.0        # 窓の開き（0〜1）
+var _peek_closing := false   # 台の時間が来て、窓がすぼんでいるところ
+var _peek_locked := false    # のぞくあいだ一人称に固定した
+var _peek_view: CanvasLayer  # 画面の窓（binocular_view.gd）
+var _peek_fov := {"hand": Binoculars.FOV_HAND, "stand": Binoculars.FOV_STAND}   # いまの画角。次にのぞくときも同じ倍率で
 var _eating := false         # 左ボタンを押しているあいだ、手の料理を 1 口ずつ食べ続ける
 var _bit_frame := -1         # ひと口を数えた身ぶりの始まりのコマ（同じひと口を 2 度数えない）
 var holding_ball := false   # 右手に雪玉を持っている（雪玉が 1 つ以上あって、持ち物を手に持っていないとき。毎フレーム決める）
@@ -383,8 +392,11 @@ func _unhandled_input(e: InputEvent) -> void:
 	if ring and ring.visible and e is InputEventMouseMotion:
 		ring.move(e.relative)   # 輪を出しているあいだは見回さない
 	elif e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
-		rotate_y(-e.relative.x * 0.003 * mouse_sens)
-		_pitch = clamp(_pitch - e.relative.y * 0.003 * mouse_sens, -1.4, 1.3)
+		var zoom_k := cam.fov / maxf(base_fov, 1.0) if peek != "" else 1.0   # のぞいているあいだは、画角に合わせて見回しをゆっくり
+		rotate_y(-e.relative.x * 0.003 * mouse_sens * zoom_k)
+		_pitch = clamp(_pitch - e.relative.y * 0.003 * mouse_sens * zoom_k, -1.4, 1.3)
+	elif peek != "" and _peek_input(e):
+		pass   # のぞいているあいだは、ほかの操作はしない
 	elif e is InputEventPanGesture:
 		# トラックパッドの二本指スクロール（Mac ではホイールでなくこれで届く）: 持ち物の持ち替えだけ。持ち物がなければ何もしない
 		# （2026-10-30 代表「二本指スクロールはインベントリ選択にしたい。視野角とカメラ高さは設定からのみ変更」）
@@ -453,6 +465,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					return
 				if mode == Mode.WALK and book_near():
 					get_parent().sled_book_ui.open()   # 布の見本帳: 自分のソリの色と滑りあとを替える
+					return
+				if _binocular_f():   # テラスの双眼鏡台: 雪玉か木のボタンを入れてのぞく
 					return
 				var rt := rack_target()
 				if not rt.is_empty():   # ソリの立てかけ台: 自分のソリを戻す・持ち出す
@@ -875,6 +889,7 @@ func _check_run_over() -> void:
 		_stop_point()
 	if hands_name != "":
 		set_height("")
+	peek_stop()
 	_winding = false
 	_eating = false
 	_fall_v = 0.0
@@ -913,6 +928,7 @@ func _pose_doll() -> void:
 			doll.rock = Seats.rock_of(st, Doll.frame_index(), _sit_frame, _stand_frame)
 	doll.seat_soft = mode == Mode.SIT and seats.seat(seat_i).kind == "zabuton"
 	doll.eat_table = table_ctx()
+	doll.peek = peek
 	if mode == Mode.DRUM:
 		var pl: Dictionary = _drum.ride_pose(Doll.frame_index())
 		doll.facing = pl.face
@@ -1191,6 +1207,8 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			var st := seats.seat(seat_i)
 			if _sit_stage == 2 and st.has("table"):   # 机より目が下だと、天板の裏しか見えない（掘りごたつの座布団）。机の面の少し上へ
 				eye.y = maxf(eye.y, to_local(Vector3(0, float(st.table.y) + TABLE_EYE, 0)).y)
+		if peek == "stand" and _peek_stand:
+			eye = to_local(_peek_stand.eye_world())   # 台をのぞく: 目は頭の軸の所
 		eye.y += _cam_em.z
 		# 着地の沈みは目の高さの追いかけ（lerp）の外で足す（なまらず、すとんと沈んですっと戻る）
 		cam.position.y += _dip_shown
@@ -1271,10 +1289,14 @@ func _pose_hands(dt: float) -> void:
 	var bob := sin(_t * 9.0) if bob_enabled else 0.0
 	# 押す・引くと視点がわずかに揺れ、画角が少し広がる
 	_update_ride_fov(dt)
+	_update_peek(dt)
 	_place_camera(dt, bob, working)
 	_save_cam(dt)
 	var fov := base_fov + (4.0 if working and fov_kick_enabled else 0.0)
-	cam.fov = lerp(cam.fov, maxf(fov, minf(fov + ride_fov, FOV_CAP)), min(1.0, dt * 4.0))
+	if peek != "":
+		cam.fov = lerp(cam.fov, float(_peek_fov[peek]), min(1.0, dt * 9.0))   # 視野を狭めるだけ（描く物は増えない）
+	else:
+		cam.fov = lerp(cam.fov, maxf(fov, minf(fov + ride_fov, FOV_CAP)), min(1.0, dt * 4.0))
 	var fi := Doll.frame_index()
 	for h in hands:
 		var s: int = h.get_meta("side")
@@ -1545,6 +1567,10 @@ func set_hands(name_: String) -> void:
 
 ## 左クリック: 雪玉があれば振りかぶる（離すと投げる。持ち物を手に持っていれば、しまって雪玉を出す）。高い両手のひらなら拍手
 func _left_click() -> void:
+	if craft and held().get("kind", "") == "binoculars":   # 手の双眼鏡: 押しているあいだのぞく（雪玉は投げない）
+		if mode == Mode.WALK or mode == Mode.SIT:
+			_peek_begin("hand", null)
+		return
 	if craft and FoodMenu.done(held()):   # できあがった料理を持っていれば、押しているあいだ食べる（雪玉より先）
 		_eating = true
 		_bite()
@@ -1806,6 +1832,8 @@ func emote(kind: String) -> void:
 func rooted() -> bool:
 	if fling.active():
 		return true   # 吹き飛んでいる途中
+	if peek != "":
+		return true   # 双眼鏡をのぞいている
 	if Doll.frame_index() < busy_until:   # 裁ちばさみで糸を切っているあいだ
 		return true
 	if _em.is_empty():
@@ -2169,6 +2197,11 @@ func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != id:
 		return
 	match ev.kind:
+		"scope_on":   # 双眼鏡台に払えた（通信ではホストが確かめて届く）
+			var coin_audio = get_parent().get_node_or_null("Audio")
+			if coin_audio and String(ev.get("paid", "")) == "button":
+				coin_audio.coin("wood", 0)
+			_peek_begin("stand", get_parent().get("binocular_stand"))
 		"doll":   # 衣装掛けで選んだ人形に着替える
 			set_doll(String(ev.doll))
 		"dye", "outfit":   # 染め桶で服を染めた: 人形と一人称の袖と脚を、その色で作り直す
@@ -2405,6 +2438,150 @@ func _facing(at: Vector3) -> float:
 	return (-global_basis.z).dot(d.normalized()) if d.length() > 0.01 else 1.0
 
 
+## 双眼鏡をのぞき始める。kind は "hand" か "stand"（stand は台の節）
+func _peek_begin(kind: String, stand: Node3D) -> void:
+	if peek != "" or (kind == "stand" and stand == null):
+		return
+	if pointing:
+		_stop_point()
+	if hands_name != "":
+		set_height("")
+	_winding = false
+	_wind_wait = false
+	_eating = false
+	if kind == "stand":
+		_pitch = clampf(_pitch, stand.PITCH.x, stand.PITCH.y)
+		rotation.y = stand.clamp_yaw(rotation.y)
+		stand.hide_head(true)
+	peek = kind
+	_peek_stand = stand
+	_peek_left = Binoculars.STAND_SECONDS
+	_peek_open = 0.0
+	_peek_closing = false
+	if not fp_locked:
+		_peek_locked = true
+		lock_first(true)
+	cam.cull_mask &= ~(1 << 2)   # 手と足は映さない（のぞいている）
+	if _peek_view == null:
+		_peek_view = preload("res://binocular_view.gd").new()
+		add_child(_peek_view)
+	_peek_hud(false)
+	var hud = get_parent().get("hud")
+	if hud and kind == "hand":
+		hud.learn("scope_hand")
+
+
+## のぞくのをやめる
+func peek_stop() -> void:
+	if peek == "":
+		return
+	var was := peek
+	peek = ""
+	if was == "stand" and _peek_stand:
+		_peek_stand.hide_head(false)
+		if craft:
+			craft.send({"kind": "scope_off", "who": id})
+		move_and_collide(global_basis.z * 0.5)   # 台の頭が目の前をふさがないよう、ひと足さがる
+	_peek_stand = null
+	if _peek_locked:
+		_peek_locked = false
+		lock_first(false)
+	_apply_third()
+	cam.fov = base_fov
+	if _peek_view:
+		_peek_view.visible = false
+	_peek_hud(true)
+
+
+## のぞいているあいだ、HUD と持ち物の列を隠す
+func _peek_hud(on: bool) -> void:
+	for key in ["hud", "craft_ui"]:
+		var layer = get_parent().get(key)
+		if layer:
+			layer.visible = on
+
+
+## のぞいているあいだの入力。true で受け取った（ほかの操作に回さない）
+func _peek_input(e: InputEvent) -> bool:
+	if e is InputEventPanGesture:   # 二本指スクロール（Mac のトラックパッド）。上へ撫でると寄る。持ち替えはしない
+		_peek_zoom(exp(e.delta.y * 0.04))
+		return true
+	if e is InputEventMagnifyGesture:   # つまむ・広げる
+		_peek_zoom(1.0 / maxf(e.factor, 0.01))
+		return true
+	if e is InputEventMouseButton:
+		if e.pressed and e.button_index == MOUSE_BUTTON_WHEEL_UP:
+			_peek_zoom(1.0 / Binoculars.WHEEL_STEP)
+		elif e.pressed and e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			_peek_zoom(Binoculars.WHEEL_STEP)
+		elif e.button_index == MOUSE_BUTTON_LEFT and not e.pressed and peek == "hand":
+			peek_stop()
+		return true
+	if e is InputEventKey and e.pressed and not e.echo:
+		if e.physical_keycode == KEY_ESCAPE:
+			if peek == "stand":   # 台は Esc でやめる。手の双眼鏡の Esc は、ふだんどおり設定の画面（開くと下ろす）
+				peek_stop()
+				get_viewport().set_input_as_handled()
+				return true
+			return false
+		if e.physical_keycode == KEY_F and peek == "stand":
+			peek_stop()
+		return true
+	return false
+
+
+## 倍率を変える: いまの画角に k を掛ける（1 より小さいと寄る）
+func _peek_zoom(k: float) -> void:
+	var r := Binoculars.fov_range(peek)
+	_peek_fov[peek] = clampf(float(_peek_fov[peek]) * k, r.x, r.y)
+
+
+## 毎コマ: やめる条件・台の前の立ち位置・窓
+func _update_peek(dt: float) -> void:
+	if peek == "":
+		return
+	var ok := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not menu_open and not fling.active()
+	if peek == "hand":
+		ok = ok and (mode == Mode.WALK or mode == Mode.SIT) and held().get("kind", "") == "binoculars"
+	else:
+		ok = ok and mode == Mode.WALK and is_instance_valid(_peek_stand)
+	if not ok:
+		peek_stop()
+		return
+	var left := -1.0
+	if peek == "stand":
+		rotation.y = _peek_stand.clamp_yaw(rotation.y)
+		_pitch = clampf(_pitch, _peek_stand.PITCH.x, _peek_stand.PITCH.y)
+		var at: Vector3 = _peek_stand.spot(rotation.y)
+		global_position = Vector3(lerpf(global_position.x, at.x, minf(1.0, dt * 10.0)), global_position.y, lerpf(global_position.z, at.z, minf(1.0, dt * 10.0)))
+		_peek_left -= dt
+		left = clampf(_peek_left / Binoculars.STAND_SECONDS, 0.0, 1.0)
+		if _peek_left <= 0.0:
+			_peek_closing = true
+	_peek_open = move_toward(_peek_open, 0.0 if _peek_closing else 1.0, dt * (2.5 if _peek_closing else 7.0))
+	_peek_view.show_view(_peek_open, left, Binoculars.zoom_of(peek, float(_peek_fov[peek])))
+	if _peek_closing and _peek_open <= 0.0:
+		peek_stop()
+
+
+## テラスの双眼鏡台の前で F: 払ってのぞく。true で受け取った（のぞいている間の F は _peek_input）
+func _binocular_f() -> bool:
+	if binocular_pay() in ["", "none"]:
+		return false
+	craft.send({"kind": "scope_on", "who": id})
+	return true
+
+
+## 双眼鏡台の前にいて空いているとき、何で払うか: "ball" / "button" / 払える物がなければ "none"。前にいなければ ""
+func binocular_pay() -> String:
+	var st = get_parent().get("binocular_stand")
+	if st == null or craft == null or mode != Mode.WALK or int(st.who) >= 0 or not st.in_reach(self):
+		return ""
+	if ball_count() >= 1:
+		return "ball"
+	return "button" if craft.wallet(id) >= 1 else "none"
+
+
 ## 一人称の右手に、持っている物の形を持たせる（雪玉を持っているときは雪玉だけ）
 func _place_held_fp(ball: bool) -> void:
 	var it := held() if not ball and table_ctx().is_empty() else {}   # 机のある席では、料理は机の上（table_eat.gd）
@@ -2451,6 +2628,10 @@ func _face_held_fp() -> void:
 ## 手に持った物の小さな形（一人称の右手と、確かめ用）
 ## fp: 一人称の手に持つ形（目の前で見るので大きく持つ）。人形の手に持たせるとき（小窓・鏡）は false
 static func held_shape(it: Dictionary, fp := true) -> Node3D:
+	if it.get("kind") == "binoculars":   # 持ち歩く双眼鏡: フェルトの筒に木のボタンの目（binoculars.gd）
+		var bino := Binoculars.shape()
+		bino.rotation.x = 0.2
+		return bino
 	if it.get("kind") == "campfire":   # 焚き火セット: 毛糸で縛った薪の束（campfire.gd）
 		return Campfire.kit_shape()
 	if it.get("kind") == "peg":   # ペグの束: 待ち針の形を、束の本数だけ扇に並べる（peg.gd）

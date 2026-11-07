@@ -169,6 +169,8 @@ var _rest_rot := {}          # 番号 → 付け根の回転（親の座標）
 var _rest_pos := {}
 var _rot := {}               # 番号 → いまの回転（親の座標）
 var _g := {}                 # 番号 → いまの向きと位置（骨の座標の空間）
+var peek := ""                    # 双眼鏡をのぞいている: "" / "hand"（持ち歩く双眼鏡）/ "stand"（テラスの台）
+var _peek_item: Node3D            # 目に当てている双眼鏡の形
 var _hold: Array = [null, null]   # 手ごとに [基準のノード, その座標での手の所] か null
 var _arm_base := {}          # コマで決めた腕の回転（毎フレームここから伸ばし直す）
 var _streams := {}           # 息の煙の出口: "small" ふだん、"big" 声、"long" B の長い息・おーい
@@ -1428,6 +1430,7 @@ func _pose() -> void:
 	if flung != 0:
 		_flung_arms()
 	_plan_palms(em[0], em[1])
+	_plan_peek()
 	if em[1] < 0 and waving and _hold[1] == null and hand_shapes[0] == "" and flung == 0:
 		# 右手を上げて振る。4 コマで 1 往復
 		var k: float = [0.55, 0.1, -0.35, 0.1][_frame % 4]
@@ -2803,6 +2806,37 @@ func _plan_palms(kind_: String, k: int) -> void:
 		else:
 			origin = bone_wrist - bs * Palm.WRIST
 		_palm_goal[side] = [shape, global_transform.affine_inverse() * Transform3D(bs, origin)]
+
+
+const PEEK_STAND_H := 1.18   # テラスの台の頭の高さ（binocular_stand.gd の HEAD_Y の少し下）
+
+## 双眼鏡をのぞく姿勢（player.gd の peek が入れる。通信でも届く）: 両手を目の前へ。持ち歩く双眼鏡なら、その形も目に当てる。
+## テラスの台なら、両手は目の少し先の台の頭へ添える（頭は binocular_stand.gd が見ている所へ向ける）
+func _plan_peek() -> void:
+	if peek != "hand" and _peek_item:
+		_peek_item.visible = false
+	if peek == "":
+		return
+	var eye := global_transform * eye_point(false)
+	var look := -global_basis.z
+	if gaze != Vector3.INF and gaze.distance_to(eye) > 0.01:
+		look = (gaze - eye).normalized()
+	var right := look.cross(Vector3.UP)
+	right = right.normalized() if right.length() > 0.05 else global_basis.x
+	for hi in 2:
+		var sd := 1.0 if hi == 1 else -1.0
+		var at := eye + look * 0.16 * _scale + right * sd * 0.085 * _scale + Vector3.DOWN * 0.03
+		if peek == "stand":   # 台の頭の横へ（足もとから決まった高さ。小さい人形は手を伸ばす）
+			at = global_position + Vector3.UP * PEEK_STAND_H + look * 0.42 + right * sd * 0.2
+		_hold[hi] = [self, to_local(at), true]
+	if peek == "hand":
+		if _peek_item == null:
+			_peek_item = preload("res://binoculars.gd").shape()
+			add_child(_peek_item)
+			for mi in _peek_item.find_children("*", "MeshInstance3D", true, false):
+				(mi as MeshInstance3D).layers = layers
+		_peek_item.visible = true
+		_peek_item.global_transform = Transform3D(Basis.looking_at(look, Vector3.UP).scaled(Vector3.ONE * maxf(_scale, 0.6)), eye + look * 0.11 * _scale)
 
 
 ## 手のひら（+z）を face の向き（水平）へ立て、tilt だけ上（正）か下（負）へ傾ける

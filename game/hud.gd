@@ -515,6 +515,15 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			_hint(rt[1], ["F"], rt[1], at)
 		elif p.rack_refused():
 			_hint("rack_busy", [], "rack_busy", p.global_position + (-p.global_basis.z) * 2.2 + Vector3.UP * 1.2)
+	# テラスの双眼鏡台: 雪玉か木のボタンの絵と F。入れる物がなければ F なしで赤い ×
+	if p.has_method("binocular_pay") and not p.rooted():
+		var how: String = p.binocular_pay()
+		if how != "":
+			var at_st: Vector3 = main.binocular_stand.global_position + Vector3.UP * 1.65
+			_hint("scope_" + how, [] if how == "none" else ["F"], "scope_" + how, at_st)
+	# 手の双眼鏡: 左ボタンを押しているあいだのぞく
+	if p.has_method("held") and p.held().get("kind", "") == "binoculars" and not p.rooted():
+		_hint("scope_hand", ["mouse_l"], "scope_hand")
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:
 		_hint("shop", ["F"], "shop", main.shopkeeper.global_position + Vector3.UP * 2.0)
