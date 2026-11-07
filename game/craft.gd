@@ -689,6 +689,7 @@ func _apply(ev: Dictionary) -> bool:
 						var d = c.get("doll")
 						if d and d.get("sled") == gs:
 							d.set("sled", world.get("sled"))
+			gs.leave_trail()
 			gs.queue_free()
 		"stitch_buy":   # 滑りあとの柄を買う（持ち物の場所は使わない。人ごとに、一度買えばどのソリにも使える）
 			var nm := String(ev.get("stitch", ""))
@@ -1043,6 +1044,7 @@ func _apply(ev: Dictionary) -> bool:
 			ev["yaw"] = s.rotation.y
 			sleds.erase(int(ev.id))
 			_origami(ev, false, s.global_transform)
+			s.leave_trail()
 			s.queue_free()
 			ev["slot"] = _put(who, ev.item)
 		"unfold":

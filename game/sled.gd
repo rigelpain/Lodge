@@ -312,38 +312,100 @@ func set_stitch(name: String) -> void:
 	_make_trail()
 
 
-## 残っている跡を、ソリから切り離して消えるまで見守らせる
+## ソリが消える前に呼ぶ（畳む・米袋をしまう）。残っている跡は雪の上に残り、ふつうの跡と同じ時刻に消えていく（2026-11-07 代表）
+func leave_trail() -> void:
+	_retire_trail()
+	_stitch = null
+
+
+## 残っている跡を、ソリから切り離して消えるまで見守らせる。また滑っても、切り離した跡とはつながらない。
+## 塊はなくなるので、ソリが続けて滑るなら _make_trail を呼ぶ
 func _retire_trail() -> void:
-	var end := _trail_now
-	for c in _chunk_end:
-		end = maxf(end, c)
-	var left := TrailLeft.new()
+	if _stitch == null:
+		return
+	var left := TrailLeft.new()   # 残す目がなければ、部屋へ入れずに捨てる
 	left.mesh = _stitch
 	left.now = _trail_now
-	left.end = end
-	get_parent().add_child(left)
-	for mi in _trails:
+	for c in _trails.size():
+		var mi := _trails[c]
 		remove_child(mi)
-		left.add_child(mi)
+		if _chunk_end[c] > _trail_now and mi.multimesh.visible_instance_count > 0:
+			left.keep(mi, _chunk_end[c])
+		else:
+			mi.queue_free()
 	_trails.clear()
 	_chunk_i = 0
 	_chunk_fill = 0
 	_trail_used = 0
 	_trail_holes = [Vector3.INF, Vector3.INF]
 	_trail_dist = [0.0, 0.0]
+	if left.chunks.is_empty():
+		left.free()
+		return
+	get_parent().add_child(left)
+	TrailLeft.trim()
 
 
-## 替える前の柄の跡。時計を進め、全部の目が消えたら消える
+## 持ち主のソリから離れた跡（畳んだ米袋・柄を替える前の跡）。時計を進め、消えきった塊から片づける。
+## 全部で LEFT_STITCHES・LEFT_CHUNKS を超えたら、ソリの跡が満ちたときと同じく、いちばん早く消える塊を丸ごと消す
 class TrailLeft extends Node:
+	const LEFT_STITCHES := 9600   # 残す目の合計（TRAIL_N の 6 本ぶん。CPU 5 人とあなたの跡がいっぱいでも収まる）
+	const LEFT_CHUNKS := 96       # 残す塊の合計（ふつうのソリ 1 台の塊 16 × 6 本ぶん）
+	static var all: Array = []
 	var mesh: ArrayMesh
 	var now := 0.0
-	var end := 0.0
+	var chunks: Array = []        # [塊, 消えきる時刻]
+
+	func keep(mi: MultiMeshInstance3D, end: float) -> void:
+		add_child(mi)
+		chunks.append([mi, end])
+
+	func _enter_tree() -> void:
+		all.append(self)
+
+	func _exit_tree() -> void:
+		all.erase(self)
 
 	func _process(dt: float) -> void:
 		now += dt
 		Look.stitch_set_time(mesh, now)
-		if now >= end:
+		for i in range(chunks.size() - 1, -1, -1):
+			if float(chunks[i][1]) <= now:
+				drop(i)
+
+	func drop(i: int) -> void:
+		(chunks[i][0] as Node).queue_free()
+		chunks.remove_at(i)
+		if chunks.is_empty():
 			queue_free()
+
+	static func totals() -> Vector2i:
+		var t := Vector2i.ZERO
+		for l in all:
+			t.y += l.chunks.size()
+			for c in l.chunks:
+				t.x += (c[0] as MultiMeshInstance3D).multimesh.visible_instance_count
+		return t
+
+	## 上限を超えたぶんを、いちばん早く消える塊から消す（残り時間で比べる。跡ごとに時計が違う）
+	static func trim() -> void:
+		var t := totals()
+		while t.x > LEFT_STITCHES or t.y > LEFT_CHUNKS:
+			var best: Node = null
+			var at := -1
+			var soon := INF
+			for l in all:
+				for i in l.chunks.size():
+					var rest: float = float(l.chunks[i][1]) - l.now
+					if rest < soon:
+						soon = rest
+						best = l
+						at = i
+			if best == null:
+				return
+			t.x -= (best.chunks[at][0] as MultiMeshInstance3D).multimesh.visible_instance_count
+			t.y -= 1
+			best.drop(at)
 
 
 ## いまのメインカラー
@@ -694,6 +756,9 @@ func let_everyone_go() -> void:
 func rack_in(at: Transform3D, wait := 0.0) -> void:
 	let_everyone_go()
 	unpeg(false)
+	if _trail_used > 0:   # 雪の上の跡は、ソリを隠しているあいだも、台にあるあいだも残る
+		_retire_trail()
+		_make_trail()
 	racked = true
 	parked = true
 	freeze = true
@@ -882,7 +947,7 @@ func _update_trail(dt: float) -> void:
 			continue
 		var move := w - last
 		var ln := move.length()
-		if far or ln > TRAIL_JUMP:
+		if far or racked or ln > TRAIL_JUMP:   # 台にある・台から降りるあいだは縫わない
 			_trail_holes[k] = Vector3.INF
 			_trail_dist[k] = 0.0
 			continue
