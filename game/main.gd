@@ -1382,6 +1382,7 @@ func _furnish_lodge() -> void:
 		var bs: Node3D = preload("res://binocular_stand.gd").new()
 		bs.name = "BinocularStand%d" % i
 		bs.craft = craft
+		bs.main = self
 		bs.index = i
 		bs.position = Vector3(float(BINOCULARS[i][0]), BINOCULAR_FLOOR, -float(BINOCULARS[i][1]))
 		bs.rotation.y = float(BINOCULARS[i][2])
@@ -1390,6 +1391,7 @@ func _furnish_lodge() -> void:
 	# 立てかけ台の横の、布の見本帳（前で F を押して、自分のソリの色と滑りあとを替える）
 	sled_book = preload("res://sled_book.gd").new()
 	sled_book.name = "SledBook"
+	sled_book.main = self
 	sled_book.position = Vector3(SLED_BOOK_AT.x, 0.0, -SLED_BOOK_AT.y)
 	sled_book.rotation.y = -PI / 2.0
 	lodge.add_child(sled_book)
@@ -1409,6 +1411,7 @@ func _furnish_lodge() -> void:
 	dye_vat.name = "DyeVat"
 	dye_vat.player = player
 	dye_vat.craft = craft
+	dye_vat.main = self
 	wardrobe.add_child(dye_vat)
 	# 入口の横の大きな鏡: 前で F を押すと、自分の人形が大きく映る
 	mirror = Mirror.new()

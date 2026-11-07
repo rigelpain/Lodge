@@ -1,6 +1,11 @@
 """布の見本帳（2026-11-06 代表「見本帖＋自由な色にしてほしい」）。ミシンの近くに立つ、ソリの色と滑りあとを替える所。
 形: ぎざぎざに切ったフェルトの布 12 枚を真鍮の輪で綴じて扇に開き、物差しの台で立てる。足もとは針山。布の下の端に紙の札を縫い付ける（字はなし）。
 素材は props/common.py と kit.py の本番の物。寸法はゲームの大きさ (m)。正面は -Y（Godot の +Z）。
+書き出すと 3 つの glb になる（近づくと扇が開くように、布を台から分けた。2026-11-07 代表「見本帳は近づくと展開される方が良いかも」）:
+    sled_book.glb            物差しの台・輪・針山
+    sled_book_leaf.glb       白い布 1 枚（上の端のまんなかが原点。game/sled_book.gd が 12 枚に増やして色を付ける）
+    sled_book_leaf_trim.glb  布 1 枚ぶんの紙の札と縫い目（色を付けないので分ける）
+絵を描くときは、前と同じように扇に開いた形で描く。
     /Applications/Blender.app/Contents/MacOS/Blender -b -P design/sled-custom/build_book.py -- --views hero --prefix /path/book --size 900x900
     /Applications/Blender.app/Contents/MacOS/Blender -b -P design/sled-custom/build_book.py -- --export game/props/sled_book
 game/sled_book.gd が読む。色の並びは game/sled_book_ui.gd の SWATCHES と同じ。
@@ -35,8 +40,8 @@ def rot(x, y, deg):
     return (x * math.cos(a) - y * math.sin(a), x * math.sin(a) + y * math.cos(a))
 
 
-def pinked(w, h, deg, z=0.035, step=0.09):
-    """上の端のまんなかを原点に、下へ垂れるぎざぎざの布。deg だけ回して、綴じの輪の高さへ"""
+def pinked(w, h, deg, z=0.035, step=0.09, pin_z=PIN_Z):
+    """上の端のまんなかを原点に、下へ垂れるぎざぎざの布。deg だけ回して、高さ pin_z へ"""
     n = int(w / step)
     m = int(h / step)
     pts = []
@@ -51,25 +56,34 @@ def pinked(w, h, deg, z=0.035, step=0.09):
     out = []
     for x, y in pts:
         rx, ry = rot(x, y, deg)
-        out.append((rx, ry + PIN_Z))
+        out.append((rx, ry + pin_z))
     return out
+
+
+def leaf(felt_parts, trim_parts, felt_role, deg, y0, pin_z):
+    """布 1 枚と、下の端の紙の札・赤い糸、綴じに近い所の縫い目"""
+    K.extrude(felt_parts, felt_role, pinked(W, L, deg, pin_z=pin_z)[::-1], 0.0, 0.01, plane="XZ", offset=(0, y0, 0))
+    cx, cy = rot(0.0, -L + 0.2, deg)
+    a = [rot(x, y, deg) for x, y in [(-0.13, 0.08), (0.13, 0.08), (0.13, -0.08), (-0.13, -0.08)]]
+    K.extrude(trim_parts, "paper_bk", [(cx + p[0], cy + p[1] + pin_z) for p in a][::-1], 0.0, 0.004, plane="XZ", offset=(0, y0 - 0.005, 0))
+    K.stitch_line(trim_parts, "thread_red", [(cx + a[0][0], y0 - 0.011, cy + a[0][1] + pin_z), (cx + a[1][0], y0 - 0.011, cy + a[1][1] + pin_z)], r=0.006, dash=0.04)
+    p0 = rot(-W * 0.42, -0.3, deg)
+    p1 = rot(W * 0.42, -0.3, deg)
+    K.stitch_line(trim_parts, "thread", [(p0[0], y0 - 0.006, p0[1] + pin_z), (p1[0], y0 - 0.006, p1[1] + pin_z)], r=0.005, dash=0.035)
 
 
 P = K.Parts("sled_book")
 n = len(SWATCHES)
-for i in range(n):
-    deg = -SPREAD + 2.0 * SPREAD * i / (n - 1)
-    y0 = -0.03 - 0.012 * i
-    K.extrude(P, "felt_bk%d" % i, pinked(W, L, deg)[::-1], 0.0, 0.01, plane="XZ", offset=(0, y0, 0))
-    # 下の端の紙の札と、留めた赤い糸
-    cx, cy = rot(0.0, -L + 0.2, deg)
-    a = [rot(x, y, deg) for x, y in [(-0.13, 0.08), (0.13, 0.08), (0.13, -0.08), (-0.13, -0.08)]]
-    K.extrude(P, "paper_bk", [(cx + p[0], cy + p[1] + PIN_Z) for p in a][::-1], 0.0, 0.004, plane="XZ", offset=(0, y0 - 0.005, 0))
-    K.stitch_line(P, "thread_red", [(cx + a[0][0], y0 - 0.011, cy + a[0][1] + PIN_Z), (cx + a[1][0], y0 - 0.011, cy + a[1][1] + PIN_Z)], r=0.006, dash=0.04)
-    # 綴じに近い所の縫い目（布の幅いっぱいに、なみ縫い）
-    p0 = rot(-W * 0.42, -0.3, deg)
-    p1 = rot(W * 0.42, -0.3, deg)
-    K.stitch_line(P, "thread", [(p0[0], y0 - 0.006, p0[1] + PIN_Z), (p1[0], y0 - 0.006, p1[1] + PIN_Z)], r=0.005, dash=0.035)
+if A.export:
+    C.HEX["felt_bk_white"] = "F4F4F4"
+    PL = K.Parts("sled_book_leaf", tris=320)
+    PT = K.Parts("sled_book_leaf_trim", tris=300)
+    leaf(PL, PT, "felt_bk_white", 0.0, 0.0, 0.0)
+    PL.finish(fuzz=0.004)
+    PT.finish()
+else:
+    for i in range(n):
+        leaf(P, P, "felt_bk%d" % i, -SPREAD + 2.0 * SPREAD * i / (n - 1), -0.03 - 0.012 * i, PIN_Z)
 
 K.ring(P, "brass", (0, -0.2, PIN_Z - 0.05), 0.13, 0.026, axis="Y")
 
