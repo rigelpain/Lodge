@@ -9,7 +9,6 @@ extends Node3D
 
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
-const Sense := preload("res://stall_sense.gd")
 
 const R := 1.8               # 桶の口の半径 (m)。design/dye-wardrobe/ideas.py の tub と同じ
 const H := 0.74              # 桶の高さ
@@ -17,7 +16,6 @@ const LIQUID_Y := 0.62       # 染め液の面の高さ
 const START := Color(0.17, 0.21, 0.38)   # はじめの染め液（藍）
 const SOAK := 1.2            # 染め液の色が変わりきるまでの秒
 
-const SENSE_R := 6.0         # 桶の真ん中からこの距離に人が来ると、布が上がる (m)。F が届く距離（wardrobe.gd の REACH）より広い
 const CLOTH_W := 1.05        # 布の幅 (m)。桶の丸みに沿わせる
 const ROWS := 18             # 布の長さの刻み
 const COLS := 24             # 布の幅の刻み（偶数。裾をぎざぎざに切る）
@@ -59,7 +57,6 @@ var _stage := 0
 var _goal := 0
 var _frame := -1
 var _tick := 0
-var _check := 0.0
 var _drops: Array[MeshInstance3D] = []
 var _rings: Array[MeshInstance3D] = []
 var _ring_mat: StandardMaterial3D
@@ -141,10 +138,7 @@ func _on_craft(ev: Dictionary) -> void:
 
 
 func _process(dt: float) -> void:
-	_check -= dt
-	if _check <= 0.0:
-		_check = Sense.CHECK
-		_goal = POSES.size() - 1 if Sense.nearest(main, self, SENSE_R, get_parent().BACK_LIMIT) else 0
+	_goal = POSES.size() - 1 if get_parent().near else 0   # 動き出す距離は人台と同じ（wardrobe.gd の SENSE_R）
 	if _stage != _goal:
 		var f := Doll.frame_index()
 		if f != _frame:
