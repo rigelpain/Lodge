@@ -2231,7 +2231,7 @@ func _on_craft(ev: Dictionary) -> void:
 			var coin_audio = get_parent().get_node_or_null("Audio")
 			if coin_audio and String(ev.get("paid", "")) == "button":
 				coin_audio.coin("wood", 0)
-			_peek_begin("stand", get_parent().binocular_stands[int(ev.stand)])
+			_peek_begin("stand", get_parent().binocular_stands[int(ev.stand)], float(ev.get("left", Binoculars.STAND_SECONDS)))
 		"doll":   # 衣装掛けで選んだ人形に着替える
 			set_doll(String(ev.doll))
 		"dye", "outfit":   # 染め桶で服を染めた: 人形と一人称の袖と脚を、その色で作り直す
@@ -2469,7 +2469,7 @@ func _facing(at: Vector3) -> float:
 
 
 ## 双眼鏡をのぞき始める。kind は "hand" か "stand"（stand は台の節）
-func _peek_begin(kind: String, stand: Node3D) -> void:
+func _peek_begin(kind: String, stand: Node3D, left := Binoculars.STAND_SECONDS) -> void:
 	if peek != "" or (kind == "stand" and stand == null):
 		return
 	if pointing:
@@ -2486,7 +2486,7 @@ func _peek_begin(kind: String, stand: Node3D) -> void:
 	peek = kind
 	_peek_grade = "stand" if kind == "stand" else String(held().get("kind", Binoculars.KIND))
 	_peek_stand = stand
-	_peek_left = Binoculars.STAND_SECONDS
+	_peek_left = left
 	_peek_open = 0.0
 	_peek_closing = false
 	if not fp_locked:
@@ -2636,10 +2636,18 @@ func binocular_near() -> Node3D:
 	return null
 
 
-## 双眼鏡台の前にいて空いているとき、何で払うか: "ball" / "button" / 払える物がなければ "none"。前にいなければ ""
+## F が届く双眼鏡台の、自分の払った時間の残り（秒）
+func binocular_left() -> float:
+	var st := binocular_near()
+	return craft.scope_left(id, int(st.index)) if st and craft else 0.0
+
+
+## 双眼鏡台の前にいて空いているとき、何で払うか: "free"（払った時間の中）/ "ball" / "button" / 払える物がなければ "none"。前にいなければ ""
 func binocular_pay() -> String:
 	if craft == null or mode != Mode.WALK or binocular_near() == null:
 		return ""
+	if binocular_left() > 0.0:
+		return "free"   # 払った時間の中: 値段の絵を出さず、ただでのぞき直せる
 	if ball_count() >= 1:
 		return "ball"
 	return "button" if craft.wallet(id) >= 1 else "none"

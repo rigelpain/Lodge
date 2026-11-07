@@ -29,6 +29,8 @@ const STAND_SECONDS := 60.0     # テラスの台が 1 回で開いている長�
 const STAND_NARROW_FROM := 10.0 # 残りがこの秒になると、穴がゆっくりすぼみ始める（幕が下りてくる。赤や点滅の警告はしない）
 const STAND_NARROW := 0.78      # 閉じる直前の穴の開き
 
+static var hint_left := 1.0     # 案内の "free" の毛糸の長さ（0〜1。hud.gd が入れる）
+const YARN := Color(0.95, 0.70, 0.22)   # のぞき窓の残りの毛糸と同じ色
 const FELT := Color(0.25, 0.50, 0.53)
 const INDIGO := Color(0.17, 0.24, 0.41)
 const MUSTARD := Color(0.79, 0.60, 0.23)
@@ -125,7 +127,8 @@ static func _moon(ci: CanvasItem, c: Vector2, a: float) -> void:
 
 
 ## 案内の絵（hud_icons.gd の icon から）。木のボタン 1 枚か雪玉 1 個を入れてのぞく。何もなければ赤い ×。字は使わない
-##   which: "ball" 雪玉で / "button" 木のボタンで / "none" 入れる物がない / "hand" 手の双眼鏡をのぞく / "off" 双眼鏡を下ろす
+##   which: "ball" 雪玉で / "button" 木のボタンで / "none" 入れる物がない / "hand" 手の双眼鏡をのぞく / "off" 双眼鏡を下ろす /
+##          "free" 払った時間の中（値段の絵の代わりに、のぞき窓と同じ残りの毛糸。長さは hint_left）
 static func hint(ci: CanvasItem, which: String, a: float) -> void:
 	if which == "hand":
 		_lenses(ci, Vector2(0, 0), 0.95, a)
@@ -133,6 +136,12 @@ static func hint(ci: CanvasItem, which: String, a: float) -> void:
 	_lenses(ci, Vector2(0, -13), 0.7, a)
 	if which == "off":
 		Icons.arrow(ci, Vector2(0, 5), Vector2(0, 27), Icons.RED, a, 3.2)
+		return
+	if which == "free":
+		Icons.patch(ci, Icons.rr(-24, 11, 48, 9, 4), Color(0.17, 0.18, 0.21), a, false)
+		var w := 44.0 * clampf(hint_left, 0.0, 1.0)
+		if w > 0.5:
+			Icons.patch(ci, Icons.rr(-w * 0.5, 13, w, 5, 2.5), YARN, a, false)
 		return
 	var at := Vector2(0, 15)
 	match which:

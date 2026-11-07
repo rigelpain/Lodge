@@ -251,6 +251,7 @@ func _run() -> void:
 	print("FPS 同じ向きをふつうに: ", Engine.get_frames_per_second())
 	st.hide_head(false)
 	# ---- 台: ボタンで。Esc でやめる
+	craft.scope_paid.clear()   # 払った時間を消して、払う所から確かめる（のぞき直しは binoculars_paid_check.gd）
 	await _stand_before()
 	_check("雪玉がなければボタン", p.binocular_pay() == "button")
 	await _key(KEY_F)
@@ -258,6 +259,7 @@ func _run() -> void:
 	await _key(KEY_ESCAPE)
 	_check("Esc でやめる。設定は開かない", p.peek == "" and not main.settings.is_open)
 	# ---- 台: 時間で閉じる
+	craft.scope_paid.clear()
 	await _stand_before()
 	await _key(KEY_F)
 	_check("もう 1 枚で開く", p.peek == "stand" and craft.wallet(p.id) == 0)
@@ -278,6 +280,7 @@ func _run() -> void:
 	await create_timer(0.5).timeout
 	_check("時間で閉じて空く", p.peek == "" and int(st.who) < 0)
 	# ---- 台: 払えない
+	craft.scope_paid.clear()
 	await _stand_before()
 	_check("何もなければ ×", p.binocular_pay() == "none")
 	await _save("09_stand_none")
@@ -307,6 +310,7 @@ func _run() -> void:
 		_check("台 %d を下りた所も空いている" % i, p.peek == "" and _free_at(p.global_position, p))
 	await _overview()
 	craft.wallets[p.id] = 2
+	craft.scope_paid.clear()
 	# ---- 手の双眼鏡
 	craft.wallets[p.id] = 40
 	craft.send({"kind": "buy", "who": p.id, "item": preload("res://binoculars.gd").ITEM.duplicate()})
