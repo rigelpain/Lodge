@@ -212,6 +212,10 @@ func _emit(ev: Dictionary) -> void:
 	if ev.kind == "flung":
 		_making.erase(ev.who)
 		preload("res://snowball.gd").splat_at(get_parent(), ev.point, -(ev.dir as Vector3))   # 当たった所に雪の粉
+		if ev.get("thrown", false):   # 木にぶつかったソリから放り投げられる。体を動かす画面（その人の画面・ホストの仲間）が飛ばす
+			var w := who_of(int(ev.who))
+			if w and w.has_method("thrown"):
+				w.thrown(ev)
 	if ev.kind == "catch":   # 取られた雪玉は、どの画面でも消える
 		var b := ball(int(ev.get("ball", -1)))
 		if b:

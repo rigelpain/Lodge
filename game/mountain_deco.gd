@@ -4,6 +4,7 @@ extends Node3D
 
 const Props := preload("res://props.gd")
 const Look := preload("res://look.gd")
+const TreeHits := preload("res://tree_hits.gd")
 
 const KICK_W := 4.4          # 台の幅 (m)。大きいソリ 2 台分
 const KICK_L := 4.5          # 踏み切りの坂の長さ（水平, m）。5.5 m だと台が 1.6 m まで高くなり、遅い小のソリが縁の手前で止まった

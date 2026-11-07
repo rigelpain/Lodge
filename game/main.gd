@@ -63,6 +63,7 @@ const ROAM_DOLLS := ["origami", "news", "robo", "ningyo", "golem"]
 const Sled := preload("res://sled.gd")
 const Mountain := preload("res://mountain.gd")
 const Grand := preload("res://grand_mountain.gd")
+const TreeHits := preload("res://tree_hits.gd")
 const Props := preload("res://props.gd")
 const Player := preload("res://player.gd")
 const Bot := preload("res://bot.gd")
@@ -1890,6 +1891,8 @@ func _make_hill_trees() -> void:
 	rng.seed = 7
 	const TREES := ["res://props/tree_tall.glb", "res://props/tree_zigzag.glb", "res://props/tree_round.glb",
 		"res://props/tree_little.glb"]
+	var hits := TreeHits.new()
+	add_child(hits)
 	for k in 70:
 		var a := rng.randf() * TAU
 		var r := rng.randf_range(32, 90)
@@ -1904,6 +1907,7 @@ func _make_hill_trees() -> void:
 		tree.position = p + Vector3(0, foot_y(p.x, p.z, 0.35 * h / 6.0) - 0.05, 0)
 		tree.rotation.y = rng.randf() * TAU
 		add_child(tree)
+		hits.add_tree(tree)
 	_make_slope_props()
 	var flags := preload("res://area_flags.gd").new()   # 山の目印の大きな旗（標高の札と同じ布）
 	flags.name = "AreaFlags"

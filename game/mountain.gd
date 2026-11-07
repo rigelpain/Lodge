@@ -357,6 +357,8 @@ func _trees() -> void:
 	const ROCKS := ["res://props/rock_a.glb", "res://props/rock_b.glb", "res://props/rock_c.glb"]
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 23
+	var hits := TreeHits.new()
+	add_child(hits)
 	var trees := 0
 	var rocks := 0
 	for k in 4000:
@@ -394,4 +396,5 @@ func _trees() -> void:
 			continue
 		var tree := _put(TREES[k % TREES.size()], x, z, yaw, 0.35 * hgt / 6.0)
 		tree.scale = Vector3.ONE * hgt / 6.0
+		hits.add_tree(tree)
 		trees += 1

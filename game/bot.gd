@@ -279,6 +279,23 @@ func _run_over_step(dt: float) -> bool:
 	return true
 
 
+## 乗っているソリが木にぶつかって、放り投げられる（ホストが配った向きと強さで。flung.gd・emotes.gd）。起き上がれば、次の山へ
+func thrown(ev: Dictionary) -> void:
+	if state != State.RIDE or seat == Vector3.INF or fling.active():
+		return
+	if roam:
+		_roam_get_off(false)
+	else:
+		sled.dismount(self)
+		seat = Vector3.INF
+		_col.disabled = false
+		velocity = Vector3.ZERO
+		state = State.PUSH
+	global_position += Vector3.UP * 0.15
+	reset_physics_interpolation()
+	fling.throw(ev)
+
+
 func _uphill(p: Vector3) -> Vector3:
 	if not _team.is_empty():   # 組: 次の点へ。頂上に着いたら、滑る向きへ
 		var w: Vector2 = _team.route[0] if not _team.route.is_empty() else _team.goal
@@ -1316,7 +1333,7 @@ func _roam_ride(dt: float) -> void:
 
 
 ## 降りる。米袋なら帯に戻す。ソリならその場に置いて、次の山へ
-func _roam_get_off() -> void:
+func _roam_get_off(place := true) -> void:
 	var gs := sled
 	var was := seat
 	sled.dismount(self)
@@ -1324,9 +1341,10 @@ func _roam_get_off() -> void:
 	state = State.PUSH
 	_col.disabled = false
 	var sack: bool = gs.kind == "sack"
-	var at: Vector3 = gs.global_position + (gs.global_basis.z * 0.7 if sack else gs.global_basis.x * (gs.HALF.x + 0.8) * side)
-	at.y = get_parent().height(at.x, at.z) + 0.2
-	global_position = at
+	if place:
+		var at: Vector3 = gs.global_position + (gs.global_basis.z * 0.7 if sack else gs.global_basis.x * (gs.HALF.x + 0.8) * side)
+		at.y = get_parent().height(at.x, at.z) + 0.2
+		global_position = at
 	velocity = Vector3.ZERO
 	if sack:
 		SackLook.set_stage(gs, was, 0)
