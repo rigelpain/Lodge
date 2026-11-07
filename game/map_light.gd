@@ -1,6 +1,6 @@
 extends Node3D
 ## ロッジ前の地図の看板の灯り（2026-11-07 代表「地図の看板にライトを当ててほしい」）。
-## 額の上から木の腕を 2 本手前へ出し、下屋と同じ紙と木の提灯（lean_lights.gd）を提げて、影を落とさない SpotLight3D で看板を照らす。
+## 額の上の左右の端から木の腕を 2 本、手前の斜め上へ出し（2026-11-07 代表「提灯地図に被って見づらい。もっと端っこか上にしてほしい」）、下屋と同じ紙と木の提灯（lean_lights.gd）を提げて、影を落とさない SpotLight3D で看板を照らす。
 ## 灯りは LAYER の物（看板の面・額・まち針・提灯）だけに当てる。影がない灯りは看板を通り抜けて裏の雪まで照らしてしまうのと、広い雪に灯りを計算させないため。
 ## 時刻は daycycle.gd の daylight() を見る: 昼は灯りごと消え、日が傾くと点く（下屋の灯りと同じ DAY_ON）。遠くでは灯りを薄くして消す。
 ## area_flags.gd の _put_map が看板の子として置く（置き物なので、通信の誰の画面でも同じ）。
@@ -10,15 +10,17 @@ const LeanLights := preload("res://lean_lights.gd")
 
 const LAYER := 1 << 17               # 灯りを当てる物の印（見た目の層 18）。ほかの層はそのまま
 const SCALE := 1.1                   # 提灯の大きさ（下屋は 1.5）
-const SIDE := 2.2                    # 看板の真ん中から提灯までの横の距離 (m)
-const REACH := 1.7                   # 看板の面から提灯までの手前への距離 (m)
-const CORD := 0.3                    # 腕から提灯の上端までのコードの長さ (m)
+const SIDE := 3.55                   # 看板の真ん中から提灯までの横の距離 (m)。額の端の少し内
+const REACH := 1.3                   # 看板の面から腕の先までの手前への距離 (m)
+const RISE := 1.1                    # 額の上の端から腕の先までの高さ (m)。提灯の下の端が額より上に来る
+const CORD := 0.2                    # 腕の先から提灯の上端までのコードの長さ (m)
 const COLOR := Color(1.0, 0.93, 0.82)   # ロッジの灯りより白く。橙の光だと藍の布が黒く沈み、まち針の色も読めない（提灯の紙の色はロッジの灯りのまま）
-const ENERGY := 1.7
+const ENERGY := 2.0
 const RANGE := 11.0
 const ATTEN := 0.3                   # 上と下の明るさの差を小さく
 const ANGLE := 78.0                  # 広がり（度）
-const TILT := 52.0                   # 水平から下への傾き（度）
+const TILT := 55.0                   # 水平から下への傾き（度）
+const TOWARD := 50.0                 # 看板の真ん中の側への向き（度）。端から半分ずつ照らす
 const FADE_BEGIN := 70.0             # 灯りをこの距離から薄くする（玄関の前からロッジの外の広場まで見える）
 const FADE_LEN := 10.0
 const SEE := 90.0                    # 提灯の形を描くのをやめる距離 (m)
@@ -38,14 +40,15 @@ func _ready() -> void:
 	for sx in [-1.0, 1.0]:
 		var arm := MeshInstance3D.new()
 		var bm := BoxMesh.new()
-		bm.size = Vector3(0.12, 0.12, REACH + 0.1)
+		bm.size = Vector3(0.12, 0.12, Vector2(REACH, RISE).length() + 0.1)
 		arm.mesh = bm
 		arm.material_override = arm_wood
-		arm.position = Vector3(sx * SIDE, top - 0.06, REACH / 2.0)
+		arm.position = Vector3(sx * SIDE, top + RISE / 2.0 - 0.06, REACH / 2.0)
+		arm.rotation.x = -atan2(RISE, REACH)
 		_lit(arm)
 		add_child(arm)
 		var root := Node3D.new()
-		root.position = Vector3(sx * SIDE, top - 0.12 - CORD, REACH - 0.1)
+		root.position = Vector3(sx * SIDE, top + RISE - 0.12 - CORD, REACH)
 		add_child(root)
 		_lantern(root)
 		var l := SpotLight3D.new()
@@ -61,7 +64,7 @@ func _ready() -> void:
 		l.distance_fade_begin = FADE_BEGIN
 		l.distance_fade_length = FADE_LEN
 		l.position = Vector3(0, -0.2 * SCALE, 0)   # 提灯のまんなか
-		l.rotation = Vector3(deg_to_rad(-TILT), 0, 0)   # 看板（-Z）へ、斜め下に向ける
+		l.rotation = Vector3(deg_to_rad(-TILT), sx * deg_to_rad(TOWARD), 0)   # 看板（-Z）の真ん中の側へ、斜め下に向ける
 		root.add_child(l)
 		_lights.append(l)
 

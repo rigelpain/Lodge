@@ -65,6 +65,7 @@ func _run() -> void:
 		if h == 12.0:
 			await _shot("close_1200", board, -2.2, 3.5)
 	await _shot("side_2200", board, -7.0, 9.0)
+	await _shot("far_2200", board, 0.0, 18.0)
 	await _shot("close_2200", board, -2.2, 3.5)
 	# 灯りを消した夜（比べる絵）
 	lamps.set_process(false)
