@@ -154,13 +154,13 @@ def craft_machine(name="craft_machine"):
     mv = lambda key, pivot, tris=400: Mover(name, key, pivot, root, tris)   # noqa: E731
     # 作業台: 天板と、ロクロの脚、足踏みの板。台は動かないが、本体と分けて焼く
     # （フェルトの胴と同じ組で減らすと、木の三角の取り分が少なすぎて天板や足踏みが消えていた）
-    TZ = 0.85
+    TZ = 0.65   # 天板の高さ（2026-11-07 代表「ミシン台の高さが高いかも、机もう少し下げてほしい」で 0.85 から下げた）
     table = mv("table", (0, 0, 0), tris=900)
     tw = table.m("wood")
     bmesh.ops.create_cube(tw.bm, size=1.0, matrix=Matrix.Translation((0, 0, TZ - 0.03)) @ Matrix.Diagonal((2.8, 1.2, 0.06, 1)))
     for x in (-1.3, 1.3):
         for y in (-0.5, 0.5):
-            C.lathe(tw, [(0.035, 0.0), (0.05, 0.05), (0.04, 0.2), (0.055, 0.4), (0.04, 0.6), (0.05, TZ - 0.06)], 12)
+            C.lathe(tw, [(0.035, 0.0), (0.05, 0.05), (0.04, TZ * 0.24), (0.055, TZ * 0.47), (0.04, TZ * 0.71), (0.05, TZ - 0.06)], 12)
             C.place(tw, len(tw.bm.verts) - 12 * 6 - 2, Matrix.Translation((x, y, 0)))
     pedal = mv("pedal", (0, 0.05, 0.12))
     bmesh.ops.create_cube(pedal.m("wood").bm, size=1.0, matrix=Matrix.Translation((0, 0.05, 0.12)) @ Matrix.Rotation(-0.2, 4, "X")
