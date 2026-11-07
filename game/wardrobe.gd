@@ -4,7 +4,7 @@ extends Node3D
 ## 案の絵と形の台本は design/dye-wardrobe/）。人形の高さを見て F で人形を選び直す画面（wardrobe_ui.gd）、桶を見下ろして F で服を染める画面（dye_vat.gd）。
 ## いま自分が着ている人形のハンガーは空になる（その人形を着て出ている、と輪を見ればわかる。文字は出さない）。
 ## 掛かった人形は、輪の下で 12 コマで少し揺れる。人形の glb は重いので、あなたが近づいて（NEAR_LOAD）から掛ける。
-## 人が近づくと、人形は腰の輪に沿って 4 周して止まり、回っているあいだは遠心力で足が外へ持ち上がる。落ち着いてから長い布が液から昇る（dress_form_cloth.gd）。
+## 人が近づくと、人形は腰の輪に沿って 2 周して止まり、回っているあいだは遠心力で足が外へ持ち上がる。回転の終わりに長い布が液から昇る（dress_form_cloth.gd）。
 ## 遠くでは人形を動かさない。
 ## 置き方は main.gd（ロッジの 1 階の南西の隅、紙細工屋さんのテントの南どなり）。この節の FRONT（+Z）が人台の正面。後ろは長い布
 
@@ -26,17 +26,17 @@ const NEAR_LOAD := 30.0      # あなたがこの距離まで来たら、人形�
 const FRONT := Vector3.BACK  # 人台の正面（この節の座標）。ハンガーの節の +Z は、それぞれ外向き
 const SENSE_R := 4.5         # 人台の真ん中からこの距離に人が来ると、人形が回り、長い布と染台の布が昇る (m)。桶の縁から約 2.6 m、F が届く距離（REACH）の 1 m 外。
                              # 2026-11-07 代表「トルソーの検知範囲広いかも。もっと近くで動き出すの」で 8 m から狭めた
-const SPIN_TURNS := 4        # 来るたびに回る数（2026-11-07 代表「もっと勢いよく4週回って」）
-const SPIN_ACCEL := 0.05     # 人形の輪: 勢いの増え方・減り方（コマごと、rad）
-const SPIN_EASE := 0.14      # 人形の輪: 止まる所へ寄せる強さ
-const SPIN_TOP := 0.5        # 人形の輪: いちばん速いとき（コマごと、rad。1 周約 1 秒）
+## 人形が回り、長い布が昇り、染台の布が垂れるまで、ぜんぶで 3 秒に収める（2026-11-07 代表「ながいな。3秒でモーション完了するようにして。2週でも3週でもいいから」）
+const SPIN_TURNS := 2        # 来るたびに回る数
+const SPIN_ACCEL := 0.12     # 人形の輪: 勢いの増え方・減り方（コマごと、rad）
+const SPIN_TOP := 0.8        # 人形の輪: いちばん速いとき（コマごと、rad。1 周約 0.65 秒）。人形の間隔 0.63 rad の近くは、12 コマでは止まって見えるので避ける
 const GRAVITY := 9.8
 const FLING_MAX := 1.3       # 遠心力で足が持ち上がる限り (rad、約 75°)。腰の輪の外へ、足が頭より少し下まで上がる
-const FLING_K := 0.28        # 振れのばね（コマごと。回りが落ちると、足が落ちて少し揺れる）
-const FLING_D := 0.68
-const CLOTH_WAIT := 0.35     # 人形の振れがこれより小さくなってから、長い布が昇る (rad)。足が布を突き抜けないように
+const FLING_K := 0.45        # 振れのばね（コマごと。回りが落ちると、足が落ちて少し揺れて収まる）
+const FLING_D := 0.4
+const CLOTH_LEFT := 3.4      # 輪の止まる所までこの角 (rad) になったら、長い布が昇り始める。布の先が人形の高さに届くころ、足が下りている
 const TRAIL := 0.5           # 回る速さのぶん、人形が後ろへ遅れる
-const TWIRL := 0.25          # 輪が 1 周するあいだに、人形がかぎのまわりで回る数
+const TWIRL := 0.5           # 輪が 1 周するあいだに、人形がかぎのまわりで回る数（2 周で 1 回）
 
 var player: Node3D           # main.gd が入れる
 var main: Node               # main.gd が入れる
@@ -202,7 +202,7 @@ func _process(dt: float) -> void:
 	if _sense_t <= 0.0:
 		_sense_t = Sense.CHECK
 		var now := Sense.nearest(main, self, SENSE_R, BACK_LIMIT) != null
-		# 来るたびに 4 周。長い布がまだ上にあるときは、足が突き抜けるので回さない
+		# 来るたびに回す。長い布がまだ上にあるときは、足が突き抜けるので回さない
 		if now and not near and _rested and _cloth.sunk():
 			_goal = (roundf(_turn / TAU) + SPIN_TURNS) * TAU
 			_rested = false
@@ -216,7 +216,6 @@ func _process(dt: float) -> void:
 	_frame = f
 	_step_wheel()
 	var i := 0
-	var top := 0.0
 	var moving := false
 	for k in _hangers:
 		var pv: Node3D = _hangers[k][0]
@@ -227,32 +226,36 @@ func _process(dt: float) -> void:
 		var want := minf(atan(w * w * HOOP_R / GRAVITY), FLING_MAX)
 		_fling_v[i] = _fling_v[i] * FLING_D + (want - _fling[i]) * FLING_K
 		_fling[i] += _fling_v[i]
-		top = maxf(top, _fling[i])
-		if absf(_fling_v[i]) > 0.003 or absf(_fling[i] - want) > 0.003:
+		if absf(_fling_v[i]) > 0.02 or absf(_fling[i] - want) > 0.02:
 			moving = true
+		else:   # 見えない小ささの揺れは残さない
+			_fling[i] = want
+			_fling_v[i] = 0.0
 		# 外向きの +Z へ足を上げ、回る向きの後ろへ遅れる。かぎのまわりの回りは体の軸で（足の向きを変えない）
 		pv.basis = Basis(Vector3.RIGHT, -_fling[i] + 0.035 * sin(t * 1.3)) * Basis(Vector3.BACK, 0.025 * sin(t * 1.9) - v * TRAIL) \
 				* Basis(Vector3.UP, _turn * TWIRL + 0.12 * sin(t * 0.7))
 		i += 1
 	_rested = is_zero_approx(_speed) and not moving and _past.all(func(x): return is_zero_approx(x))
-	cloth_up = near and top < CLOTH_WAIT and absf(_speed) < 0.1
+	cloth_up = near and _goal - _turn < CLOTH_LEFT
 
 
-## 人形 i が感じる輪の速さ（i コマ前の速さ）
+## 人形 i が感じる輪の速さ（人形ごとに半コマずつ遅れる）
 func _speed_at(i: int) -> float:
-	return _past[mini(i, _past.size() - 1)] if not _past.is_empty() else 0.0
+	return _past[mini(i / 2, _past.size() - 1)] if not _past.is_empty() else 0.0
 
 
-## 輪を 12 コマごとに進める。来るたびに 4 周: 勢いをつけて回り、止まる所を少し行き過ぎて戻る
-## （2026-11-07 代表「もっと勢いよく4週回って、回ってる最中は遠心力で足のほうが外側に引っ張られて持ち上がる感じに」）
+## 輪を 12 コマごとに進める。来るたびに 2 周: 勢いをつけて回り、同じ減り方で止まる所に着く
+## （2026-11-07 代表「もっと勢いよく」「回ってる最中は遠心力で足のほうが外側に引っ張られて持ち上がる感じに」）
 func _step_wheel() -> void:
-	var want := clampf((_goal - _turn) * SPIN_EASE, -SPIN_TOP, SPIN_TOP)
+	var left := _goal - _turn
+	var want := minf(sqrt(2.0 * SPIN_ACCEL * absf(left)), SPIN_TOP) * signf(left)   # 同じ減り方でちょうど止まる速さ
 	_speed = move_toward(_speed, want, SPIN_ACCEL)
-	_turn += _speed
-	if absf(_goal - _turn) < 0.004 and absf(_speed) < 0.004:
+	if absf(left) <= absf(_speed) and absf(_speed) < SPIN_ACCEL * 3.0:   # このコマで着く: ぴたりと止める（コマの刻みで揺れ続けないように）
 		_turn = _goal
 		_speed = 0.0
+	else:
+		_turn += _speed
 	_wheel.rotation.y = _turn
 	_past.push_front(_speed)
-	if _past.size() > _hangers.size():
+	if _past.size() > _hangers.size() / 2 + 1:
 		_past.pop_back()

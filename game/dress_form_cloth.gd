@@ -19,11 +19,11 @@ const STRIPS := [[60.0, "A8532E"], [108.0, "C99A3A"], [156.0, "9E3B3A"], [204.0,
 const SPAN := 40.0           # 1 枚の幅（度）
 const ROWS := 24
 const COLS := 12             # 偶数。布の先をぎざぎざに切る
-const RISE := 22             # 1 枚が昇るコマ数
-const DELAY := 3             # 次の布が出るまでのコマ
-const SETTLE := 8            # 昇りきってから止まるまでのコマ
+const RISE := 10             # 1 枚が昇るコマ数
+const DELAY := 1             # 次の布が出るまでのコマ
+const SETTLE := 2            # 昇りきってから止まるまでのコマ
 const DEEP := 0.74           # 焼いた布と同じ色の深さに見えるよう、色を沈める
-const SPIRAL := 2.6          # 昇る途中の、先の巻きつき（rad）
+const SPIRAL := 2.2          # 昇る途中の、先の巻きつき（rad）
 const STAGES := RISE + DELAY * 4 + SETTLE
 
 var _mat: StandardMaterial3D
@@ -86,10 +86,9 @@ func sunk() -> bool:
 	return _stage == 0
 
 
-## 布 k の、コマ s での昇り具合（0 = 液の中、1 = 天井）。出だしは速く、上で少しゆるむ
+## 布 k の、コマ s での昇り具合（0 = 液の中、1 = 天井）。だんだん速く昇り、人形の高さに届くのを遅らせる
 static func _rise(k: int, s: int) -> float:
-	var p := clampf(float(s - k * DELAY) / RISE, 0.0, 1.0)
-	return 1.0 - (1.0 - p) * (1.0 - p)
+	return pow(clampf(float(s - k * DELAY) / RISE, 0.0, 1.0), 1.6)
 
 
 ## 布 k の先の巻きつき。昇るほどほどけ、昇りきった所で少し行き過ぎて戻る
