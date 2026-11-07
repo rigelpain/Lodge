@@ -3,6 +3,7 @@ extends CharacterBody3D
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
 const Flung := preload("res://flung.gd")
+const Rolled := preload("res://rolled.gd")
 const FpHands := preload("res://fp_hands.gd")
 const Emotes := preload("res://emotes.gd")
 const EmoteRing := preload("res://emote_ring.gd")
@@ -69,6 +70,16 @@ enum Mode { WALK, GRIP, RIDE, ROPE, SIT, DRUM }
 var sled: RigidBody3D
 var fling: Flung             # ソリに轢かれて吹き飛ぶ（flung.gd）
 var _fl_drop := 0.0          # 三人称のカメラの中心を下げている量（倒れているあいだ）
+var rolled: Rolled           # 転がる大玉に取り込まれる（rolled.gd）
+var ball_pushed: RigidBody3D # いま押している大玉（big_ball.gd）。押していなければ null。通信でホストの画面のあなたの体が同じに押す（net.gd）
+var ball_push_dir := Vector3.ZERO   # 大玉を押す向き（水平、長さが強さ）
+var _push_keep := 0.0        # 大玉から体が少し離れても、押す姿のままでいる残り (s)
+var _seed_ok := false        # 雪玉を丸めはじめてから F を押し続けている（大玉の種にする。2026-11-07 代表「Ctrl+F を長押し」）
+const PUSH_REACH := 0.3      # 大玉の面からこの距離まで寄ると、当たっているとして押す (m)
+const PUSH_MAGNET := 8.0     # 押しているあいだ、体が大玉の面へ吸い付く速さ（1/s）
+const PUSH_FACE := 0.35      # 歩く向きが大玉の方へこれだけ向いていれば押す（向きの合い具合）
+const SEED_FRAME := 14       # 丸めている身ぶりのこのコマまで F を押し続けていたら、雪の上に置く（Emotes.MAKE_READY の手前）
+const SEED_AHEAD := 0.55     # 種を置く所: 足もとから体の向きへ (m)
 var cam: Camera3D
 var hands: Array[Node3D] = []
 var doll: Doll               # 自分の体（笠と千代紙の人形）。一人称には映さず、右上の映像と三人称と影に出る
@@ -207,6 +218,7 @@ var _sit_keys_free := false  # 座ってから、移動キーをいったん離�
 
 func _ready() -> void:
 	fling = Flung.new(self)
+	rolled = Rolled.new(self)
 	_col = CollisionShape3D.new()
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.35
@@ -386,7 +398,7 @@ func lock_first(on: bool) -> void:
 
 
 func _apply_third() -> void:
-	third = _third_want and not fp_locked
+	third = rolled.active() or (_third_want and not fp_locked)   # 大玉の中にいるあいだは、大玉の三人称（2026-11-07 代表）
 	cam.cull_mask = ((1 << 0) | (1 << 1) | (1 << 3) if third else (1 << 0) | (1 << 2) | (1 << 3)) | (1 << 4) | (1 << 7)   # 層 8 は太陽
 
 
@@ -405,8 +417,10 @@ func _unhandled_input(e: InputEvent) -> void:
 		_pan_hand(e.delta)
 	elif e is InputEventMagnifyGesture and not menu_open:
 		_pinch(e.factor)
-	elif fling.active() and (e is InputEventMouseButton and e.pressed and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or e is InputEventKey and e.pressed and e.physical_keycode != KEY_C):
-		pass   # 吹き飛んでいるあいだは、見回す・視点を替えるだけ
+	elif rolled.active() and e is InputEventKey and e.pressed and not e.echo and e.physical_keycode == KEY_SPACE:
+		rolled.kick()   # 大玉の中で暴れる（連打で崩す）
+	elif (fling.active() or rolled.active()) and (e is InputEventMouseButton and e.pressed and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED or e is InputEventKey and e.pressed and e.physical_keycode != KEY_C):
+		pass   # 吹き飛んでいる・大玉の中にいるあいだは、見回す・視点を替えるだけ
 	elif e is InputEventMouseButton and e.pressed:
 		if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN, MOUSE_BUTTON_WHEEL_LEFT, MOUSE_BUTTON_WHEEL_RIGHT]:
 			var step := -1 if e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_LEFT] else 1
@@ -848,6 +862,7 @@ func _physics_process(dt: float) -> void:
 
 	if mode == Mode.WALK:
 		_pick_sled()
+	_check_rolled()
 	_check_run_over()
 	match mode:
 		Mode.RIDE:
@@ -861,7 +876,11 @@ func _physics_process(dt: float) -> void:
 			_walk(dt, true)
 			_keep_above_ground(FALL_NET)
 		Mode.WALK:
-			if fling.active():
+			if rolled.active():
+				rolled.step(dt)
+				if not rolled.active():
+					_apply_third()   # 玉が消えていて、出てきた
+			elif fling.active():
 				fling.step(dt)
 			else:
 				_walk(dt, false)
@@ -882,7 +901,7 @@ func _physics_process(dt: float) -> void:
 ## 動いているソリに当たったら吹き飛ぶ（flung.gd）。乗っている・座っている人は飛ばない。つかんでいるソリには飛ばされない（引きずられる）。
 ## 別のソリに当たったら、持っているソリや紐から手を離して飛ぶ
 func _check_run_over() -> void:
-	if mode != Mode.WALK and mode != Mode.GRIP and mode != Mode.ROPE:
+	if rolled.active() or (mode != Mode.WALK and mode != Mode.GRIP and mode != Mode.ROPE):
 		return
 	var hit := fling.find_hit(sled if mode == Mode.GRIP else null)
 	if hit.is_empty():
@@ -898,6 +917,123 @@ func _check_run_over() -> void:
 	_eating = false
 	_fall_v = 0.0
 	fling.start(hit)
+
+
+## 速く転がる大玉に当たったら、取り込まれる（rolled.gd）。吹き飛ぶのと同じく、持っているソリや紐から手を離す。視点は大玉の三人称になる
+func _check_rolled() -> void:
+	if rolled.active() or fling.active() or (mode != Mode.WALK and mode != Mode.GRIP and mode != Mode.ROPE):
+		return
+	var hit := rolled.find_hit()
+	if hit.is_empty():
+		return
+	if mode != Mode.WALK:
+		let_go()
+	if pointing:
+		_stop_point()
+	if hands_name != "":
+		set_height("")
+	peek_stop()
+	_winding = false
+	_eating = false
+	_fall_v = 0.0
+	ball_pushed = null
+	rolled.start(hit)
+	_apply_third()
+
+
+## 入っていた大玉が崩れた（emotes.gd が出来事 ball_break で呼ぶ）: 放り出されて飛ぶ（flung.gd）。視点は選んでいたものへ戻る
+func ball_out() -> void:
+	if not rolled.active():
+		return
+	rolled.out()
+	_apply_third()
+
+
+## 体を当てて歩くと、大玉を押す（big_ball.gd。2026-11-07 代表「当たれば押す感じで、ちょっと吸い付いてほしいのと、押してる間は手を雪玉に伸ばしてほしい」）。
+## 大玉の面から PUSH_REACH の内で、歩く向きが玉のほうを向いていれば押す。押す向きは体から玉のまんなかへ（横へ歩くと玉のまわりを回って向きを変えられる）。
+## 押しているあいだは、体が玉の面へ吸い付く（玉が少し先へ転がっても、離れずについて行く）
+func _push_ball(dt: float, dir: Vector3) -> void:
+	var was := ball_pushed
+	ball_pushed = null
+	ball_push_dir = Vector3.ZERO
+	_push_keep = maxf(0.0, _push_keep - dt)
+	if crouching and not _em.is_empty() and _em.kind == "make_ball":
+		return
+	if not gloves_on():
+		return   # 大玉を押すのも、雪玉ころがしの手袋をはめているときだけ
+	var me := global_position
+	var best: RigidBody3D = null
+	var best_gap := PUSH_REACH
+	for b in get_tree().get_nodes_in_group("big_balls"):
+		if b.broken:
+			continue
+		var gap := _ball_gap(b, me)
+		if b == was:
+			gap -= 0.15   # 押している玉は、少し離れても押し続ける
+		if gap < best_gap:
+			best_gap = gap
+			best = b
+	if best == null:
+		return
+	var to := best.global_position - me
+	to.y = 0.0
+	if to.length() < 0.01:
+		return
+	to = to.normalized()
+	var k := dir.dot(to) if dir != Vector3.ZERO else 0.0
+	if k < PUSH_FACE:
+		if best == was and _push_keep > 0.0:
+			ball_pushed = best   # 押す手は、すぐには下ろさない（向きを変えるあいだ）
+		return
+	_push_keep = 0.25
+	ball_pushed = best
+	ball_push_dir = to * k
+	best.push(ball_push_dir, damp_k(true), glove_grade())   # 手袋の段で押す力が違う（gloves.gd）
+	# 吸い付き: 面からの離れを縮める（玉の向こうへは行かない。当たりがある）
+	var gap := _ball_gap(best, me)
+	if gap > 0.02:
+		var pull := minf(gap - 0.02, (gap - 0.02) * (1.0 - exp(-PUSH_MAGNET * dt)) + 0.3 * dt)
+		global_position += to * pull
+
+
+## 手袋をはめていなければ、大玉に当たってもそれ以上は玉の方へ進まない（体で押し込んで、物理で玉が動いてしまわないように）
+func _ball_block() -> void:
+	for b in get_tree().get_nodes_in_group("big_balls"):
+		if b.broken or _ball_gap(b, global_position) > 0.08:
+			continue
+		var to: Vector3 = b.global_position - global_position
+		to.y = 0.0
+		if to.length() < 0.01:
+			continue
+		to = to.normalized()
+		var into := velocity.x * to.x + velocity.z * to.z
+		if into > 0.0:
+			velocity.x -= to.x * into
+			velocity.z -= to.z * into
+
+
+## 雪玉ころがしの手袋をはめているか（craft.gd の gloves。2026-11-08 代表「雪玉ころがしは手袋を買って装備したらできるようにしましょう」）。
+## はめていれば、しゃがんで F を押し続けて大玉の種を置け、大玉を押せる
+func gloves_on() -> bool:
+	return craft != null and craft.gloves_on(id)
+
+
+## はめている手袋の段（gloves.gd。はめていなければ ""）
+func glove_grade() -> String:
+	return craft.glove_grade(id) if craft else ""
+
+
+## 体（カプセル）の面から大玉の面までの水平の離れ (m)。上下にずれていれば（玉の上・下）遠いとする
+func _ball_gap(b: RigidBody3D, me: Vector3) -> float:
+	var c: Vector3 = b.global_position
+	var r: float = b.r
+	var y := clampf(c.y, me.y + Rolled.RADIUS, me.y + Rolled.TALL - Rolled.RADIUS)
+	var dy := absf(c.y - y)
+	var reach := r + Rolled.RADIUS
+	if dy >= reach:
+		return INF
+	var flat := Vector2(c.x - me.x, c.z - me.z).length()
+	return flat - sqrt(reach * reach - dy * dy)
 
 
 ## 乗っているソリが木にぶつかって、放り投げられる（ホストが配った向きと強さで。flung.gd・emotes.gd）。米袋は帯に戻す（空の袋を坂に残さない）
@@ -935,7 +1071,9 @@ func _pose_doll() -> void:
 	doll.drum_fit = 1.0
 	doll.sled = sled
 	doll.grip = handle if mode == Mode.GRIP else Vector3.INF
-	doll.effort = pushing or pulling
+	doll.effort = pushing or pulling or ball_pushed != null
+	doll.ball_at = ball_pushed.global_position if ball_pushed and mode == Mode.WALK else Vector3.INF
+	doll.ball_r = ball_pushed.r if ball_pushed else 0.0
 	doll.dragged = mode == Mode.GRIP and sled.is_dragged(self)
 	doll.airborne = mode == Mode.WALK and not is_on_floor()
 	doll.facing = (sled.global_basis * push_dir) if mode == Mode.GRIP else Vector3.ZERO
@@ -986,7 +1124,9 @@ func _pose_doll() -> void:
 	holding_ball = ball_count() > 0 and held().is_empty() and hub.can_throw(id)   # 雪合戦の対決で投げたばかりなら、次の雪玉はまだ袖に
 	doll.holding_ball = holding_ball
 	doll.sleeve_balls = ball_count() - (1 if holding_ball else 0)
-	doll.crouch = crouching
+	doll.gloves = glove_grade()
+	_fp_gloves(doll.gloves)
+	doll.crouch = crouching or (ball_pushed != null and ball_pushed.global_position.y + ball_pushed.r < global_position.y + 0.8)   # 小さな玉は、しゃがんで押す
 	doll.point = point_at
 	if craft:
 		# 帯の丸めた米袋（出していなければ下げている）
@@ -998,6 +1138,7 @@ func _pose_doll() -> void:
 		doll.lantern = craft.lantern(id).get("look", "")
 		doll.lantern_lit = craft.lamp_on(id)
 	fling.pose()
+	rolled.pose()
 
 
 ## 右クリックで指さしを入れたり切ったりする。入れているあいだ、腕はいま見ている先（画面のまんなかが当たる所）を追う。
@@ -1130,8 +1271,12 @@ func _walk(dt: float, with_rope: bool) -> void:
 			_step_up(dir)
 	else:
 		velocity.y -= (GRAVITY if velocity.y > 0.0 else FALL_GRAVITY) * dt
+	if not gloves_on():
+		_ball_block()
 	var was_air := not is_on_floor()
 	move_and_slide()
+	if not with_rope:
+		_push_ball(dt, dir)
 	if was_air and is_on_floor() and _fall_v > 1.5:
 		# 着いた: 下向きの速さに応じて、一人称の目が少し沈んで戻る（膝で受け止める。人形の膝は doll.gd、音は audio.gd）
 		_land_t = 0.0
@@ -1259,11 +1404,15 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	_dip_shown = 0.0   # 着地の沈みは一人称だけ（三人称は人形の膝で見せる）
 	_fl_drop = move_toward(_fl_drop, fling.pivot_drop(), dt * 3.0)
 	var pivot := Vector3(0, 1.6 - _fl_drop, 0)
-	if mode == Mode.DRUM:
+	var dist := cam_dist
+	if rolled.active():
+		pivot = to_local(rolled.cam_pivot())   # 大玉の中: 大玉を見る。大きい玉ほど離れる
+		dist = maxf(cam_dist, rolled.cam_min_dist())
+	elif mode == Mode.DRUM:
 		pivot = to_local(_drum.drum_center())   # 乾燥機の中: 胴の真ん中を見る（カメラは戸の前へ出る）
 	elif mode == Mode.SIT and _sit_stage > 0:
 		pivot.y -= (doll.eye_point(false).y - doll.eye_point(true).y) * (1.0 if _sit_stage == 2 else 0.55)   # 座った目の高さに合わせて下げる
-	var offset := Vector3(0, CAM_RISE, cam_dist + RIDE_CAM_PUSH * ride_fov / RIDE_FOV_MAX).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
+	var offset := Vector3(0, CAM_RISE, dist + RIDE_CAM_PUSH * ride_fov / RIDE_FOV_MAX).rotated(Vector3.RIGHT, clamp(_pitch, -0.6, 1.0))
 	var pivot_w := to_global(pivot)
 	_gaze_from = pivot_w
 	var orbit_w := to_global(pivot + offset)
@@ -1310,12 +1459,40 @@ func _cam_clear(from: Vector3, ray: Vector3) -> float:
 	q.transform = Transform3D(Basis(), from)
 	q.motion = ray
 	q.exclude = [get_rid()]
-	if mode == Mode.DRUM:
+	if rolled.active() and is_instance_valid(rolled.ball):
+		q.exclude = [get_rid(), rolled.ball.get_rid()]   # 大玉の中から、玉の外へ
+	elif mode == Mode.DRUM:
 		q.exclude = [get_rid(), _drum.body_rid()]   # 乾燥機の中から、戸の外へ
 	elif space.get_rest_info(q).size() > 0:   # 頭がもう何かに触れている（座ったソリなど）: ソリは外して測り直す
 		q.exclude = [get_rid(), sled.get_rid()]
 	var r := space.cast_motion(q)
 	return maxf(0.3, ray.length() * r[0] - 0.05)
+
+
+## 一人称の手に、はめている雪玉ころがしの手袋をかぶせる（段が替わったら作り直す。"" なら取る）。紙のミトンは _pose_hands で隠す
+var _fp_glove_grade := ""
+
+func _fp_gloves(fabric: String) -> void:
+	if fabric == _fp_glove_grade and (fabric == "" or (not hands.is_empty() and hands[0].get_node_or_null("Glove") != null)):
+		return
+	_fp_glove_grade = fabric
+	for hh in hands:
+		var old := hh.get_node_or_null("Glove")
+		if old:
+			hh.remove_child(old)
+			old.queue_free()
+		if fabric == "":
+			hh.get_node("Mitten").visible = true
+			hh.get_node("MittenThumb").visible = true
+			continue
+		var side := int(hh.get_meta("side"))
+		var g := preload("res://gloves.gd").mitten(fabric, FP_GLOVE_HAND, side, 1 << 2)
+		g.name = "Glove"
+		g.transform = Transform3D(Basis(Vector3.RIGHT, -PI / 2 - 0.15), Vector3(0, -0.005, -0.035))   # 指先（+y）を腕の先（-z）へ。袖口から前へ出す
+		hh.add_child(g)
+
+
+const FP_GLOVE_HAND := 0.12    # 一人称の手袋の手の長さ (m)。紙のミトン（長さ 0.13）より太く、袖口からはっきり出る
 
 
 func _pose_hands(dt: float) -> void:
@@ -1453,8 +1630,11 @@ func _place_shapes_fp(em: Array) -> void:
 	# 元のキャラの手は一時的に消してほしい」。指さしでは、奥へ伸ばした手形のこぶしを手前のミトンがふさぐのでもあった）
 	for hh in hands:
 		var mitt: bool = want[int(hh.get_meta("side"))] == ""
-		hh.get_node("Mitten").visible = mitt
-		hh.get_node("MittenThumb").visible = mitt
+		var gl := hh.get_node_or_null("Glove")
+		hh.get_node("Mitten").visible = mitt and gl == null   # 雪玉ころがしの手袋をはめていれば、紙のミトンの代わりに毛糸の手袋
+		hh.get_node("MittenThumb").visible = mitt and gl == null
+		if gl:
+			gl.visible = mitt
 	# 右手に持った物（雪玉・持ち物）も、手と一緒に隠す。残すと、手のない所に物だけ浮いて手形に重なる（人形も手ごと隠れる）
 	if want[1] != "":
 		_ball_fp.visible = false
@@ -1536,7 +1716,7 @@ func available() -> Dictionary:
 		"wa": true, "un": true, "nn": true, "huh": true, "oi": true,
 		"breath": not busy,
 		"clap": not busy and hands_name == "high_both",
-		"make_ball": not busy and mode == Mode.WALK and ball_count() < Emotes.BALL_MAX and crouching,
+		"make_ball": not busy and mode == Mode.WALK and crouching,   # 持てる数がいっぱいでも、押し続けて大玉の種にできる
 	}
 
 
@@ -1870,8 +2050,8 @@ func emote(kind: String) -> void:
 
 ## その場でする身ぶりの途中か（歩けない、つかめない）
 func rooted() -> bool:
-	if fling.active():
-		return true   # 吹き飛んでいる途中
+	if fling.active() or rolled.active():
+		return true   # 吹き飛んでいる途中・大玉の中
 	if peek != "":
 		return true   # 双眼鏡をのぞいている
 	if Doll.frame_index() < busy_until:   # 裁ちばさみで糸を切っているあいだ
@@ -1887,8 +2067,10 @@ func _em_k() -> int:
 
 
 func _on_emote(ev: Dictionary) -> void:
-	if ev.get("who", -1) != id:
+	if ev.get("who", -1) != id or ev.kind in Emotes.BALL_EVENTS:
 		return
+	if ev.kind == "make_ball":
+		_seed_ok = Input.is_physical_key_pressed(KEY_F)
 	if ev.kind == "hands":
 		hands_name = ev.hands
 		doll.play(ev)
@@ -1948,6 +2130,7 @@ func _update_emote(dt: float) -> void:
 	if _winding:
 		_wind_t += dt
 	crouching = mode == Mode.WALK and Input.is_physical_key_pressed(KEY_CTRL) and not menu_open
+	_seed_step()
 	# 滑りながら高い両手のひらにすると、ひとりでに「ワ〜」
 	var sliding := mode == Mode.RIDE and sled.linear_velocity.length() > 2.5
 	if hands_name == "high_both" and sliding and not _auto_wa:
@@ -1973,6 +2156,29 @@ func _update_emote(dt: float) -> void:
 	if not _em.is_empty() and _em.kind == "huh" and k >= 2 and k < 14:
 		roll = -0.12 * (1.0 if k < 10 else (14 - k) / 4.0) * (1.0 if bob_enabled else 0.4)
 	_cam_roll = lerpf(_cam_roll, roll, minf(1.0, dt * 10.0))
+
+
+## しゃがんで F を押し続けたまま雪玉ができる手前まで来たら、雪の上に置いて大玉の種にする（big_ball.gd・emotes.gd の roll_seed）
+func _seed_step() -> void:
+	if not _seed_ok:
+		return
+	if not gloves_on():
+		_seed_ok = false   # 雪玉ころがしの手袋をはめていなければ、ふつうに雪玉を丸める
+		return
+	if not Input.is_physical_key_pressed(KEY_F) or _em.is_empty() or _em.kind != "make_ball" or menu_open:
+		_seed_ok = false
+		return
+	if _em_k() < SEED_FRAME:
+		return
+	_seed_ok = false
+	var fwd := -global_basis.z
+	fwd.y = 0.0
+	var at := global_position + fwd.normalized() * SEED_AHEAD
+	var q := PhysicsRayQueryParameters3D.create(at + Vector3.UP * 1.0, at + Vector3.DOWN * 1.5)   # 足もとの前の雪面
+	q.exclude = [get_rid()]
+	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	at.y = hit.position.y if not hit.is_empty() else get_parent().height(at.x, at.z)
+	hub.send({"kind": "roll_seed", "who": id, "point": at})
 
 
 ## 身ぶりの一人称の視点（x 上下の向き、y 左右の向き、z 高さ）。人形の頭と同じ形を、小さく
@@ -2950,6 +3156,10 @@ func _load_tag() -> bool:
 		if cf.has_section_key("lantern", "wear"):
 			var look := String(cf.get_value("lantern", "wear"))
 			craft.send({"kind": "equip", "who": id, "gear": "lantern", "index": craft.lantern_index(id, look) if look != "" else -1})
+	if cf.has_section("gloves"):   # 雪玉ころがしの手袋: 持っている段を戻してから、はめていたものをはめる
+		for f in cf.get_value("gloves", "owned", []):
+			craft.send({"kind": "gloves_own", "who": id, "grade": String(f)})
+		craft.send({"kind": "equip", "who": id, "gear": "gloves", "index": int(cf.get_value("gloves", "wear", -1))})
 	if cf.has_section("pals"):   # 頭・肩の小物とミニオン: 持っている物を戻してから付ける
 		for k in cf.get_value("pals", "owned", []):
 			craft.send({"kind": "pal_own", "who": id, "key": String(k)})
@@ -3022,6 +3232,9 @@ func _tag_hold_step(dt: float) -> void:
 
 ## 自分の名札を保存する（装備の画面で変えたとき。次に起動しても同じ名札）。名前とキャラの色も同じ帳面に
 func save_tag() -> void:
+	var a = get_parent().get("args")
+	if a is Dictionary and a.has("no-save"):
+		return   # 確かめの道具（--no-save）: 遊ぶ人の保存を書き換えない
 	var cf := ConfigFile.new()
 	cf.set_value("profile", "name", craft.name_of(id))
 	cf.set_value("profile", "color", int(craft.colors.get(id, 0)))
@@ -3044,6 +3257,11 @@ func save_tag() -> void:
 		looks.append(String(l.get("look", "")))
 	cf.set_value("lantern", "owned", looks)
 	cf.set_value("lantern", "wear", String(craft.lantern(id).get("look", "")))
+	var gl: Array = []   # 雪玉ころがしの手袋（gloves.gd）: 持っている段と、はめている番号
+	for g in craft.gloves.get(id, []):
+		gl.append(String(g.get("grade", "")))
+	cf.set_value("gloves", "owned", gl)
+	cf.set_value("gloves", "wear", craft.gear_index(id, "gloves"))
 	cf.set_value("pals", "owned", craft.pals_owned.get(id, []))   # 頭・肩の小物とミニオン（pals.gd）
 	for slot in craft.pals_wear.get(id, {}):
 		cf.set_value("pals", slot, craft.pals_wear[id][slot])

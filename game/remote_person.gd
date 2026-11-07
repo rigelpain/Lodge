@@ -2,6 +2,7 @@ extends CharacterBody3D
 
 const Doll := preload("res://doll.gd")
 const SackLook := preload("res://sack_look.gd")
+const Rolled := preload("res://rolled.gd")
 ## 通信でつないでいるほかの人の体（net.gd が置く）。動きはその人の画面が決め、ここは届いた姿を写す。
 ## ソリには、あなたや仲間と同じ口（take_handle・push・mount・lean・pull_rope）でかかわる。
 ## 力をかけるのはどの画面でも同じに呼ぶが、効くのはホストの画面だけ（つなぐ側のソリは、ホストのソリの姿を写しているので）。
@@ -225,8 +226,18 @@ func _physics_process(dt: float) -> void:
 				global_position = global_position.lerp(want, 1.0 - exp(-PULL * dt))
 			if mode == Mode.ROPE and fresh:
 				pulling = sled.pull_rope(rope_hand(), damp_k()) > 0.0
+			var b := _ball_pushed()
+			if b and fresh:
+				b.push(_s.bp[1], damp_k(), craft.glove_grade(id) if craft else "")   # 転がす大玉を押す（効くのはホストの画面だけ。手袋の段で押す力が違う。big_ball.gd）
 	rotation.y = lerp_angle(rotation.y, _yaw, 1.0 - exp(-PULL * dt))
 	_pose_doll()
+
+
+## その人が押している大玉（届いた "bp" の番号から。なければ null）
+func _ball_pushed() -> RigidBody3D:
+	if not _s.has("bp") or hub == null or mode != Mode.WALK:
+		return null
+	return hub.big_ball(int(_s.bp[0]))
 
 
 ## 人形に、その人の画面の人形と同じ姿勢を伝える（姿勢は人形が 12 コマで刻む）
@@ -276,6 +287,14 @@ func _pose_doll() -> void:
 			doll.spin = pl.spin
 			doll.spin_at = _drum.drum_center()
 			doll.flop = pl.get("flop", {})
+	doll.gloves = craft.glove_grade(id) if craft else ""   # 雪玉ころがしの手袋（gloves.gd。はめているかは工房の配り役が知っている）
+	var bp := _ball_pushed()   # 転がす大玉を押している: 両手を玉の面に
+	doll.ball_at = bp.global_position if bp else Vector3.INF
+	doll.ball_r = bp.r if bp else 0.0
+	var ri: Array = hub.rolled_in(id) if hub else []
+	doll.rolled = not ri.is_empty()
+	if doll.rolled:   # 大玉に取り込まれている: 出来事 ball_in で覚えた所に、この画面の大玉と一緒に回す（rolled.gd）
+		Rolled.place(doll, ri[0], ri[1], ri[2])
 	# 雪玉・帯の米袋・ランタンは、配り役（ホストが決めて配った値）から。player.gd の _pose_doll と同じ
 	if hub:
 		var n: int = hub.balls_of(id)

@@ -1131,6 +1131,9 @@ const EMOTE_SOUNDS := {
 	"oi": [[2, "voice_oi", 3, -1.0, 1.0]],    # 遠くまで届く（_emote_sound で、届く距離を長く）
 	"hit": [[0, "voice_surprise", 3, -4.0, 1.0]],   # 雪玉が当たって、わっ
 	"flung": [[0, "voice_surprise", 3, -2.0, 1.08], [0, "till_snow", 3, -8.0, 0.8]],   # ソリに轢かれて、わっ（flung.gd）
+	"ball_in": [[0, "voice_surprise", 3, -2.0, 1.15], [0, "till_snow", 3, -5.0, 0.6]],   # 転がる大玉に取り込まれて、わっ（rolled.gd）
+	"ball_kick": [[0, "felt_pat", 3, -9.0, 0.55]],   # 大玉の中で暴れる: こもった、ぼふっ
+	"roll_seed": [[0, "till_snow", 3, -14.0, 1.3]],  # 丸めた雪玉を雪の上に置く
 	"whiff": [[2, "swish", 2, -10.0, 1.0]],
 	"throw": [[0, "swish", 2, -8.0, 1.15]],
 	"clap": [[2, "felt_pat", 3, -12.0, 1.3], [6, "felt_pat", 3, -12.0, 1.25], [10, "felt_pat", 3, -12.0, 1.3], [14, "felt_pat", 3, -12.0, 1.2]],
@@ -1162,6 +1165,11 @@ func _on_emote(ev: Dictionary) -> void:
 			if ev.hands == "" or who == null:
 				return
 			_emote_sound(ev, 0, "swish", 2, -16.0, rng.randf_range(1.3, 1.5), who.global_position + Vector3.UP * 1.0, is_self)
+			return
+		"ball_break":   # 転がす大玉が崩れた（big_ball.gd）: 大きいほど低く、どさっと
+			var low := clampf(0.75 - float(ev.get("r", 0.5)) * 0.12, 0.42, 0.75)
+			_emote_sound(ev, 0, "snow_splat", 3, 0.0, rng.randf_range(low, low + 0.06), ev.point, false, "", "", false)
+			_emote_sound(ev, 0, "till_snow", 3, -2.0, rng.randf_range(low, low + 0.1), ev.point, false, "", "", false)
 			return
 		"crash":   # ソリが雪の塊や木にぶつかった: 雪がどさっと
 			_emote_sound(ev, 0, "snow_splat", 3, 0.0, rng.randf_range(0.5, 0.6), ev.point, false, "", "", false)

@@ -68,6 +68,9 @@ func receive(pid: int, m: Array) -> void:
 		"sled":
 			if from_host:
 				_sled(m[1], m[2], m[3], m[4])
+		"bigball":
+			if from_host:
+				_bigball(int(m[1]), m[2], m[3], m[4], float(m[5]))
 		"cpu":
 			if from_host:
 				_cpu(int(m[1]), m[2])
@@ -301,6 +304,19 @@ func _physics_process(dt: float) -> void:
 				t = 1.0 / (STILL_HZ if still else SLED_HZ)
 				_sleds.rpc("_in", ["sled", main.get_path_to(rb), rb.global_transform, rb.linear_velocity, rb.angular_velocity])
 			_sled_t[s] = t
+		# 転がす大玉（big_ball.gd）: ソリと同じ流れで、半径も
+		for b in get_tree().get_nodes_in_group("big_balls"):
+			if b.broken:
+				continue
+			var t: float = _sled_t.get(b, 0.0) - dt
+			if t <= 0.0:
+				var still: bool = b.linear_velocity.length() < 0.05 and b.angular_velocity.length() < 0.05
+				t = 1.0 / (STILL_HZ if still else SLED_HZ)
+				_sleds.rpc("_in", ["bigball", b.ball_id, b.global_transform, b.linear_velocity, b.angular_velocity, b.r])
+			_sled_t[b] = t
+		for k in _sled_t.keys():
+			if not is_instance_valid(k):
+				_sled_t.erase(k)
 
 
 ## 自分の姿（remote_person.gd の put が読む）。人形の姿勢は、自分の人形にいま入っている値をそのまま
@@ -316,6 +332,8 @@ func _my_state() -> Dictionary:
 			s["l"] = p.ride_lean
 		3:   # 紐
 			s["rh"] = p.rope_hand()
+	if p.ball_pushed and is_instance_valid(p.ball_pushed):   # 転がす大玉を押している（big_ball.gd）: 玉の番号と、押す向き（長さが強さ）
+		s["bp"] = [p.ball_pushed.ball_id, p.ball_push_dir]
 	return s
 
 
@@ -452,6 +470,15 @@ func _cpu(id: int, s: Dictionary) -> void:
 		cpus[id] = _add_body(id, "Cpu%d" % id)
 		main._add_pals(cpus[id])
 	cpus[id].put(s)
+
+
+## ホストの大玉の姿が届いた。まだない玉（あとから来た人）は、ここで置く
+func _bigball(id: int, at: Transform3D, lv: Vector3, av: Vector3, r: float) -> void:
+	var b: RigidBody3D = main.emotes.big_balls.get(id)
+	if b == null:
+		b = main.emotes._spawn_big({"ball": id, "point": at.origin - Vector3.UP * r, "r": r})
+	if is_instance_valid(b) and not b.broken:
+		b.net_put(at, lv, av, r)
 
 
 ## ホストのソリの姿が届いた

@@ -7,12 +7,14 @@ extends RefCounted
 ##   焚き火セット  品目・名前・値段・絵は campfire.gd（組む・燃える・乾かすも）
 ##   ペグ          品目（3 本の束）・名前・値段・絵は peg.gd（刺してソリを留めるのも）
 ##   双眼鏡        品目・名前・値段・絵は binoculars.gd（のぞくのは player.gd の peek）
+##   手袋          雪玉ころがしの手袋 3 段（毛糸・フェルト・革）。名前・値段・性能・絵は gloves.gd。持ち物の場所は使わず、装備に入る（craft.gd の buy）
 ## 品目を足すときも、ここに 1 行足し、絵を draw に足す（持ち物の列の絵も craft_icons.gd の item がここを呼ぶ）。
 
 const Icons := preload("res://hud_icons.gd")
 const Campfire := preload("res://campfire.gd")
 const Peg := preload("res://peg.gd")
 const Binoculars := preload("res://binoculars.gd")
+const Gloves := preload("res://gloves.gd")
 
 const SHELF := [
 	{"item": Campfire.ITEM, "price": Campfire.PRICE, "on": true},
@@ -20,6 +22,9 @@ const SHELF := [
 	{"item": Binoculars.ITEM, "price": Binoculars.PRICE, "on": true},
 	{"item": {"kind": "binoculars_far"}, "price": 500, "on": true},     # 値段は binoculars.gd の GRADES と同じ
 	{"item": {"kind": "binoculars_night"}, "price": 1000, "on": true},
+	{"item": {"kind": "gloves"}, "price": Gloves.GRADES["gloves"].price, "on": true},
+	{"item": {"kind": "gloves_felt"}, "price": Gloves.GRADES["gloves_felt"].price, "on": true},
+	{"item": {"kind": "gloves_leather"}, "price": Gloves.GRADES["gloves_leather"].price, "on": true},
 ]
 
 ## 確かめ用: true なら on でない品目も売る（--shelf-all。main.gd が入れる）
@@ -56,6 +61,8 @@ static func item_name(it: Dictionary) -> String:
 			return Peg.item_name(it)
 		"binoculars", "binoculars_far", "binoculars_night":
 			return Binoculars.item_name(it)
+		"gloves", "gloves_felt", "gloves_leather":
+			return Gloves.item_name(String(it.kind))
 	return ""
 
 
@@ -68,3 +75,5 @@ static func draw(ci: CanvasItem, it: Dictionary, a := 1.0) -> void:
 			Peg.icon(ci, it, a)
 		"binoculars", "binoculars_far", "binoculars_night":
 			Binoculars.icon(ci, a, String(it.kind))
+		"gloves", "gloves_felt", "gloves_leather":
+			Gloves.icon(ci, String(it.kind), a)

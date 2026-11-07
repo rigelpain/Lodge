@@ -187,6 +187,12 @@ func throw(ev: Dictionary) -> void:
 		_thru.append(t)
 
 
+## 崩れた大玉から放り出される（rolled.gd の out）。長く飛ぶので、木から放り投げられたときと同じく一人称の視点を穏やかに
+func toss(to: Vector3, out: float, up: float) -> void:
+	_launch(to, out, up)
+	_thrown = true
+
+
 ## ホストの画面のソリが呼ぶ: 乗っている一人ひとりの飛び方を決めて、出来事にして返す。v はぶつかる前の水平の速さ。
 ## 乗っている人を左右の扇に等分して並べ（だれがどこかは毎回変わる）、速さと高さもばらけさせる
 static func throw_events(s: RigidBody3D, v: Vector3, point: Vector3) -> Array:

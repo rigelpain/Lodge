@@ -116,6 +116,19 @@ var flung_dir := Vector3.ZERO   # 飛ぶ向き（世界、水平）
 var flung_spin := 0.0        # 飛んでいるあいだ 1 コマに回る量 (rad)
 var flung_n := Vector3.UP    # 倒れている所の雪の向き
 var flung_hops := 0          # 跳ねた回数（増えたら雪の粉を出す）
+var ball_at := Vector3.INF   # 押している大玉のまんなか（世界。big_ball.gd）。押していなければ INF。両手を玉の面に当てる
+var ball_r := 0.0            # その大玉の半径 (m)
+var rolled := false          # 大玉に取り込まれている（rolled.gd）。体ごと rolled_at に置く（玉の面に半分埋まって、玉と回る）
+var rolled_at := Transform3D()
+## 雪玉ころがしの手袋（gloves.gd）の段。"" ははめていない。はめていると、両手がその段の手袋になる（持ち主が毎フレーム入れる）
+var gloves := "":
+	set(v):
+		if v == gloves:
+			return
+		gloves = v
+		if skel:
+			_put_gloves()
+var _glove_nodes: Array = []
 var _tumble := 0.0           # いま体ごと回っている角 (rad)。コマで刻む。0 で立つ、π/2 で仰向け
 var _lay := 0.0              # 倒れている割合（0 立つ 〜 1 雪の上）。体の中心が雪の近くまで下がる
 var _lay_n := Vector3.UP     # 倒れている雪の向き（コマで刻む）
@@ -256,6 +269,7 @@ func _ready() -> void:
 	_order.sort_custom(func(a, b): return depth.call(a) < depth.call(b))
 	_make_breath()
 	_make_ball()
+	_put_gloves()
 	_make_stock()
 	_make_roll()
 	_lantern = Lantern.new(self)
@@ -378,6 +392,10 @@ func play(ev: Dictionary) -> void:
 	if ev.kind == "flung":
 		emote = {}   # 吹き飛ぶ姿勢は flung が決める（途中の身ぶりはやめる）
 		return
+	if ev.kind in ["roll_seed", "ball_in", "ball_kick", "ball_break"]:
+		if ev.kind == "ball_in":
+			emote = {}   # 大玉に取り込まれた（姿勢は rolled が決める）
+		return   # 大玉の出来事（emotes.gd の BALL_EVENTS）は身ぶりではない
 	if ev.kind == "breath_end":
 		if emote.get("kind", "") == "breath":
 			emote["until"] = int(ev.frame)   # 吐くのをやめる（少しで胸が戻る）
@@ -604,7 +622,8 @@ func _apply() -> void:
 	for side in [1, -1]:
 		var hd := _id("hand.R" if side > 0 else "hand.L")
 		if hd >= 0:
-			skel.set_bone_pose_scale(hd, Vector3.ONE * (HAND_TUCK if _palm_goal.has(side) else 1.0))
+			# 雪玉ころがしの手袋をはめていれば、紙の手を手袋の中へ縮める（手袋は GLOVE_TUCK で割って、元の大きさのまま）
+			skel.set_bone_pose_scale(hd, Vector3.ONE * (HAND_TUCK if _palm_goal.has(side) else (GLOVE_TUCK if gloves != "" else 1.0)))
 
 
 ## 座るときに腰を落とす量（骨の座標の空間）。腰の骨の付け根を座面から SIT_HIPS の所へ
@@ -1185,7 +1204,12 @@ func _physics_process(dt: float) -> void:
 		pos = rock_at + r * (pos - rock_at) + ax.cross(Vector3.UP).normalized() * (rock_roll * rock)
 	if drum_fit != 1.0:
 		b = b.scaled(Vector3.ONE * drum_fit)
-	global_transform = _flung_xform(b, pos) if _tumble != 0.0 or _lay > 0.0 else Transform3D(b, pos)
+	if rolled:
+		global_transform = rolled_at   # 大玉の面に半分埋まって、玉と一緒に回る（rolled.gd）
+		_tumble = 0.0
+		_lay = 0.0
+	else:
+		global_transform = _flung_xform(b, pos) if _tumble != 0.0 or _lay > 0.0 else Transform3D(b, pos)
 
 	# 歩みは進んだ道のりで刻む（足と地面のずれを小さく）
 	if _last == Vector3.INF:
@@ -1448,6 +1472,17 @@ func _pose() -> void:
 					_hold[1] = [self, to_local(rope_hand)]
 				if effort:
 					bend += 0.3
+			elif ball_at != Vector3.INF and flung == 0:
+				# 大玉を押している（big_ball.gd）: 両手を玉の面に当て、前のめりに踏ん張る。手は肩から見ていちばん近い玉の面に
+				for s in ["L", "R"]:
+					var sh := skel.global_transform * _head_of(_id("upper_arm." + s))
+					sh += global_basis.x * (0.12 if s == "R" else -0.12)
+					_hold[1 if s == "R" else 0] = [self, to_local(ball_at + (sh - ball_at).normalized() * ball_r)]
+				if effort and amp == 0.0:
+					var k := 1.0 if (_frame / 6) % 2 == 0 else -1.0
+					_turn_axis("thigh.L", X, 0.15 * k)
+					_turn_axis("thigh.R", X, -0.15 * k)
+				bend = maxf(bend, 0.35)
 
 	var si := sack_k("in")
 	if si >= 0 and act != Act.RIDE:
@@ -2547,6 +2582,34 @@ func _make_ball() -> void:
 	pivot.add_child(m)
 	_ball = pivot
 	_ball.visible = false
+
+
+## 両手に雪玉ころがしの手袋をかぶせる（gloves で替わる。外せば取る）。手の骨に付けるので、手形のワッペンで手を隠すときは一緒に隠れる
+func _put_gloves() -> void:
+	for n in _glove_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_glove_nodes.clear()
+	if gloves == "":
+		return
+	for side in [1, -1]:
+		var bn := "hand.R" if side > 0 else "hand.L"
+		var hd := _id(bn)
+		if hd < 0:
+			continue
+		var att := BoneAttachment3D.new()
+		att.bone_name = bn
+		skel.add_child(att)
+		var hand_m := maxf(_len(hd) * _scale, 0.06) * GLOVE_K
+		var g := preload("res://gloves.gd").mitten(gloves, hand_m, side, layers)
+		g.scale = Vector3.ONE / _scale / GLOVE_TUCK   # 手の骨は GLOVE_TUCK に縮めてあるので、その分だけ大きく
+		g.position = Vector3(0, -hand_m * 0.15, 0) / _scale / GLOVE_TUCK
+		att.add_child(g)
+		_glove_nodes.append(att)
+
+
+const GLOVE_K := 1.15   # 手袋の大きさ: 手の骨の長さの何倍（紙の手を包んで、一回り大きく）
+const GLOVE_TUCK := 0.55   # 手袋をはめているあいだ、紙の手をこれだけに縮めて手袋の中に隠す
 
 
 ## 左の袖の雪玉のストック: 前腕の外側（体の横から見える側）に、肘から手首へ帯を縫い付ける。
