@@ -4,7 +4,7 @@ extends SceneTree
 ##   Godot --headless --path game -s res://tools/tree_crash_net_check.gd -- --join=127.0.0.1 --port=24756 --bots=0 --lodge-bots=0 --roam-bots=0 --no-sound --no-pip --no-buttons
 ## ホストの人・つなぐ人・仲間の 3 人が丘の木の手前で同じソリに乗り、ホストのソリが 12 m/s で幹へ向かう。
 ## 見ること: 3 人分の出来事が両方の画面に同じ値で届く。自分の画面の体が配られた向きへ飛ぶ。つなぐ側の仲間とホストの人、ホストのつなぐ人の人形も飛ぶ段を通る。
-## 終わりに、3 人の位置を両方の画面で並べて出す（2 つの画面の時計は合わないので、起き上がったあとの止まった位置で比べる）。
+## 終わりに、3 人の位置と水を両方の画面で並べて出す（2 つの画面の時計は合わないので、起き上がったあとの値で比べる）。
 
 var args := {}
 var main: Node3D
@@ -61,19 +61,27 @@ func _run() -> void:
 	main.emotes.happened.connect(func(ev):
 		if ev.kind == "flung" and ev.get("thrown", false):
 			_got.append(ev))
-	# 同じ Mac の時計で、次の 10 秒の区切りの 10 秒後に始める
-	var now := Time.get_unix_time_from_system()
-	await create_timer(ceilf(now / 10.0) * 10.0 + 10.0 - now).timeout
+	await create_timer(2.0).timeout
 	var t := _tree()
 	var o := Vector2(t.position.x, t.position.z)
 	var dir := Vector2(1, 0)
 	var a: Vector2 = o - dir * (float(s.HALF.y) + 6.0)
+	# ホストがソリを木の手前へ置く。つなぐ人が乗ったら（ホストの画面に届いたら）、ホストの人と仲間も乗って、すぐ走らせる。
+	# 仲間を先に乗せると、待つあいだに滑り出すので、順番を守る。2 つの画面の起動の早さがずれても合う
+	var wait := 0.0
 	if host:
 		s.let_everyone_go()
 		s.reset_to(Vector3(a.x, main.height(a.x, a.y) + 0.3, a.y))
 		s.global_basis = Basis(Vector3.UP, atan2(-dir.x, -dir.y))
-		s.parked = false
-	await create_timer(1.5).timeout   # つなぐ側のソリが着くまで
+		s.parked = true
+		while s.riders.is_empty() and wait < 30.0:
+			await create_timer(0.1).timeout
+			wait += 0.1
+	else:
+		while Vector2(s.global_position.x, s.global_position.z).distance_to(a) > 1.5 and wait < 60.0:
+			await create_timer(0.25).timeout
+			wait += 0.25
+		await create_timer(0.5).timeout
 	p.global_position = s.global_position + s.global_basis.x * 1.2
 	p.sled = s
 	p.get_on()
@@ -91,8 +99,7 @@ func _run() -> void:
 		bot._still = 0.0
 		bot._goal_best = INF
 		bot._goal_t = 0.0
-	await create_timer(1.0).timeout
-	if host:
+		await create_timer(0.3).timeout
 		_check(s.riders.size() == 3, "ホストのソリに 3 人（%d）" % s.riders.size())
 		s.linear_velocity = Vector3(dir.x, 0, dir.y) * 12.0
 	var others: Array = main.net.remotes.values() + main.net.cpus.values()
@@ -100,7 +107,7 @@ func _run() -> void:
 	var from := p.global_position
 	var far_at := Vector3.ZERO
 	var t1 := 0.0
-	while t1 < 8.0:
+	while t1 < 10.0:
 		await physics_frame
 		t1 += 1.0 / 60.0
 		for w in [p] + others + ([bot] if bot else []):
@@ -132,6 +139,11 @@ func _run() -> void:
 	if bot:
 		at.append("仲間 %d (%.1f, %.1f)" % [bot.id, bot.global_position.x, bot.global_position.z])
 	_say("止まった位置: " + "、".join(at))
+	var wet := []
+	for ev in _got:
+		wet.append("%d: 水 %d 見た目 %.2f" % [ev.who, roundi(main.damp.water_of(int(ev.who))), main.emotes.who_of(int(ev.who)).doll.damp])
+	wet.sort()
+	_say("濡れ: " + "、".join(wet))
 	_say("だめだった数: %d" % fails)
 	await create_timer(2.0).timeout
 	quit(1 if fails > 0 else 0)
