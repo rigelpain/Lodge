@@ -66,6 +66,9 @@ const GLIDE_DRAG := 18.0       # 平らな所を滑っている空のソリの�
 const GLIDE_FRICTION := 0.02   # ソリの底の摩擦（物理の材質）。乗っていても空でも、どの速さでも効く減速（重力 × これ）。これがいちばん低い速さの滑りを決める
 const EDGE_DRIFT := 30.0        # 地面の端の吹きだまりの幅 (m)。ここに入ると、端へ向かう速さだけが弱まる（遠景の雪山の手前で止まる）
 const EDGE_STOP := 3.0          # 端からこの距離までに止まる (m)
+# 上り斜面の減速（2026-11-07 代表「上り斜面への減速率が低いかも」）。乗って滑っているソリが雪面の上りへ向かうあいだだけ、坂の重力をこの割合だけ足す。下りと平らな所では 0。
+# 地形の傾きで見るので、ジャンプ台の坂（当たりは地形の上に別にある）には効かない。押して登るときは _ride_forces を通らないので効かない
+const UPHILL_K := 0.7
 const UNPLANE_SPEED := 0.5     # これより遅くなると、また雪に沈む（KINDS の sink。止まりきらずにいつまでも這わないように）
 const RIDER_MASS := 45.0       # 乗っている人一人の重さ (kg)。止めるときにだけ効く（登りは速くも遅くもしない）
 const STOP_FORCE := 300.0      # つかんでいる人一人が止める力 (N)。押す力と同じ
@@ -1071,6 +1074,7 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 		var sink: float = 0.0 if _planed else K.sink * load_mass() * 9.8 * absf(n.y) * (1.0 - smoothstep(0.0, K.plane, vs))
 		var resist: float = (K.drag * vs + K.push * vs * vs) * ease + sink
 		apply_central_force(-v_t / vs * minf(resist * share, vs * mass / dt))
+		_uphill_brake(dt, v_t)
 	for x in [-RUNNER_X, RUNNER_X]:
 		var r := global_basis * Vector3(x, 0, 0)
 		var v_point := linear_velocity + angular_velocity.cross(r)
@@ -1079,6 +1083,27 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 		if _steer * signf(x) > 0.0:
 			c += LEAN_DIG * K.turn * absf(_steer)
 		apply_force(-fwd * v_long * c * share, r)
+
+
+## 上り斜面の減速。地形の傾きと進む向きから、登っている分だけ重力を足す（UPHILL_K）。宙にいるあいだは効かない
+func _uphill_brake(dt: float, v_t: Vector3) -> void:
+	var w := get_parent()
+	if w == null or not w.has_method("ground_normal"):
+		return
+	var p := global_position
+	if p.y - w.height(p.x, p.z) > 1.0:
+		return
+	var along := Vector3(v_t.x, 0.0, v_t.z)
+	if along.length() < 0.05:
+		return
+	along = along.normalized()
+	var tn: Vector3 = w.ground_normal(p.x, p.z)
+	var rise := -(tn.x * along.x + tn.z * along.z) / maxf(tn.y, 0.01)   # 進む向きの上り（tan）
+	if rise <= 0.0:
+		return
+	var sin_a := rise / sqrt(1.0 + rise * rise)
+	var vs := v_t.length()
+	apply_central_force(-v_t / vs * minf(UPHILL_K * 9.8 * sin_a * mass, vs * mass / dt))
 
 
 ## 止める力を出している人の数: つかんでいて、このコマ押していない人（押されて登っているときは数えない）
