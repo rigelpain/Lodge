@@ -81,7 +81,7 @@ func _process(dt: float) -> bool:
 		p.rotation.y = atan2(back.x, back.z)
 		p.grab()
 		print("つかむ: mode=%d 速さ=%.1f" % [p.mode, sled.linear_velocity.length()])
-	# --point=秒: その秒から 3 秒、右クリックを押したままにする（指さし）
+	# --point=秒: その秒に右クリックで指さしを入れ、3 秒後にもう一度押して切る（--solo では、指したあと左へ見回す）
 	if p and args.has("point"):
 		var t0 := float(args["point"])
 		var want_on := t > t0 and t < t0 + 3.0
@@ -89,9 +89,11 @@ func _process(dt: float) -> bool:
 			p._pitch = float(args.get("pitch", "-0.25"))   # 前の雪を指す
 		if want_on != _pointing:
 			_pointing = want_on
-			p.force_point = want_on
 			if want_on and args.has("solo"):
 				p.rotate_y(-0.6)   # 右の前を指す
+			p.toggle_point()
+			if want_on and args.has("solo"):
+				p.rotate_y(1.2)    # 指したまま、左へ見回す（顔と指さしが別の向き）
 			print("指さし: ", want_on)
 	if _pointing and int(t * 4) % 4 == 0 and p.point_at != Vector3.INF:
 		for b in main.get_children():
