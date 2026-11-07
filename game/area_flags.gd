@@ -4,12 +4,13 @@ extends Node3D
 ## 布の絵は札と同じ描き方で一度だけ焼く。旗に当たりはない（ほかの旗と同じ）。
 ## ロッジの前には、同じ布を切り抜いて貼った地図の看板を立てる（2026-11-04 代表「ロッジの前に大きな地図看板欲しいかも」）。
 ## 地図は areas.gd の表から描くので、山を足すと地図にも載る。文字は使わない
-## 地図の上に、いまいる人のまち針が刺さって動く（map_pins.gd）
+## 地図の上に、いまいる人のまち針が刺さって動く（map_pins.gd）。日が傾くと、額の上の提灯が看板を照らす（map_light.gd）
 
 const Card := preload("res://elev_card.gd")
 const Icons := preload("res://hud_icons.gd")
 const Areas := preload("res://areas.gd")
 const MapPins := preload("res://map_pins.gd")
+const MapLight := preload("res://map_light.gd")
 
 const POLE_H := 7.0          # 棒の高さ (m)。丘のコースの旗（1.7 m）の 4 倍ほど。ロッジの前から見つかる大きさ
 const CLOTH := Vector2(3.6, 2.25)   # 布の大きさ (m)
@@ -221,6 +222,13 @@ func _put_map(tex: Texture2D) -> void:
 	pins.main = main
 	pins.to_board = on_board
 	root.add_child(pins)
+	var lamps := MapLight.new()
+	lamps.name = "MapLight"
+	lamps.top = BOARD_Y + BOARD.y + 0.18
+	lamps.wood = wood
+	root.add_child(lamps)
+	for g: GeometryInstance3D in [frame, face, pins]:
+		g.layers |= MapLight.LAYER
 	# 脚の当たり（板は脚より上なので、脚だけ）
 	var body := StaticBody3D.new()
 	for sx in [-1.0, 1.0]:
