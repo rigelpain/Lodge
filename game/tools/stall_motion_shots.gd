@@ -7,6 +7,7 @@ extends SceneTree
 ##   --far=7 --near=2.6 --walk-s=1.5 --stay-s=3 --back=1   歩く距離と時間（--back=0 で戻らない）
 ##   --side=1.2 --cam-back=4.5 --cam-h=1.6 --look-h=1.2    カメラの置き場（施設の座標。--side は横へ、--cam-back は正面へ）
 ##   --person=1  歩くあなたの人形も写す（既定は写さない）
+##   --timing=1  染台: 近くに立たせて、人形・長い布・染台の布が動き終わるまでの秒を書き出す（--fixed-fps を付けない）
 ##   --sew=1     ミシン: 歩いたあとに縫い始める（針の上下、できた物が台から床へ下りるまでを撮る）
 ## 終わりに、見本帳・染台・双眼鏡台が止まっているか（動きが残っていないか）を書き出す。
 
@@ -102,6 +103,26 @@ func _run() -> void:
 		var d = who.get("doll")
 		if d:
 			d.visible = false
+	if args.has("timing"):
+		await create_timer(_num("settle", 1.0)).timeout
+		var w: Node3D = main.wardrobe
+		var cl: Node = w.get_node("LongCloth")
+		var vat: Node = main.dye_vat
+		at.call(_num("near", 4.0))
+		var t0 := Time.get_ticks_msec()
+		var ends := {}
+		while ends.size() < 3 and Time.get_ticks_msec() - t0 < 15000:
+			await process_frame
+			var now := (Time.get_ticks_msec() - t0) / 1000.0
+			if w.near and w._rested and w.get("_turn") > 0.0 and not ends.has("人形"):
+				ends["人形"] = now
+			if cl._stage == cl.STAGES and not ends.has("長い布"):
+				ends["長い布"] = now
+			if vat._stage == vat.POSES.size() - 1 and not ends.has("染台の布"):
+				ends["染台の布"] = now
+		print("動き終わるまでの秒 ", ends)
+		quit()
+		return
 	if args.has("still"):
 		await create_timer(_num("still", 4.0)).timeout
 		root.get_texture().get_image().save_png(_dir().path_join(args.get("name", name_) + ".png"))
