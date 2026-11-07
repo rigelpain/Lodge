@@ -104,6 +104,48 @@ func _wheel(button: MouseButton, n: int) -> void:
 	await create_timer(0.2).timeout
 
 
+## 人の体の大きさがそこに入るか（床は除く）
+func _free_at(at: Vector3, skip: Node3D) -> bool:
+	var q := PhysicsShapeQueryParameters3D.new()
+	var cap := CapsuleShape3D.new()
+	cap.radius = 0.33
+	cap.height = 1.5
+	q.shape = cap
+	q.transform = Transform3D(Basis(), at + Vector3.UP * 0.95)
+	q.exclude = [skip.get_rid()]
+	var hits := skip.get_world_3d().direct_space_state.intersect_shape(q, 8)
+	for h in hits:
+		print("  当たり: ", h.collider)
+	return hits.is_empty()
+
+
+## 全方角の並びの絵: 上から全体（台の上に色の玉の目印）と、台ごとの近景
+func _overview() -> void:
+	var cols := [Color(0.85, 0.2, 0.18), Color(0.92, 0.68, 0.15), Color(0.2, 0.62, 0.62), Color(0.55, 0.3, 0.7)]
+	var marks := []
+	for i in main.binocular_stands.size():
+		var bs: Node3D = main.binocular_stands[i]
+		var mi := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.75
+		sm.height = 1.5
+		mi.mesh = sm
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = cols[i]
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mi.material_override = mat
+		bs.add_child(mi)
+		mi.position = Vector3(0, 3.2, 0)
+		marks.append(mi)
+	var lodge: Node3D = main.get_node("Lodge")
+	await _from_side("30_overview", lodge.to_global(Vector3(-46, 40, 44)), lodge.to_global(Vector3(-1, 5, 2)))
+	for i in main.binocular_stands.size():
+		var bs: Node3D = main.binocular_stands[i]
+		await _from_side("31_near%d" % i, bs.to_global(Vector3(1.9, 2.1, 3.6)), bs.to_global(Vector3(0, 0.9, 0)))
+	for m in marks:
+		m.queue_free()
+
+
 func _stand_before() -> void:
 	p.global_position = st.to_global(Vector3(0, 0.1, 1.3))
 	p.rotation.y = st.global_rotation.y
@@ -115,7 +157,7 @@ func _stand_before() -> void:
 func _run() -> void:
 	await create_timer(3.0).timeout
 	p = main.player
-	st = main.binocular_stand
+	st = main.binocular_stands[0]
 	var craft = main.craft
 	var hub = main.emotes
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -219,8 +261,16 @@ func _run() -> void:
 	await _stand_before()
 	await _key(KEY_F)
 	_check("もう 1 枚で開く", p.peek == "stand" and craft.wallet(p.id) == 0)
-	p._peek_left = 6.0
 	await create_timer(1.0).timeout
+	await _save("07a_stand_full")
+	p._peek_left = 30.0
+	await create_timer(1.0).timeout
+	await _save("07b_stand_half")
+	p._peek_left = 9.0
+	await create_timer(0.7).timeout
+	await _save("07c_stand_ten")
+	p._peek_left = 4.5
+	await create_timer(0.5).timeout
 	await _save("07_stand_little_left")
 	p._peek_left = 0.3
 	await create_timer(0.55).timeout
@@ -233,6 +283,30 @@ func _run() -> void:
 	await _save("09_stand_none")
 	await _key(KEY_F)
 	_check("払えなければのぞけない", p.peek == "")
+	# ---- 全方角の台: 外を向く・払える・F が取り合わない・人が立てる
+	craft.wallets[p.id] = 10
+	var lodge: Node3D = main.get_node("Lodge")
+	var outward := [Vector3(0, 0, 1), Vector3(-1, 0, 0), Vector3(0, 0, -1), Vector3(1, 0, 0)]   # ロッジの座標（z が南）
+	for i in main.binocular_stands.size():
+		var bs: Node3D = main.binocular_stands[i]
+		p.global_position = bs.to_global(Vector3(0, 0.1, 1.3))
+		p.rotation.y = bs.global_rotation.y
+		p._pitch = 0.0
+		p.velocity = Vector3.ZERO
+		await create_timer(0.5).timeout
+		_check("台 %d の前で F の相手は台だけ（席・立てかけ台が出ない）" % i, p.binocular_near() == bs and p.seat_near() < 0 and p.rack_target().is_empty())
+		_check("台 %d は床の上に立つ" % i, absf(p.global_position.y - bs.global_position.y) < 0.2)
+		await _key(KEY_F)
+		await create_timer(0.8).timeout
+		_check("台 %d でのぞける" % i, p.peek == "stand" and int(bs.who) == p.id)
+		var look: Vector3 = lodge.global_basis.inverse() * (-p.cam.global_basis.z)
+		_check("台 %d は外を向く" % i, Vector3(look.x, 0, look.z).normalized().dot(outward[i]) > 0.95)
+		_check("台 %d で人が立つ所に当たりがない" % i, _free_at(p.global_position, p))
+		await _save("20_stand%d_view" % i)
+		await _key(KEY_F)
+		_check("台 %d を下りた所も空いている" % i, p.peek == "" and _free_at(p.global_position, p))
+	await _overview()
+	craft.wallets[p.id] = 2
 	# ---- 手の双眼鏡
 	craft.wallets[p.id] = 40
 	craft.send({"kind": "buy", "who": p.id, "item": preload("res://binoculars.gd").ITEM.duplicate()})

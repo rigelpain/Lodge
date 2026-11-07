@@ -2229,7 +2229,7 @@ func _on_craft(ev: Dictionary) -> void:
 			var coin_audio = get_parent().get_node_or_null("Audio")
 			if coin_audio and String(ev.get("paid", "")) == "button":
 				coin_audio.coin("wood", 0)
-			_peek_begin("stand", get_parent().get("binocular_stand"))
+			_peek_begin("stand", get_parent().binocular_stands[int(ev.stand)])
 		"doll":   # 衣装掛けで選んだ人形に着替える
 			set_doll(String(ev.doll))
 		"dye", "outfit":   # 染め桶で服を染めた: 人形と一人称の袖と脚を、その色で作り直す
@@ -2508,7 +2508,7 @@ func peek_stop() -> void:
 	if was == "stand" and _peek_stand:
 		_peek_stand.hide_head(false)
 		if craft:
-			craft.send({"kind": "scope_off", "who": id})
+			craft.send({"kind": "scope_off", "who": id, "stand": _peek_stand.index})
 		move_and_collide(global_basis.z * 0.5)   # 台の頭が目の前をふさがないよう、ひと足さがる
 	_peek_stand = null
 	if _peek_locked:
@@ -2594,7 +2594,10 @@ func _update_peek(dt: float) -> void:
 		left = clampf(_peek_left / Binoculars.STAND_SECONDS, 0.0, 1.0)
 		if _peek_left <= 0.0:
 			_peek_closing = true
-	_peek_open = move_toward(_peek_open, 0.0 if _peek_closing else 1.0, dt * (2.5 if _peek_closing else 7.0))
+	var open_goal := 1.0
+	if peek == "stand":   # 終わりが近いと、穴がゆっくりすぼんでくる
+		open_goal = lerpf(Binoculars.STAND_NARROW, 1.0, clampf(_peek_left / Binoculars.STAND_NARROW_FROM, 0.0, 1.0))
+	_peek_open = move_toward(_peek_open, 0.0 if _peek_closing else open_goal, dt * (2.5 if _peek_closing else 7.0))
 	_peek_view.show_view(_peek_open, left, Binoculars.zoom_of(peek, float(_peek_fov[peek])), peek)
 	if _peek_closing and _peek_open <= 0.0:
 		peek_stop()
@@ -2604,14 +2607,21 @@ func _update_peek(dt: float) -> void:
 func _binocular_f() -> bool:
 	if binocular_pay() in ["", "none"]:
 		return false
-	craft.send({"kind": "scope_on", "who": id})
+	craft.send({"kind": "scope_on", "who": id, "stand": binocular_near().index})
 	return true
+
+
+## F が届く、空いた双眼鏡台（なければ null）
+func binocular_near() -> Node3D:
+	for st in get_parent().binocular_stands:
+		if int(st.who) < 0 and st.in_reach(self):
+			return st
+	return null
 
 
 ## 双眼鏡台の前にいて空いているとき、何で払うか: "ball" / "button" / 払える物がなければ "none"。前にいなければ ""
 func binocular_pay() -> String:
-	var st = get_parent().get("binocular_stand")
-	if st == null or craft == null or mode != Mode.WALK or int(st.who) >= 0 or not st.in_reach(self):
+	if craft == null or mode != Mode.WALK or binocular_near() == null:
 		return ""
 	if ball_count() >= 1:
 		return "ball"

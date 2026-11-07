@@ -190,8 +190,10 @@ func _on_gone(pid: int) -> void:
 		r.queue_free()
 	if main.get("seats"):
 		main.seats.forget(pid)
-	if main.get("binocular_stand") and is_host() and int(main.binocular_stand.who) == pid:
-		main.craft.send({"kind": "scope_off", "who": pid})   # 双眼鏡台をのぞいたまま帰った人の分を空ける
+	if is_host():
+		for st in main.binocular_stands:
+			if int(st.who) == pid:
+				main.craft.send({"kind": "scope_off", "who": pid, "stand": st.index})   # 双眼鏡台をのぞいたまま帰った人の分を空ける
 	print("帰った: 番号 ", pid)
 
 

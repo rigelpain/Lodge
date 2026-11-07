@@ -19,6 +19,8 @@ const WHEEL_STEP := 1.18        # ホイール 1 目盛りで画角を何倍に�
 const PAN_ZOOM := 0.12          # 二本指スクロールの効き。Godot は Mac のスクロール量の 0.03 倍で渡すので、約 430 pt の撫でで台の幅の端から端まで
 const PINCH_ZOOM := 1.5         # つまむ・広げるの効き
 const STAND_SECONDS := 60.0     # テラスの台が 1 回で開いている長さ（秒）
+const STAND_NARROW_FROM := 10.0 # 残りがこの秒になると、穴がゆっくりすぼみ始める（幕が下りてくる。赤や点滅の警告はしない）
+const STAND_NARROW := 0.78      # 閉じる直前の穴の開き
 
 const FELT := Color(0.25, 0.50, 0.53)
 const WOOD := Color(0.62, 0.42, 0.24)
