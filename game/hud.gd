@@ -522,7 +522,7 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 			var at_st: Vector3 = p.binocular_near().global_position + Vector3.UP * 1.65
 			_hint("scope_" + how, [] if how == "none" else ["F"], "scope_" + how, at_st)
 	# 手の双眼鏡: 左ボタンを押しているあいだのぞく
-	if p.has_method("held") and p.held().get("kind", "") == "binoculars" and not p.rooted():
+	if p.has_method("held") and preload("res://binoculars.gd").is_item(p.held()) and not p.rooted():
 		_hint("scope_hand", ["mouse_l"], "scope_hand")
 	# 売り子のおじさん: F で売り台
 	if p.shop_near() and not p.shopping:

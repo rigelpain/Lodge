@@ -169,8 +169,9 @@ var _rest_rot := {}          # 番号 → 付け根の回転（親の座標）
 var _rest_pos := {}
 var _rot := {}               # 番号 → いまの回転（親の座標）
 var _g := {}                 # 番号 → いまの向きと位置（骨の座標の空間）
-var peek := ""                    # 双眼鏡をのぞいている: "" / "hand"（持ち歩く双眼鏡）/ "stand"（テラスの台）
+var peek := ""                    # 双眼鏡をのぞいている: "" / "stand"（テラスの台）/ 手の双眼鏡の品物の kind（binoculars.gd の GRADES）
 var _peek_item: Node3D            # 目に当てている双眼鏡の形
+var _peek_kind := ""              # …その段
 var _hold: Array = [null, null]   # 手ごとに [基準のノード, その座標での手の所] か null
 var _arm_base := {}          # コマで決めた腕の回転（毎フレームここから伸ばし直す）
 var _streams := {}           # 息の煙の出口: "small" ふだん、"big" 声、"long" B の長い息・おーい
@@ -2813,7 +2814,8 @@ const PEEK_STAND_H := 1.18   # テラスの台の頭の高さ（binocular_stand.
 ## 双眼鏡をのぞく姿勢（player.gd の peek が入れる。通信でも届く）: 両手を目の前へ。持ち歩く双眼鏡なら、その形も目に当てる。
 ## テラスの台なら、両手は目の少し先の台の頭へ添える（頭は binocular_stand.gd が見ている所へ向ける）
 func _plan_peek() -> void:
-	if peek != "hand" and _peek_item:
+	var in_hand := peek != "" and peek != "stand"
+	if not in_hand and _peek_item:
 		_peek_item.visible = false
 	if peek == "":
 		return
@@ -2829,9 +2831,13 @@ func _plan_peek() -> void:
 		if peek == "stand":   # 台の頭の横へ（足もとから決まった高さ。小さい人形は手を伸ばす）
 			at = global_position + Vector3.UP * PEEK_STAND_H + look * 0.42 + right * sd * 0.2
 		_hold[hi] = [self, to_local(at), true]
-	if peek == "hand":
+	if in_hand:
+		if _peek_item and _peek_kind != peek:
+			_peek_item.queue_free()
+			_peek_item = null
 		if _peek_item == null:
-			_peek_item = preload("res://binoculars.gd").shape()
+			_peek_kind = peek
+			_peek_item = preload("res://binoculars.gd").shape(peek)
 			add_child(_peek_item)
 			for mi in _peek_item.find_children("*", "MeshInstance3D", true, false):
 				(mi as MeshInstance3D).layers = layers

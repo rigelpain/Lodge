@@ -201,26 +201,26 @@ func _run() -> void:
 	# 横から撮る
 	await _from_side("04_stand_peek_side", st.to_global(Vector3(-1.7, 1.0, 1.7)), st.to_global(Vector3(0, 0.85, 0.1)))
 	# 倍率: ホイールと二本指スクロールで変わり、持ち替えない。幅に収まる
-	var fov0: float = p._peek_fov.stand
+	var fov0: float = p._peek_fov_now()
 	await _wheel(MOUSE_BUTTON_WHEEL_UP, 30)
-	_check("ホイールで寄り、幅で止まる", is_equal_approx(p._peek_fov.stand, 5.0))
+	_check("ホイールで寄り、幅で止まる", is_equal_approx(p._peek_fov_now(), 5.0))
 	p._pitch = 0.09
 	await create_timer(1.0).timeout
 	await _save("03d_stand_most")
 	await _wheel(MOUSE_BUTTON_WHEEL_DOWN, 30)
-	_check("ホイールで引き、幅で止まる", is_equal_approx(p._peek_fov.stand, 24.0))
+	_check("ホイールで引き、幅で止まる", is_equal_approx(p._peek_fov_now(), 24.0))
 	await create_timer(1.0).timeout
 	await _save("03e_stand_least")
-	var fv: float = p._peek_fov.stand
+	var fv: float = p._peek_fov_now()
 	var pan := InputEventPanGesture.new()
 	pan.delta = Vector2(0, -6)
 	Input.parse_input_event(pan)
 	await create_timer(0.2).timeout
-	_check("二本指スクロールで寄る", p._peek_fov.stand < fv and p.peek == "stand")
-	p._peek_fov.stand = 24.0
+	_check("二本指スクロールで寄る", p._peek_fov_now() < fv and p.peek == "stand")
+	p._peek_fov["stand"] = 24.0
 	await _pan(-430.0 * 0.03)   # Mac の量の 0.03 倍で届く
-	_check("約 430 pt の撫でで台の倍率の端へ届く", p._peek_fov.stand < 5.5)
-	p._peek_fov.stand = fov0
+	_check("約 430 pt の撫でで台の倍率の端へ届く", p._peek_fov_now() < 5.5)
+	p._peek_fov["stand"] = fov0
 	p._pitch = -0.1
 	await create_timer(0.5).timeout
 	# 台は左ボタンやほかのキーではやめない
@@ -318,19 +318,19 @@ func _run() -> void:
 	await _save("10_hand_held")
 	await _click()
 	await create_timer(0.8).timeout
-	_check("左ボタン 1 回でのぞき、離してものぞいたまま", p.peek == "hand" and p.doll.peek == "hand")
+	_check("左ボタン 1 回でのぞき、離してものぞいたまま", p.peek == "hand" and p.doll.peek == "binoculars")
 	await _save("11_hand_peek")
 	await _wheel(MOUSE_BUTTON_WHEEL_UP, 2)
-	_check("手の双眼鏡もホイールで寄り、持ち替えない", p._peek_fov.hand < 24.0 and p.peek == "hand" and p.held().get("kind", "") == "binoculars")
-	var fh: float = p._peek_fov.hand
+	_check("手の双眼鏡もホイールで寄り、持ち替えない", p._peek_fov_now() < 24.0 and p.peek == "hand" and p.held().get("kind", "") == "binoculars")
+	var fh: float = p._peek_fov_now()
 	await _pan(4.0)
-	_check("離した状態の二本指スクロールで倍率が変わり、持ち替えない", p._peek_fov.hand > fh and p.peek == "hand")
-	var fh2: float = p._peek_fov.hand
+	_check("離した状態の二本指スクロールで倍率が変わり、持ち替えない", p._peek_fov_now() > fh and p.peek == "hand")
+	var fh2: float = p._peek_fov_now()
 	var pinch := InputEventMagnifyGesture.new()
 	pinch.factor = 1.2
 	Input.parse_input_event(pinch)
 	await create_timer(0.2).timeout
-	_check("離した状態のつまむ操作で倍率が変わる", p._peek_fov.hand < fh2 and p.peek == "hand")
+	_check("離した状態のつまむ操作で倍率が変わる", p._peek_fov_now() < fh2 and p.peek == "hand")
 	await _save("11b_hand_zoomed")
 	await _click()
 	_check("もう 1 回押すとやめる", p.peek == "")
