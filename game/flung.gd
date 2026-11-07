@@ -44,7 +44,7 @@ const CRASH_MIN := 5.0      # 放り投げられる境目: ソリが幹へ向か
 const THROW_OUT_K := Vector2(0.9, 1.05)   # 水平に飛ぶ速さ = ぶつかる前のソリの速さ × この範囲（一人ひとり）
 const THROW_OUT_MAX := 30.0 # 水平に飛ぶ速さの上限 (m/s)
 const THROW_UP_K := Vector2(0.55, 0.95)   # 上向きの速さ = ぶつかる前のソリの速さ × この範囲（一人ひとり）
-const THROW_UP := Vector2(5.0, 14.0)      # 上向きの速さの下限と上限 (m/s)
+const THROW_UP := Vector2(9.0, 14.0)      # 上向きの速さの下限と上限 (m/s)
 const THROW_FAN := 70.0     # 進む向きから左右へ広がる角度の端 (度)。乗っている人を、この中に等分して並べる
 const THROW_FAN_MIN := 18.0 # 真っすぐ前を避ける角度 (度)。幹に正面から突っ込まない
 const THROW_FAN_ONE := 45.0 # 1 人で乗っているときの、左右へそれる角度の端 (度)。THROW_FAN_MIN からこの間で決める

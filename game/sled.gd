@@ -82,6 +82,22 @@ const FALL_NET := 2.0          # 安全網: 雪面よりこれだけ下へ沈ん
 
 signal slipped(who: Node3D)    # 引きずられて手が離れた
 
+# ---- 雪の塊や木にぶつかって打ち上がる（塊は sled_crash.gd。値の意味は design/controls-and-physics.md）
+const CRASH_SOFT_SPEED := 3.0  # 雪の塊に、これより速く当たると打ち上がる (m/s)。押している・紐で引いている・つかんでいるソリは飛ばない
+const CRASH_UP := Vector2(5.0, 13.0)   # 上へ飛ぶ速さ (m/s)。当たった速さが CRASH_UP_AT.x のとき 〜 CRASH_UP_AT.y のとき
+const CRASH_UP_AT := Vector2(3.0, 12.0)
+const CRASH_KEEP := 0.35       # 雪の塊: 当たった速さのうち、そのまま前へ残る割合。大きいと塊を越えてロッジの前の広場まで飛ぶ
+const CRASH_BOUNCE := 0.3      # 木: 跳ね返る速さの割合
+const CRASH_SPIN := Vector2(4.0, 9.0)  # 宙で回る速さの下限と上限 (rad/s)
+const CRASH_SPIN_DAMP := 0.2   # 宙で回る勢いの弱まり（ふだんの angular_damp は 6）
+const CRASH_LAND_DAMP := 2.5   # 着いたあと、回る勢いの弱まり
+const CRASH_MAX := 40.0        # 打ち上がってからこの長さで、ふつうのソリに戻る (s)
+const CRASH_REST := 1.0        # これだけ止まっていると、ふつうのソリに戻る (s)
+var crashed := false           # 打ち上がってから止まるまで。乗れない。滑り木は効かず、どの向きでも坂に沿って滑る
+var _crash_t := 0.0
+var _crash_still := 0.0
+var _right_t := 0.0
+
 # ---- ペグで斜面に留める（2026-11-01 代表「斜面にそりを留める消耗品があると休憩したり焚き火ができる」。形と動きは peg.gd）
 # 引き紐の先をペグに結ぶ。留めているあいだは、乗っていても、どんな坂でも止まっている（休める・そばで焚き火ができる）。
 # 押すと紐のたるみの分だけは動くが、紐が張るとそれ以上は行かない。乗ったまま雪をかいても、蹴っても進まない。
@@ -554,7 +570,7 @@ func pull_rope(hand: Vector3, strength := 1.0) -> float:
 
 
 func mount(who: Node3D) -> Vector3:
-	if racked or riders.size() >= SEATS.size() or who in riders:
+	if racked or crashed or global_basis.y.y < 0.5 or riders.size() >= SEATS.size() or who in riders:   # 打ち上がっている・ひっくり返っているソリには乗れない
 		return Vector3.INF
 	var at := free_seat(who)
 	riders.append(who)
@@ -942,6 +958,8 @@ func _update_trail(dt: float) -> void:
 	# 遠くのソリは跡を作らない（レイも目も増やさない）
 	var cam := get_viewport().get_camera_3d()
 	var far := cam != null and cam.global_position.distance_squared_to(global_position) > TRAIL_MAKE * TRAIL_MAKE
+	if crashed and global_position.y > get_parent().height(global_position.x, global_position.z) + 1.0:
+		far = true   # 打ち上がって宙にいるあいだも縫わない
 	# ステッチ: 左右の滑り木の後ろ端が滑った道のりを 1 歩（TRAIL_STEP）ずつに刻み、そのたびに雪面を探して、
 	# 前の歩みからそこまでを、ソリの縫い目（なみ縫い・くさり縫い・サドルステッチ…）で縫う。
 	# 速くてもコマの刻みに左右されず、どの目も同じ長さになる。遅いあいだは数えないだけで、また滑り出せば前の目から続く
@@ -1282,12 +1300,95 @@ func _edge_drift(dt: float) -> void:
 	apply_central_force(-out * minf(decel, v_out / dt) * mass)
 
 
+## 雪の塊に入った（sled_crash.gd。ホストのソリだけ）。速ければ打ち上がり、乗っている人を放り投げる
+func crash_lump(lump: Node3D) -> void:
+	if net_follow or crashed or racked or freeze or peg or not visible or pushers > 0 or not holders.is_empty():
+		return
+	var flat := Vector3(linear_velocity.x, 0.0, linear_velocity.z)
+	if flat.length() < CRASH_SOFT_SPEED:
+		return
+	_launch(flat, flat * CRASH_KEEP, global_position + Vector3.UP * 0.7, lump)
+
+
+## 打ち上がる。v はぶつかる前の速さ（水平）、keep は残る水平の速さ、point は雪の粉の所。ホストのソリが呼び、乗っている人の飛び方と雪の粉を全員へ配る
+func _launch(v: Vector3, keep: Vector3, point: Vector3, lump: Node3D = null) -> void:
+	crashed = true
+	_crash_t = 0.0
+	_crash_still = 0.0
+	var hub = get_parent().get_node_or_null("Emotes")
+	if hub:
+		for ev in Flung.throw_events(self, v, point):
+			hub.send(ev)
+		var ev := {"kind": "crash", "sled": get_parent().get_path_to(self), "point": point}
+		if lump:
+			ev["lump"] = get_parent().get_path_to(lump)
+		hub.send(ev)
+	for who in holders.keys():
+		if who.has_method("let_go"):
+			who.let_go()
+	if rope_holder and rope_holder.has_method("let_go"):
+		rope_holder.let_go()
+	var speed := v.length()
+	linear_velocity = keep + Vector3.UP * lerpf(CRASH_UP.x, CRASH_UP.y, clampf(inverse_lerp(CRASH_UP_AT.x, CRASH_UP_AT.y, speed), 0.0, 1.0))
+	var spin := clampf(speed, CRASH_SPIN.x, CRASH_SPIN.y)
+	angular_velocity = global_basis.x * spin * (1.0 if randf() < 0.5 else -1.0) + global_basis.z * spin * randf_range(-0.7, 0.7)
+	angular_damp = CRASH_SPIN_DAMP
+
+
+## 出来事 "crash" が届いた（どの画面でも）
+func crash_seen() -> void:
+	crashed = true
+	_crash_t = 0.0
+
+
+## 打ち上がってから止まるまでの 1 コマ。滑り木も体重移動も効かない。雪面にいれば、どの向きでも坂に沿って滑る（雪の抵抗は、平らな所を滑る空のソリと同じ）
+func _crash_step(dt: float) -> void:
+	_crash_t += dt
+	_steer = 0.0
+	_n_fwd = 0
+	_n_back = 0
+	_crash_still = _crash_still + dt if linear_velocity.length() < 0.3 else 0.0
+	if net_follow:
+		if _crash_still > CRASH_REST:
+			crashed = false
+		return
+	linear_damp_mode = RigidBody3D.DAMP_MODE_REPLACE
+	linear_damp = 0.0
+	var w := get_parent()
+	if _crash_t > 0.3 and global_position.y - w.height(global_position.x, global_position.z) < 1.0:
+		angular_damp = CRASH_LAND_DAMP
+		var n := _ground_normal()
+		var v_t := linear_velocity - n * linear_velocity.dot(n)
+		if v_t.length() > 0.01:
+			var resist: float = GLIDE_GRIP * mass * 9.8 * absf(n.y) + GLIDE_DRAG * v_t.length()
+			apply_central_force(-v_t.normalized() * minf(resist, v_t.length() * mass / dt))
+	_edge_drift(dt)
+	if _crash_still > CRASH_REST or _crash_t > CRASH_MAX or not holders.is_empty() or rope_holder or pushers > 0:
+		_crash_end()
+
+
+## ふつうのソリに戻る。ひっくり返っていれば、長いソリも回りきれるだけ高く跳ねて起き直る（乗れる・押せるように）
+func _crash_end() -> void:
+	crashed = false
+	angular_damp = 6.0
+	var up := global_basis.y
+	if up.y >= 0.5:
+		return
+	var axis := up.cross(Vector3.UP)
+	axis = axis.normalized() if axis.length() > 0.05 else global_basis.z
+	var t := 2.0 * sqrt(2.0 * (HALF.y + 0.3) / 9.8)
+	_right_t = t
+	angular_damp = 0.0
+	angular_velocity = axis * acos(clampf(up.y, -1.0, 1.0)) / t
+	linear_velocity = Vector3.UP * 9.8 * t * 0.5
+
+
 ## 乗って滑っていて、次のコマで木の幹にぶつかるなら、乗っている人を放り投げる（ソリの物理を持つホストの画面だけ。向きと強さを決めて配る。flung.gd）。
 ## 幹の当たりで速さが消える前に見つけるので、ぶつかる前の速さを渡せる。ソリは幹で止まり、そのままそこに残る（空のソリの決まりでずり落ちる）。
 ## 迫る速さが Flung.CRASH_MIN より遅い・横をかすめるだけなら、何もしない（乗ったまま、物理で止まる・それる）
 func _check_crash(dt: float) -> void:
 	_crash_cool = maxf(0.0, _crash_cool - dt)
-	if net_follow or riders.is_empty() or _crash_cool > 0.0:
+	if net_follow or crashed or peg or _crash_cool > 0.0:
 		return
 	var v := linear_velocity
 	var flat := Vector3(v.x, 0.0, v.z)
@@ -1313,10 +1414,7 @@ func _check_crash(dt: float) -> void:
 		if flat.dot(n) < Flung.CRASH_MIN:
 			continue
 		_crash_cool = 1.0
-		var hub = get_parent().get_node_or_null("Emotes")
-		if hub:
-			for ev in Flung.throw_events(self, flat, to_global(near) + Vector3.UP * 0.7):
-				hub.send(ev)
+		_launch(flat, (flat - n * 2.0 * flat.dot(n)) * CRASH_BOUNCE, to_global(near) + Vector3.UP * 0.7)
 		return
 
 
@@ -1330,6 +1428,15 @@ func _physics_process(dt: float) -> void:
 	_push_count = 0
 	_pushed_by = _pushed_now
 	_pushed_now = {}
+	if _right_t > 0.0:
+		_right_t -= dt
+		if _right_t <= 0.0:
+			angular_damp = 6.0
+			angular_velocity = Vector3.ZERO
+	if crashed:
+		_update_drag(dt)
+		_crash_step(dt)
+		return
 	var riding := riders.size() > 0
 	# 押されて坂を登っている間は、乗っている人がいても登りの雪の抵抗。乗るだけで登りが速くならないように
 	var pushed_up := pushers > 0 and linear_velocity.y > 0.05

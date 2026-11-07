@@ -216,6 +216,8 @@ func _emit(ev: Dictionary) -> void:
 			var w := who_of(int(ev.who))
 			if w and w.has_method("thrown"):
 				w.thrown(ev)
+	if ev.kind == "crash":   # ソリが雪の塊や木にぶつかって打ち上がった
+		preload("res://sled_crash.gd").on_event(get_parent(), ev)
 	if ev.kind == "catch":   # 取られた雪玉は、どの画面でも消える
 		var b := ball(int(ev.get("ball", -1)))
 		if b:

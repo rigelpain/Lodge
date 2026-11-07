@@ -1163,6 +1163,10 @@ func _on_emote(ev: Dictionary) -> void:
 				return
 			_emote_sound(ev, 0, "swish", 2, -16.0, rng.randf_range(1.3, 1.5), who.global_position + Vector3.UP * 1.0, is_self)
 			return
+		"crash":   # ソリが雪の塊や木にぶつかった: 雪がどさっと
+			_emote_sound(ev, 0, "snow_splat", 3, 0.0, rng.randf_range(0.5, 0.6), ev.point, false, "", "", false)
+			_emote_sound(ev, 0, "till_snow", 3, -3.0, rng.randf_range(0.7, 0.85), ev.point, false, "", "", false)
+			return
 		"splat":
 			# 自分の雪玉は、その場所からそのままの大きさで。ほかの人の雪玉は、ほかの人の音の決まりで
 			var me_id: int = int(player.get("id")) if player and player.get("id") != null else -99

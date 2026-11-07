@@ -107,18 +107,18 @@ func _on_body(body: Node) -> void:
 # ---------------------------------------------------------------- 崩れた雪
 
 ## 当たった所に、綿の粉を散らし、綿の雪を少し残す。on に付けて一緒に動かす（ソリに当たれば、ソリと滑っていく）
-static func splat_at(on: Node3D, point: Vector3, normal: Vector3, small := false) -> void:
+static func splat_at(on: Node3D, point: Vector3, normal: Vector3, small := false, power := 1.0) -> void:
 	var puff := CPUParticles3D.new()
 	puff.one_shot = true
 	puff.emitting = false
 	puff.local_coords = false
-	puff.amount = 5 if small else 8
+	puff.amount = int((5 if small else 8) * power)
 	puff.lifetime = 0.9
 	puff.explosiveness = 0.95
 	puff.direction = Vector3(0, 0, 1)
 	puff.spread = 70.0
 	puff.initial_velocity_min = 0.6
-	puff.initial_velocity_max = 1.6
+	puff.initial_velocity_max = 1.6 * sqrt(power)
 	puff.gravity = Vector3(0, -2.5, 0)
 	puff.damping_min = 2.0
 	puff.damping_max = 3.0
