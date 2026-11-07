@@ -21,6 +21,10 @@ var _base_prev := -1.0
 var _results := []
 var _pending := {}
 var _per := 5.0
+var _gpu_t := 0.0
+var _gpu_sum := 0.0
+var _gpu_n := 0
+var _gpu_base := 0.0
 
 
 func _initialize() -> void:
@@ -64,7 +68,16 @@ func _bots(on: bool) -> void:
 
 
 func _process(dt: float) -> bool:
-	Engine.max_fps = 0   # main.gd の 60 の頭打ちを外して、本当の重さを測る
+	Engine.max_fps = int(args.get("cap", "0"))   # 既定は main.gd の 60 の頭打ちを外して、本当の重さを測る。--cap=60 なら遊ぶときと同じ
+	_gpu_t += dt
+	if _gpu_t > 1.0 and _phase == 2 and _t > 1.5:
+		_gpu_t = 0.0
+		var o := []
+		OS.execute("ioreg", ["-r", "-d", "1", "-c", "IOAccelerator"], o)
+		var m := RegEx.create_from_string("Device Utilization %\"=(\\d+)").search(String(o[0]))
+		if m:
+			_gpu_sum += float(m.get_string(1))
+			_gpu_n += 1
 	if main.get("settings") and main.settings:
 		main.settings.set_open(false)
 	var p = main.get("player")
@@ -120,11 +133,14 @@ func _begin(off: bool) -> void:
 
 func _finish() -> void:
 	var ms := _acc / maxi(_n, 1)
+	var gpu := _gpu_sum / maxi(_gpu_n, 1)
+	_gpu_sum = 0.0
+	_gpu_n = 0
 	var dr := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
 	if _pending.off:
 		(_steps[_si][1] as Callable).call(true)
 		_results.append([_steps[_si][0], _base_prev, ms])
-		_line("%-22s ふつう %.2f ms → 消す %.2f ms（差 %.2f ms, 描く数 %d）" % [_steps[_si][0], _base_prev, ms, _base_prev - ms, dr])
+		_line("%-22s ふつう %.2f ms GPU %.0f%% → 消す %.2f ms GPU %.0f%%（差 %.2f ms, 描く数 %d）" % [_steps[_si][0], _base_prev, _gpu_base, ms, gpu, _base_prev - ms, dr])
 		_si += 1
 		if _si >= _steps.size():
 			_out.flush()
@@ -133,6 +149,7 @@ func _finish() -> void:
 		_begin(false)
 	else:
 		_base_prev = ms
+		_gpu_base = gpu
 		_begin(true)
 
 

@@ -3,10 +3,12 @@ extends SceneTree
 ##   Godot --path game -s res://tools/fps_soak.gd -- --secs=600 --out=/path/soak.csv [--play=loop|still] [--every=5] [--time=時] [--vsync=on|off] [--cap=FPS]
 ## --play=loop: あなたがソリを押して登り、乗って滑り、降りて歩き回る（ふつうの遊びに近い動きをくり返す）
 ## --play=still: スポーンの場所に立ったまま（動きをなくして、時間で増える物だけを見る）
+## --probe-every=秒: 遊びの途中で、この間隔で決まった場所（丘の上とロッジの中を交互）に PROBE_SECS 秒立つ。場所の違いを抜いて、時間で重くなるかを見る
 ## --recover=秒: 測り終わる前のこの秒だけ、時刻を朝の 10 時へ戻す（落ちた FPS が戻るなら熱ではなく中身の原因）
 ## out に 1 行ずつ CSV を書き、out.census に 30 秒ごとの「親ごとの子の数・種類ごとの数」のふえた分を書く。
 
 const CENSUS_EVERY := 30.0
+const PROBE_SECS := 15.0
 
 var args := {}
 var main: Node3D
@@ -29,6 +31,8 @@ var _walk_turn := 0.0
 var _recovering := false
 var _w_down := false
 var _vsync_set := false
+var _next_probe := 30.0
+var _probe_n := 0
 
 
 func _initialize() -> void:
@@ -130,6 +134,8 @@ func _write_census() -> void:
 	var parts_on := 0
 	var aud_on := 0
 	var vp_live := 0
+	var mm_on := 0
+	var mm_inst := 0
 	while not stack.is_empty():
 		var n: Node = stack.pop_back()
 		var kids := n.get_child_count(true)
@@ -149,6 +155,10 @@ func _write_census() -> void:
 		if n is AudioStreamPlayer or n is AudioStreamPlayer3D:
 			if n.get("playing"):
 				aud_on += 1
+		if n is MultiMeshInstance3D and (n as MultiMeshInstance3D).is_visible_in_tree() and (n as MultiMeshInstance3D).multimesh:
+			mm_on += 1
+			var mm := (n as MultiMeshInstance3D).multimesh
+			mm_inst += mm.instance_count if mm.visible_instance_count < 0 else mm.visible_instance_count
 		if n is SubViewport and (n as SubViewport).render_target_update_mode == SubViewport.UPDATE_ALWAYS:
 			vp_live += 1
 		for c in n.get_children(true):
@@ -158,6 +168,8 @@ func _write_census() -> void:
 	now["on particles_emitting"] = parts_on
 	now["on audio_playing"] = aud_on
 	now["on subviewports_always"] = vp_live
+	now["on multimesh_shown"] = mm_on
+	now["on multimesh_instances"] = mm_inst
 	if _base.is_empty():
 		_base = now
 		var keys := now.keys()
@@ -200,6 +212,27 @@ func _drive(dt: float) -> void:
 	if p == null or sled == null:
 		return
 	_phase_t += dt
+	if args.has("probe-every") and t >= _next_probe and not _phase.begins_with("probe"):
+		if p.mode == p.Mode.RIDE:
+			p.get_off()
+		elif p.mode == p.Mode.GRIP:
+			p.let_go()
+		_begin("probe_hill" if _probe_n % 2 == 0 else "probe_lodge")
+		_probe_n += 1
+		_set_w(false)
+	if _phase.begins_with("probe"):
+		# 少し落ち着くまで置き直す
+		if _phase_t < 1.0:
+			if _phase == "probe_hill":
+				p.global_position = Vector3(1.5, main.height(1.5, 35.0) + 1.0, 35.0)
+				p.rotation.y = 2.62
+			else:
+				p.global_position = main.get_node("Audio").spawn_point("inside")
+				p.rotation.y = 0.8
+		if _phase_t > PROBE_SECS:
+			_next_probe = t + float(args["probe-every"])
+			_begin("push")
+		return
 	match _phase:
 		"wait":
 			if t > 3.0:

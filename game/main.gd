@@ -296,6 +296,18 @@ static func drift(x: float, z: float) -> float:
 	return _drift_at(x, z) * 0.35 * lodge_weight(x, z) * (1.0 - maxf(maxf(path_weight(x, z), Mountain.path_weight(x, z)), Grand.path_weight(x, z))) * Grand.seam_fade(x, z)
 
 
+static var _drift_memo := {}
+
+## 整数の格子の点の吹きだまり（地形は変わらないので、一度求めたら覚えておく。紐や足もとが 1 コマに何千回も聞くので）
+static func _drift_on(x: float, z: float) -> float:
+	var k := Vector2i(int(x), int(z))
+	var v = _drift_memo.get(k)
+	if v == null:
+		v = drift(x, z)
+		_drift_memo[k] = v
+	return v
+
+
 ## 見た目の雪面が当たり判定の地面からずれている量。1 m 刻みの点のあいだは直線でつなぐ（滑りあとを雪面に載せる用）
 static func snow_lift(x: float, z: float) -> float:
 	if Grand.on_ground(x, z):   # 大山の地面は 2 m おき
@@ -303,12 +315,12 @@ static func snow_lift(x: float, z: float) -> float:
 		var gz := floorf(z * 0.5) * 2.0
 		var tx := (x - gx) * 0.5
 		var tz := (z - gz) * 0.5
-		return lerpf(lerpf(drift(gx, gz), drift(gx + 2, gz), tx), lerpf(drift(gx, gz + 2), drift(gx + 2, gz + 2), tx), tz)
+		return lerpf(lerpf(_drift_on(gx, gz), _drift_on(gx + 2, gz), tx), lerpf(_drift_on(gx, gz + 2), _drift_on(gx + 2, gz + 2), tx), tz)
 	var x0 := floorf(x)
 	var z0 := floorf(z)
 	var fx := x - x0
 	var fz := z - z0
-	return lerpf(lerpf(drift(x0, z0), drift(x0 + 1, z0), fx), lerpf(drift(x0, z0 + 1), drift(x0 + 1, z0 + 1), fx), fz)
+	return lerpf(lerpf(_drift_on(x0, z0), _drift_on(x0 + 1, z0), fx), lerpf(_drift_on(x0, z0 + 1), _drift_on(x0 + 1, z0 + 1), fx), fz)
 
 
 static var _snow_cache := {}   # 格子の点 → 見た目の雪面の高さ（滑りあとが何度も同じ点を読むので覚えておく）
