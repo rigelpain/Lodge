@@ -488,7 +488,9 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var near_sled := false
 	var rope_end: Vector3 = sled.rope.end_point()
 	var to_rope := Vector2(rope_end.x - pos.x, rope_end.z - pos.z).length()
-	if to_rope < 2.4 and lp.z < 0.0:
+	if p.has_method("dueling") and p.dueling():
+		pass   # 雪合戦の対決のあいだは、ソリの F・E を案内しない（F はキャッチ）
+	elif to_rope < 2.4 and lp.z < 0.0:
 		_hint("rope", ["F"], "rope", rope_end + Vector3.UP * 0.55)
 		near_sled = true
 	else:

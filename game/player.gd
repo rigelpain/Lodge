@@ -514,7 +514,9 @@ func _unhandled_input(e: InputEvent) -> void:
 					Mode.GRIP, Mode.ROPE:
 						let_go()
 					Mode.WALK:
-						if _rope_end_near():
+						if dueling():
+							pass   # 雪合戦の対決のあいだは、F はキャッチだけ。玉が照準に入る前に押しても、そばのソリをつかまない
+						elif _rope_end_near():
 							grab_rope()
 						else:
 							grab()
@@ -562,8 +564,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_E:
 				if mode == Mode.RIDE:
 					get_off()
-				elif mode != Mode.SIT and mode != Mode.DRUM:
-					get_on()
+				elif mode != Mode.SIT and mode != Mode.DRUM and not dueling():
+					get_on()   # 雪合戦の対決のあいだは、ソリに乗らない
 
 
 ## そばの、座れる空いた席の番号（見ている向きにあるもの）。なければ -1
@@ -1143,6 +1145,8 @@ func _walk(dt: float, with_rope: bool) -> void:
 		prompt = "紐を引いている　F 手を離す" if pulling else "紐を持っている　歩くと引ける　F 手を離す"
 		return
 
+	if dueling():
+		return   # 雪合戦の対決のあいだは、ソリの F を案内しない（F はキャッチ）
 	if _rope_end_near():
 		prompt = "F で紐を持つ"
 		return
@@ -1686,9 +1690,15 @@ func plant_peg() -> bool:
 	return ok
 
 
+## 雪合戦の対決で戦っているあいだか（duel.gd の fight の段）。このあいだはソリに触れない（F はキャッチに取っておく）
+func dueling() -> bool:
+	var duel := get_parent().get_node_or_null("Duel")
+	return duel != null and not duel.fighting(id).is_empty()
+
+
 ## F で抜けるペグの刺さったソリ（なければ null）。歩いていればそばのペグ、乗っていれば乗っているソリのペグ
 func peg_near() -> RigidBody3D:
-	if craft == null or menu_open:
+	if craft == null or menu_open or dueling():
 		return null
 	if mode == Mode.RIDE:
 		if sled and "peg" in sled and is_instance_valid(sled.peg) and sled.peg.global_position.distance_to(global_position) < PEG_RIDE_REACH:
@@ -2327,7 +2337,7 @@ const RACK_LOOK := 0.92   # 台のソリの方を見ている（見ている向�
 
 func rack_target() -> Array:
 	var r = get_parent().get("sled_rack")
-	if r == null or craft == null or mode != Mode.WALK or menu_open or shopping or not r.can_use(self):
+	if r == null or craft == null or mode != Mode.WALK or menu_open or shopping or dueling() or not r.can_use(self):
 		return []
 	var l: Dictionary = craft.rack_list(id)
 	var best: Node3D = null
@@ -2356,7 +2366,7 @@ func rack_target() -> Array:
 ## 立てかけ台の前で、自分のソリがみなペグで留めてあって戻せず、持ち出せる物もないか（F の代わりに「いまは呼べない」の絵を出す）
 func rack_refused() -> bool:
 	var r = get_parent().get("sled_rack")
-	if r == null or craft == null or mode != Mode.WALK or menu_open or shopping or not r.can_use(self):
+	if r == null or craft == null or mode != Mode.WALK or menu_open or shopping or dueling() or not r.can_use(self):
 		return false
 	var l: Dictionary = craft.rack_list(id)
 	return l.on.is_empty() and l.free.is_empty() and l.touched.is_empty() and not l.busy.is_empty() and not _sled_in_reach()
