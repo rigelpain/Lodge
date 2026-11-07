@@ -67,7 +67,7 @@ func _host() -> void:
 	var r: Node3D = main.net.remotes.values()[0]
 	me.global_position = _spot()
 	await create_timer(2.0).timeout
-	main.craft.send({"kind": "earn", "who": r.id, "n": 1000, "at": r.global_position})   # 夜目を買う分（ホストだけが配れる）
+	main.craft.send({"kind": "earn", "who": r.id, "n": 1100, "at": r.global_position})   # 夜目を買う分（ホストだけが配れる）
 	var fog: float = env.fog_density
 	var ex: float = env.tonemap_exposure
 	var snow: bool = main.snowfall.visible
@@ -101,7 +101,7 @@ func _join() -> void:
 	var p: CharacterBody3D = main.player
 	var craft = main.craft
 	var st: Node3D = main.binocular_stands[0]
-	await _wait(func() -> bool: return craft.wallet(p.id) >= 400, 10.0)
+	await _wait(func() -> bool: return craft.wallet(p.id) >= 1000, 10.0)
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	p.set_third(false)
 	p.global_position = st.to_global(Vector3(-2.0, 0.1, 0.45))

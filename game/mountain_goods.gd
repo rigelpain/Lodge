@@ -18,8 +18,8 @@ const SHELF := [
 	{"item": Campfire.ITEM, "price": Campfire.PRICE, "on": true},
 	{"item": {"kind": Peg.KIND, "n": Peg.PACK}, "price": Peg.PRICE, "on": true},   # Peg.item() と同じ 1 束
 	{"item": Binoculars.ITEM, "price": Binoculars.PRICE, "on": true},
-	{"item": {"kind": "binoculars_far"}, "price": 150, "on": true},     # 値段は binoculars.gd の GRADES と同じ
-	{"item": {"kind": "binoculars_night"}, "price": 400, "on": true},
+	{"item": {"kind": "binoculars_far"}, "price": 500, "on": true},     # 値段は binoculars.gd の GRADES と同じ
+	{"item": {"kind": "binoculars_night"}, "price": 1000, "on": true},
 ]
 
 ## 確かめ用: true なら on でない品目も売る（--shelf-all。main.gd が入れる）

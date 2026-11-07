@@ -10,6 +10,7 @@ const KIND := "binoculars"
 const NAME := "双眼鏡"
 const ITEM := {"kind": KIND}
 const PRICE := 30               # 木のボタンの何個分。ペグの束 6 と焚き火セット 15 より高く、何度でも使える
+## 値段は代表が決めた（2026-11-08 代表「基本真鍮3、遠見白蝶貝5、夜目螺鈿1がいいです」）: 真鍮 3 枚 = 30、白蝶貝 5 枚 = 500、螺鈿 1 枚 = 1000
 const WHEEL_STEP := 1.18        # ホイール 1 目盛りで画角を何倍にするか
 const PAN_ZOOM := 0.12          # 二本指スクロールの効き。Godot は Mac のスクロール量の 0.03 倍で渡すので、約 430 pt の撫でで台の幅の端から端まで
 const PINCH_ZOOM := 1.5         # つまむ・広げるの効き
@@ -19,8 +20,8 @@ const PINCH_ZOOM := 1.5         # つまむ・広げるの効き
 ## 倍率はふだんの 75° との比: 40° 約 2 倍、24° 約 3.5 倍、16° 約 5.5 倍、12° 約 7 倍、6.5° 約 13.5 倍
 const GRADES := {
 	"binoculars": {"name": NAME, "price": PRICE, "fov": 24.0, "range": Vector2(16.0, 40.0), "night": false},
-	"binoculars_far": {"name": "遠見の双眼鏡", "price": 150, "fov": 12.0, "range": Vector2(6.5, 40.0), "night": false},
-	"binoculars_night": {"name": "夜目の双眼鏡", "price": 400, "fov": 24.0, "range": Vector2(16.0, 40.0), "night": true},
+	"binoculars_far": {"name": "遠見の双眼鏡", "price": 500, "fov": 12.0, "range": Vector2(6.5, 40.0), "night": false},
+	"binoculars_night": {"name": "夜目の双眼鏡", "price": 1000, "fov": 24.0, "range": Vector2(16.0, 40.0), "night": true},
 }
 const FOV_STAND := 10.0         # テラスの台の始めの画角（約 8.5 倍。観光地のものらしく強め）
 const FOV_STAND_RANGE := Vector2(5.0, 24.0)    # テラスの台の幅（約 17 倍〜約 3.5 倍）

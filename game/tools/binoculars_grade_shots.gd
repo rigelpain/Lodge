@@ -75,7 +75,7 @@ func _run() -> void:
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	p.set_third(false)
 	# ---- 買う: 段ごとの値段。前の段は持ち物に残る
-	craft.wallets[p.id] = 600
+	craft.wallets[p.id] = 1600
 	for kind in B.GRADES:
 		var before: int = craft.wallet(p.id)
 		craft.send({"kind": "buy", "who": p.id, "item": {"kind": kind}})
