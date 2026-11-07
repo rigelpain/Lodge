@@ -10,8 +10,9 @@ const Sled := preload("res://sled.gd")
 const Props := preload("res://props.gd")
 
 const LEAN := PI / 3.0              # 立てかける角度（雪の面から）
-const LEN := 12.0                   # 並べられる長さ (m)
-const WIDTHS := {"small": 0.95, "mid": 1.7, "large": 2.4}   # 1 台が取る幅。大は 5 台、小は 12 台ほど
+const LEN := 9.6                    # 並べられる長さ (m)。2026-11-07 に 12 m から、布の見本帳の幅のぶん短くした（代表「ソリ立てちょっと幅減らしても良いかも」「見本帖の大きさ分」）
+const SLOT_SHIFT := 1.2              # 目印 slot_sled_rack（12 m の台のまんなか）からずらす (m)。南の端（ミシンの側）を前の位置に残し、北の端を詰める
+const WIDTHS := {"small": 0.95, "mid": 1.7, "large": 2.4}   # 1 台が取る幅。大は 4 台、小は 10 台
 const USE_Z := Vector2(0.6, 4.2)    # F が届く前の奥行き (m)
 const USE_X := 0.8                  # 両端の外へ届く分 (m)
 const USE_FACE := 0.2               # 台の方を向いている（見ている向きと台の奥の向きの合い具合）
@@ -20,14 +21,15 @@ const OUT_TRY := [0.0, -3.0, 3.0, -6.0, 6.0]   # 持ち出す所がふさがっ�
 
 ## [大きさ, 中心, 高さ] と、ぶつかる所。glb の形に合わせた箱（土台・衝立・物差し）
 const BOXES := [
-	[Vector3(12.8, 0.2, 1.5), Vector3(0, 0.1, -1.25)],     # 土台
-	[Vector3(12.8, 0.45, 0.24), Vector3(0, 0.225, 0.46)],  # 手前の床の板に刺した、ストッパーの待ち針の列
-	[Vector3(12.4, 2.5, 0.2), Vector3(0, 1.25, -1.72)],    # 刺繍枠の衝立
-	[Vector3(12.5, 0.25, 0.3), Vector3(0, 1.1, -0.8)],     # 物差しと糸巻き
+	[Vector3(10.4, 0.2, 1.5), Vector3(0, 0.1, -1.25)],     # 土台
+	[Vector3(10.4, 0.45, 0.24), Vector3(0, 0.225, 0.46)],  # 手前の床の板に刺した、ストッパーの待ち針の列
+	[Vector3(10.0, 2.5, 0.2), Vector3(0, 1.25, -1.72)],    # 刺繍枠の衝立
+	[Vector3(10.1, 0.25, 0.3), Vector3(0, 1.1, -0.8)],     # 物差しと糸巻き
 ]
 
 
 func _ready() -> void:
+	position.x = SLOT_SHIFT
 	var g := Props.make("res://props/sled_rack/sled_rack.glb")
 	g.rotation.y = PI      # 模型の正面は -Z
 	add_child(g)
