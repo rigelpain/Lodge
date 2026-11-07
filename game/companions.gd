@@ -511,6 +511,10 @@ func pet_radius() -> float:
 
 # ---------------------------------------------------------------- 時計
 
+var _lod_dt := 0.0
+var _lod_frame := -1
+
+
 func _physics_process(dt: float) -> void:
 	if host == null or not is_instance_valid(host):
 		queue_free()
@@ -522,6 +526,15 @@ func _physics_process(dt: float) -> void:
 		_refresh()
 	if _doll == null or not is_instance_valid(_doll):
 		return
+	if Doll.view_lod(_doll, _doll.global_position + Vector3.UP) > 0:
+		# 遠い持ち主の小物とペットは 12 コマ／秒で（地面を探すのが重いので）
+		_lod_dt += dt
+		var lk := Doll.frame_index()
+		if lk == _lod_frame:
+			return
+		_lod_frame = lk
+		dt = _lod_dt
+	_lod_dt = 0.0
 	var pointing := _doll.point != Vector3.INF
 	if pointing and not _was_pointing:
 		_hop = 4   # 指さしが入ると、頭・肩の生き物がぴょんと跳ねて向き直る

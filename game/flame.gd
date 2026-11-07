@@ -108,7 +108,7 @@ func _step(k: int) -> void:
 	var far := false
 	var offscreen := false
 	if cam and _stepped:
-		var d2 := cam.global_position.distance_squared_to(global_position)
+		var d2 := cam.global_position.distance_squared_to(global_position) * pow(clampf(cam.fov / 75.0, 0.02, 1.0), 2.0)   # 望遠のときは近い扱い
 		var lim := FAR_BASE + FAR_PER_SIZE * size
 		far = d2 > lim * lim
 		offscreen = d2 > NEAR_ALWAYS * NEAR_ALWAYS and not cam.is_position_in_frustum(global_position)

@@ -174,6 +174,9 @@ var _peek_item: Node3D            # 目に当てている双眼鏡の形
 var _peek_kind := ""              # …その段
 var _hold: Array = [null, null]   # 手ごとに [基準のノード, その座標での手の所] か null
 var _arm_base := {}          # コマで決めた腕の回転（毎フレームここから伸ばし直す）
+var _lod_dt := 0.0           # 遠くて間引いたあいだに進んだ時間（view_lod）
+var _lod_frame := -1
+var _lod_quiet := false
 var _streams := {}           # 息の煙の出口: "small" ふだん、"big" 声、"long" B の長い息・おーい
 var _blow := {"small": 0.0, "big": 0.0}   # 吐き続ける残り (s)。0 になったら出すのをやめる（出た煙は流れ続ける）
 var _scale_base := {}        # 出口ごとの、粒の大きさ [最小, 最大]（寒さを掛ける前）
@@ -325,6 +328,21 @@ func body_hit(p: Vector3, r: float) -> bool:
 		return false
 	var bi := clampi(int(dy / top * BODY_BANDS), 0, BODY_BANDS - 1)
 	return Vector2(p.x - global_position.x, p.z - global_position.z).length() < radii[bi] + r
+
+
+## カメラから見た遠さの段（CPU の仲間が増えても重くならないように。2026-11-07 測定）。望遠のときはそのぶん近い扱い。
+##   0 近い  1 少し遠い（mid より遠く、画面に入っている）  2 見えない（mid より遠くて画面の外か、gone より遠い）
+## 別の小窓の中の人形は、その小窓のカメラで見る
+static func view_lod(n: Node, p: Vector3, mid := 30.0, gone := 220.0) -> int:
+	var cam := n.get_viewport().get_camera_3d()
+	if cam == null:
+		return 0
+	var d := cam.global_position.distance_to(p) * clampf(cam.fov / 75.0, 0.02, 1.0)
+	if d <= mid:
+		return 0
+	if d > gone or not cam.is_position_in_frustum(p):
+		return 2
+	return 1
 
 
 static func frame_index() -> int:
@@ -1169,16 +1187,39 @@ func _physics_process(dt: float) -> void:
 	_phase += TAU * d.length() / maxf(_speed / CADENCE, 0.5) / _scale
 
 	var fi := frame_index()
+	var lod := view_lod(self, pos + Vector3.UP)
+	if lod == 2:
+		# 遠いか画面の外: 姿勢を作らない。提灯だけ 12 コマ／秒でついて行かせる（灯りは離れた所からも見える）
+		_lod_dt += dt
+		if fi != _lod_frame:
+			_lod_frame = fi
+			_lantern.follow(_lod_dt, _yaw)
+			_lod_dt = 0.0
+		if not _lod_quiet:
+			_lod_quiet = true
+			for key in _streams:
+				(_streams[key] as CPUParticles3D).emitting = false
+		return
+	_lod_quiet = false
+	var posed := false
 	if fi != _frame and fi >= _pose_due:
 		# 湿っているとコマを飛ばす（12 → 10 → 8 fps）。飛ばしたぶんは次へ持ち越し、間隔をならす
 		_pose_due = _pose_due + pose_step if _pose_due + pose_step > fi else fi + pose_step
 		_frame = fi
 		_pose()
-	_show_damp(dt)
+		posed = true
+	if lod == 1 and not posed:
+		# 少し遠い: 骨へ当てるのは姿勢のコマだけ（提灯は毎回。人と一緒に動いて見えるように）
+		_lod_dt += dt
+		_lantern.follow(dt, _yaw)
+		return
+	var step_dt := dt + _lod_dt
+	_lod_dt = 0.0
+	_show_damp(step_dt)
 	_hold_hands()
 	_apply()
 	_lantern.follow(dt, _yaw)
-	_blow_breath(dt)
+	_blow_breath(step_dt)
 	_place_shapes()
 
 

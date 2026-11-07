@@ -117,7 +117,7 @@ func _write() -> void:
 	var n := maxi(frames, 1)
 	out.store_line("コマ数 %d 1 コマの時間 %.2f ms スクリプトの時間 %.2f ms  種類 %s" % [frames, frame_ms / n, script_ms / n, str(kinds)])
 	out.store_line("自分ms/コマ  合計ms/コマ  呼ぶ回数/コマ  関数")
-	for id in ids.slice(0, 80):
+	for id in ids.slice(0, 400):
 		out.store_line("%8.3f %8.3f %9.1f  %s" % [self_ms[id] / n, total_ms[id] / n, float(calls[id]) / n, names.get(id, str(id))])
 	out.close()
 	print("書いた")
