@@ -419,7 +419,8 @@ func _physics_process(dt: float) -> void:
 			var ahead: float = max(0.0, cos(err)) if abs(err) < deg_to_rad(60.0) else 0.0
 			var push_dir: Vector3 = fwd * ahead + sled.global_basis.x * steer * 1.2
 			if not _team.is_empty():   # 組: 小さなソリは縁を横に押すと横へ流れて回らないので、体で向きを回す
-				push_dir = fwd * ahead
+				# 頂上で滑る向きへ回しているあいだは、前へ押さない（行き先は下りなので、押すと回し終える前に頂上から滑り落ちる）
+				push_dir = fwd * ahead if not _team.route.is_empty() else Vector3.ZERO
 				if _team.go and absf(err) > 0.2:
 					sled.apply_torque(Vector3.UP * clampf(err, -1.0, 1.0) * sled.mass * TEAM_TWIST)
 			var waiting: bool = not _team.is_empty() and not _team.go   # みんながつかむまで押さない

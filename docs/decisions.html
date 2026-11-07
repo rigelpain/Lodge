@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lodge 判断の記録</title>
+<meta name="description" content="Lodge の代表の判断の記録。削除前のセッションから、やったことと判断を引用つきで残し、今後の判断のよりどころとなるポリシーの案にまとめた。">
+<meta name="color-scheme" content="light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="index.css?v=7">
+</head>
+<body>
+<a class="skip" href="#main">本文へ移る</a>
+
+<nav class="tabs" aria-label="ページ">
+  <a href="./" data-page="all">全体</a>
+  <a href="art.html" data-page="art">アート</a>
+  <a href="sound.html" data-page="sound">音</a>
+  <a href="layout.html" data-page="layout">間取り</a>
+  <a href="decisions.html" data-page="decisions" aria-current="page">判断</a>
+</nav>
+
+<!-- 判断: ポリシーの案と、セッションごとの記録。中身は decisions.json -->
+<main id="main" class="grid" data-page="decisions">
+  <header class="tile hero dec-hero" aria-labelledby="dec-goal">
+    <p class="kicker">判断の記録<span class="dot" aria-hidden="true"></span><time id="dec-updated"></time> 更新</p>
+    <h1 id="dec-goal"></h1>
+    <p class="pitch" id="dec-pitch"></p>
+    <p class="cap" id="dec-count"></p>
+  </header>
+  <div id="dec-policies" class="dec-policies"></div>
+  <section class="tile dec-changed" aria-labelledby="dchg-h">
+    <h2 id="dchg-h">変わった判断</h2>
+    <ol class="dec-chg" id="dec-changed"></ol>
+  </section>
+  <section class="tile dec-sessions" aria-labelledby="dses-h">
+    <h2 id="dses-h">セッションの記録 <span class="count num" id="dec-ses-count"></span></h2>
+    <div id="dec-sessions"></div>
+  </section>
+</main>
+
+<script src="index.js?v=8"></script>
+</body>
+</html>

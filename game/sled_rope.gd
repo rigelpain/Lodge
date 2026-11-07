@@ -1,4 +1,5 @@
 extends Node3D
+const Doll := preload("res://doll.gd")
 ## ソリの引き紐。左右の手すりの前の端（渦の一番前）を、長くたわんだ一本の紐（ブライドル）で結び、
 ## そのまんなかの結び目から引っ張り紐が前へ出る。紐は点を棒でつないだだけの簡単な計算（Verlet）で、
 ## 重力でたわみ、雪の上に寝る。持つ人がいれば先が手に付き、張ると結び目が引かれる向きへ寄って、
@@ -238,7 +239,36 @@ func _ground(p: Vector3) -> float:
 	return world.height(p.x, p.z) + (world.snow_lift(p.x, p.z) if world.has_method("snow_lift") else 0.0)
 
 
+## 遠い紐は細くて見えないので動かさず隠す。少し遠い紐は 3 回に 1 度だけ動かす。
+## CPU の仲間のソリが増えて全部が滑ると、紐だけで 1 コマの大半を使っていた（2026-11-07 測定）
+const ROPE_MID := 30.0    # これより遠いと 3 回に 1 度
+const ROPE_GONE := 80.0   # これより遠い（または少し遠くて画面の外の）紐は隠す
+var _rope_hidden := false
+
+
+func _rope_show(on: bool) -> void:
+	_bridle.visible = on
+	_pull.visible = on
+	for k in _knots:
+		k.visible = on
+
+
 func _physics_process(dt: float) -> void:
+	var lod := Doll.view_lod(sled, sled.global_position, ROPE_MID, ROPE_GONE)
+	if lod == 2:
+		if not _rope_hidden:
+			_rope_hidden = true
+			_rope_show(false)
+		return
+	if _rope_hidden:
+		_rope_hidden = false
+		_rope_show(true)
+		_lay_out()
+		_calm = 0
+	if lod == 1:
+		if (get_instance_id() + Engine.get_physics_frames()) % 3 != 0:
+			return
+		dt *= 3.0
 	var l := sled.to_global(_ties[0])
 	var r := sled.to_global(_ties[1])
 	if r.distance_to(_last_tie) > 2.0:   # ふもとへ戻したときなど

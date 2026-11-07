@@ -26,6 +26,8 @@ function paint() {
   } else if (page === 'sound') {
     if (!data.sound) throw new Error('data.json に sound がない');
     renderSound(data.sound); reveal();
+  } else if (page === 'decisions') {
+    loadDecisions();
   } else render(data);
 }
 
@@ -196,6 +198,67 @@ function renderSound(s) {
       if (first) show(first);
     })
     .catch((e) => { $('snd-groups').innerHTML = `<p class="cap" role="alert">sound/manifest.json を読めませんでした（${esc(e.message)}）。</p>`; });
+}
+
+// 判断: ポリシーの案と、セッションごとの記録。量が多いので data.json とは別に読む
+function loadDecisions() {
+  fetch('decisions.json', { cache: 'no-cache' })
+    .then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); })
+    .then((d) => { renderDecisions(d); reveal(); openFromHash(); })
+    .catch((e) => {
+      $('main').insertAdjacentHTML('afterbegin', `<p class="tile in" style="grid-column:span 12" role="alert">decisions.json を読めませんでした（${esc(e.message)}）。</p>`);
+    });
+}
+const QS = { report: 'Claude の報告にある引用', none: '本人の字句は記録にない' };
+function quoteLine(x) {
+  if (x.quote) return `<q>${esc(x.quote)}</q>${x.qs === 'report' ? `<span class="dec-src">${QS.report}</span>` : ''}`;
+  return `<span class="dec-src">${QS.none}</span>`;
+}
+function renderDecisions(d) {
+  const by = {};
+  d.sessions.forEach((s) => s.decisions.forEach((x) => { by[x.id] = x; }));
+  const link = (id) => `<a class="dec-ref num" href="#d-${esc(id)}">${esc(id)}</a>`;
+  $('dec-updated').dateTime = d.updated;
+  $('dec-updated').textContent = fmt(d.updated);
+  $('dec-goal').textContent = d.hero.title;
+  $('dec-pitch').textContent = d.hero.pitch;
+  $('dec-count').textContent = `セッション ${d.about.sessions} 件、判断 ${d.about.decisions} 件、ポリシーの案 ${d.about.policies} 件`;
+  const groups = [...new Set(d.policies.map((p) => p.group))];
+  $('dec-policies').innerHTML = groups.map((g) => `<section class="tile dec-group"><h2>${esc(g)}</h2><ol class="dec-pol">` +
+    d.policies.filter((p) => p.group === g).map((p) => {
+      const quoted = p.evidence.filter((i) => by[i].quote).slice(0, 2);
+      return `<li id="${esc(p.id)}"><h3>${esc(p.title)}</h3><p>${esc(p.rule)}</p>` +
+        (p.why ? `<p class="dec-why">${esc(p.why)}</p>` : '') +
+        (p.exception ? `<p class="dec-why">${esc(p.exception)}</p>` : '') +
+        quoted.map((i) => `<p class="dec-q">${quoteLine(by[i])}</p>`).join('') +
+        `<p class="dec-refs">根拠 ${p.evidence.map(link).join(' ')}</p></li>`;
+    }).join('') + '</ol></section>').join('');
+  $('dec-changed').innerHTML = d.changed.map((c) => `<li><b>${esc(c.topic)}</b><span>${esc(c.text)}</span><span class="dec-refs">根拠 ${c.evidence.map(link).join(' ')}</span></li>`).join('');
+  $('dec-ses-count').textContent = `${d.sessions.length} 件`;
+  $('dec-sessions').innerHTML = d.sessions.map((s) => `<details class="dec-ses" id="s-${s.n}"><summary><span class="num idx">${String(s.n).padStart(2, '0')}</span><span class="dec-ses-t">${esc(s.title)}</span><span class="dec-ses-m num">${esc(s.dates || '')} ・ 判断 ${s.decisions.length} 件</span></summary>` +
+    `<h3>やったこと</h3><ul>${s.did.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` +
+    (s.outcome ? `<h3>どう終わったか</h3><p>${esc(s.outcome)}</p>` : '') +
+    (s.decisions.length ? `<h3>判断</h3><ol class="dec-list">${s.decisions.map((x) => `<li id="d-${esc(x.id)}"><span class="dec-id num">${esc(x.id)}</span><span class="dec-tag">${esc(x.kind)}</span><span class="dec-tag">${esc(x.scope)}</span>${x.date ? `<time class="num" datetime="${esc(x.date)}">${short(x.date)}</time>` : ''}<p>${esc(x.decision)}</p><p class="dec-q">${quoteLine(x)}</p>${x.why ? `<p class="dec-why">理由: ${esc(x.why)}</p>` : ''}</li>`).join('')}</ol>` : '') +
+    (s.open && s.open.length ? `<h3>記録の時点で残っていたこと</h3><ul>${s.open.map((x) => `<li>${esc(x)}</li>`).join('')}</ul>` : '') +
+    '</details>').join('');
+  $('main').addEventListener('click', (e) => {
+    const a = e.target.closest('a.dec-ref');
+    if (!a) return;
+    e.preventDefault();
+    history.replaceState(null, '', a.getAttribute('href'));
+    openFromHash();
+  });
+}
+// #d-8-18 のような根拠へ飛ぶとき、閉じているセッションを開く
+function openFromHash() {
+  if (!location.hash.startsWith('#d-')) return;
+  const el = document.getElementById(location.hash.slice(1));
+  if (!el) return;
+  const s = el.closest('details');
+  if (s) s.open = true;
+  el.scrollIntoView({ block: 'center' });
+  el.classList.add('dec-hit');
+  setTimeout(() => el.classList.remove('dec-hit'), 1600);
 }
 
 // ページの行き来: 読み込み直さず、相手のページの main だけ取ってきて差し替える

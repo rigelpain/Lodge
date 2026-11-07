@@ -156,6 +156,15 @@ func _ready() -> void:
 	_tag_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tag_view.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	add_child(_tag_view)
+	_hint_view = View.new()   # 操作の手引き。世界の物について毎コマ動くので、HUD 本体から分けて、本体を毎コマ描き直さない（2026-11-07）
+	_hint_view.hud = self
+	_hint_view.part = "hints"
+	_hint_view.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_hint_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hint_view.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	_hint_view.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+	_hint_view.z_index = 10   # 本体と同じ高さ。木の中で本体より前なので、もとと同じく本体の下に描かれる
+	add_child(_hint_view)
 	_view = View.new()
 	_view.hud = self
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -250,6 +259,10 @@ func _process(dt: float) -> void:
 	if vst != _view_stamp_last:
 		_view_stamp_last = vst
 		_view.queue_redraw()
+	var hst := [_view.size, _hints.hash()]
+	if hst != _hint_stamp_last:
+		_hint_stamp_last = hst
+		_hint_view.queue_redraw()
 
 
 # ---- 無操作で引っこめる ------------------------------------------------------------------
@@ -475,7 +488,9 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	var near_sled := false
 	var rope_end: Vector3 = sled.rope.end_point()
 	var to_rope := Vector2(rope_end.x - pos.x, rope_end.z - pos.z).length()
-	if to_rope < 2.4 and lp.z < 0.0:
+	if p.has_method("dueling") and p.dueling():
+		pass   # 雪合戦の対決のあいだは、ソリの F・E を案内しない（F はキャッチ）
+	elif to_rope < 2.4 and lp.z < 0.0:
 		_hint("rope", ["F"], "rope", rope_end + Vector3.UP * 0.55)
 		near_sled = true
 	else:
@@ -1025,13 +1040,15 @@ func _update_plates() -> void:
 
 var _tag_view_stamp := []
 var _view_stamp_last := []
+var _hint_view: Control
+var _hint_stamp_last := []
 
 ## HUD 本体（操作の札・刺繍枠・水のゲージとバッジ・小窓の印）の中身の印。これが変わったときだけ描き直す
 ## （2026-11-02、M2 で毎コマ 2.5〜3 ms 描いていた）。風の揺れは人形と同じ 12 コマ／秒の刻みなので、そのコマで描き直す。
 ## 引っこめ・札の出入り・跳ね・長押しなど動いている途中は、印が毎コマ変わるので毎コマ描く
 func _view_stamp() -> Array:
 	var p = main.player if main else null
-	var s := [_view.size, _hints.hash(), Icons.tuck, _badge_pop.hash(), float(p.get("tag_hold")) if p else 0.0, main.duel_focus if main else false]
+	var s := [_view.size, Icons.tuck, _badge_pop.hash(), float(p.get("tag_hold")) if p else 0.0, main.duel_focus if main else false]
 	if Icons.wind > 0.001:
 		s.append(Doll.frame_index() if Icons.wind_stepped else Engine.get_process_frames())
 	var sc = main.get("self_cam") if main else null
@@ -1171,11 +1188,14 @@ class View extends Control:
 				Icons.flap(self, tr.position + Vector2(tr.size.x, 0), Vector2.LEFT, Vector2.DOWN, 22.0 * u, 1.0)
 			Icons.printing = false
 			return
-		for id in hud._hints:
-			var h: Dictionary = hud._hints[id]
-			if h.a < 0.02 or not h.get("shown", false):
-				continue
-			Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, ease(h.a, 0.5))   # 操作のための表示なので、平らで、風でも揺らさない
+		if part == "hints":
+			Icons.printing = false
+			for id in hud._hints:
+				var h: Dictionary = hud._hints[id]
+				if h.a < 0.02 or not h.get("shown", false):
+					continue
+				Icons.badge(self, h.keys, h.icon, h.draw_at, h.draw_sz, ease(h.a, 0.5))   # 操作のための表示なので、平らで、風でも揺らさない
+			return
 		_draw_tag_hold(u)
 		_draw_hoop(u)
 		_draw_damp(u)
