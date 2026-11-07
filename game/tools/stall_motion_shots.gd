@@ -7,7 +7,6 @@ extends SceneTree
 ##   --far=7 --near=2.6 --walk-s=1.5 --stay-s=3 --back=1   歩く距離と時間（--back=0 で戻らない）
 ##   --side=1.2 --cam-back=4.5 --cam-h=1.6 --look-h=1.2    カメラの置き場（施設の座標。--side は横へ、--cam-back は正面へ）
 ##   --person=1  歩くあなたの人形も写す（既定は写さない）
-##   --spin=keep 染台: 人形の輪が回り続ける案で撮る
 ##   --sew=1     ミシン: 歩いたあとに縫い始める（針の上下、できた物が台から床へ下りるまでを撮る）
 ## 終わりに、見本帳・染台・双眼鏡台が止まっているか（動きが残っていないか）を書き出す。
 
@@ -109,8 +108,6 @@ func _run() -> void:
 		print("保存: ", name_)
 		quit()
 		return
-	if args.get("spin", "") == "keep":
-		main.wardrobe.spin_keep = true
 	await create_timer(_num("settle", 1.5)).timeout
 	var walk := _num("walk-s", 1.5)
 	var stay := _num("stay-s", 3.0)

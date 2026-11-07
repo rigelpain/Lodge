@@ -4,6 +4,7 @@ extends Node3D
 ## 案の絵と形の台本は design/dye-wardrobe/）。人形の高さを見て F で人形を選び直す画面（wardrobe_ui.gd）、桶を見下ろして F で服を染める画面（dye_vat.gd）。
 ## いま自分が着ている人形のハンガーは空になる（その人形を着て出ている、と輪を見ればわかる。文字は出さない）。
 ## 掛かった人形は、輪の下で 12 コマで少し揺れる。人形の glb は重いので、あなたが近づいて（NEAR_LOAD）から掛ける。
+## 人が近づくと、人形は腰の輪に沿ってぐるんと 1 周して止まり、長い布は液から昇る（dress_form_cloth.gd）。遠くでは人形を動かさない。
 ## 置き方は main.gd（ロッジの 1 階の南西の隅、紙細工屋さんのテントの南どなり）。この節の FRONT（+Z）が人台の正面。後ろは長い布
 
 const Doll := preload("res://doll.gd")
@@ -26,7 +27,6 @@ const SENSE_R := 8.0         # 人台の真ん中からこの距離に人が来�
 const SPIN_ACCEL := 0.024    # 人形の輪: 勢いの増え方・減り方（コマごと、rad）
 const SPIN_EASE := 0.14      # 人形の輪: 止まる所へ寄せる強さ
 const SPIN_TOP := 0.34       # 人形の輪: いちばん速いとき（コマごと、rad。12 コマで見て回るのが分かる速さ）
-const KEEP_SPEED := 0.05     # 回り続ける案の速さ（コマごと、rad。1 周 10 秒）
 const SWING := 1.3           # 回る速さのぶん、人形が外へ振れる
 const SWING_MAX := 0.42
 const TRAIL := 0.9           # 回る速さのぶん、人形が後ろへ遅れる
@@ -34,14 +34,12 @@ const TWIRLS := 1.0          # 輪が 1 周するあいだに、人形がかぎ�
 
 var player: Node3D           # main.gd が入れる
 var main: Node               # main.gd が入れる
-var spin_keep := false       # 比べる案: 人がいるあいだゆっくり回り続ける（確かめの道具が入れる）
 var near := false            # 近くに人がいる（dress_form_cloth.gd も見る）
 var _wheel: Node3D           # ハンガーをまとめて回す節（人台の真ん中）
 var _turn := 0.0             # 輪の回った角 (rad)
 var _speed := 0.0
 var _goal := 0.0             # 輪を止める角（1 周ずつ増える）
 var _sense_t := 0.0
-var _cruise := false         # 回り続ける案で、同じ速さで回っているあいだ
 var _rested := true          # 人形が振れ終わった
 var _past: Array[float] = [] # 少し前までの輪の速さ（人形ごとの遅れに使う）
 var _hangers := {}           # 人形 → [ハンガーの節（竿で揺れる）, 人形の節]
@@ -219,18 +217,10 @@ func _speed_at(i: int) -> float:
 	return _past[mini(i, _past.size() - 1)] if not _past.is_empty() else 0.0
 
 
-## 輪を 12 コマごとに進める。来るたびに 1 周: 勢いをつけて回り、止まる所を少し行き過ぎて戻る。
-## 回り続ける案（spin_keep）: 1 周のあと、人がいるあいだ同じ速さで回り、離れると次の 1 周の終わりで止まる
+## 輪を 12 コマごとに進める。来るたびに 1 周: 勢いをつけて回り、止まる所を少し行き過ぎて戻る
+## （2026-11-07 代表「トルソーにかかってる人形たちをぐるんとまわしてもいいのに」。回り続ける案と比べて、1 周して止まる案に決めた）
 func _step_wheel() -> void:
-	var left := _goal - _turn
-	if spin_keep and near and left < 1.0:
-		_goal += TAU
-		_cruise = true
-	var want := clampf(left * SPIN_EASE, -SPIN_TOP, SPIN_TOP)
-	if _cruise and near:
-		want = KEEP_SPEED
-	else:
-		_cruise = false
+	var want := clampf((_goal - _turn) * SPIN_EASE, -SPIN_TOP, SPIN_TOP)
 	_speed = move_toward(_speed, want, SPIN_ACCEL)
 	_turn += _speed
 	if absf(_goal - _turn) < 0.004 and absf(_speed) < 0.004:
