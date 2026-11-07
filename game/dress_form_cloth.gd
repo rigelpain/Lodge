@@ -68,7 +68,7 @@ func _build_all() -> void:
 
 
 func _process(_dt: float) -> void:
-	var goal := STAGES if get_parent().near else 0
+	var goal := STAGES if get_parent().cloth_up else 0
 	if _stage == goal:
 		return
 	var f := Doll.frame_index()
@@ -79,6 +79,11 @@ func _process(_dt: float) -> void:
 	_mi.visible = _stage > 0
 	if _stage > 0:
 		_mi.mesh = _mesh(_stage)
+
+
+## 布が液の中にある（人形の足が布を突き抜けないので、回してよい）
+func sunk() -> bool:
+	return _stage == 0
 
 
 ## 布 k の、コマ s での昇り具合（0 = 液の中、1 = 天井）。出だしは速く、上で少しゆるむ
