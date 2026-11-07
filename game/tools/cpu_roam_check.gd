@@ -121,7 +121,8 @@ func _watch(b) -> void:
 		count["team"] = int(count.get("team", 0)) + 1
 	if not team and w.get("team", false):
 		var s = b.sled
-		_say("組おわり %s %s: ソリの所 (%.0f, %.1f, %.0f)、%s の所 (%.1f, %.1f)" % [_name(b), "乗った" if ride else "抜けた", s.global_position.x, s.global_position.y, s.global_position.z, s.kind, b.global_position.x, b.global_position.z])
+		_say("組おわり %s %s: ソリの所 (%.0f, %.1f, %.0f)、%s の所 (%.1f, %.1f)%s" % [_name(b), "乗った" if ride else "抜けた", s.global_position.x, s.global_position.y, s.global_position.z, s.kind, b.global_position.x, b.global_position.z,
+				"" if ride else " ソリまで %.1f m 速さ %.1f 傾き %.2f 打ち上がり %s 乗っている %d" % [b.global_position.distance_to(s.global_position), s.linear_velocity.length(), s.global_basis.y.y, str(s.get("crashed")), s.riders.size()]])
 		count["board" if ride else "left"] = int(count.get("board" if ride else "left", 0)) + 1
 	w["team"] = team
 	if b._area != w.area:
