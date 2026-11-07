@@ -201,7 +201,10 @@ var _voice := 0
 var _next_breath := 0
 var _rng := RandomNumberGenerator.new()
 var _scale := 1.0
-var _long: CPUParticles3D    # B の長い息・おーい（_streams["long"]）
+var _long: CPUParticles3D    # おーいの長い息（_streams["long"]）
+var _exhale: CPUParticles3D  # B の息（_streams["exhale"]）
+var _exhale_mat: ShaderMaterial   # B の息の材質（濃さは _breath_mat と同じ）
+var _exhale_opacity := -1.0
 var _ball: Node3D            # 右手の雪玉
 var _stock: Node3D          # 左の袖の雪玉のストック（雪玉がなければ隠す）
 var _shapes := {}            # 手の形のアップリケ: 形 → {1: 右手, -1: 左手}
@@ -1393,8 +1396,10 @@ func _pose() -> void:
 		bend += _crouch_legs(1.0) * 0.6
 	if em[1] >= 0:
 		bend += _emote_body(em[0], em[1])
-	if em[0] != "breath" and em[0] != "oi":
+	if em[0] != "oi":
 		_long.emitting = false
+	if em[0] != "breath":
+		_exhale.emitting = false
 	_turn_axis("chest", X, -bend - _damp_bend())
 	_flop_limbs()
 
@@ -1709,6 +1714,7 @@ uniform vec3 sun_dir = vec3(-0.5, -0.6, -0.6);   // 光の進む向き（世界�
 uniform float opacity = 0.78;                     // 少し透ける（後ろの景色がうっすら見える）
 uniform float bright = 1.75;                      // 画面の明るさの圧縮（トーンマップ）のあとでも真っ白に見えるよう、1 より明るく
 uniform float erode = 0.0;                        // 粒の寿命の後半で、薄い所から削れて消える強さ（白い息は 0.85。霧散する）
+uniform float near_fade = 0.0;                    // カメラからこの距離 (m) より近いほど薄くする（0 で薄くしない。B の息が一人称の視界をふさがないよう）
 
 varying float spin;
 varying float life;   // 粒の寿命のどこにいるか（0 生まれ 〜 1 消える）
@@ -1744,6 +1750,9 @@ void fragment() {
 	vec3 col = mix(mix(cool, warm, lit), cool * 0.68, rim * 0.5);
 	ALBEDO = col * bright;
 	ALPHA = t.a * COLOR.a * opacity;
+	if (near_fade > 0.0) {
+		ALPHA *= smoothstep(near_fade * 0.25, near_fade, -VERTEX.z);
+	}
 }
 """
 
@@ -1811,8 +1820,14 @@ static func _cotton_tuft(n: int, seed: int) -> Image:
 const STREAMS := {
 	"small": [26.0, 2.1, 0.85, 0.42],   # ふだんの息: 0.6 秒ほど、細く短く
 	"big": [30.0, 2.5, 1.15, 0.62],     # 声の息: 大きく勢いよく
-	"long": [24.0, 2.7, 1.35, 0.55],    # B の長い息・おーい: 吐いているあいだ出し続ける
+	"long": [24.0, 2.7, 1.35, 0.55],    # おーい: 声を伸ばすあいだ出し続ける
+	"exhale": [18.0, 3.6, 2.3, 1.15],   # B の息: 押しているあいだ出し続ける。粒の数は長い息と同じ 65（1 秒の粒を減らして長生きさせ、大きな粒で重ねる）。大きさは 3 つ目、前へ吐く勢いは 4 つ目
 }
+## B の息だけの作り（ほかの息は変わらない）
+const EXHALE_RISE := 0.8        # 昇る力 (m/s²。ほかの息は 0.5)。大きいほど高く昇る
+const EXHALE_UP := 0.25        # 吐く向きの上向き（ほかの息は 0.12）。小さいほど前へ伸びてから昇る（一人称で、少し先に煙の柱が見える）
+const EXHALE_ERODE := 0.7       # 寿命の後半で削れて消える強さ（ほかの息は 0.85）。小さいほど高い所まで形が残る
+const EXHALE_NEAR := 1.7        # カメラからこの距離 (m) より近いほど薄い。大きいほど一人称の視界が空く（離れて見るほかの人には、ほとんど効かない）
 
 
 func _make_breath() -> void:
@@ -1873,6 +1888,27 @@ func _make_breath() -> void:
 		att.add_child(e)
 		_streams[key] = e
 	_long = _streams["long"]
+	# B の息: 高く昇り、高い所でも形が見えるよう、濃さを長く保つ
+	_exhale = _streams["exhale"]
+	_exhale.direction = Vector3(0, EXHALE_UP, -1)
+	_exhale.gravity = Vector3(0, EXHALE_RISE, 0)
+	var exhale_fade := Gradient.new()
+	exhale_fade.offsets = fade.offsets
+	exhale_fade.colors = PackedColorArray([Color(1, 1, 1, 0.0), Color(1, 1, 1, 0.9), Color(1, 1, 1, 0.65), Color(1, 1, 1, 0.42), Color(1, 1, 1, 0.18), Color(1, 1, 1, 0.0)])
+	_exhale.color_ramp = exhale_fade
+	var exhale_grow := Curve.new()   # 出口から早く太る（昇っても細い筋にならない）
+	exhale_grow.max_value = 4.0
+	exhale_grow.add_point(Vector2(0.0, 0.2))
+	exhale_grow.add_point(Vector2(0.25, 1.15))
+	exhale_grow.add_point(Vector2(1.0, 2.9))
+	_exhale.scale_amount_curve = exhale_grow
+	_exhale_mat = mat.duplicate()
+	_exhale_mat.set_shader_parameter("erode", EXHALE_ERODE)
+	_exhale_mat.set_shader_parameter("near_fade", EXHALE_NEAR)
+	var exhale_quad := QuadMesh.new()
+	exhale_quad.size = quad.size
+	exhale_quad.material = _exhale_mat
+	_exhale.mesh = exhale_quad
 
 
 ## 息を吐く。size 1 がふだんの小さな息、声のときは大きく。吐く長さのあいだ口から煙を出し続ける（出た煙は流れて消える）。
@@ -1913,7 +1949,11 @@ func _blow_breath(dt: float) -> void:
 	_calm = lerpf(_calm, _calm_want, k)
 	var seen := _cold > 0.04
 	var size := 0.7 + 0.35 * _cold
-	_breath_mat.set_shader_parameter("opacity", 0.78 * clampf(_cold, 0.0, 1.25))   # 暖かくなるにつれて薄れ、消える
+	var opacity := 0.78 * clampf(_cold, 0.0, 1.25)
+	_breath_mat.set_shader_parameter("opacity", opacity)   # 暖かくなるにつれて薄れ、消える
+	if absf(opacity - _exhale_opacity) > 0.004:
+		_exhale_opacity = opacity
+		_exhale_mat.set_shader_parameter("opacity", opacity)
 	for key in _streams:
 		var e: CPUParticles3D = _streams[key]
 		e.scale_amount_min = _scale_base[key][0] * size
@@ -1922,7 +1962,7 @@ func _blow_breath(dt: float) -> void:
 			_blow[key] = maxf(0.0, _blow[key] - dt)
 			e.emitting = _blow[key] > 0.0 and seen
 		elif not seen:
-			e.emitting = false   # 長い息も、暖かい所では白くならない
+			e.emitting = false   # 長い息・B の息も、暖かい所では白くならない
 
 
 const Temp := preload("res://temperature.gd")
@@ -2384,7 +2424,7 @@ func _emote_breath(kind_: String, k: int) -> void:
 		"breath":
 			# 短く吸ったあと、押しているあいだ吐き続ける（離したら止める）
 			var stop: bool = emote.has("until") and _frame >= int(emote.until)
-			_long.emitting = k >= INHALE and not stop
+			_exhale.emitting = k >= INHALE and not stop
 			_next_breath = _frame + 40
 		"wa":
 			if k == 2:

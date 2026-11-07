@@ -18,3 +18,13 @@
 ```
 
 重さ: `--fps` で、あなたと仲間 2 人が 10 秒吐き続けるあいだの fps を出す（`--disable-vsync` を付けて測る）。
+
+## B の息を大きく、高く（2026-11-07）
+
+`big-exhale/before-after.jpg`: 左が直す前、右が直したあと。どれも B を押して 4.5 秒。上から 離れた所から（真横 7 m）、顔の横から、一人称（自分が吐く）、一人称（仲間が 2 人で吐くのを見る）。
+
+```bash
+/Applications/Godot.app/Contents/MacOS/Godot --path game --resolution 960x540 -s res://tools/breath_shots.gd -- --bots=2 --no-snow --no-sound --view=other --only=b --when=1.0,2.5,4.5 --tag=now --dir="$PWD/design/breath/raw"
+```
+
+数字は同じ道具の `--measure`（`--view=other` で見える高さ、`--view=fp` で画面をふさぐ割合）。`--only=b_bot` は仲間が B で吐くのを自分の目で見る絵、`--pitch=0.5` は見上げる絵。通信の確かめは `tools/breath_net_check.gd`（2 つ立ち上げる）。
