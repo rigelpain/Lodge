@@ -104,8 +104,9 @@ const PAPER_LADY_AT := Vector2(-19.5, -5.85)
 const DyeVat := preload("res://dye_vat.gd")
 const DyeUi := preload("res://dye_ui.gd")
 const SledBookUi := preload("res://sled_book_ui.gd")
-## 布の見本帳（sled_book.gd）の立つ所（ロッジの座標 (x, y)）。ミシンと番台の前、立てかけ台の前の通り道の南。下屋の外の雪の上で、正面は西
-const SLED_BOOK_AT := Vector2(-30.3, -3.3)
+## 布の見本帳（sled_book.gd）の立つ所（ロッジの座標 (x, y)）。立てかけ台の北の端の横で、台と同じ列に同じ西を向いて並ぶ（2026-11-07 代表
+## 「ソリ立ての横に並べるのが良いと思うんだけど」「ソリ立てちょっと幅減らしても良いかも」「見本帖の大きさ分」）。台を短くして空けた所（sled_rack.gd の LEN）
+const SLED_BOOK_AT := Vector2(-25.1, 9.7)
 const Net := preload("res://net.gd")
 const Start := preload("res://start.gd")
 ## 染めと着替えの人台（wardrobe.gd と子の dye_vat.gd）の真ん中（ロッジの座標 (x, y)）。1 階の南西の隅。もとはソリ屋（ミシン・番台・貸出の棚）のあった所。
@@ -1371,7 +1372,7 @@ func _furnish_lodge() -> void:
 		sled_rack = preload("res://sled_rack.gd").new()
 		sled_rack.name = "SledRack"
 		rack_slot.add_child(sled_rack)
-	# ミシンの近くの、布の見本帳（前で F を押して、自分のソリの色と滑りあとを替える）
+	# 立てかけ台の横の、布の見本帳（前で F を押して、自分のソリの色と滑りあとを替える）
 	sled_book = preload("res://sled_book.gd").new()
 	sled_book.name = "SledBook"
 	sled_book.position = Vector3(SLED_BOOK_AT.x, 0.0, -SLED_BOOK_AT.y)

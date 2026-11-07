@@ -219,9 +219,9 @@ func _run() -> void:
 	var u1: float = rack.fit("large", taken)
 	_say(absf(u1 - u0) >= (1.7 + 2.4) / 2.0 - 0.01, "次の大の置き場は重ならない（%.2f と %.2f）" % [u0, u1])
 	var full := []
-	for i in 5:
+	for i in 4:
 		full.append([rack.fit("large", full), 2.4])
-	_say(is_nan(rack.fit("large", full)), "大 5 台でいっぱい（6 台目は断る）")
+	_say(is_nan(rack.fit("large", full)), "大 4 台でいっぱい（5 台目は断る）")
 	# 通信: あとから来た人の画面に、台のソリがそのまま出る（ホストの様子を読み直す）
 	var snap: Dictionary = craft.snapshot()
 	craft.load_snapshot(snap)
