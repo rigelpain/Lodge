@@ -110,4 +110,6 @@ static func _head_material() -> StandardMaterial3D:
 	felt.vertex_color_is_srgb = true   # 人の色は札や HUD と同じ sRGB の値
 	felt.albedo_color = Color(0.72, 0.72, 0.72)   # 看板の布と同じく、雪山の光で白く飛ばないように沈める（LIT）
 	felt.rim_enabled = false   # 小さな玉はリムで色が抜けて、人の色に見えなくなる
+	felt.backlight_enabled = true   # 灯りは上から当たり、人は下から見上げる。夜に玉の下側が黒く沈まないように、裏へも光を回す
+	felt.backlight = Color(0.55, 0.55, 0.55)
 	return felt
