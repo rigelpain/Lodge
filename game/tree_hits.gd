@@ -6,8 +6,24 @@ extends StaticBody3D
 ## 木の置き場所はどの画面でも同じ種の乱数で決まるので、当たりも全員の画面で同じ。
 
 const TOP := 0.9             # 芯のてっぺん（木の高さの割合）。先は円錐が細いので、芯が見た目から出ないように
+const LAYER := 2             # 木だけを探す当たりの層（ソリが、ぶつかる幹を探すのに使う。ふつうの当たりは層 1 のまま）
 
 static var _sizes := {}      # 木の glb → Vector2(幹の半径, 木の高さ)。倍率 1 のとき
+
+
+func _init() -> void:
+	collision_layer = 1 | LAYER
+	add_to_group("tree_hits")
+
+
+## 当たりの番号（光線や形の問い合わせの shape）の幹の根もと（世界）
+func trunk_at(shape: int) -> Vector3:
+	return global_transform * shape_owner_get_transform(shape_find_owner(shape)).origin
+
+
+## その幹の半径 (m)
+func radius_at(shape: int) -> float:
+	return (shape_owner_get_shape(shape_find_owner(shape), 0) as CapsuleShape3D).radius
 
 
 ## 置いた木（位置と倍率を決めたあと）の幹の当たりを足す。木はこの体と同じ親の下にあること

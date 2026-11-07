@@ -896,6 +896,34 @@ func _check_run_over() -> void:
 	fling.start(hit)
 
 
+## 乗っているソリが木にぶつかって、放り投げられる（ホストが配った向きと強さで。flung.gd・emotes.gd）。米袋は帯に戻す（空の袋を坂に残さない）
+func thrown(ev: Dictionary) -> void:
+	if mode != Mode.RIDE or fling.active():
+		return
+	var gs := sled
+	var was := seat
+	gs.dismount(self)
+	seat = Vector3.INF
+	mode = Mode.WALK
+	_col.disabled = false
+	global_position += Vector3.UP * 0.15
+	velocity = Vector3.ZERO
+	reset_physics_interpolation()
+	if pointing:
+		_stop_point()
+	if hands_name != "":
+		set_height("")
+	peek_stop()
+	_winding = false
+	_eating = false
+	_fall_v = 0.0
+	fling.throw(ev)
+	if gs.kind == "sack":
+		SackLook.set_stage(gs, was, 0)
+		if craft:
+			craft.send({"kind": "sack_in", "who": id})
+
+
 ## 人形に、いまの動きを伝える（姿勢は人形が 12 コマで刻む）。Q を押しているあいだ手を振る（仮のキー）
 func _pose_doll() -> void:
 	doll.act = [Doll.Act.WALK, Doll.Act.PUSH, Doll.Act.RIDE, Doll.Act.ROPE, Doll.Act.SIT, Doll.Act.SIT][mode]

@@ -5,6 +5,8 @@ const Look := preload("res://look.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Snowball := preload("res://snowball.gd")
 const Stitches := preload("res://stitches.gd")
+const Flung := preload("res://flung.gd")
+const TreeHits := preload("res://tree_hits.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
 ## 誰も触れていない空のソリは、坂をゆっくりずり落ちる。速く下っているソリをつかむと引きずられ、
@@ -225,6 +227,9 @@ var _trail_chunk := TRAIL_CHUNK                  # 塊の目の数
 var _trail_rng := RandomNumberGenerator.new()
 var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定からずれる量。main が渡す
 var snow_plane := Callable()  # (x, z) → 見た目の雪面の向きと高さ Vector4(法線 x, y, z, 高さ)。main が渡す。なければ当たり判定＋snow_lift
+var _box_col: CollisionShape3D  # 当たりの箱
+var _crash_q: PhysicsShapeQueryParameters3D   # ぶつかる幹を探す問い合わせ（_check_crash）
+var _crash_cool := 0.0       # 放り投げたあと、次に放り投げるまで空ける (s)。つなぐ側の人の席が空くまでに、もう一度配らないように
 
 
 func _ready() -> void:
@@ -261,6 +266,7 @@ func _ready() -> void:
 	col.shape = box
 	col.position.y = k.box.y * 0.49 + (h - k.box.y) * 0.5
 	add_child(col)
+	_box_col = col
 
 	_make_body()
 	# 引き紐: 手すりの両端を結ぶたわんだ紐と、そのまんなかから出る引っ張り紐（sled_rope.gd）
@@ -1276,11 +1282,50 @@ func _edge_drift(dt: float) -> void:
 	apply_central_force(-out * minf(decel, v_out / dt) * mass)
 
 
+## 乗って滑っていて、次のコマで木の幹にぶつかるなら、乗っている人を放り投げる（ソリの物理を持つホストの画面だけ。向きと強さを決めて配る。flung.gd）。
+## 幹の当たりで速さが消える前に見つけるので、ぶつかる前の速さを渡せる。ソリは幹で止まり、そのままそこに残る（空のソリの決まりでずり落ちる）。
+## 迫る速さが Flung.CRASH_MIN より遅い・横をかすめるだけなら、何もしない（乗ったまま、物理で止まる・それる）
+func _check_crash(dt: float) -> void:
+	_crash_cool = maxf(0.0, _crash_cool - dt)
+	if net_follow or riders.is_empty() or _crash_cool > 0.0:
+		return
+	var v := linear_velocity
+	var flat := Vector3(v.x, 0.0, v.z)
+	if flat.length() < Flung.CRASH_MIN:
+		return
+	if _crash_q == null:
+		_crash_q = PhysicsShapeQueryParameters3D.new()
+		_crash_q.shape = _box_col.shape
+		_crash_q.collision_mask = TreeHits.LAYER
+	var at := global_transform * _box_col.transform
+	at.origin += v * dt
+	_crash_q.transform = at
+	for r in get_world_3d().direct_space_state.intersect_shape(_crash_q, 4):
+		var trunk: TreeHits = r.collider
+		var c: Vector3 = to_local(trunk.trunk_at(r.shape) - v * dt)   # 次のコマの箱から見た幹
+		var near := Vector3(clampf(c.x, -HALF.x, HALF.x), 0.0, clampf(c.z, -HALF.y, HALF.y))
+		var off := Vector3(c.x - near.x, 0.0, c.z - near.z)
+		if off.length() > trunk.radius_at(r.shape) + 0.02:
+			continue   # 問い合わせの余白で引っかかっただけ。本当に触れたときの向きで見る（かすめただけを正面と間違えない）
+		var n: Vector3 = global_basis * off
+		n.y = 0.0
+		n = n.normalized() if n.length() > 0.01 else flat.normalized()
+		if flat.dot(n) < Flung.CRASH_MIN:
+			continue
+		_crash_cool = 1.0
+		var hub = get_parent().get_node_or_null("Emotes")
+		if hub:
+			for ev in Flung.throw_events(self, flat, to_global(near) + Vector3.UP * 0.7):
+				hub.send(ev)
+		return
+
+
 func _physics_process(dt: float) -> void:
 	_catch_fall()
 	_update_trail(dt)
 	if racked:
 		return
+	_check_crash(dt)
 	pushers = _push_count
 	_push_count = 0
 	_pushed_by = _pushed_now

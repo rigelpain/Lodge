@@ -5,6 +5,8 @@ extends RefCounted
 ## 体を動かす画面が決める（人の動きと同じ。人はその人の画面、仲間はホストの画面）。ほかの画面には、ふだんの姿（位置と人形の姿勢）で届く。
 ## 当たる直前に見つけて、そのソリとの当たりを切るので、ソリは体に止められずに走り抜ける（CharacterBody3D は押されないので、切らないと壁になる）。
 ## 吹き飛ばした分だけソリが遅くなるのは、出来事 "flung" でホストのソリだけに効かせる（slow_sled）。
+## 滑走中のソリが木にぶつかると、乗っている人がそれぞれ別の向きへ放り投げられる（2026-11-07 代表「ソリから人形があちこちに放り投げられる」）。
+## ホストの画面のソリ（sled.gd の _check_crash）が見つけて、一人ひとりの向きと強さを決めて配る（throw_events）。飛んだあとは轢かれたときと同じ
 
 enum { NONE, FLY, DOWN, RISE }   # 人形の flung と同じ番号
 
@@ -37,6 +39,17 @@ const COOL_TIME := 0.3      # 起き上がったあと、次に飛ばされる�
 const FALL_NET := 2.0       # 雪面よりこれだけ下へ沈んだら、雪の上へ戻す (m)
 const EDGE_STOP := 3.0      # 見た目の地面の端からこの距離より外へは飛ばない (m)
 const EDGE_EASE := 2.5      # 端へ向かう速さの上限 = 端までの残り × これ (1/s)
+# ---- ソリで木にぶつかって放り投げられる
+const CRASH_MIN := 5.0      # 放り投げられる境目: ソリが幹へ向かって迫る速さ (m/s)。これより遅い・かすめるだけなら、乗ったままソリが止まる。押して出せる 4 m/s より上
+const THROW_OUT_K := Vector2(0.9, 1.05)   # 水平に飛ぶ速さ = ぶつかる前のソリの速さ × この範囲（一人ひとり）
+const THROW_OUT_MAX := 30.0 # 水平に飛ぶ速さの上限 (m/s)
+const THROW_UP_K := Vector2(0.55, 0.95)   # 上向きの速さ = ぶつかる前のソリの速さ × この範囲（一人ひとり）
+const THROW_UP := Vector2(5.0, 14.0)      # 上向きの速さの下限と上限 (m/s)
+const THROW_FAN := 70.0     # 進む向きから左右へ広がる角度の端 (度)。乗っている人を、この中に等分して並べる
+const THROW_FAN_MIN := 18.0 # 真っすぐ前を避ける角度 (度)。幹に正面から突っ込まない
+const THROW_FAN_ONE := 45.0 # 1 人で乗っているときの、左右へそれる角度の端 (度)。THROW_FAN_MIN からこの間で決める
+const THROW_JITTER := 12.0  # 向きのばらつき (度)
+const THROW_THRU := 0.4     # 飛び出してからこの長さ、幹の当たりを切る (s)。席が幹のすぐ後ろなので、はじめに引っかからないように
 # ---- 体の当たり（player.gd・bot.gd の _ready のカプセルと同じ）
 const RADIUS := 0.35
 const TALL := 1.7
@@ -54,6 +67,9 @@ var _lie := 0.0              # 倒れている長さの残り (s)
 var _rise := 0.0             # 起き上がる長さの残り (s)
 var _cool := 0.0
 var _passing: Array = []     # 当たりを切っているソリ
+var _thru: Array = []        # 当たりを切っている木の体（放り投げられて飛び出すあいだ）
+var _thru_t := 0.0
+var _thrown := false         # 木にぶつかって放り投げられた（一人称の視点を穏やかに）
 
 
 func _init(b: CharacterBody3D) -> void:
@@ -134,14 +150,22 @@ func _hit_of(s: RigidBody3D, dt: float) -> Dictionary:
 
 ## 吹き飛ぶ。まず手を離してから呼ぶ（let_go は持ち主がする）
 func start(hit: Dictionary) -> void:
+	_launch(hit.dir, float(hit.out), clampf(float(hit.out) * UP_K, UP_RANGE.x, UP_RANGE.y))
+	_thrown = false
+	var hub = body.get("hub")
+	if hub:
+		var w: Node = body.get_parent()
+		hub.send({"kind": "flung", "who": body.get("id"), "sled": w.get_path_to(hit.sled), "closing": hit.closing, "point": hit.point, "dir": dir})
+
+
+func _launch(to: Vector3, out: float, up: float) -> void:
 	stage = FLY
-	dir = hit.dir
+	dir = to
 	_t = 0.0
 	_air_t = 0.0
 	hops = 0
 	ground_n = Vector3.UP
-	var up := clampf(float(hit.out) * UP_K, UP_RANGE.x, UP_RANGE.y)
-	_v = dir * float(hit.out) + Vector3.UP * up
+	_v = dir * out + Vector3.UP * up
 	# 宙で回る量: 着くときに、足をソリのほうへ向けて仰向けになる（人形は、飛ぶ向きへ背を向けて頭から回る）
 	var air := up / G_UP + sqrt(up * up / G_UP / G_DOWN)
 	var turns := roundf(air * TURNS_PER_S)
@@ -149,10 +173,37 @@ func start(hit: Dictionary) -> void:
 	for s in body.get_tree().get_nodes_in_group("sleds"):
 		body.add_collision_exception_with(s)
 		_passing.append(s)
-	var hub = body.get("hub")
-	if hub:
-		var w: Node = body.get_parent()
-		hub.send({"kind": "flung", "who": body.get("id"), "sled": w.get_path_to(hit.sled), "closing": hit.closing, "point": hit.point, "dir": dir})
+
+
+## 木にぶつかったソリから放り投げられる（ホストが配った出来事 "flung" の thrown の値で。持ち主が席を離れてから呼ぶ）
+func throw(ev: Dictionary) -> void:
+	_launch(ev.dir, float(ev.out), float(ev.up))
+	_thrown = true
+	_thru_t = THROW_THRU
+	for t in body.get_tree().get_nodes_in_group("tree_hits"):
+		body.add_collision_exception_with(t)
+		_thru.append(t)
+
+
+## ホストの画面のソリが呼ぶ: 乗っている一人ひとりの飛び方を決めて、出来事にして返す。v はぶつかる前の水平の速さ。
+## 乗っている人を左右の扇に等分して並べ（だれがどこかは毎回変わる）、速さと高さもばらけさせる
+static func throw_events(s: RigidBody3D, v: Vector3, point: Vector3) -> Array:
+	var who: Array = s.riders.duplicate()
+	who.shuffle()
+	var side := 1.0 if randf() < 0.5 else -1.0
+	var out := []
+	for i in who.size():
+		var deg := lerpf(-THROW_FAN, THROW_FAN, (i + 0.5) / who.size()) + randf_range(-THROW_JITTER, THROW_JITTER)
+		if who.size() == 1:
+			deg = side * randf_range(THROW_FAN_MIN, THROW_FAN_ONE)
+		elif absf(deg) < THROW_FAN_MIN:
+			deg = (signf(deg) if deg != 0.0 else side) * THROW_FAN_MIN
+		var speed := v.length()
+		out.append({"kind": "flung", "who": who[i].get("id"), "thrown": true, "sled": s.get_parent().get_path_to(s), "closing": 0.0, "point": point,
+				"dir": v.normalized().rotated(Vector3.UP, deg_to_rad(deg)),
+				"out": minf(speed * randf_range(THROW_OUT_K.x, THROW_OUT_K.y), THROW_OUT_MAX),
+				"up": clampf(speed * randf_range(THROW_UP_K.x, THROW_UP_K.y), THROW_UP.x, THROW_UP.y)})
+	return out
 
 
 ## ホストのソリだけに効かせる（emotes.gd が出来事 "flung" で呼ぶ）。重いソリほど遅くならない
@@ -167,6 +218,12 @@ static func slow_sled(s: RigidBody3D, closing: float) -> void:
 ## 1 コマ動かす（持ち主の _physics_process が、歩くかわりに呼ぶ）
 func step(dt: float) -> void:
 	_t += dt
+	if not _thru.is_empty():
+		_thru_t -= dt
+		if _thru_t <= 0.0:
+			for t in _thru:
+				body.remove_collision_exception_with(t)
+			_thru.clear()
 	match stage:
 		FLY:
 			_fly(dt)
@@ -305,6 +362,8 @@ func pose() -> void:
 func view(frame: int, calm: float) -> Vector3:
 	match stage:
 		FLY:
+			if _thrown:   # 長く飛ぶので穏やかに。ゆっくり傾くだけで、少し下を向いて、雪面が遠ざかるのが読める
+				return Vector3(sin(frame * 0.4) * 0.2 * calm, -0.2 + cos(frame * 0.3) * 0.1 * calm, 0.2)
 			return Vector3(sin(frame * 1.1) * 0.5 * calm, cos(frame * 0.8) * 0.3 * calm, 0.6)
 		DOWN:
 			return Vector3(0.2 * calm, 0.55, 1.15)
