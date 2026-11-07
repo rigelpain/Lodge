@@ -355,6 +355,7 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"scope_button": preload("res://binoculars.gd").hint(ci, "button", a)
 		"scope_none": preload("res://binoculars.gd").hint(ci, "none", a)
 		"scope_hand": preload("res://binoculars.gd").hint(ci, "hand", a)
+		"scope_off": preload("res://binoculars.gd").hint(ci, "off", a)
 		"rack_in": _rack(ci, a, 1)
 		"rack_out": _rack(ci, a, -1)
 		"rack_busy": _rack(ci, a, 0)

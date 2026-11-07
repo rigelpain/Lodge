@@ -519,7 +519,7 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if p.has_method("binocular_pay") and not p.rooted():
 		var how: String = p.binocular_pay()
 		if how != "":
-			var at_st: Vector3 = main.binocular_stand.global_position + Vector3.UP * 1.65
+			var at_st: Vector3 = p.binocular_near().global_position + Vector3.UP * 1.65
 			_hint("scope_" + how, [] if how == "none" else ["F"], "scope_" + how, at_st)
 	# 手の双眼鏡: 左ボタンを押しているあいだのぞく
 	if p.has_method("held") and p.held().get("kind", "") == "binoculars" and not p.rooted():

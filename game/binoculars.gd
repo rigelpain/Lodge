@@ -16,7 +16,11 @@ const FOV_HAND_RANGE := Vector2(16.0, 40.0)    # 持ち歩く双眼鏡の幅（�
 const FOV_STAND := 10.0         # テラスの台の始めの画角（約 8.5 倍。観光地のものらしく強め）
 const FOV_STAND_RANGE := Vector2(5.0, 24.0)    # テラスの台の幅（約 17 倍〜約 3.5 倍）
 const WHEEL_STEP := 1.18        # ホイール 1 目盛りで画角を何倍にするか
+const PAN_ZOOM := 0.12          # 二本指スクロールの効き。Godot は Mac のスクロール量の 0.03 倍で渡すので、約 430 pt の撫でで台の幅の端から端まで
+const PINCH_ZOOM := 1.5         # つまむ・広げるの効き
 const STAND_SECONDS := 60.0     # テラスの台が 1 回で開いている長さ（秒）
+const STAND_NARROW_FROM := 10.0 # 残りがこの秒になると、穴がゆっくりすぼみ始める（幕が下りてくる。赤や点滅の警告はしない）
+const STAND_NARROW := 0.78      # 閉じる直前の穴の開き
 
 const FELT := Color(0.25, 0.50, 0.53)
 const WOOD := Color(0.62, 0.42, 0.24)
@@ -64,12 +68,15 @@ static func _lenses(ci: CanvasItem, c: Vector2, sc: float, a: float) -> void:
 
 
 ## 案内の絵（hud_icons.gd の icon から）。木のボタン 1 枚か雪玉 1 個を入れてのぞく。何もなければ赤い ×。字は使わない
-##   which: "ball" 雪玉で / "button" 木のボタンで / "none" 入れる物がない / "hand" 手の双眼鏡をのぞく
+##   which: "ball" 雪玉で / "button" 木のボタンで / "none" 入れる物がない / "hand" 手の双眼鏡をのぞく / "off" 双眼鏡を下ろす
 static func hint(ci: CanvasItem, which: String, a: float) -> void:
 	if which == "hand":
 		_lenses(ci, Vector2(0, 0), 0.95, a)
 		return
 	_lenses(ci, Vector2(0, -13), 0.7, a)
+	if which == "off":
+		Icons.arrow(ci, Vector2(0, 5), Vector2(0, 27), Icons.RED, a, 3.2)
+		return
 	var at := Vector2(0, 15)
 	match which:
 		"ball":

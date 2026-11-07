@@ -1,6 +1,8 @@
 extends CanvasLayer
 ## のぞいているときの画面の窓（player.gd の peek）: 濃いフェルトの覆いに丸い穴が 2 つ、縁は白糸のなみ縫い。字は使わない。
-## テラスの台は時間が来ると穴がすぼんで閉じる。残りは、覆いの下の縫い目の長さで見せる（ほどけて短くなる）。
+## テラスの台は時間が来ると穴がすぼんで閉じる。残りは、覆いの下の太い山吹の毛糸の長さで見せる（両端からほどけて、暗い溝が見えてくる）。
+## 終わりが近いのは、穴がゆっくりすぼんでくることで見せる（player.gd の _update_peek）。赤や点滅はしない
+## （2026-11-08 代表「あ、あるわ、もうちょっとわかりやすくしてほしい」「警告的なのは嫌かも」）。
 ## 倍率は、覆いの右の縦の縫い目の上を動く木のボタンで見せる（上ほど寄っている）。その下に、変える操作の絵。
 ## 重いことはしない: 画面いっぱいの 1 枚のシェーダーと、操作の絵だけ
 
@@ -33,9 +35,19 @@ void fragment() {
 	float s2 = step(abs(d2 - sr), 0.0042) * step(0.42, fract(a2 * 19.0 / 3.14159)) * step(sr, d1);
 	float stitch = max(s1, s2) * step(0.2, open);
 	felt = mix(felt, vec3(0.90, 0.87, 0.78), stitch);
-	// 残りの縫い目: 覆いの下の真ん中から両へ
-	if (left >= 0.0 && abs(p.y - 0.455) < 0.0065 && abs(p.x) < 0.42 * left) {
-		felt = mix(felt, vec3(0.90, 0.87, 0.78), step(0.38, fract(p.x * 24.0)));
+	// 残りの毛糸: 覆いの下いっぱいの溝に、撚りの見える太い毛糸。真ん中へ向かって短くなる
+	if (left >= 0.0) {
+		float hw = 0.56;
+		float th = 0.0135;
+		float yy = p.y - 0.462;
+		if (abs(p.x) < hw + th && abs(yy) < th) {
+			float cap = length(vec2(max(abs(p.x) - hw * left, 0.0), yy));
+			float gcap = length(vec2(max(abs(p.x) - hw, 0.0), yy));
+			float twist = 0.80 + 0.20 * step(0.5, fract((p.x * 0.7 + yy) * 52.0));
+			vec3 yarn = vec3(0.95, 0.70, 0.22) * twist;
+			if (gcap < th) { felt = vec3(0.17, 0.18, 0.21); }
+			if (cap < th && left > 0.0) { felt = yarn; }
+		}
 	}
 	// 倍率の目印: 縦の縫い目と、その上の木のボタン。覆いの幅が足りない画面では出さない
 	float mx = aspect * 0.5 - 0.075;
@@ -60,10 +72,16 @@ void fragment() {
 const Icons := preload("res://hud_icons.gd")
 
 
-## 変える操作の絵（ホイールと二本指スクロール）。覆いの右下に。覆いの幅が足りない画面では出さない
+## 操作の絵。左下にやめ方（手の双眼鏡は左ボタン、台は F と、双眼鏡を下ろす絵）。
+## 右下に倍率を変える操作（ホイールと二本指スクロール。覆いの幅が足りない画面では出さない）
 class Hint extends Control:
+	var kind := ""
+
 	func _draw() -> void:
 		var h := size.y
+		var keys: Array = ["F"] if kind == "stand" else ["mouse_l"]
+		var bh := h * 0.075
+		Icons.badge(self, keys, "scope_off", Vector2(h * 0.03 + Icons.badge_w(keys, bh) * 0.5, h * 0.92), bh, 0.95)
 		var x := size.x - 0.075 * h
 		if size.x / h * 0.5 - 0.075 <= 0.70:
 			return
@@ -73,6 +91,7 @@ class Hint extends Control:
 
 var _rect: ColorRect
 var _mat: ShaderMaterial
+var _hint: Hint
 
 
 func _ready() -> void:
@@ -86,16 +105,19 @@ func _ready() -> void:
 	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_rect)
-	var hint := Hint.new()
-	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hint.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(hint)
+	_hint = Hint.new()
+	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hint.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_hint)
 	visible = false
 
 
-## 毎コマ: open は穴の開き、left は残りの割合（負なら縫い目を出さない）、zoom は倍率の目印（0〜1）
-func show_view(open: float, left: float, zoom: float) -> void:
+## 毎コマ: open は穴の開き、left は残りの割合（負なら縫い目を出さない）、zoom は倍率の目印（0〜1）、kind は "hand" か "stand"
+func show_view(open: float, left: float, zoom: float, kind: String) -> void:
 	visible = true
+	if _hint.kind != kind:
+		_hint.kind = kind
+		_hint.queue_redraw()
 	var s := get_viewport().get_visible_rect().size
 	_mat.set_shader_parameter("aspect", s.x / maxf(s.y, 1.0))
 	_mat.set_shader_parameter("open", open)

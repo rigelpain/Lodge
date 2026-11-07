@@ -1,7 +1,7 @@
 extends Node3D
 ## テラスの双眼鏡台（2026-11-07 代表「テラスに固定の双眼鏡台」「双眼鏡台は木のボタン1枚か雪玉で起動してほしい」）。
 ## 形は design/binoculars の B（糸巻きを 2 本並べた筒）。足と支柱・左右に回る受け・上下に振る頭の 3 つに分けてある。
-## この節の座標: -Z が景色の側、+Z が人の側。原点は足の板の真ん中の床。置き場は main.gd の BINOCULAR_AT（lodge/dims.py の BINOCULAR_STAND）。
+## この節の座標: -Z が景色の側、+Z が人の側。原点は足の板の真ん中の床。置き場は main.gd の BINOCULARS（lodge/dims.py の BINOCULAR_STANDS）。
 ## 動かすのは craft.gd の scope_on・scope_off（みんなの画面で who が同じになる）。のぞく人の動きは player.gd の peek。
 ## 頭は、のぞいている人の見ている所（doll.gaze）へ向く。どの画面でも同じ形で動く（のぞく人の画面だけ頭を隠す）
 
@@ -17,6 +17,7 @@ const STAND_R := 0.52             # のぞく人の立つ所の、支柱から�
 const YAW_MAX := 1.35             # 見回せる幅（景色の向きから左右へ。rad）。人が手すりの側へ回らない
 const PITCH := Vector2(-0.45, 0.55)   # 見下ろす・見上げる幅 (rad)
 
+var index := 0                    # 台の番号（main.gd の binocular_stands の順。通信の出来事で使う）
 var who := -1                     # のぞいている人の番号（-1 はだれもいない）
 var craft: Node                   # 工房の配り役（だれがのぞいているかを読む。main.gd が入れる）
 var _yaw: Node3D
