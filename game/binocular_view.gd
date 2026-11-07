@@ -60,10 +60,16 @@ void fragment() {
 const Icons := preload("res://hud_icons.gd")
 
 
-## 変える操作の絵（ホイールと二本指スクロール）。覆いの右下に。覆いの幅が足りない画面では出さない
+## 操作の絵。左下にやめ方（手の双眼鏡は左ボタン、台は F と、双眼鏡を下ろす絵）。
+## 右下に倍率を変える操作（ホイールと二本指スクロール。覆いの幅が足りない画面では出さない）
 class Hint extends Control:
+	var kind := ""
+
 	func _draw() -> void:
 		var h := size.y
+		var keys: Array = ["F"] if kind == "stand" else ["mouse_l"]
+		var bh := h * 0.075
+		Icons.badge(self, keys, "scope_off", Vector2(h * 0.03 + Icons.badge_w(keys, bh) * 0.5, h * 0.92), bh, 0.95)
 		var x := size.x - 0.075 * h
 		if size.x / h * 0.5 - 0.075 <= 0.70:
 			return
@@ -73,6 +79,7 @@ class Hint extends Control:
 
 var _rect: ColorRect
 var _mat: ShaderMaterial
+var _hint: Hint
 
 
 func _ready() -> void:
@@ -86,16 +93,19 @@ func _ready() -> void:
 	_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_rect)
-	var hint := Hint.new()
-	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	hint.set_anchors_preset(Control.PRESET_FULL_RECT)
-	add_child(hint)
+	_hint = Hint.new()
+	_hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hint.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_hint)
 	visible = false
 
 
-## 毎コマ: open は穴の開き、left は残りの割合（負なら縫い目を出さない）、zoom は倍率の目印（0〜1）
-func show_view(open: float, left: float, zoom: float) -> void:
+## 毎コマ: open は穴の開き、left は残りの割合（負なら縫い目を出さない）、zoom は倍率の目印（0〜1）、kind は "hand" か "stand"
+func show_view(open: float, left: float, zoom: float, kind: String) -> void:
 	visible = true
+	if _hint.kind != kind:
+		_hint.kind = kind
+		_hint.queue_redraw()
 	var s := get_viewport().get_visible_rect().size
 	_mat.set_shader_parameter("aspect", s.x / maxf(s.y, 1.0))
 	_mat.set_shader_parameter("open", open)

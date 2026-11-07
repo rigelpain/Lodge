@@ -76,7 +76,8 @@ func _host() -> void:
 	main.craft.send({"kind": "earn", "who": r.id, "n": 40, "at": r.global_position})   # 手の双眼鏡を買う分
 	ok = await _wait(func() -> bool: return r != null and r.doll.peek == "hand")
 	_check("相手の人形は手の双眼鏡を目に当てる", ok)
-	await create_timer(1.0).timeout
+	await create_timer(3.0).timeout   # 相手が指を離したあとも続いている
+	_check("相手が指を離したあとも、目に当てたまま", r.doll.peek == "hand")
 	var eye_h: float = r.doll.eye_point(false).y
 	cam.look_at_from_position(r.global_position + r.global_basis * Vector3(0.55, eye_h - 0.12, -1.15), r.global_position + Vector3.UP * (eye_h - 0.05))
 	await _save("host_sees_hand")
@@ -125,15 +126,23 @@ func _join() -> void:
 	p.global_position = st.to_global(Vector3(-3.0, 0.1, 2.5))   # 台から離れた所で
 	p.rotation.y = st.global_rotation.y
 	await create_timer(0.8).timeout
+	await _click()
+	await create_timer(6.0).timeout
+	_check("つなぐ側で 1 回押して離しても、のぞいたまま", p.peek == "hand")
+	await _click()
+	_check("もう 1 回押すとやめる", p.peek == "")
+	await create_timer(3.0).timeout
+	print("だめの数: ", fails)
+	quit(0 if fails == 0 else 1)
+
+
+func _click() -> void:
 	var e := InputEventMouseButton.new()
 	e.button_index = MOUSE_BUTTON_LEFT
 	e.pressed = true
 	Input.parse_input_event(e)
-	await create_timer(6.0).timeout
-	_check("つなぐ側で手の双眼鏡をのぞく", p.peek == "hand")
+	await create_timer(0.1).timeout
 	var u := e.duplicate()
 	u.pressed = false
 	Input.parse_input_event(u)
-	await create_timer(3.0).timeout
-	print("だめの数: ", fails)
-	quit(0 if fails == 0 else 1)
+	await create_timer(0.2).timeout

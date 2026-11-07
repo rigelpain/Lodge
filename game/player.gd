@@ -138,7 +138,7 @@ var id := -1                 # 配り役からもらった番号
 var busy_until := -1         # このコマまでは、その場で（裁ちばさみで雪のボタンの糸を切っている。snow_buttons.gd）
 var _fp_rig: Node3D          # 机の皿と、一人称の手の道具を描く役（table_eat.gd の Rig）
 var _te_done := {}           # 机での食べ方: このひと口で済ませた音と数（コマ → true）
-var peek := ""               # 双眼鏡をのぞいている: "" / "hand"（手の双眼鏡。左ボタンを押しているあいだ）/ "stand"（テラスの台）
+var peek := ""               # 双眼鏡をのぞいている: "" / "hand"（手の双眼鏡。左ボタンで始め、もう 1 回でやめる）/ "stand"（テラスの台）
 var _peek_stand: Node3D      # のぞいている台
 var _peek_left := 0.0        # 台が閉じるまでの秒
 var _peek_open := 0.0        # 窓の開き（0〜1）
@@ -1595,7 +1595,7 @@ func set_hands(name_: String) -> void:
 
 ## 左クリック: 雪玉があれば振りかぶる（離すと投げる。持ち物を手に持っていれば、しまって雪玉を出す）。高い両手のひらなら拍手
 func _left_click() -> void:
-	if craft and held().get("kind", "") == "binoculars":   # 手の双眼鏡: 押しているあいだのぞく（雪玉は投げない）
+	if craft and held().get("kind", "") == "binoculars":   # 手の双眼鏡: 押すとのぞき始める。指を離してものぞいたまま（雪玉は投げない）
 		if mode == Mode.WALK or mode == Mode.SIT:
 			_peek_begin("hand", null)
 		return
@@ -2531,29 +2531,37 @@ func _peek_hud(on: bool) -> void:
 
 ## のぞいているあいだの入力。true で受け取った（ほかの操作に回さない）
 func _peek_input(e: InputEvent) -> bool:
-	if e is InputEventPanGesture:   # 二本指スクロール（Mac のトラックパッド）。上へ撫でると寄る。持ち替えはしない
-		_peek_zoom(exp(e.delta.y * 0.04))
+	if e is InputEventPanGesture:   # 二本指スクロール（Mac のトラックパッド）。向きはホイールと同じ。持ち替えはしない
+		_peek_zoom(exp(e.delta.y * Binoculars.PAN_ZOOM))
+		if e.delta != Vector2.ZERO:   # このひと撫での続き（やめたあとの慣性）で持ち物を替えない（_pan_hand と同じ区切り）
+			var now := Time.get_ticks_msec()
+			var frame := Engine.get_process_frames()
+			if now - _pan_ms > PAN_GAP and frame - _pan_frame > 1:
+				_pan_acc = Vector2.ZERO
+			_pan_acc += e.delta
+			_pan_done = true
+			_pan_ms = now
+			_pan_frame = frame
 		return true
 	if e is InputEventMagnifyGesture:   # つまむ・広げる
-		_peek_zoom(1.0 / maxf(e.factor, 0.01))
+		_peek_zoom(pow(1.0 / maxf(e.factor, 0.01), Binoculars.PINCH_ZOOM))
 		return true
 	if e is InputEventMouseButton:
 		if e.pressed and e.button_index == MOUSE_BUTTON_WHEEL_UP:
 			_peek_zoom(1.0 / Binoculars.WHEEL_STEP)
 		elif e.pressed and e.button_index == MOUSE_BUTTON_WHEEL_DOWN:
 			_peek_zoom(Binoculars.WHEEL_STEP)
-		elif e.button_index == MOUSE_BUTTON_LEFT and not e.pressed and peek == "hand":
-			peek_stop()
+		elif e.button_index == MOUSE_BUTTON_LEFT and e.pressed and peek == "hand":
+			peek_stop()   # もう 1 回押すとやめる（2026-11-08 代表「長押し中止用じゃなくて切り替えスタイルだと行けるかも」）
 		return true
 	if e is InputEventKey and e.pressed and not e.echo:
-		if e.physical_keycode == KEY_ESCAPE:
-			if peek == "stand":   # 台は Esc でやめる。手の双眼鏡の Esc は、ふだんどおり設定の画面（開くと下ろす）
-				peek_stop()
-				get_viewport().set_input_as_handled()
-				return true
-			return false
-		if e.physical_keycode == KEY_F and peek == "stand":
+		if e.physical_keycode in [KEY_F, KEY_ESCAPE]:
 			peek_stop()
+			get_viewport().set_input_as_handled()
+			return true
+		if peek == "hand" and not e.physical_keycode in [KEY_SHIFT, KEY_CTRL, KEY_ALT, KEY_META, KEY_CAPSLOCK]:
+			peek_stop()
+			return false   # 歩く・乗る・持ち替える・持ち物の画面: 双眼鏡を下ろして、そのキーの動作をする
 		return true
 	return false
 
@@ -2568,7 +2576,7 @@ func _peek_zoom(k: float) -> void:
 func _update_peek(dt: float) -> void:
 	if peek == "":
 		return
-	var ok := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not menu_open and not fling.active()
+	var ok := Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not menu_open and not shopping and not fling.active()
 	if peek == "hand":
 		ok = ok and (mode == Mode.WALK or mode == Mode.SIT) and held().get("kind", "") == "binoculars"
 	else:
@@ -2587,7 +2595,7 @@ func _update_peek(dt: float) -> void:
 		if _peek_left <= 0.0:
 			_peek_closing = true
 	_peek_open = move_toward(_peek_open, 0.0 if _peek_closing else 1.0, dt * (2.5 if _peek_closing else 7.0))
-	_peek_view.show_view(_peek_open, left, Binoculars.zoom_of(peek, float(_peek_fov[peek])))
+	_peek_view.show_view(_peek_open, left, Binoculars.zoom_of(peek, float(_peek_fov[peek])), peek)
 	if _peek_closing and _peek_open <= 0.0:
 		peek_stop()
 
