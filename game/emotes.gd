@@ -60,8 +60,9 @@ const BALL_MAX := 5          # 持てる雪玉の数（右手に 1 つ、残り�
 ##   roll_seed  しゃがんで F を押し続けて、丸めた雪玉を雪の上に置く（point）。ホストが番号（ball）を付け、全員の画面に大玉が生まれる
 ##   ball_in    大玉に取り込まれた（その人の画面が決める。dir・up は取り込まれた所の向き、玉の座標）
 ##   ball_kick  中の人が Space で暴れた（ホストが数え、足りたら崩す。k は崩れるまでの割合）
+##   ball_hurt  大玉の耐久が減った（ホストが決める。dir は当たった所の向き（玉の座標）、amt は減った割合、k は減りきるまでの割合）
 ##   ball_break 大玉が崩れた（ホストが決める。inside の人は、それぞれの体を動かす画面で放り出される）
-const BALL_EVENTS := ["roll_seed", "ball_in", "ball_kick", "ball_break"]
+const BALL_EVENTS := ["roll_seed", "ball_in", "ball_kick", "ball_hurt", "ball_break"]
 
 var balls := {}              # 番号 → 持っている雪玉の数
 var _making := {}            # 番号 → 丸めている雪玉ができるコマ（MAKE_READY。それまでにのけぞると、できない）
@@ -260,13 +261,19 @@ func _emit(ev: Dictionary) -> void:
 		var b := big_ball(int(ev.ball))
 		if b:
 			b.wobble(float(ev.get("k", 0.3)))
-	if ev.kind == "ball_break":
+	if ev.kind == "ball_hurt":
 		var b := big_ball(int(ev.ball))
-		big_balls.erase(int(ev.ball))
 		if b:
+			b.show_hurt(ev)
+	if ev.kind == "ball_break":
+		# ホストの玉は、送る前に broken になっている（big_ball.gd の break_now）。big_ball() は崩れた玉を返さないので、表から直に引く
+		var b = big_balls.get(int(ev.ball))
+		big_balls.erase(int(ev.ball))
+		if b != null and is_instance_valid(b):
 			b.crumble(ev)
 		else:
-			BigBall._leave_pile(get_parent(), ev.point, float(ev.r))
+			var pt: Vector3 = ev.point   # 玉のまんなか。山は足もとの雪の上に
+			BigBall._leave_pile(get_parent(), Vector3(pt.x, get_parent().height(pt.x, pt.z), pt.z), float(ev.r))
 		for id in ev.get("inside", []):   # 中の人は、体を動かす画面（その人の画面・ホストの仲間）で放り出される
 			var w := who_of(int(id))
 			if w and w.has_method("ball_out"):
@@ -593,6 +600,11 @@ func hit_person(by: int, id: int, point: Vector3, dir: Vector3) -> void:
 ## 雪玉が物（ソリ・地面・ロッジ）に当たって崩れた。残る雪を付ける物は、通信に乗るよう節点の道すじで渡す
 func ball_splat(point: Vector3, normal: Vector3, body: Node, by := -1) -> void:
 	if _client():
+		return
+	if body is BigBall:
+		# 転がす大玉は、雪玉 1 個ごとに少し減る（big_ball.gd の SNOW_HIT）。当たった所はへこみと粉で見せる（出来事 ball_hurt）。
+		# 綿の雪の板は貼らない（へこんだ面から浮いて、光って見える）
+		body.snow_hit(point)
 		return
 	var on := ""
 	if body is Node3D and get_parent().is_ancestor_of(body):
