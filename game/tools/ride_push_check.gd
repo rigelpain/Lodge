@@ -112,7 +112,7 @@ func _climb(n_riders: int, how: String) -> Dictionary:
 		await physics_frame
 		var dt := 1.0 / Engine.physics_ticks_per_second
 		t += dt
-		if t > 0.1 and t - dt <= 0.1:   # 押しはじめてから乗る（押す前に乗ると、急な所では大がつかんだ人ごとずり落ちる）
+		if t > 1.0 and t - dt <= 1.0:   # 押しはじめて、置き直したソリが雪に落ち着いてから乗る（落ちた勢いのまま乗ると、大は滑り出して止まらない）
 			for d in rs:
 				sled.mount(d)
 		if how == "紐 1 人":
