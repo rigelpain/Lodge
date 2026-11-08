@@ -59,6 +59,7 @@ func _run() -> void:
 	g.cam.global_position += Vector3.UP * 4.0   # 浮かんでいるのが分かるよう、少し上から
 	g._pitch = -0.35
 	g.cam.global_basis = Basis.from_euler(Vector3(g._pitch, g._yaw, 0))
+	st._scroll.scroll_vertical = 100000   # 霊体化の行は、設定のいちばん下
 	for i in 8:
 		await process_frame
 	var dir: String = args.get("dir", "")

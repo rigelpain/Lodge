@@ -110,7 +110,6 @@ func _build() -> void:
 	title.add_theme_font_size_override("font_size", 20)
 	title.add_theme_color_override("font_color", Color.WHITE)
 	box.add_child(title)
-	_build_ghost(box)
 
 	for it in ITEMS:
 		var key: String = it[0]
@@ -168,6 +167,8 @@ func _build() -> void:
 			box.add_child(row)
 			_controls[key] = sl
 
+	_build_ghost(box)   # 霊体化はいちばん下（2026-11-08 代表「霊体化は一番下で良いよ」）
+
 	var foot := HBoxContainer.new()
 	foot.add_theme_constant_override("separation", 10)
 	var hint := Label.new()
@@ -191,8 +192,9 @@ func _build() -> void:
 	box.add_child(foot)
 
 
-## 霊体化の 2 行（ほかの切り替えと同じく字で）: 霊体になる、霊体のあいだほかの人から見える
+## 霊体化の 2 行（ほかの切り替えと同じく字で。項目のいちばん下に、線で分けて）: 霊体になる、霊体のあいだほかの人から見える
 func _build_ghost(box: VBoxContainer) -> void:
+	box.add_child(HSeparator.new())
 	_ghost_cb = CheckButton.new()
 	_ghost_cb.text = "霊体になる（観戦モード）"
 	_ghost_cb.add_theme_font_size_override("font_size", 15)
@@ -203,7 +205,6 @@ func _build_ghost(box: VBoxContainer) -> void:
 	_seen_cb.add_theme_font_size_override("font_size", 15)
 	_seen_cb.toggled.connect(func(on: bool): ghost_seen_set.emit(on))
 	box.add_child(_seen_cb)
-	box.add_child(HSeparator.new())
 	sync_ghost(false, false)
 
 
