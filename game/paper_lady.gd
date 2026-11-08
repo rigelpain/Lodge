@@ -22,6 +22,7 @@ const Look := preload("res://look.gd")
 const Lantern := preload("res://lantern.gd")
 const Pals := preload("res://pals.gd")
 const PaperTent := preload("res://paper_tent.gd")
+const Ghost := preload("res://ghost.gd")
 
 const LADY_GLB := "res://props/paper_lady/paper_lady.glb"
 const POSES_JSON := "res://props/paper_lady/lady_poses.json"
@@ -277,11 +278,11 @@ func _seq_pose(act: String, n: int) -> Variant:
 
 ## 近くの人（自分とほかの人。通信の相手の体も）
 func _people() -> Array:
-	var out: Array = [player]
+	var out: Array = [player] if not Ghost.gone(player) else []   # 観戦モードの霊体（ghost.gd）は見ない
 	var net = main.get("net") if main else null
 	if net and net.get("remotes"):
 		for r in (net.remotes as Dictionary).values():
-			if is_instance_valid(r):
+			if is_instance_valid(r) and not Ghost.gone(r):
 				out.append(r)
 	return out
 

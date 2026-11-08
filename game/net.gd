@@ -322,6 +322,8 @@ func _physics_process(dt: float) -> void:
 ## 自分の姿（remote_person.gd の put が読む）。人形の姿勢は、自分の人形にいま入っている値をそのまま
 func _my_state() -> Dictionary:
 	var p: CharacterBody3D = main.player
+	if main.get("ghost") and main.ghost.active:
+		return main.ghost.net_state()   # 霊体（ghost.gd）: 見えないあいだは位置も送らない
 	var s := _body_state(p, int(p.mode))
 	match int(p.mode):
 		1:   # つかんでいる

@@ -44,6 +44,7 @@ var vp: SubViewport
 var hidden := false           # 画面に出していない（設定で消している、か、雪合戦のあいだ）
 var _want_shown := true       # 遊ぶ人の選び（設定の「刺繍枠」）
 var _focus_off := false       # 雪合戦のあいだ、選びとは別によける（main.gd の set_duel_focus）
+var _ghost_off := false       # 観戦モードで体から抜けているあいだ、よける（ghost.gd）
 var stitch_col := Icons.RED   # 枠の内のランニングステッチの色
 var plain_frame := false      # true なら、木の輪とねじは描かない（hud_plates.gd の立体の刺繍枠を重ねる）。赤い糸の縁取りだけ
 
@@ -366,8 +367,14 @@ func set_focus_off(on: bool) -> void:
 	_apply_shown()
 
 
+## 観戦モード（ghost.gd）で体から抜けているあいだは隠す（体は消えている）
+func set_ghost_off(on: bool) -> void:
+	_ghost_off = on
+	_apply_shown()
+
+
 func _apply_shown() -> void:
-	var on := _want_shown and not _focus_off
+	var on := _want_shown and not _focus_off and not _ghost_off
 	hidden = not on
 	visible = on
 	vp.render_target_update_mode = SubViewport.UPDATE_ONCE if on else SubViewport.UPDATE_DISABLED
