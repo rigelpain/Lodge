@@ -2,10 +2,10 @@ extends Node
 ## 観戦モード（霊体）。2026-11-08 代表「観戦モードが欲しい。これは実験目的でもあるから、3次元自由に動けてプレイヤーからは見えなくて
 ## なににも衝突しない霊体みたいな状態。可視不可視はスイッチできると良いな。」
 ##
-## O で体から抜けて霊体になり、もう一度 O で体へ戻る。抜けているあいだ、体は抜けた所に止まって消える（当たり・人形・影・連れ・
+## 設定の画面（Esc）の「霊体になる」で体から抜けて霊体になり、切ると体へ戻る（2026-11-08 代表「キーボードでのショートカットは消して」）。抜けているあいだ、体は抜けた所に止まって消える（当たり・人形・影・連れ・
 ## まち針・足音・息、どれも出ない）。霊体は別のカメラで、重力も当たりもなく 3 次元を飛ぶ。
 ##   マウス 見回す / W・S 見ている向きへ前後（上下も） / A・D 横 / Space 上がる / 左 Ctrl 下がる / Shift 速く /
-##   ホイール・二本指スクロール 速さを変える / U 見える ⇄ 見えない（はじめは見えない）
+##   ホイール・二本指スクロール 速さを変える。見える ⇄ 見えないも設定の画面で（はじめは見えない）
 ## 見えないあいだは、周りのゲームの動きを一切変えない（体がその場から帰ったのと同じに扱う）。そのため霊体の人は:
 ##   名簿（emotes.gd の people）から外す → 施設の「近づくと動く」・番台ののれん・地図のまち針・湿り気・雪玉の当たりが見ない
 ##   仲間（bot.gd の _humans）・山男・柵の動物・紙細工屋さんが見ない / 足音と息（audio.gd）を出さない / 連れ（companions.gd）を隠す
@@ -18,8 +18,6 @@ extends Node
 
 const Doll := preload("res://doll.gd")
 
-const KEY_GHOST := KEY_O      # 体から抜ける・戻る
-const KEY_SEEN := KEY_U       # 見える ⇄ 見えない
 const EYE := 1.55             # 抜けるときの目の高さ（player.gd のカメラ）
 const SPEED := 6.0            # はじめの飛ぶ速さ (m/s)
 const SPEED_RANGE := Vector2(0.5, 80.0)
@@ -160,7 +158,7 @@ func _set_ghost(g: int) -> void:
 	if main.has_method("_sync_pip_shown"):
 		main._sync_pip_shown()
 	if main.get("settings") and main.settings.has_method("sync_ghost"):
-		main.settings.sync_ghost(g != 0, g == 2)   # 設定の画面の切り替えも、O・U と同じ様子に
+		main.settings.sync_ghost(g != 0, g == 2)   # 設定の画面の切り替えも、いまの様子に（抜けられず戻したときも）
 
 
 ## 霊体の姿（net.gd が送る）。見えないときは位置を入れない
@@ -178,24 +176,12 @@ func _input(e: InputEvent) -> void:
 	if main.get("start") != null and is_instance_valid(main.start):
 		return
 	var menu: bool = main.settings != null and main.settings.is_open
-	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode == KEY_GHOST and not menu:
-		if active:
-			leave()
-		else:
-			enter()
-		_learn("ghost")
-		get_viewport().set_input_as_handled()
-		return
 	if not active:
 		return
 	if e is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED and not menu:
 		var k: float = player.mouse_sens
 		_yaw -= e.relative.x * 0.003 * k
 		_pitch = clampf(_pitch - e.relative.y * 0.003 * k, -1.55, 1.55)
-	elif e is InputEventKey and e.pressed and not e.echo and e.physical_keycode == KEY_SEEN and not menu:
-		set_seen(not seen)
-		_learn("ghost_seen")
-		get_viewport().set_input_as_handled()
 	elif e is InputEventMouseButton and e.pressed and e.button_index in [MOUSE_BUTTON_WHEEL_UP, MOUSE_BUTTON_WHEEL_DOWN] and not menu:
 		_speed_step(1 if e.button_index == MOUSE_BUTTON_WHEEL_UP else -1)
 	elif e is InputEventPanGesture and not menu:

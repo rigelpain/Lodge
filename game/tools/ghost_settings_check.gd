@@ -2,7 +2,7 @@ extends SceneTree
 ## 設定の画面の霊体化の切り替え（settings.gd の _build_ghost）の確かめ:
 ##   Godot --path game --resolution 1280x720 -s res://tools/ghost_settings_check.gd -- --no-sound --dir=/path/shots
 ## Esc で設定を開き、切り替えで霊体になる → 見える・見えないも切り替える → 撮る（設定を開いたまま、霊体の画面）。
-## 閉じて O で戻ると切り替えも戻るか、O で抜けると切り替えも入るか、切り替えで戻ると抜けた所・向きへ戻るか。
+## 閉じたまま（設定の外で）戻ると切り替えも戻るか、抜けると切り替えも入るか、O・U では何も起きないか、切り替えで戻ると抜けた所・向きへ戻るか。
 ## 霊体化は保存しない（settings.values に入らない）
 
 var main: Node3D
@@ -66,18 +66,24 @@ func _run() -> void:
 		DirAccess.make_dir_recursive_absolute(dir)
 		root.get_viewport().get_texture().get_image().save_png(dir + "/settings_ghost.png")
 
-	# 2) 閉じて O で戻る → 切り替えも切に
+	# 2) 閉じたまま、O・U は効かない。設定の外で戻る → 切り替えも切に
 	await _tap(KEY_ESCAPE)
 	_check(not st.is_open, "Esc で閉じた（霊体のまま）")
 	_check(g.active, "閉じても霊体のまま")
 	await _tap(KEY_O)
+	await _tap(KEY_U)
+	_check(g.active and int(p.ghost) == 2, "O・U のキーでは何も変わらない（キーの切り替えは外した）")
+	g.leave()
 	await create_timer(0.3).timeout
-	_check(not g.active and int(p.ghost) == 0, "O で体へ戻った")
+	_check(not g.active and int(p.ghost) == 0, "体へ戻った")
 	_check(not st._ghost_cb.button_pressed and not st._seen_cb.button_pressed and st._seen_cb.disabled, "設定の切り替えも切に戻った")
 
-	# 3) O で抜ける → 切り替えも入に。設定の切り替えで戻る
+	# 3) 設定の外で抜ける → 切り替えも入に。設定の切り替えで戻る
 	await _tap(KEY_O)
-	_check(g.active, "O で抜けた")
+	_check(not g.active, "体のときも O では抜けない")
+	g.enter()
+	await process_frame
+	_check(g.active, "抜けた")
 	await _tap(KEY_ESCAPE)
 	_check(st._ghost_cb.button_pressed and not st._seen_cb.button_pressed and not st._seen_cb.disabled, "設定の切り替えも入（見えない）になっている")
 	g.cam.global_position += Vector3(3, 2, -4)

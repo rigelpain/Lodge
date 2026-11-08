@@ -21,7 +21,7 @@ const LEG := Color(0.28, 0.27, 0.32)
 const NAMES := ["grab", "release", "push", "ride", "rope", "pull", "scoop", "getoff", "sit", "standup", "lean_l", "lean_r", "brake", "handsup",
 	"wave", "point", "voice", "breath", "ring", "needle", "return", "walk", "run", "jump", "look", "zoom", "view",
 	"cam_dist", "cam_frame", "tag_stack", "hill", "speed", "hourglass", "pip_cycle", "pip_off", "settings", "mouse_r", "mouse_move", "mouse_wheel", "mouse_pinch", "mouse_pan", "back", "untag", "tag_on",
-	"ghost_in", "ghost_back", "ghost_hidden", "ghost_seen", "ghost_up", "ghost_down"]
+	"ghost_up", "ghost_down"]
 
 ## HUD の物が受ける風（hud.gd が毎コマ入れる。0〜1.6 ほど）。設定「HUD が風で揺れる」を切ると 0、「視点の揺れ」を切ると小さく
 static var wind := 0.0
@@ -369,10 +369,6 @@ static func icon(ci: CanvasItem, name: String, center: Vector2, size: float, a :
 		"pal_pet": _pals(ci, a, tint, "pet")
 		"dye": _dye(ci, a, tint)
 		"swatch_book": _swatch_book(ci, a)
-		"ghost_in": _ghost_in(ci, a, tint, false)
-		"ghost_back": _ghost_in(ci, a, tint, true)
-		"ghost_hidden": _ghost_eye(ci, a, tint, false)
-		"ghost_seen": _ghost_eye(ci, a, tint, true)
 		"ghost_up": _ghost_move(ci, a, tint, -1)
 		"ghost_down": _ghost_move(ci, a, tint, 1)
 		"person": doll(ci, Vector2(0, 26), tint, "stand", a)
@@ -1138,27 +1134,6 @@ static func _back(ci: CanvasItem, a: float) -> void:
 static func _ghost(ci: CanvasItem, feet: Vector2, a: float, col: Color, sc := 1.0, k := 0.42) -> void:
 	ci.draw_colored_polygon(_map(ell(feet + Vector2(0, 9.0 * sc), 7.0 * sc, 1.6 * sc, 12)), Color(SHADOW, 0.12 * a))
 	doll(ci, feet, col, "stand", a * k, sc)
-
-
-## 体から抜ける（戻るなら、霊体から体へ）: 立っている人形と、右上に浮かぶ透けた人形、そのあいだの糸の矢印
-static func _ghost_in(ci: CanvasItem, a: float, col: Color, back: bool) -> void:
-	thread(ci, PackedVector2Array([Vector2(-28, 28), Vector2(-2, 28)]), Color(0.7, 0.75, 0.88), 2.0, a)
-	doll(ci, Vector2(-15, 28), col, "stand", a, 0.85)
-	_ghost(ci, Vector2(15, 6), a, col, 0.85)
-	if back:
-		arc_arrow(ci, Vector2(0, 2), 13.0, -PI * 0.15, -PI * 0.85, THREAD, a, 2.0)
-	else:
-		arc_arrow(ci, Vector2(0, 2), 13.0, -PI * 0.85, -PI * 0.15, THREAD, a, 2.0)
-
-
-## 見える・見えない: 透けた人形と、目（見えないときは目に斜めの糸）
-static func _ghost_eye(ci: CanvasItem, a: float, col: Color, seen: bool) -> void:
-	_ghost(ci, Vector2(-8, 22), a, col, 1.0, 0.5 if seen else 0.22)
-	var c := Vector2(16, -16)
-	patch(ci, ell(c, 12, 7, 18), PAPER, a, true, PAPER_EDGE)
-	patch(ci, circ(c + Vector2(2, 0), 4.5, 12), NAVY, a, false)
-	if not seen:
-		thread(ci, PackedVector2Array([c + Vector2(-12, 9), c + Vector2(12, -9)]), RED, 2.6, a)
 
 
 ## 上がる（dir -1）・下がる（1）: 透けた人形の横に、糸の矢印

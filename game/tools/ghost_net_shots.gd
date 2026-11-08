@@ -120,12 +120,13 @@ func _stage(ghost_is_host: bool, stage: String) -> void:
 	if mine:
 		match stage:
 			"2_hidden":
-				await _key(KEY_O)
+				g.enter()
+				await process_frame
 				g.cam.global_position = main.player.global_position + Vector3.UP * (Ghost.EYE + 1.0)   # 抜けた所の 1 m 上に浮かぶ
 			"3_seen":
-				await _key(KEY_U)
+				g.set_seen(true)
 			"4_back":
-				await _key(KEY_O)
+				g.leave()
 		await create_timer(1.6).timeout
 		if stage == "2_hidden":
 			await _shot("%s_ghost_%s" % [stage, "host" if ghost_is_host else "join"])   # 霊体の画面（案内のワッペン）

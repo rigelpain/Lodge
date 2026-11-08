@@ -393,7 +393,7 @@ func tag_owner() -> int:
 # ---- 手引き --------------------------------------------------------------------------
 
 func _hint(id: String, keys: Array, icon: String, world := Vector3.INF) -> void:
-	if known(id) and not id in ["gesture", "ghost_back", "ghost_seen"]:   # 霊体の戻る・見える見えないは、抜けているあいだずっと
+	if known(id) and id != "gesture":
 		return
 	if not _hints.has(id):
 		_hints[id] = {"keys": keys, "icon": icon, "world": world, "scr": Vector2.ZERO, "a": 0.0, "on": false, "bottom": world == Vector3.INF}
@@ -409,8 +409,6 @@ func _hint(id: String, keys: Array, icon: String, world := Vector3.INF) -> void:
 
 func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if Ghost.gone(p):   # 観戦モード（ghost.gd）: 霊体の操作だけ。体の案内は出さない
-		_hint("ghost_back", ["O"], "ghost_back")
-		_hint("ghost_seen", ["U"], "ghost_seen" if int(p.ghost) == 2 else "ghost_hidden")
 		_hint("ghost_up", ["Space"], "ghost_up")
 		_hint("ghost_down", ["Ctrl"], "ghost_down")
 		_hint("ghost_speed", ["mouse_wheel"], "speed")
@@ -1454,7 +1452,7 @@ class View extends Control:
 			[["W", "A", "S", "D"], "walk"], [["Shift"], "run"], [["Space"], "jump"], [["mouse_move"], "look"],
 			[["F"], "grab"], [["F"], "rope"], [["E"], "ride"], [["Backspace"], "return"],
 			[["mouse_r"], "point"], [["C"], "view"], [["V"], "pip_cycle"], [["P"], "pip_off"],
-			[["Esc"], "settings"], [["Left", "Right"], "tag_stack"], [["O"], "ghost_in"], [["U"], "ghost_seen"],
+			[["Esc"], "settings"], [["Left", "Right"], "tag_stack"],
 		]
 		# ピンチ: 三人称のカメラの距離（一人称で閉じ続けると三人称へ）。視野角と人形の画面の高さは設定からだけ
 		rows.append([["mouse_pinch"], "cam_dist" if hud.main.player and hud.main.player.third else "view"])
