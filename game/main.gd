@@ -21,6 +21,8 @@ const Look := preload("res://look.gd")
 ##   --spawn=lanterns  おじいさんの番台の横のランタン掛けの前から始める（F でランタンを買って提げ替える）
 ##   --roam-bots=N  山をめぐる仲間の数（既定 5。--bots か --lodge-bots か --no-player を書いたときは 0）。自分で山を選んで登り、米袋で滑り降りて、別の山へ（bot.gd の roam）
 ##   --roam-all-hill  確かめ用: 山をめぐる仲間をみんな丘のそばから始める
+##   --cpu-visit=割合  山をめぐる仲間が、次の山を選ぶときにロッジへ寄る割合（既定 0.35。0 なら濡れきったときだけ帰る。bot_visit.gd）。
+##                  重さを見るなら --roam-bots=20 と合わせる（20 人でも、はじめの所は ROAM_START の 5 か所の近くに散らす）
 ##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 0。--bots か --no-player を書いたときは 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
 ##   --spawn=wardrobe  1 階の人台の前から始める（F で人形を選び直す）
 ##   --spawn=mirror    入口の横の大きな鏡の前から始める（F で自分の人形が映る）
@@ -497,10 +499,14 @@ func _ready() -> void:
 		if args.has("roam-all-hill"):   # 確かめ用（いちばん重いとき）: みんな丘の、遊ぶ人のそばから
 			spot = ["hill", Vector2(2.0 + 3.0 * i, 41.0)]
 			at = spot[1]
+		if i >= ROAM_START.size() and not args.has("roam-all-hill"):   # 6 人目からは、同じ所に重ならないよう少しずらす
+			at += Vector2.from_angle(i * 2.4) * (3.0 + 1.5 * float(i / ROAM_START.size()))
 		var b := Bot.new()
 		b.sled = sled
 		b.player = player
 		b.roam = true
+		b.stays_dry = false   # 外で濡れる。いっぱいになったらロッジへ乾かしに帰る（bot_visit.gd）
+		b.visit_odds = float(args.get("cpu-visit", str(b.visit_odds)))
 		b.side = 1 if i % 2 == 0 else -1
 		if args.has("bot-dolls"):
 			var ds: PackedStringArray = String(args["bot-dolls"]).split(",")

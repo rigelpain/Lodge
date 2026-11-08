@@ -227,7 +227,8 @@ func _drive(dt: float) -> void:
 				p.global_position = Vector3(1.5, main.height(1.5, 35.0) + 1.0, 35.0)
 				p.rotation.y = 2.62
 			else:
-				p.global_position = main.get_node("Audio").spawn_point("inside")
+				var au := main.get_node_or_null("Audio")   # --no-sound では音の配り役がないので、同じ所（audio.gd の spawn_point）をロッジから
+				p.global_position = au.spawn_point("inside") if au else main.get_node("Lodge").to_global(Vector3(6.0, 0.5, -4.0))
 				p.rotation.y = 0.8
 		if _phase_t > PROBE_SECS:
 			_next_probe = t + float(args["probe-every"])
@@ -273,7 +274,8 @@ func _drive(dt: float) -> void:
 				p.rotation.y += randf_range(-1.6, 1.6)
 			if _phase_t > 25.0:
 				# ロッジの食堂へ入って歩く
-				p.global_position = main.get_node("Audio").spawn_point("inside")
+				var au := main.get_node_or_null("Audio")   # --no-sound では音の配り役がないので、同じ所（audio.gd の spawn_point）をロッジから
+				p.global_position = au.spawn_point("inside") if au else main.get_node("Lodge").to_global(Vector3(6.0, 0.5, -4.0))
 				_begin("lodge")
 		"lodge":
 			_set_w(true)
