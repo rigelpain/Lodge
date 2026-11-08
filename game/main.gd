@@ -603,6 +603,8 @@ func _ready() -> void:
 	add_child(settings)
 	settings.changed.connect(_apply_setting)
 	settings.to_start.connect(func(): net.leave())
+	settings.ghost_set.connect(_ghost_from_settings)
+	settings.ghost_seen_set.connect(func(on: bool): if ghost: ghost.set_seen(on))
 	for key in settings.values:
 		_apply_setting(key, settings.values[key])
 	if get_tree().current_scene == self:
@@ -2146,6 +2148,17 @@ func _set_volume(buses: Array, v: float) -> void:
 			continue
 		AudioServer.set_bus_volume_db(i, linear_to_db(maxf(v, 0.0001)))
 		AudioServer.set_bus_mute(i, v <= 0.001)
+
+
+## 設定の画面の霊体化の切り替え（ghost.gd）。抜けられないとき（乗っている・座っているなど）は切り替えを戻す
+func _ghost_from_settings(on: bool) -> void:
+	if ghost == null:
+		settings.sync_ghost(false, false)
+	elif on:
+		if not ghost.enter(true):
+			settings.sync_ghost(false, false)
+	else:
+		ghost.leave()
 
 
 func _apply_setting(key: String, v) -> void:
