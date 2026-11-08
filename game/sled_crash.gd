@@ -3,49 +3,53 @@ extends RefCounted
 ## 四散するような感じが良い。その後ソリはひっくり返っていても着地点の傾斜に沿って滑っていってほしい」「同様のことを木に当たり判定をつけて木への衝突でも」）。
 ## 決まりと値の意味は design/controls-and-physics.md の「雪の塊と木にぶつかる」。ソリの動きは sled.gd の crash_lump・_launch。乗っている人の飛び方は flung.gd の throw_events。
 
-const Props := preload("res://props.gd")
+const Look := preload("res://look.gd")
 const Snowball := preload("res://snowball.gd")
 
-# ---- 雪の塊: ロッジの正面の帯に、自然に積もった・寄せた雪だまりを散らす（2026-11-08 代表「ロッジ前の雪山、規則的すぎて気持ち悪いです。おおきさも形も配置も」）。
-# 形は 4 つ: こんもりした山（heap）、大小がくっついた山（cluster）、風の吹きだまりや雪かきで寄せた長い土手（bank）、低くなだらかな雪だまり（low）。
-# どれも毛糸の雪の glb（props/build_snow.py）を、大きさ・縦横・高さ・向きを変えて組む。
-# 置き方は種を固定した乱数（どの画面でも同じ）。最後に、丘から来るまっすぐな道すじを細かく調べ、米袋の幅でも抜けられる隙間に小さな塊を足す（ソリはどこかに必ず当たる）。
-# 当たりは見た目の形に合わせた丸棒（横に寝かせたカプセル）と円柱。ソリだけが読むので、歩く人と CPU は通り抜ける
+# ---- 雪の塊: ロッジの正面の帯に、地面の雪が盛り上がった雪だまりを散らす（2026-11-08 代表「ロッジ前の雪山、規則的すぎて気持ち悪いです。おおきさも形も配置も」、
+# 2026-11-08 代表「ロッジ前の雪が形が気持ち悪いです。スカスカだし」「あと地面から浮いてる」）。
+# 綿の山の glb を置くのをやめ、地面と同じ毛糸の編み地（Look.snow）を、地面の見た目の高さからなめらかに盛り上げた 1 枚の形にした。裾は地面そのものなので浮かない。
+# 形は自然な吹きだまりに合わせる: 上は丸く、風上（丘の側）はなだらか、風下（ロッジの側）は少し急。長く伸びた土手、くっついた盛り、低く広い雪だまり。
+# 帯全体で 1 つの形なので、数を増やしても描く回数は増えない（遠くでは描かない: LUMP_SEE）。
+# 置き方は種を固定した乱数（どの画面でも同じ）。最後に、丘から来るまっすぐな道すじを調べ、米袋の幅でも抜けられる隙間に小さな盛りを足す（ソリはどこかに必ず当たる）。
+# 当たりは盛りの形に合わせた円柱と寝かせた丸棒。ソリだけが読むので、歩く人と CPU は通り抜ける
 const LUMP_SEED := 41
 const LUMP_BAND := Rect2(-50.0, 29.0, 94.0, 13.0)   # 散らす帯（ロッジの座標の x, 正面向きの距離）。届いたソリが並ぶ所（main.gd の DELIVER_Z）と案内板より先
-const LUMP_GAP := Vector2(3.0, 8.0)  # となりの塊までの、帯に沿った間隔の範囲 (m)
-const LUMP_KINDS := {"heap": 0.35, "cluster": 0.25, "bank": 0.2, "low": 0.2}   # 形の出やすさ
-const LUMP_LIFT := 0.25         # 塊を雪面から持ち上げる (m)。低いと雪に埋まって、砕けた粒に見える
-const LUMP_ROAD := 0.6          # 道にかかる塊の高さに掛ける割合。ロッジへ歩く人のじゃまにならないよう低く（形は low だけ）
+const LUMP_GAP := Vector2(1.6, 4.2)  # 帯に沿って、次の盛りまでの間隔の範囲 (m)
+const LUMP_EXTRA := 0.45        # 同じ所に、前後をずらしてもう 1 つ盛る割合（帯の奥行きを埋める）
+const LUMP_KINDS := {"heap": 0.3, "cluster": 0.25, "bank": 0.25, "low": 0.2}   # 形の出やすさ
+const LUMP_ROAD := 0.5          # 道にかかる盛りの高さに掛ける割合。ロッジへ歩く人のじゃまにならないよう低く（形は low だけ）
 const LUMP_FILL_W := 0.3        # 抜け道を調べる幅の半分 (m)。米袋の幅の半分
 const LUMP_HIT_H := 2.6         # 当たりの高さ (m)
-const PILE_A := "res://props/snow_pile_a.glb"
-const PILE_B := "res://props/snow_pile_b.glb"
-const DRIFT := "res://props/snow_drift.glb"
+const LUMP_HIT_K := 0.8         # 当たりの半径 = 盛りの裾の半径 × これ（裾の薄い所は当たらない）
+const LUMP_LEE := 0.7           # 風下（ロッジの側）の裾の長さの割合。小さいほど風下が急
+const LUMP_CELL := 0.4          # 形の格子の間隔 (m)
+const LUMP_SINK := 0.06         # 盛りのない所は、地面の見た目よりこれだけ下へ（地面と重ならないように隠す）
+const LUMP_SEE := 160.0         # これより遠いと描かない (m)
 
-static var _sizes := {}         # glb → 倍率 1 の足もとの大きさ Vector3(横, 高さ, 奥)
 
-
-## ロッジの正面に雪の塊を散らす
+## ロッジの正面に雪だまりを散らす
 static func build_lumps(world: Node3D) -> void:
 	var holder := Node3D.new()
 	holder.name = "CrashLumps"
 	world.add_child(holder)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = LUMP_SEED
-	var parts_all: Array = []   # [ロッジの座標の中心 Vector2, 半分の長さ, 半径, 向き]（抜け道を調べる）
+	var bumps: Array = []       # 見た目の盛り [ロッジの座標の中心, 長いほうの半分, 短いほうの半分, 向き, 高さ]
+	var parts_all: Array = []   # 当たり [ロッジの座標の中心, 半分の長さ, 半径, 向き]（抜け道を調べる）
 	var x := LUMP_BAND.position.x + rng.randf_range(0.0, LUMP_GAP.x)
 	while x < LUMP_BAND.end.x:
-		var at := Vector2(x, rng.randf_range(LUMP_BAND.position.y, LUMP_BAND.end.y))
-		var kind := _pick(rng)
-		parts_all.append_array(_put_lump(world, holder, at, kind, rng))
+		for k in (2 if rng.randf() < LUMP_EXTRA else 1):
+			var at := Vector2(x + rng.randf_range(-0.8, 0.8), rng.randf_range(LUMP_BAND.position.y, LUMP_BAND.end.y))
+			parts_all.append_array(_put_lump(world, holder, at, _pick(rng), rng, bumps))
 		x += rng.randf_range(LUMP_GAP.x, LUMP_GAP.y)
-	# 抜け道をふさぐ: 丘の頂上から帯を横切る道すじと、ロッジへまっすぐ向かう道すじを 0.2 m おきに調べ、塊に触れない道すじが帯のまんなかを通る所に小さな塊を足す
+	# 抜け道をふさぐ: 丘の頂上から帯を横切る道すじと、ロッジへまっすぐ向かう道すじを 0.2 m おきに調べ、塊に触れない道すじが帯のまんなかを通る所に小さな盛りを足す
 	for k in 60:
 		var hole := _first_hole(world, parts_all)
 		if hole == Vector2.INF:
 			break
-		parts_all.append_array(_put_lump(world, holder, hole, "low" if rng.randf() < 0.5 else "heap", rng, 0.6))
+		parts_all.append_array(_put_lump(world, holder, hole, "low" if rng.randf() < 0.5 else "heap", rng, bumps, 0.7))
+	holder.add_child(_drift_mesh(world, bumps))
 
 
 static func _pick(rng: RandomNumberGenerator) -> String:
@@ -109,101 +113,150 @@ static func _to_lodge(world: Node3D, w: Vector2) -> Vector2:
 	return Vector2(d.x * c - d.y * s, d.x * s + d.y * c)
 
 
-## 塊を 1 つ置く（at はロッジの座標）。形の部品を返す [中心, 半分の長さ, 半径, 向き]（ロッジの座標）。small は大きさの倍率
-static func _put_lump(world: Node3D, holder: Node3D, at: Vector2, kind: String, rng: RandomNumberGenerator, small := 1.0) -> Array:
+## 盛りを 1 つ置く（at はロッジの座標）。見た目の盛りを bumps に足し、当たりの部品を返す [中心, 半分の長さ, 半径, 向き]（ロッジの座標）。small は大きさの倍率
+static func _put_lump(world: Node3D, holder: Node3D, at: Vector2, kind: String, rng: RandomNumberGenerator, bumps: Array, small := 1.0) -> Array:
 	var w: Vector2 = world.lodge_to_world(at)
-	var road: bool = world.path_weight(w.x, w.y, 2.0) > 0.0
+	var road: bool = world.path_weight(w.x, w.y, 2.5) > 0.0
 	if road:
 		kind = "low"
+	var yaw := rng.randf_range(-0.5, 0.5)   # 帯に沿った向き（ロッジの座標の x）から、少しずつずらす
+	var mine: Array = []   # [中心（ロッジの座標）, 長いほうの半分, 短いほうの半分, 向き, 高さ]
+	match kind:
+		"heap":   # こんもりした盛り。少しだけ楕円
+			var r := rng.randf_range(1.3, 2.3) * small
+			mine.append([at, r * rng.randf_range(1.0, 1.35), r, yaw, r * rng.randf_range(0.45, 0.6)])
+		"cluster":   # 大きな盛りに、小さな盛りがくっつく
+			var r := rng.randf_range(1.4, 2.1) * small
+			mine.append([at, r * 1.15, r, yaw, r * rng.randf_range(0.45, 0.55)])
+			for i in rng.randi_range(1, 3):
+				var q := r * rng.randf_range(0.4, 0.7)
+				var off := Vector2.from_angle(rng.randf() * TAU) * r * rng.randf_range(0.8, 1.2)
+				mine.append([at + off, q * rng.randf_range(1.0, 1.4), q, rng.randf() * TAU, q * rng.randf_range(0.5, 0.7)])
+		"bank":   # 吹きだまり・寄せた雪の、長い土手
+			var r := rng.randf_range(1.0, 1.5) * small
+			mine.append([at, r * rng.randf_range(2.2, 3.4), r, yaw, r * rng.randf_range(0.5, 0.75)])
+		_:   # low: 低く広い雪だまり
+			var r := rng.randf_range(1.8, 2.8) * small
+			mine.append([at, r * rng.randf_range(1.2, 1.7), r, yaw, r * rng.randf_range(0.18, 0.26) * (LUMP_ROAD if road else 1.0)])
+	bumps.append_array(mine)
 	var area := Area3D.new()
 	area.add_to_group("crash_lumps")
 	area.set_meta("kind", kind)
-	area.position = Vector3(w.x, world.foot_y(w.x, w.y, 1.0) - 0.05, w.y)
-	area.rotation.y = world.LODGE_YAW
+	area.position = Vector3(w.x, world.height(w.x, w.y), w.y)
+	area.rotation.y = world.LODGE_YAW   # 塊の中の (x, z) は、ロッジの座標と同じ向き
 	area.monitorable = false
-	var look := Node3D.new()
-	look.name = "Look"
-	look.position.y = LUMP_LIFT
-	area.add_child(look)
-	var yaw := rng.randf_range(-0.6, 0.6)   # 帯に沿った向きから、少しずつずらす
-	var parts: Array = []   # [glb, 中心（塊の中）, 大きさ Vector3, 向き]
-	match kind:
-		"heap":
-			var s := rng.randf_range(1.3, 2.3) * small
-			parts.append([PILE_A, Vector2.ZERO, Vector3(s * rng.randf_range(0.9, 1.25), s * rng.randf_range(0.75, 1.1), s), rng.randf() * TAU])
-		"cluster":
-			var s := rng.randf_range(1.2, 1.9) * small
-			parts.append([PILE_A, Vector2.ZERO, Vector3(s, s * rng.randf_range(0.8, 1.05), s * 0.95), rng.randf() * TAU])
-			for i in rng.randi_range(1, 3):
-				var a := rng.randf() * TAU
-				var r := s * rng.randf_range(0.9, 1.5)
-				var t := s * rng.randf_range(0.35, 0.8)
-				parts.append([PILE_B if rng.randf() < 0.6 else PILE_A, Vector2.from_angle(a) * r, Vector3(t * 1.8, t * rng.randf_range(1.2, 1.7), t * 1.8), rng.randf() * TAU])
-		"bank":
-			var s := rng.randf_range(0.55, 0.9) * small
-			parts.append([DRIFT, Vector2.ZERO, Vector3(s, s * rng.randf_range(1.0, 1.5), s * rng.randf_range(1.0, 1.4)), yaw + (PI if rng.randf() < 0.5 else 0.0)])
-			if rng.randf() < 0.5:   # 寄せた土手の端に、こぼれた山
-				parts.append([PILE_A, Vector2(s * 3.4 * (1.0 if rng.randf() < 0.5 else -1.0), rng.randf_range(-0.6, 0.6)).rotated(yaw), Vector3.ONE * s * rng.randf_range(1.0, 1.4), rng.randf() * TAU])
-		_:   # low: 平たく広い雪だまり
-			var s := rng.randf_range(1.8, 2.8) * small
-			parts.append([PILE_A, Vector2.ZERO, Vector3(s * rng.randf_range(1.0, 1.5), s * rng.randf_range(0.4, 0.55) * (LUMP_ROAD if road else 1.0), s), yaw])
 	var out: Array = []
-	for pt in parts:
-		var size := _size_of(pt[0])
-		var n := Props.make(pt[0])
-		n.scale = pt[2]
-		n.position = Vector3(pt[1].x, 0.0, pt[1].y)
-		n.rotation.y = pt[3]
-		look.add_child(n)
-		# 当たり: 足もとの大きさの長いほうに沿って寝かせた丸棒。半径は短いほうの半分の 9 割（形の縁は丸い）
-		var hx: float = size.x * pt[2].x * 0.5
-		var hz: float = size.z * pt[2].z * 0.5
-		var r := minf(hx, hz) * 0.9
-		var half := maxf(hx, hz) - minf(hx, hz)
-		var axis_yaw: float = pt[3] - (0.0 if hx >= hz else PI * 0.5)   # 塊の中での、長いほうの向き（y 回り。0 で x の向き）
+	for b in mine:
+		var long: float = b[1] * LUMP_HIT_K
+		var r: float = b[2] * LUMP_HIT_K
+		var half := maxf(long - r, 0.0)
+		var lc: Vector2 = b[0] - at
 		var col := CollisionShape3D.new()
 		if half < 0.2:
 			var cyl := CylinderShape3D.new()
 			cyl.radius = r
 			cyl.height = LUMP_HIT_H
 			col.shape = cyl
-			col.position = Vector3(pt[1].x, LUMP_HIT_H * 0.5 - 0.5, pt[1].y)
+			col.position = Vector3(lc.x, LUMP_HIT_H * 0.5 - 0.5, lc.y)
 		else:
-			var cap := CapsuleShape3D.new()   # 横に寝かせて、少し縦につぶれた丸棒（半径は高さの分も含む）
+			var cap := CapsuleShape3D.new()   # 横に寝かせた丸棒（半径は高さの分も含む）
 			cap.radius = maxf(r, 0.6)
 			cap.height = half * 2.0 + cap.radius * 2.0
 			col.shape = cap
-			col.position = Vector3(pt[1].x, 0.4, pt[1].y)
-			col.rotation = Vector3(0.0, axis_yaw, PI * 0.5)
+			col.position = Vector3(lc.x, 0.4, lc.y)
+			col.rotation = Vector3(0.0, -float(b[3]), PI * 0.5)
 		area.add_child(col)
-		# ロッジの座標で: 塊の中の (x, z) は、ロッジの座標の (x, z) と同じ向き（area の向き = ロッジの向き）
-		var lc: Vector2 = at + pt[1]
-		out.append([lc, half, r, -axis_yaw])
-	area.body_entered.connect(func(b: Node3D) -> void:
-		if b.has_method("crash_lump"):
-			b.crash_lump(area))
+		out.append([b[0], half, r, b[3]])
+	area.body_entered.connect(func(body: Node3D) -> void:
+		if body.has_method("crash_lump"):
+			body.crash_lump(area))
 	holder.add_child(area)
 	return out
 
 
-## glb の足もとの大きさ（倍率 1）。形から一度だけ測る
-static func _size_of(path: String) -> Vector3:
-	if _sizes.has(path):
-		return _sizes[path]
-	var n := Props.make(path)
-	var box := AABB()
-	var first := true
-	for mi in n.find_children("*", "MeshInstance3D", true, false):
-		var b: AABB = (mi as MeshInstance3D).get_aabb()
-		var p: Node = mi
-		while p != n:
-			b = (p as Node3D).transform * b
-			p = p.get_parent()
-		box = b if first else box.merge(b)
-		first = false
-	n.free()
-	_sizes[path] = box.size
-	return box.size
+## 盛りの高さ (m)。p はロッジの座標。盛りどうしはなめらかにつながる（大きいほうに、ほかの盛りの裾を少し足す）
+static func _drift_height(p: Vector2, bumps: Array) -> float:
+	var top := 0.0
+	var rest := 0.0
+	for b in bumps:
+		var d: Vector2 = (p - b[0]).rotated(-float(b[3]))   # 盛りの向きに沿った座標（x が長いほう）
+		var long: float = b[1]
+		var short: float = b[2] * (LUMP_LEE if d.y < 0.0 else 1.0)   # ロッジの側（座標の z が小さい側）は裾が短く、急
+		var q := (d.x / long) * (d.x / long) + (d.y / short) * (d.y / short)
+		if q >= 1.0:
+			continue
+		var h: float = b[4] * pow(1.0 - q, 1.6)   # 上は丸く、裾はなだらかに地面へ
+		if h > top:
+			rest += top
+			top = h
+		else:
+			rest += h
+	return top + rest * 0.25
+
+
+## 帯の雪だまりの形（地面の見た目の高さから盛り上げる。毛糸の編み地）
+static func _drift_mesh(world: Node3D, bumps: Array) -> MeshInstance3D:
+	var x0 := LUMP_BAND.position.x - 6.0
+	var z0 := LUMP_BAND.position.y - 6.0
+	var nx := int((LUMP_BAND.size.x + 12.0) / LUMP_CELL) + 1
+	var nz := int((LUMP_BAND.size.y + 12.0) / LUMP_CELL) + 1
+	var noise := FastNoiseLite.new()   # 盛りの表面のゆるいうねり（吹きだまりの風の跡）
+	noise.seed = LUMP_SEED
+	noise.frequency = 0.35
+	var ys := PackedFloat32Array()
+	var hs := PackedFloat32Array()
+	var ws := PackedVector2Array()
+	ys.resize(nx * nz)
+	hs.resize(nx * nz)
+	ws.resize(nx * nz)
+	for j in nz:
+		for i in nx:
+			var l := Vector2(x0 + i * LUMP_CELL, z0 + j * LUMP_CELL)
+			var w: Vector2 = world.lodge_to_world(l)
+			var h := _drift_height(l, bumps)
+			if h > 0.0:
+				h *= 1.0 + 0.12 * noise.get_noise_2d(l.x, l.y)
+			var g: float = world.height(w.x, w.y) + world.snow_lift(w.x, w.y)
+			var k := j * nx + i
+			hs[k] = h
+			ys[k] = g + h if h > 0.005 else g - LUMP_SINK
+			ws[k] = w
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	st.set_color(Color.WHITE)
+	for j in nz:
+		for i in nx:
+			var k := j * nx + i
+			var il := maxi(i - 1, 0)
+			var ir := mini(i + 1, nx - 1)
+			var jd := maxi(j - 1, 0)
+			var ju := mini(j + 1, nz - 1)
+			var a: Vector3 = Vector3(ws[j * nx + ir].x, ys[j * nx + ir], ws[j * nx + ir].y) - Vector3(ws[j * nx + il].x, ys[j * nx + il], ws[j * nx + il].y)
+			var b: Vector3 = Vector3(ws[ju * nx + i].x, ys[ju * nx + i], ws[ju * nx + i].y) - Vector3(ws[jd * nx + i].x, ys[jd * nx + i], ws[jd * nx + i].y)
+			var n := b.cross(a).normalized()
+			st.set_normal(n if n.y > 0.0 else -n)
+			st.set_uv(ws[k] * 0.5)
+			st.add_vertex(Vector3(ws[k].x, ys[k], ws[k].y))
+	for j in nz - 1:
+		for i in nx - 1:
+			var a := j * nx + i
+			if hs[a] <= 0.005 and hs[a + 1] <= 0.005 and hs[a + nx] <= 0.005 and hs[a + nx + 1] <= 0.005:
+				continue   # 盛りのない升は描かない
+			st.add_index(a)
+			st.add_index(a + 1)
+			st.add_index(a + nx)
+			st.add_index(a + nx)
+			st.add_index(a + 1)
+			st.add_index(a + nx + 1)
+	st.generate_tangents()
+	var mi := MeshInstance3D.new()
+	mi.name = "Drifts"
+	mi.mesh = st.commit()
+	var mat := Look.snow()
+	mat.vertex_color_use_as_albedo = true   # 地面と同じ色の出し方
+	mi.material_override = mat
+	mi.visibility_range_end = LUMP_SEE
+	return mi
 
 
 ## 出来事 "crash" が届いた（どの画面でも。emotes.gd が呼ぶ）。雪の粉を出し、塊をへこませる。乗っていた人は出来事 "flung" で飛ぶ
@@ -212,19 +265,3 @@ static func on_event(world: Node3D, ev: Dictionary) -> void:
 	if s is RigidBody3D:
 		s.crash_seen()
 	Snowball.splat_at(world, ev.point, Vector3.UP, false, 8.0)
-	var lump = world.get_node_or_null(ev.get("lump", NodePath())) if ev.has("lump") else null
-	if lump:
-		_squash(lump.get_node_or_null("Look"))
-
-
-## 塊がぼふっとへこんで戻る（12 コマ／秒）
-static func _squash(look: Node3D) -> void:
-	if look == null or not look.is_inside_tree():
-		return
-	var base := look.scale
-	var tree := look.get_tree()
-	for k in [Vector2(1.35, 0.4), Vector2(1.3, 0.5), Vector2(1.2, 0.65), Vector2(1.1, 0.8), Vector2(1.03, 0.95), Vector2(1.0, 1.0)]:
-		if not is_instance_valid(look):
-			return
-		look.scale = Vector3(base.x * k.x, base.y * k.y, base.z * k.x)
-		await tree.create_timer(1.0 / 12.0).timeout

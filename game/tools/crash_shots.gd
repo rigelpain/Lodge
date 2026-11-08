@@ -94,6 +94,8 @@ func _run() -> void:
 		cam.make_current()
 		await create_timer(0.5).timeout
 		_save(await _grab(), args.get("out", "/tmp/c.jpg"))
+		await RenderingServer.frame_post_draw
+		print("描いた数 %d、三角形 %d" % [RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME), RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
 		quit()
 		return
 	if view == "row":
