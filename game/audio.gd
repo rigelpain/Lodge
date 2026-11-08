@@ -3,6 +3,7 @@ extends Node
 const Look := preload("res://look.gd")
 const Doll := preload("res://doll.gd")
 const Craft := preload("res://craft.gd")
+const Ghost := preload("res://ghost.gd")
 ## Lodge の音。考え方は design/sound-concept.md。
 ## 場にあるものしか鳴らさない。外は響かない。言葉はない（声は言葉にならない「ワ〜」「ウン」「ンーン」だけ）。
 ##
@@ -480,6 +481,10 @@ func _update_walkers(dt: float) -> void:
 			_walkers.erase(who)
 	for who in _walkers:
 		var w: Dictionary = _walkers[who]
+		if Ghost.gone(who):   # 観戦モードの霊体（ghost.gd）は、足音も息も出さない
+			if w.get("remote", false):
+				w.last = who.global_position
+			continue
 		var is_player: bool = who == player
 		var remote: bool = w.get("remote", false)
 		var vel: Vector3 = who.velocity
@@ -1088,7 +1093,7 @@ func spawn_point(where: String) -> Vector3:
 # ---- 毎フレーム ----------------------------------------------------------------------
 
 func _listener() -> Vector3:
-	if player:
+	if player and not Ghost.gone(player):   # 観戦モードで抜けているあいだは、霊体のカメラで聞く
 		return player.global_position + Vector3.UP * 1.55
 	var cam := get_viewport().get_camera_3d()
 	return cam.global_position if cam else Vector3.ZERO

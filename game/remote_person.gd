@@ -3,6 +3,7 @@ extends CharacterBody3D
 const Doll := preload("res://doll.gd")
 const SackLook := preload("res://sack_look.gd")
 const Rolled := preload("res://rolled.gd")
+const Ghost := preload("res://ghost.gd")
 ## 通信でつないでいるほかの人の体（net.gd が置く）。動きはその人の画面が決め、ここは届いた姿を写す。
 ## ソリには、あなたや仲間と同じ口（take_handle・push・mount・lean・pull_rope）でかかわる。
 ## 力をかけるのはどの画面でも同じに呼ぶが、効くのはホストの画面だけ（つなぐ側のソリは、ホストのソリの姿を写しているので）。
@@ -35,6 +36,8 @@ var _age := 99.0             # 最後に届いてから (s)
 var _at := Vector3.INF       # 届いた位置
 var _vel := Vector3.ZERO     # 届いた位置から測った速さ（次が届くまで、この速さで先へ進める）
 var _yaw := 0.0
+var ghost := 0               # 観戦モード（ghost.gd）: 0 体、1 見えない霊体、2 見える霊体
+var _paint_frame := -1
 
 
 func _ready() -> void:
@@ -64,15 +67,23 @@ func put(s: Dictionary) -> void:
 	if _at != Vector3.INF and _age > 0.0:
 		_vel = (p - _at) / maxf(_age, 0.02)
 	_at = p
-	_yaw = float(s.get("y", 0.0))
+	_yaw = float(s.get("y", rotation.y))
 	_age = 0.0
-	if _s.is_empty():
-		global_position = p
+	var g := int(s.get("gh", 0))
+	if _s.is_empty() or g != ghost:
+		global_position = p   # はじめて届いた・霊体から戻った・霊体になった: 寄らずにその所へ
 		rotation.y = _yaw
-	_put_state(s)
+		_vel = Vector3.ZERO
 	var kind := String(s.get("d", doll.kind))
 	if kind != doll.kind and kind in Doll.KINDS:
 		_set_doll(kind)
+		_paint_frame = -1
+	if g != ghost:
+		_set_ghost(g)
+	if ghost != 0:
+		_s = s   # 霊体: ソリ・体の調子にはかかわらない
+		return
+	_put_state(s)
 	var sl: RigidBody3D = net.sled_at(s.get("sl", NodePath())) if net else null
 	var m := int(s.get("m", Mode.WALK))
 	if sl and sl.racked and m in [Mode.GRIP, Mode.ROPE, Mode.RIDE]:
@@ -87,6 +98,21 @@ func put(s: Dictionary) -> void:
 		ride_lean = s.get("l", Vector3.ZERO)
 		_yield_seat()
 	_s = s
+
+
+## 観戦モードに入った・出た（ghost.gd）。霊体のあいだは名簿から外し（施設・まち針・湿り気・雪玉が見ない）、
+## 見えないなら人形を隠し、見えるなら透けた紙にする。ソリから手を離して席を空ける
+func _set_ghost(g: int) -> void:
+	ghost = g
+	if g != 0:
+		_leave()
+		if hub and hub.people.get(id) == self:
+			hub.people.erase(id)
+	elif hub and id >= 0 and not hub.people.has(id):
+		hub.people[id] = self
+	doll.visible = g != 1
+	Ghost.paint(doll, g == 2)
+	_paint_frame = Doll.frame_index()
 
 
 ## 体の調子が届いた（"dw" 水）
@@ -201,6 +227,18 @@ func _physics_process(dt: float) -> void:
 	var fresh := _age < STALE
 	pushing = false
 	pulling = false
+	if ghost == 1:
+		return   # 見えない霊体: 体はその場で消えたまま
+	if ghost == 2:   # 見える霊体: 届いた所へ浮かんで寄る（足音は audio.gd が出さない）
+		var want := _at + _vel * minf(_age, STALE)
+		global_position = want if global_position.distance_to(want) > SNAP * 4.0 else global_position.lerp(want, 1.0 - exp(-PULL * dt))
+		rotation.y = lerp_angle(rotation.y, _yaw, 1.0 - exp(-PULL * dt))
+		_pose_doll()
+		var f := Doll.frame_index()
+		if f != _paint_frame:   # 人形は部品を作り直すので、コマごとに透かし直す
+			_paint_frame = f
+			Ghost.paint(doll, true)
+		return
 	if _in_drum():
 		global_position = _drum.ride_pose(Doll.frame_index()).pos
 		rotation.y = lerp_angle(rotation.y, _yaw, 1.0 - exp(-PULL * dt))

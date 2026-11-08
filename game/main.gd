@@ -77,6 +77,7 @@ const Duel := preload("res://duel.gd")
 const DuelHud := preload("res://duel_hud.gd")
 const Hud := preload("res://hud.gd")
 const SelfCam := preload("res://self_cam.gd")
+const Ghost := preload("res://ghost.gd")
 const Craft := preload("res://craft.gd")
 const Shopkeeper := preload("res://shopkeeper.gd")
 const BandaiCurtain := preload("res://bandai_curtain.gd")
@@ -718,6 +719,13 @@ func _ready() -> void:
 			var to := shopkeeper.global_position
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 
+	if player:   # 観戦モード（霊体）。O で体から抜けて飛ぶ（ghost.gd）
+		ghost = Ghost.new()
+		ghost.name = "Ghost"
+		ghost.main = self
+		ghost.player = player
+		add_child(ghost)
+
 	# 引数なしで起動した: スタート画面（一人・ホスト・つなぐ）。スタート画面からつなぎに行ったときは、つながるまで出しておく
 	var waiting := Net.boot.has("join") and net.online and not net.joined()
 	if Start.wanted(args) or waiting:
@@ -896,6 +904,7 @@ var snowfall: GPUParticles3D
 var ride_wind: Node3D
 var _pip_layer: CanvasLayer
 var self_cam: CanvasLayer
+var ghost: Node              # 観戦モード（ghost.gd）
 var pip_frame: PanelContainer
 var pip_mat: ShaderMaterial
 var pip_mode := 0
@@ -1064,7 +1073,7 @@ func _pip_env_of() -> Environment:
 ## 右上の 360° の小窓を出す・消す。pip_hidden は遊ぶ人の選び（P・設定）で、雪合戦のあいだ（duel_focus）はそれと別に消す
 func _sync_pip_shown() -> void:
 	if _pip_layer:
-		_pip_layer.visible = not pip_hidden and not duel_focus
+		_pip_layer.visible = not pip_hidden and not duel_focus and not (ghost and ghost.active)   # 霊体のあいだは、体の所の映像を出さない
 
 
 ## 雪合戦で戦っているあいだ、ふだんの HUD をよけて一人称に固定する（2026-11-05 代表「タグやインベントリ、体力ゲージ、時間ゲージ、

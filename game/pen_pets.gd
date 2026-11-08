@@ -10,6 +10,7 @@ extends Node3D
 const Doll := preload("res://doll.gd")
 const Pals := preload("res://pals.gd")
 const Companions := preload("res://companions.gd")
+const Ghost := preload("res://ghost.gd")
 
 ## 柵の内側（ここから外へは出ない。柵の柱から 0.3 m あける）: x の範囲、z の範囲
 const AREA := Rect2(-7.0, -0.2, 3.4, 2.6)
@@ -191,6 +192,7 @@ func _look_at(m: Dictionary) -> Vector3:
 	var net = main.get_node_or_null("Net") if main else null
 	if net and net.get("remotes") != null:
 		people.append_array(net.remotes.values())
+	people = people.filter(func(p): return not Ghost.gone(p))   # 観戦モードの霊体（ghost.gd）は見ない
 	for p in people:
 		if p is Node3D and is_instance_valid(p) and (p as Node3D).global_position.distance_to(me) < bd:
 			bd = (p as Node3D).global_position.distance_to(me)

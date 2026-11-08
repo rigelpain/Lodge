@@ -18,6 +18,7 @@ extends Node3D
 const Doll := preload("res://doll.gd")
 const Goods := preload("res://mountain_goods.gd")
 const Pals := preload("res://pals.gd")
+const Ghost := preload("res://ghost.gd")
 
 const MODEL := "res://person/yamaotoko.glb"
 const SCALE := 1.3           # ラフ（1.33 m）から、ゲームの人と並ぶ大きさへ（おじいさんと同じくらい）
@@ -172,6 +173,7 @@ func _nearest() -> Node3D:
 	var net = main.get_node_or_null("Net") if main else null
 	if net and net.get("remotes") != null:
 		people.append_array(net.remotes.values())
+	people = people.filter(func(p): return not Ghost.gone(p))   # 観戦モードの霊体（ghost.gd）は見ない
 	for p in people:
 		if p is Node3D and is_instance_valid(p):
 			var d: float = (p as Node3D).global_position.distance_to(global_position)

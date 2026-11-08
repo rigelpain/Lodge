@@ -10,6 +10,7 @@ const Areas := preload("res://areas.gd")
 const Mountain := preload("res://mountain.gd")
 const Grand := preload("res://grand_mountain.gd")
 const SackLook := preload("res://sack_look.gd")
+const Ghost := preload("res://ghost.gd")
 ## 押すのを手伝う仲間（CPU）。動かすのは一人で遊ぶ画面かホストの画面だけ。つなぐ側へは姿が配られる（net.gd の "cpu"）。
 ## 説明の「あなた」は、遊んでいる人（通信では、つないでいる人もみんな。_humans）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
@@ -520,10 +521,12 @@ var _rounding := false       # あなたのまわりを回っている途中
 
 ## 遊んでいる人: この画面の人と、通信でつないでいる人。仲間は入らない
 func _humans() -> Array:
-	var out := [player] if player else []
+	var out := [player] if player and not Ghost.gone(player) else []   # 観戦モードの霊体（ghost.gd）は、いない人と同じ
 	var net := get_parent().get_node_or_null("Net")
 	if net:
-		out.append_array(net.remotes.values())
+		for r in net.remotes.values():
+			if not Ghost.gone(r):
+				out.append(r)
 	return out
 
 
@@ -549,7 +552,7 @@ func net_mode() -> int:
 
 
 func _player_within(m: float) -> bool:
-	return player != null and Emotes._flat(player.global_position - global_position).length() < m
+	return player != null and not Ghost.gone(player) and Emotes._flat(player.global_position - global_position).length() < m
 
 
 ## 一緒に乗っているあなたの体重移動に、少し遅れて合わせる

@@ -28,6 +28,7 @@ const PersonIcon := preload("res://person_icon.gd")
 const Player := preload("res://player.gd")
 const DampHud := preload("res://damp_hud.gd")
 const Doll := preload("res://doll.gd")
+const Ghost := preload("res://ghost.gd")
 const LEARNED := 3            # この回数したら、その案内はもう出さない
 const TAG_NEAR := 30.0        # ソリからこの距離より近いと札を出す (m)
 const MEET_R := 5.0           # ほかの人がこの距離に来たら身ぶりの案内
@@ -392,7 +393,7 @@ func tag_owner() -> int:
 # ---- 手引き --------------------------------------------------------------------------
 
 func _hint(id: String, keys: Array, icon: String, world := Vector3.INF) -> void:
-	if known(id) and id != "gesture":
+	if known(id) and not id in ["gesture", "ghost_back", "ghost_seen"]:   # 霊体の戻る・見える見えないは、抜けているあいだずっと
 		return
 	if not _hints.has(id):
 		_hints[id] = {"keys": keys, "icon": icon, "world": world, "scr": Vector2.ZERO, "a": 0.0, "on": false, "bottom": world == Vector3.INF}
@@ -407,6 +408,13 @@ func _hint(id: String, keys: Array, icon: String, world := Vector3.INF) -> void:
 
 
 func _find_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
+	if Ghost.gone(p):   # 観戦モード（ghost.gd）: 霊体の操作だけ。体の案内は出さない
+		_hint("ghost_back", ["O"], "ghost_back")
+		_hint("ghost_seen", ["U"], "ghost_seen" if int(p.ghost) == 2 else "ghost_hidden")
+		_hint("ghost_up", ["Space"], "ghost_up")
+		_hint("ghost_down", ["Ctrl"], "ghost_down")
+		_hint("ghost_speed", ["mouse_wheel"], "speed")
+		return
 	var mode: int = p.mode
 	if mode != _prev_mode:
 		match mode:
@@ -644,6 +652,14 @@ func _layout_bottom() -> void:
 	total += maxf(0, ws.size() - 1) * 14.0 * u
 	var x := _view.size.x / 2.0 - total / 2.0
 	var y := _view.size.y * 0.80
+	# 列が長くて（霊体の案内 5 つなど）左下の名札にかかるなら、名札の右へずらす。それでも右に入りきらなければ、名札の上へ上げる
+	var tr: Rect2 = _view.tag_rect(u)
+	var gap := 14.0 * u
+	if x < tr.end.x + gap and y + sz / 2.0 > tr.position.y and y - sz / 2.0 < tr.end.y:
+		if tr.end.x + gap + total <= _view.size.x - 24.0 * u:
+			x = tr.end.x + gap
+		else:
+			y = tr.position.y - sz / 2.0 - gap
 	var i := 0
 	for id in _order:
 		if id == "return":
@@ -1438,7 +1454,7 @@ class View extends Control:
 			[["W", "A", "S", "D"], "walk"], [["Shift"], "run"], [["Space"], "jump"], [["mouse_move"], "look"],
 			[["F"], "grab"], [["F"], "rope"], [["E"], "ride"], [["Backspace"], "return"],
 			[["mouse_r"], "point"], [["C"], "view"], [["V"], "pip_cycle"], [["P"], "pip_off"],
-			[["Esc"], "settings"], [["Left", "Right"], "tag_stack"],
+			[["Esc"], "settings"], [["Left", "Right"], "tag_stack"], [["O"], "ghost_in"], [["U"], "ghost_seen"],
 		]
 		# ピンチ: 三人称のカメラの距離（一人称で閉じ続けると三人称へ）。視野角と人形の画面の高さは設定からだけ
 		rows.append([["mouse_pinch"], "cam_dist" if hud.main.player and hud.main.player.third else "view"])

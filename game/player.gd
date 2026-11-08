@@ -84,6 +84,7 @@ var cam: Camera3D
 var hands: Array[Node3D] = []
 var doll: Doll               # 自分の体（笠と千代紙の人形）。一人称には映さず、右上の映像と三人称と影に出る
 var mode := Mode.WALK
+var ghost := 0               # 観戦モード（ghost.gd）: 0 体、1 見えない霊体、2 見える霊体。抜けているあいだ、体は抜けた所に止まって消える
 var ride_lean := Vector3.ZERO  # 乗っているときの体重移動（x 左右 -1〜1、y 前傾、z 後傾）。一緒に乗った仲間が合わせる
 var seat := Vector3.INF
 var handle := Vector3.INF    # つかんでいる所（ソリの座標）

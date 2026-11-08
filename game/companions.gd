@@ -21,6 +21,7 @@ const Doll := preload("res://doll.gd")
 const Pals := preload("res://pals.gd")
 const Audio := preload("res://audio.gd")
 const Mirror := preload("res://mirror.gd")
+const Ghost := preload("res://ghost.gd")
 
 const HEEL := Vector3(0.75, 0.0, 0.25)   # ミニオンの立ち位置（持ち主の座標。右の少しうしろ）
 const HEAD_YAW := 1.2        # ミニオンの首が回る限り（これより横は体ごと向く）
@@ -525,6 +526,9 @@ func _physics_process(dt: float) -> void:
 		_perch.clear()
 		_refresh()
 	if _doll == null or not is_instance_valid(_doll):
+		return
+	visible = not Ghost.gone(host)   # 観戦モード（ghost.gd）で持ち主が抜けているあいだは、連れも出さない（その場で待つ）
+	if not visible:
 		return
 	if Doll.view_lod(_doll, _doll.global_position + Vector3.UP) > 0:
 		# 遠い持ち主の小物とペットは 12 コマ／秒で（地面を探すのが重いので）
