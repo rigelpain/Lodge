@@ -9,6 +9,7 @@ extends SceneTree
 ##   --case=push   平らな雪の板の上で、半径ごとに一人で W を押し続ける。4 秒後の速さ、両手が玉に伸びているか、体が玉から離れないか
 ##   --case=slope  本物の丘の上から放す。速さ・半径・崩れたか（--at=mountain で大山の頂上から）
 ##   --case=bump   板の上の壁にぶつける・高い所から落とす。強いと崩れ、弱いと崩れない
+##   --case=wear   耐久: 壁に 5 m/s で 2 回、投げた雪玉を当て続ける、ソリ（main の --sled= の大きさ）を 6 m/s でぶつけ続ける。減る量と、何回で崩れるか
 ##   --case=catch  速い大玉を、立っているあなたに当てる。取り込まれ、Space の連打で崩れて放り出され、着いたら歩ける。遅い玉は取り込まない
 ##   --case=bot    （--bots=1）仲間に当てる。取り込まれた仲間は、ひとりでに暴れて出てくる
 
@@ -57,6 +58,8 @@ func _run() -> void:
 			await _slope_case()
 		"bump":
 			await _bump_case()
+		"wear":
+			await _wear_case()
 		"catch":
 			await _catch_case()
 		"bot":
@@ -297,7 +300,7 @@ func _grade_case() -> void:
 			b2.linear_velocity = Vector3(3.0, b2.linear_velocity.y, 0)
 			b2.angular_velocity = Vector3(0, 0, -3.0 / b2.r)
 			await physics_frame
-		print("  固めた玉: 20 m 転がって半径 %.2f m、崩れる強さ %.1f m/s" % [b2.r, BigBall.BREAK_DV * Gloves.stat(g, "hard")])
+		print("  固めた玉: 20 m 転がって半径 %.2f m、耐えられる量 %.1f（同じ半径の毛糸 %.1f）" % [b2.r, b2.max_wear(), BigBall.WEAR_BASE + BigBall.WEAR_PER_R * b2.r])
 	await _clear_balls()
 
 
@@ -347,7 +350,7 @@ func _slope_case() -> void:
 		if t > 3.0 and b.linear_velocity.length() < 0.05:
 			break
 	var gone: bool = not is_instance_valid(b) or b.broken
-	print("最高速 %.1f m/s、%s（%.1f 秒）" % [top_v, "崩れた" if gone else "止まった", t])
+	print("最高速 %.1f m/s、%s（%.1f 秒）%s" % [top_v, "崩れた" if gone else "止まった", t, "" if gone else "、減った量 %.1f / %.1f（半径 %.2f m）" % [b.wear, b.max_wear(), b.r]])
 	_say(top_v > 3.0, "坂では重さで転がり出す")
 
 
@@ -369,6 +372,7 @@ func _bump_case() -> void:
 		await _ticks(30)
 		b.linear_velocity = Vector3(v, 0, 0)
 		b.angular_velocity = Vector3(0, 0, -v / b.r)
+		b._v_prev = b.linear_velocity   # 急に速くしたのを、ぶつかったと見ない
 		for i in 120:
 			await physics_frame
 			if not is_instance_valid(b) or b.broken:
@@ -389,6 +393,117 @@ func _bump_case() -> void:
 		print("%.1f m から落ちて: %s（着く速さ %.1f m/s）" % [h, "崩れた" if broke else "崩れない", sqrt(2.0 * 9.8 * h)])
 		_say(broke == (h >= 2.0), "  %.1f m から落ちるのは%s" % [h, "崩れる" if h >= 2.0 else "崩れない"])
 	await _clear_balls()
+
+
+# ---------------------------------------------------------------- 耐久
+
+func _wear_case() -> void:
+	_stand(p, Vector3(-100, LAB_Y + 0.1, -100))
+	# 壁に 5 m/s で 2 回（1 回では崩れず、2 回目で崩れる）
+	var wall := StaticBody3D.new()
+	var col := CollisionShape3D.new()
+	var box := BoxShape3D.new()
+	box.size = Vector3(2, 6, 20)
+	col.shape = box
+	wall.add_child(col)
+	main.add_child(wall)
+	wall.global_position = Vector3(10, LAB_Y + 3, 0)
+	await _clear_balls()
+	var b := _ball(Vector3(7.0, LAB_Y, 0), 0.8)
+	await _ticks(30)
+	print("壁: 半径 0.8 m、耐えられる量 %.1f" % b.max_wear())
+	var hits := 0
+	for k in 4:
+		b.global_position = Vector3(7.0, LAB_Y + b.r, 0)
+		b.linear_velocity = Vector3(5.0, 0, 0)
+		b.angular_velocity = Vector3(0, 0, -5.0 / b.r)
+		b._v_prev = b.linear_velocity
+		hits += 1
+		for i in 90:
+			await physics_frame
+			if not is_instance_valid(b) or b.broken:
+				break
+		if not is_instance_valid(b) or b.broken:
+			print("  %d 回目: 崩れた" % hits)
+			break
+		print("  %d 回目: 減った量 %.1f（%.0f%%）" % [hits, b.wear, b.wear / b.max_wear() * 100.0])
+		b.linear_velocity = Vector3.ZERO
+		await _ticks(10)
+	_say(hits == 2, "壁に 5 m/s は、1 回では崩れず 2 回目で崩れる（%d 回）" % hits)
+	wall.queue_free()
+	# 投げた雪玉（本物の雪玉を、3 m 先から 12 m/s で）
+	for r in [0.5, 1.0]:
+		await _clear_balls()
+		b = _ball(Vector3(0, LAB_Y, 0), r)
+		await _ticks(20)
+		var n := 0
+		var first := -1.0
+		var dents := 0
+		while n < 60 and is_instance_valid(b) and not b.broken:
+			n += 1
+			var at: Vector3 = b.global_position + Vector3(0, 0.2, 3.0 + r)
+			main.emotes._spawn_ball({"who": p.id, "ball": 9000 + n, "origin": at, "velocity": (b.global_position - at).normalized() * 12.0})
+			await _ticks(25)
+			if n == 1 and is_instance_valid(b):
+				first = b.wear
+				dents = b._dents.size()
+		print("雪玉: 半径 %.1f m（耐えられる量 %.1f）は 1 個で %.1f 減り、%d 個で崩れた" % [r, BigBall.WEAR_BASE + BigBall.WEAR_PER_R * r, first, n])
+		_say(absf(first - BigBall.SNOW_HIT) < 0.01 and dents == 1, "  雪玉 1 個で %.1f 減り、へこみが 1 つ（%d）" % [BigBall.SNOW_HIT, dents])
+		var need := int(ceil((BigBall.WEAR_BASE + BigBall.WEAR_PER_R * r) / BigBall.SNOW_HIT))
+		_say(n == need, "  %d 個で崩れる（%d）" % [need, n])
+	# ソリ: 本物のソリを、平らな高台の上で 6 m/s でぶつけ続ける
+	await _sled_wear(1.0, 6.0)
+	await _sled_wear(0.5, 3.0)
+	await _clear_balls()
+
+
+## 高台（くぼみの外）の平らな所で、半径 r の玉にソリを v でぶつけ続ける
+func _sled_wear(r: float, v: float) -> void:
+	await _clear_balls()
+	var sled: RigidBody3D = main.sled
+	var at := Vector3(40.0, 0.0, 100.0)
+	at.y = main.height(at.x, at.z)
+	_stand(p, at + Vector3(0, 0.5, 20.0))
+	var b := _ball(at, r)
+	await _ticks(30)
+	var mw: float = b.max_wear()
+	print("ソリ（%s、重さ %.0f kg）を %.0f m/s で、半径 %.1f m（耐えられる量 %.1f、ふもとの高さ %.1f m）へ" % [sled.kind, sled.load_mass(), v, r, mw, at.y])
+	var n := 0
+	var last := 0.0
+	var each := []
+	while n < 8 and is_instance_valid(b) and not b.broken:
+		n += 1
+		var bp: Vector3 = b.global_position
+		var from := Vector2(bp.x - (r + sled.HALF.y + 1.0), bp.z)   # ソリの前の端から玉まで 1 m
+		sled.crashed = false
+		sled.reset_to(Vector3(from.x, main.height(from.x, from.y) + 0.3, from.y))
+		sled.rotation.y = atan2(-1.0, 0.0)   # +x を向く
+		sled.parked = false
+		await _ticks(20)
+		sled.linear_velocity = Vector3(v, 0, 0)
+		var top := 0.0
+		for i in 120:
+			await physics_frame
+			if not is_instance_valid(b) or b.broken:
+				break
+			top = maxf(top, (b._sled_v.get(sled, [Vector3.ZERO, Vector3.ZERO])[1] as Vector3).length())
+		if not is_instance_valid(b) or b.broken:
+			each.append("崩れた")
+			break
+		if args.has("trace"):
+			print("    ソリの速さ（玉のそばで覚えた最大）%.1f m/s、玉の動き %.2f m" % [top, (b.global_position - bp).length()])
+		each.append("%.1f" % (b.wear - last))
+		last = b.wear
+		b.linear_velocity = Vector3.ZERO
+	print("  1 回ごとに減った量: %s（%d 回目で%s）" % [", ".join(each), n, "崩れた" if not is_instance_valid(b) or b.broken else "崩れない"])
+	var want: float = (sled.load_mass() * v - BigBall.SLED_FREE) / BigBall.SLED_K
+	var gone: bool = not is_instance_valid(b) or b.broken
+	if want <= 0.0:
+		_say(not gone and is_instance_valid(b) and b.wear < 0.01, "  軽いソリ（%.0f kg × %.0f m/s）では減らない（%.1f）" % [sled.load_mass(), v, b.wear if is_instance_valid(b) else -1.0])
+	else:
+		_say(each.size() > 0 and (each[0] == "崩れた" or absf(float(each[0]) - want) < want * 0.5 + 0.5), "  1 回目の減りは、重さ × 速さから見積もった %.1f くらい（%s）" % [want, each[0] if each.size() > 0 else "—"])
+		_say(gone, "  ぶつけ続けると崩れる")
+	sled.reset_to(Vector3(0, main.height(0, 38) + 0.3, 38))
 
 
 # ---------------------------------------------------------------- 取り込まれる

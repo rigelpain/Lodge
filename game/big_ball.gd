@@ -12,7 +12,10 @@ const Gloves := preload("res://gloves.gd")
 ## しゃがんで F を押し続けると、丸めた雪玉を雪の上に置く（emotes.gd の roll_seed）。体を当てて歩くと押せる（player.gd の _push_ball）。
 ## 雪の上を転がった道のりで大きくなり、大きいほど育ちも速い（半径の伸び = 道のり × (GROW_A + GROW_B × 半径)）。
 ## 重さは体積に比べる（DENSITY）。坂では重さで転がり、雪の転がり抵抗と、雪を押しのける抵抗（速さの 2 乗）で釣り合う。
-## 強くぶつかる・跳ねて落ちる（1 コマの速さの変わりが BREAK_DV より大きい）と崩れる。
+## 耐久（2026-11-08 代表「耐久値を設定して、たえられる衝撃の量を持たせてほしい。ソリでぶつかっても耐久値が減ってほしいし、雪玉をぶつけても減ってほしい」）:
+## 耐えられる量は大きいほど、固めた手袋がよいほど多い（max_wear）。ぶつかる・落ちる（1 コマの速さの変わり）、ソリ（重さ × 近づく速さ）、
+## 投げた雪玉、雪の塊で減り（hurt）、尽きると崩れる。減ると当たった所がへこみ、そこの縫い目がはじけ飛び、雪のかけらが散る（show_hurt）。
+## 崩れると、雪のかたまりが四方へ飛び散って転がり、雪に沈む（crumble）。育つと、減った分も、へこみも少し埋まる。
 ## 速く転がる大玉に当たった人は取り込まれる（rolled.gd）。中の人が Space を連打すると崩れ、崩れると中の人は放り出される。
 ##
 ## ソリと同じく、物理はホストの画面が正（net.gd の "bigball"。つなぐ側は届いた姿へ寄せる）。
@@ -36,9 +39,18 @@ const HOLD_TAN := 0.12       # 止まっていて、誰も押していなけれ�
 const HOLD_SPEED := 0.25     # これより遅ければ「止まっている」(m/s)
 const PUSH_FORCE := 300.0    # 一人が押す力 (N)。ソリと同じ（sled.gd の PUSH_FORCE）
 const PUSH_SPEED := 2.6      # 押して出せる速さ (m/s)。ここに近づくほど押す力が弱まる（歩く 2 m/s・走る 3.4 m/s のあいだ）
+# ---- 耐久（減る量の単位は「点」。どれも代表が遊んで決める前の仮の値）
+const WEAR_BASE := 6.0       # 耐えられる量 = (WEAR_BASE + WEAR_PER_R × 半径) × 手袋の hard（gloves.gd）。毛糸で半径 0.16 m は 7、0.8 m は 11、2.4 m は 20
+const WEAR_PER_R := 6.0
+const DENT_DV := 2.5         # 1 コマの速さの変わり（重力の分を除く）がこれより小さければ減らない (m/s)。押す・起伏を転がる・人に当たるくらいでは減らない
+const DENT_K := 3.5          # それを超えた 1 m/s ごとに減る量。毛糸の半径 0.8 m の玉は、木・ロッジに 7 m/s で 1 回、5 m/s なら 2 回で崩れる。2 m の高さから落ちると崩れる
+const SLED_FREE := 60.0      # ソリがぶつかった勢い（乗る人も入れたソリの重さ × 近づく速さ, kg·m/s）がこれより小さければ減らない
+const SLED_K := 40.0         # それを超えた SLED_K kg·m/s ごとに 1 減る。中のソリに 1 人乗って 6 m/s で 14（毛糸の半径 1 m の玉は 1 回で崩れる）
+const SNOW_HIT := 0.8        # 投げた雪玉 1 個で減る量。毛糸の半径 0.5 m の玉は 12 個、1 m は 15 個で崩れる
+const LUMP_FREE := 1.5       # 雪の塊（sled_crash.gd）に入る速さがこれより遅ければ減らない (m/s)
+const LUMP_K := 4.0          # それを超えた 1 m/s ごとに減る量
+const DENT_MAX := 10         # 覚えておくへこみの数（超えたら、近いへこみに足す）
 # ---- 崩れる
-const BREAK_DV := 6.0        # 1 コマの速さの変わり（重力の分を除く）がこれより大きいと崩れる (m/s)。木・ロッジに 6 m/s で当たる、2 m ほどの高さから落ちる
-const BREAK_LUMP := 3.5      # 雪の塊（sled_crash.gd）にこれより速く入ると崩れる (m/s)
 const KICK_BASE := 5         # 中から崩すのに要る Space の回数 = KICK_BASE + KICK_PER_R × 半径（中の人みんなの合計）
 const KICK_PER_R := 4.0
 const KICK_FADE := 2.5       # 暴れるのをやめると、ひびがこの秒数で 1 回分ずつ戻る
@@ -58,6 +70,8 @@ var kicks := 0.0             # 中から暴れた回数（ホスト）
 var pack := ""               # この玉を固めた手袋の段（押した人の手袋のうち、いちばんよいもの。gloves.gd）。育つ速さと丈夫さが上がる（ホスト）
 var broken := false
 var born := 0.0              # 生まれてから (s)
+var wear := 0.0              # 減った量（点。ホスト）。尽きる（max_wear に届く）と崩れる
+var wear_k := 0.0            # 減った割合 0〜1（どの画面でも。出来事 ball_hurt で届く。見た目に使う）
 
 # ---- 通信: つなぐ側の大玉は、ホストの大玉の姿を写す（sled.gd の net_follow と同じ作り）
 var net_follow := false:
@@ -80,12 +94,24 @@ var _v_prev := Vector3.INF
 var _push_t := 99.0          # 最後に押されてから (s)
 var _wob := 0.0              # 暴れて揺れている強さ（0〜）
 var _wob_t := 0.0
+var _body: MeshInstance3D    # 玉の面（へこむと、へこんだ形の ArrayMesh に替わる）
+var _stitches := []          # 縫い目の目 [MeshInstance3D, 玉の座標の向き]。へこんだ所の目ははじけ飛ぶ
+var _dents := []             # へこみ [玉の座標の向き, 深さ（半径に対する割合）, 広がりの cos]
+var _dent_r := 0.0           # へこみを作ったときの半径（育つと埋まる）
+var _sled_v := {}            # 近くのソリ → [2 コマ前, 前のコマ] の速さ（触れはじめの知らせが届くときは、もう跳ね返ったあとの速さなので。ホスト）
+var _v_old := Vector3.INF    # 玉の 2 コマ前の速さ
+var _pend := 0.0             # このコマに減る量（いちばん強い当たりだけ数える。ソリの当たりと、その速さの変わりを重ねない）
+var _pend_at := Vector3.ZERO
+var _pend_why := ""
 
 
 func _ready() -> void:
 	add_to_group("big_balls")
 	continuous_cd = true
 	can_sleep = false
+	contact_monitor = true      # ソリが当たったのを知る（_on_body）
+	max_contacts_reported = 4
+	body_entered.connect(_on_body)
 	linear_damp_mode = RigidBody3D.DAMP_MODE_COMBINE
 	angular_damp = 0.3
 	var pm := PhysicsMaterial.new()
@@ -107,13 +133,18 @@ func _ready() -> void:
 	sm.rings = 14
 	var body := MeshInstance3D.new()
 	body.mesh = sm
+	_body = body
 	_mat = Look.snow()   # 地面と同じ羊毛の雪（フェルトの縁の光りは雪の明るさで白く飛び、玉が平たい円に見えた）。編み目で転がるのが見える
-	_mat.albedo_color = Color(0.93, 0.94, 0.97)   # 雪面より少しだけ沈めて、地面から浮き立たせる
+	_mat.albedo_color = COLOR_NEW   # 雪面より少しだけ沈めて、地面から浮き立たせる
 	body.material_override = _mat
 	_look.add_child(body)
 	_add_seam()
 	_set_r(r)
 	born = 0.0
+
+
+const COLOR_NEW := Color(0.93, 0.94, 0.97)
+const COLOR_WORN := Color(0.80, 0.83, 0.90)   # 減りきる手前の色（押し固められて、少し灰がかった雪）
 
 
 ## 転がっているのが読めるように、玉を一周する縫い目（ソリの滑りあとと同じ、なみ縫い）
@@ -133,6 +164,7 @@ func _add_seam() -> void:
 		m.position = Vector3(cos(a), 0.0, sin(a)) * 1.005
 		m.rotation = Vector3(0.0, -a - PI * 0.5, 0.0)
 		_look.add_child(m)
+		_stitches.append([m, m.position.normalized()])
 	# もう一本、斜めに（どちらへ転がっても回るのが見える）
 	for i in n:
 		if i % 2 == 0:
@@ -145,6 +177,7 @@ func _add_seam() -> void:
 		m.position = Basis(Vector3.UP, 1.1) * p
 		m.basis = Basis(Vector3.UP, 1.1) * Basis(Vector3.BACK, a + PI * 0.5)
 		_look.add_child(m)
+		_stitches.append([m, m.position.normalized()])
 
 
 ## 半径を変える（当たり・重さ・見た目）
@@ -156,6 +189,15 @@ func _set_r(nr: float) -> void:
 	if absf(r - _mat_r) > _mat_r * 0.08:
 		_mat_r = r
 		_mat.uv1_scale = Vector3.ONE * 1.2 * r   # 編み目の細かさを、どの大きさでも同じに（玉の座標で 1 m に 1.2 回。雪面の 0.8 より少し細かく）
+	# 育つと、へこみが埋まり、減った割合も下がる（耐えられる量が増える）。どの画面でも同じに
+	if not _dents.is_empty() and r > _dent_r * 1.05:
+		var f := _dent_r / r
+		for d in _dents:
+			d[1] *= f * f
+		_dents = _dents.filter(func(d): return d[1] > 0.01)
+		wear_k *= (WEAR_BASE + WEAR_PER_R * _dent_r) / (WEAR_BASE + WEAR_PER_R * r)
+		_dent_r = r
+		_reshape()
 
 
 func _physics_process(dt: float) -> void:
@@ -172,10 +214,17 @@ func _physics_process(dt: float) -> void:
 	var v := linear_velocity
 	if _v_prev != Vector3.INF and born > 0.1:
 		var dv := v - _v_prev - get_gravity() * dt
-		if dv.length() > BREAK_DV * Gloves.stat(pack, "hard"):
-			break_now("bump")
+		var dl := dv.length()
+		if dl > DENT_DV:
+			_queue_hurt((dl - DENT_DV) * DENT_K, p - dv / dl * r, "bump")   # 速さの変わりの逆の向き（当たった物の側）がへこむ
+	if _pend > 0.0:
+		hurt(_pend, _pend_at, _pend_why)
+		_pend = 0.0
+		if broken:
 			return
+	_v_old = _v_prev
 	_v_prev = v
+	_note_sleds(p)
 	_push_t += dt
 	var hit := _ground_hit(p)
 	if hit.is_empty():
@@ -245,8 +294,80 @@ func push(dir: Vector3, k := 1.0, grade := "") -> void:
 
 ## 雪の塊（sled_crash.gd）に入った
 func crash_lump(_lump: Node3D) -> void:
-	if not net_follow and linear_velocity.length() > BREAK_LUMP:
-		break_now("lump")
+	if net_follow or broken:
+		return
+	var v := linear_velocity
+	if v.length() > LUMP_FREE:
+		_queue_hurt((v.length() - LUMP_FREE) * LUMP_K, global_position + v.normalized() * r, "lump")
+
+
+## 投げた雪玉が当たった（ホスト。emotes.gd の ball_splat）
+func snow_hit(point: Vector3) -> void:
+	hurt(SNOW_HIT, point, "snow")
+
+
+## 耐えられる量（点）。大きいほど、固めた手袋がよいほど多い
+func max_wear() -> float:
+	return (WEAR_BASE + WEAR_PER_R * r) * Gloves.stat(pack, "hard")
+
+
+## このコマに減る量を覚える（いちばん強いものだけ。_physics_process で減らす）
+func _queue_hurt(amt: float, at: Vector3, why: String) -> void:
+	if amt > _pend:
+		_pend = amt
+		_pend_at = at
+		_pend_why = why
+
+
+## 減らす（ホスト）。at は当たった所（世界）。尽きたら崩す。減った所と割合は出来事 ball_hurt で全員へ
+func hurt(amt: float, at: Vector3, why: String) -> void:
+	if broken or net_follow or hub == null or amt <= 0.0:
+		return
+	wear += amt
+	var mw := max_wear()
+	if wear >= mw:
+		break_now(why)
+		return
+	var dir := global_basis.inverse() * (at - global_position)
+	if dir.length() < 0.001:
+		dir = Vector3.UP
+	hub.send({"kind": "ball_hurt", "who": -1, "ball": ball_id, "dir": dir.normalized(), "amt": amt / mw,
+			"k": wear / mw, "why": why})
+
+
+## 近くのソリの速さを覚える（ホスト。触れはじめの知らせ（_on_body）は 1 コマ遅れて届くことがあり、そのときはもう跳ね返ったあとの速さなので、
+## 2 コマ前まで覚えておく）
+func _note_sleds(p: Vector3) -> void:
+	var near := (r + 8.0) * (r + 8.0)
+	for s in get_tree().get_nodes_in_group("sleds"):
+		if s is RigidBody3D and (s as Node3D).global_position.distance_squared_to(p) < near:
+			var v := (s as RigidBody3D).linear_velocity
+			_sled_v[s] = [_sled_v[s][1] if _sled_v.has(s) else v, v]
+		else:
+			_sled_v.erase(s)
+
+
+## 何かに触れはじめた（ホスト）。ソリなら、重さ（乗る人も）× 近づく速さで減る
+func _on_body(body: Node) -> void:
+	if broken or net_follow or not body.is_in_group("sleds"):
+		return
+	var s := body as RigidBody3D
+	var d := global_position - s.global_position
+	d.y *= 0.5   # ソリは玉の下の方に当たる。上下の差で近づく速さを小さく見積もらないように
+	d = d.normalized()
+	# 近づく速さ: 2 コマ前と前のコマのうち、大きいほう（当たる前の速さ）
+	var vss: Array = _sled_v.get(s, [s.linear_velocity, s.linear_velocity])
+	var vbs := [_v_old, _v_prev]
+	var closing := 0.0
+	for i in 2:
+		var vb: Vector3 = vbs[i] if vbs[i] != Vector3.INF else linear_velocity
+		closing = maxf(closing, ((vss[i] as Vector3) - vb).dot(d))
+	if closing <= 0.0:
+		return
+	var m: float = s.load_mass() if s.has_method("load_mass") else s.mass
+	var amt := (m * closing - SLED_FREE) / SLED_K
+	if amt > 0.0:
+		_queue_hurt(amt, global_position - d * r, "sled")
 
 
 ## 中の人が暴れた（ホスト。出来事 ball_kick）。回数が足りたら崩れる。崩れるまでの割合を返す
@@ -287,16 +408,174 @@ func break_now(why: String) -> void:
 			"dir": linear_velocity, "why": why, "inside": inside.keys()})
 
 
-## 崩れる（どの画面でも。emotes.gd が出来事 ball_break で呼ぶ）: 綿の雪が四方へ散り、崩れた雪の山がしばらく残る
+## 減った（どの画面でも。emotes.gd が出来事 ball_hurt で呼ぶ）: 当たった所がへこみ、そこの縫い目がはじけ飛び、雪のかけらが散って、玉が揺れる。
+## 減るほど、玉の色が少し灰がかる（押し固められた雪）
+func show_hurt(ev: Dictionary) -> void:
+	var dir: Vector3 = (ev.get("dir", Vector3.UP) as Vector3).normalized()
+	var amt: float = clampf(float(ev.get("amt", 0.1)), 0.0, 1.0)
+	wear_k = clampf(float(ev.get("k", wear_k)), 0.0, 1.0)
+	_mat.albedo_color = COLOR_NEW.lerp(COLOR_WORN, wear_k)
+	# へこみ: 減った割合が大きいほど深く広い。近くにへこみがあれば、そこが深くなる
+	var depth := clampf(0.025 + amt * 0.3, 0.025, 0.16)
+	var ca := cos(clampf(0.28 + amt * 0.8, 0.28, 0.62))
+	var near := -1
+	for i in _dents.size():
+		if (_dents[i][0] as Vector3).dot(dir) > ca:
+			near = i
+	if near >= 0:
+		_dents[near][1] = minf(_dents[near][1] + depth * 0.6, 0.22)
+		_dents[near][2] = minf(_dents[near][2], ca)
+	else:
+		if _dents.size() >= DENT_MAX:
+			_dents.pop_front()
+		_dents.append([dir, depth, ca])
+	_dent_r = r
+	_reshape()
+	# へこんだ所の縫い目の目が、はじけ飛ぶ
+	var w := get_parent() as Node3D
+	for st in _stitches:
+		var m: MeshInstance3D = st[0]
+		if m.visible and (st[1] as Vector3).dot(dir) > ca - 0.04:
+			m.visible = false
+			_fly_stitch(w, m)
+	# 雪のかけらと綿の粉
+	var at := global_position + global_basis * dir * r
+	var out := (global_basis * dir).normalized()
+	Snowball.splat_at(w, at, out, true, 0.8 + amt * 3.0 + r * 0.4)
+	for i in clampi(int(amt * 10.0), 1, 4):
+		var sz := clampf(r * randf_range(0.08, 0.16) * (0.6 + amt * 2.0), 0.04, 0.35)
+		var v := (out + Vector3(randf_range(-0.6, 0.6), randf_range(0.2, 0.9), randf_range(-0.6, 0.6))).normalized() * randf_range(1.5, 3.0)
+		_fly_chunk(w, at + out * sz, v + linear_velocity * 0.6, sz)
+	_wob = maxf(_wob, 0.03 + 0.12 * clampf(amt * 2.5, 0.0, 1.0))
+	_wob_t = 0.0
+
+
+## 玉の面を、へこみの形に作り直す（半径 1 の玉の頂点を、へこみの向きへ沈める。法線も、へこみの斜面に合わせて傾ける）
+func _reshape() -> void:
+	if _dents.is_empty():
+		_body.mesh = _sphere_mesh()
+		return
+	var a: Array = _sphere_arrays()
+	var vs: PackedVector3Array = a[Mesh.ARRAY_VERTEX]
+	var nv := PackedVector3Array()
+	var nn := PackedVector3Array()
+	nv.resize(vs.size())
+	nn.resize(vs.size())
+	for i in vs.size():
+		var v := vs[i].normalized()
+		var h := 1.0
+		var g := Vector3.ZERO
+		for d in _dents:
+			var dir: Vector3 = d[0]
+			var c := v.dot(dir)
+			var ca: float = d[2]
+			if c <= ca:
+				continue
+			var t := (c - ca) / (1.0 - ca)
+			h -= float(d[1]) * t * t * (3.0 - 2.0 * t)
+			g += (dir - v * c) * float(d[1]) * 6.0 * t * (1.0 - t) / (1.0 - ca)
+		h = maxf(h, 0.7)
+		nv[i] = v * h
+		nn[i] = (v * h + g).normalized()
+	var out := a.duplicate()
+	out[Mesh.ARRAY_VERTEX] = nv
+	out[Mesh.ARRAY_NORMAL] = nn
+	var am := ArrayMesh.new()
+	am.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, out)
+	_body.mesh = am
+
+
+static var _sphere: SphereMesh
+static var _sphere_a := []
+
+static func _sphere_mesh() -> SphereMesh:
+	if _sphere == null:
+		_sphere = SphereMesh.new()
+		_sphere.radius = 1.0
+		_sphere.height = 2.0
+		_sphere.radial_segments = 28
+		_sphere.rings = 14
+	return _sphere
+
+
+static func _sphere_arrays() -> Array:
+	if _sphere_a.is_empty():
+		_sphere_a = _sphere_mesh().get_mesh_arrays()
+	return _sphere_a
+
+
+## 縫い目の目を一つ、玉から飛ばす
+func _fly_stitch(w: Node3D, m: MeshInstance3D) -> void:
+	var f := Flyer.new()
+	f.mesh = m.mesh
+	f.material_override = m.material_override
+	w.add_child(f)
+	f.global_transform = m.global_transform
+	var out := (m.global_position - global_position).normalized()
+	f.vel = out * randf_range(1.5, 3.0) + Vector3.UP * randf_range(1.0, 2.5) + linear_velocity * 0.5
+	f.spin = Vector3(randf_range(-9, 9), randf_range(-9, 9), randf_range(-9, 9))
+	f.size = 0.03 * r
+	f.skip = get_rid()
+
+
+static var _chunk_mesh: SphereMesh
+static var _chunk_mats := {}
+
+## 雪のかたまりを一つ飛ばす（いびつな毛糸の雪の玉）。sz は半径 (m)
+func _fly_chunk(w: Node3D, at: Vector3, v: Vector3, sz: float) -> void:
+	if _chunk_mesh == null:
+		_chunk_mesh = SphereMesh.new()
+		_chunk_mesh.radius = 1.0
+		_chunk_mesh.height = 2.0
+		_chunk_mesh.radial_segments = 9
+		_chunk_mesh.rings = 5
+	var key := snappedf(sz, 0.05)
+	if not _chunk_mats.has(key):
+		var m := Look.snow()
+		m.albedo_color = COLOR_NEW
+		m.uv1_scale = Vector3.ONE * 1.2 * maxf(key, 0.05)   # 編み目の細かさを玉と同じに
+		_chunk_mats[key] = m
+	var f := Flyer.new()
+	f.mesh = _chunk_mesh
+	f.material_override = _chunk_mats[key]
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if sz > 0.15 else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	w.add_child(f)
+	f.global_position = at
+	f.basis = Basis.from_euler(Vector3(randf() * TAU, randf() * TAU, 0.0)).scaled(
+			Vector3(randf_range(0.75, 1.15), randf_range(0.6, 0.95), randf_range(0.8, 1.2)) * sz)
+	f.vel = v
+	f.spin = Vector3(randf_range(-4, 4), randf_range(-4, 4), randf_range(-4, 4))
+	f.size = sz
+	f.skip = get_rid()
+
+
+## 崩れる（どの画面でも。emotes.gd が出来事 ball_break で呼ぶ）: 雪のかたまりが四方へ飛び散って転がり、綿の雪の粉が舞い、
+## 縫い目の目がはじけ、崩れた雪の山がしばらく残る
 func crumble(ev: Dictionary) -> void:
 	broken = true
 	var w := get_parent() as Node3D
 	var c := global_position
 	var rr: float = float(ev.get("r", r))
+	var carry: Vector3 = (ev.get("dir", Vector3.ZERO) as Vector3) * 0.5
 	var n := clampi(int(4 + rr * 4.0), 4, 14)
 	for i in n:
 		var d := Vector3(randf_range(-1, 1), randf_range(0.0, 1.0), randf_range(-1, 1)).normalized()
 		Snowball.splat_at(w, c + d * rr * 0.8, d, true, 1.5 + rr * 2.0)
+	# 雪のかたまり: 大きいのが少し、小さいのがたくさん
+	var nc := clampi(int(7 + rr * 5.0), 7, 18)
+	for i in nc:
+		var d := Vector3(randf_range(-1, 1), randf_range(-0.2, 1.0), randf_range(-1, 1)).normalized()
+		var sz := rr * (randf_range(0.26, 0.4) if i < 3 else randf_range(0.1, 0.22))
+		sz = clampf(sz, 0.05, 0.9)
+		var sp := randf_range(1.5, 3.5) * (0.7 + 0.25 * sqrt(rr))
+		var v := d * sp + Vector3.UP * randf_range(1.0, 3.0) * (0.6 + 0.4 * sqrt(rr)) + carry
+		_fly_chunk(w, c + d * rr * 0.55, v, sz)
+	var torn := 0
+	for st in _stitches:
+		var m: MeshInstance3D = st[0]
+		if m.visible and randf() < 0.35 and torn < 10:
+			torn += 1
+			_fly_stitch(w, m)
 	var g: float = w.height(c.x, c.z)
 	Snowball.splat_at(w, Vector3(c.x, g + 0.05, c.z), Vector3.UP, false, 3.0 + rr * 4.0)
 	_leave_pile(w, Vector3(c.x, g, c.z), rr)
@@ -314,6 +593,53 @@ static func _leave_pile(w: Node3D, at: Vector3, rr: float) -> void:
 	tw.tween_interval(10.0)
 	tw.tween_property(pile, "position:y", at.y - 0.6 * pile.scale.y, 12.0)
 	tw.tween_callback(pile.queue_free)
+
+
+## 飛び散る雪のかたまり・縫い目の目（見た目だけ。当たりは持たない。どの画面でも、それぞれに飛ぶ）。
+## 進んだ線分で地面・物に当たると跳ね、止まると転がって、しばらくで雪に沈んで消える
+class Flyer extends MeshInstance3D:
+	var vel := Vector3.ZERO
+	var spin := Vector3.ZERO
+	var size := 0.1            # 地面からの浮き (m)
+	var skip := RID()          # 当たりを見ない体（崩れた玉）
+	var life := 0.0
+	var rest := -1.0           # 止まってから (s)。止まるまでは負
+
+	func _physics_process(dt: float) -> void:
+		life += dt
+		if life > 14.0:
+			queue_free()
+			return
+		if rest >= 0.0:
+			rest += dt
+			if rest > 5.0:
+				# 雪に沈む
+				global_position.y -= dt * maxf(size, 0.03) * 0.5
+				if rest > 8.0:
+					queue_free()
+			return
+		vel.y -= 9.8 * dt
+		var a := global_position
+		var b := a + vel * dt
+		var q := PhysicsRayQueryParameters3D.create(a, b + vel.normalized() * size)
+		if skip.is_valid():
+			q.exclude = [skip]
+		var hit := get_world_3d().direct_space_state.intersect_ray(q)
+		if hit.is_empty():
+			global_position = b
+			if spin != Vector3.ZERO:
+				basis = Basis(spin.normalized(), spin.length() * dt) * basis
+			if global_position.y < -100.0:
+				queue_free()
+			return
+		var nrm: Vector3 = hit.normal
+		global_position = (hit.position as Vector3) + nrm * size * 0.7
+		var vn := vel.dot(nrm)
+		if absf(vn) > 1.5:
+			vel = (vel - nrm * vn) * 0.55 - nrm * vn * 0.25   # 跳ねる（雪なので、ほとんど跳ねない）
+			spin *= 0.6
+		else:
+			rest = 0.0                                          # 止まる
 
 
 ## ホストの大玉の姿が届いた（net.gd）
