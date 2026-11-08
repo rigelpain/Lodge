@@ -251,6 +251,15 @@ var _trail_n := TRAIL_N                          # 目の数（TRAIL_N × per）
 var _trail_chunk := TRAIL_CHUNK                  # 塊の目の数
 var _trail_rng := RandomNumberGenerator.new()
 var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定からずれる量。main が渡す
+# ---- 見た目を、見た目の雪面に載せる（2026-11-08 代表「二人乗りソリが雪に底が埋もれがち」「ソリのなかに雪が底から貫通するような感じ」）。
+# 見た目の雪面は、当たり判定の地面に吹きだまりのうねり（main.gd の drift。道の外で最大 ±0.35 m）を足してある。ソリは当たりの上に
+# 乗るので、うねりが高い所では見た目の雪が荷台の床を突き抜けていた（小は床が底から 1〜5 cm しかない）。
+# 当たりと物理はそのままにして、見た目（形・紐・名札）と、乗っている人の席・つかんでいる人の手（vis_point）だけを上下させる
+const VIS_LIFT_RATE := 18.0    # 見た目の雪面へ寄る速さ（1/s）。速く滑ってうねりを越えるときも、雪が床から出ないように速め
+const VIS_LIFT_ON := 0.15      # 底のどこも当たりの地面からこれより離れていたら（ロッジの床・ジャンプ台・宙）、合わせない (m)
+var vis_lift := 0.0            # いま見た目を上げている量 (m。ソリの上向きに。負は下げる)
+var _body_y0 := 0.0
+var _tag_y0 := 0.0
 var snow_plane := Callable()  # (x, z) → 見た目の雪面の向きと高さ Vector4(法線 x, y, z, 高さ)。main が渡す。なければ当たり判定＋snow_lift
 var _box_col: CollisionShape3D  # 当たりの箱
 var _crash_q: PhysicsShapeQueryParameters3D   # ぶつかる幹を探す問い合わせ（_check_crash）
@@ -323,6 +332,37 @@ func _make_body() -> void:
 		mi.material_override = m
 		_body = mi
 	add_child(_body)
+	_body_y0 = _body.position.y
+
+
+## ソリの座標の点 local の、見た目の位置（世界）。乗っている人の席・つかんでいる人の手・紐の結び先は、ここで見た目の雪面に合わせる
+func vis_point(local: Vector3) -> Vector3:
+	return to_global(local + Vector3(0, vis_lift, 0))
+
+
+## 見た目を見た目の雪面に載せる量を求めて、寄せる。底（ソリの座標の y = 0）の 3 × 5 の点で、見た目の雪面がいちばん上に出ている所に合わせる
+func _update_vis_lift(dt: float) -> void:
+	var want := 0.0
+	var w := get_parent()
+	if snow_lift.is_valid() and w and w.has_method("height") and not crashed and not racked:
+		var top := -INF
+		var near := INF
+		for i in 3:
+			for j in 5:
+				var p := to_global(Vector3((i - 1) * HALF.x * 0.9, 0.0, (j - 2) * 0.5 * HALF.y * 0.9))
+				var g: float = w.height(p.x, p.z)
+				near = minf(near, p.y - g)
+				top = maxf(top, g + float(snow_lift.call(p.x, p.z)) - p.y)
+		if near < VIS_LIFT_ON:
+			want = top
+	vis_lift = lerpf(vis_lift, want, 1.0 - exp(-VIS_LIFT_RATE * dt))
+	if absf(vis_lift - want) < 0.001:
+		vis_lift = want
+	if _body:
+		_body.position.y = _body_y0 + vis_lift
+	var tg := get_node_or_null("Tag") as Node3D
+	if tg:
+		tg.position.y = _tag_y0 + vis_lift
 
 
 ## いまの滑りあとの縫い目の名前（STITCHES）
@@ -785,11 +825,13 @@ func retag(d) -> void:
 		return
 	var tg: Node3D = preload("res://sled_tags.gd").hang(self, rope._ties[1] + Vector3(0.02, -0.02, 0), d, clampf(HALF.x * 0.32, 0.16, 0.26))
 	tg.rotation.y = PI / 2   # 紙の面を外（横）へ向ける
+	_tag_y0 = tg.position.y
+	tg.position.y += vis_lift
 
 
 ## 名札を吊るす結び目（世界の座標）。名札を外す・付けるのは、ここのそばで
 func tag_point() -> Vector3:
-	return to_global(rope._ties[1] + Vector3(0.02, -0.1, 0)) if rope else global_position
+	return vis_point(rope._ties[1] + Vector3(0.02, -0.1, 0)) if rope else global_position
 
 
 ## 乗っている人を降ろし、つかんでいる人と紐を持っている人の手を離させる
@@ -1473,6 +1515,7 @@ func _check_crash(dt: float) -> void:
 func _physics_process(dt: float) -> void:
 	_catch_fall()
 	_update_trail(dt)
+	_update_vis_lift(dt)
 	if racked:
 		return
 	_check_crash(dt)

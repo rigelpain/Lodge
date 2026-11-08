@@ -246,12 +246,12 @@ func _physics_process(dt: float) -> void:
 		return
 	match mode:
 		Mode.RIDE:
-			global_position = sled.to_global(seat)
+			global_position = sled.vis_point(seat)
 			var l: Vector3 = _s.get("l", Vector3.ZERO)
 			if fresh:
 				sled.lean(l.x, l.y > 0.0, l.z > 0.0)
 		Mode.GRIP:
-			global_position = sled.to_global(handle)
+			global_position = sled.vis_point(handle)
 			var dir: Vector3 = _s.get("pd", Vector3.ZERO)
 			if fresh and dir != Vector3.ZERO:
 				sled.push(dir, global_position + Vector3.UP * 0.5, self, damp_k())

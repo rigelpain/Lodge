@@ -385,7 +385,7 @@ func _physics_process(dt: float) -> void:
 		to_top = 100.0   # 組のときは、頂上に着いたかを _team_step が見る
 
 	if state == State.RIDE:
-		global_position = sled.to_global(seat)
+		global_position = sled.vis_point(seat)
 		_pose_doll()
 		# あなたがいないときは、仲間が体重をかけて滑り出す
 		if player == null and to_top < 8.0:
@@ -406,7 +406,7 @@ func _physics_process(dt: float) -> void:
 			_wait = 0.0
 		elif handle != Vector3.INF:
 			# つかんでいる: 体はソリについて行き、縁に手をかけて頂上へ押す
-			global_position = sled.to_global(handle)
+			global_position = sled.vis_point(handle)
 			# ソリの軸に沿って押しながら、向きを頂上へ向け直す。
 			# 大きくずれているときは進める力をかけず、まず向きを直す（縁を横に押して回す）
 			var fwd: Vector3 = -sled.global_basis.z
@@ -1336,7 +1336,7 @@ func _roam_launch() -> void:
 
 ## 滑る: 行き先へ体重をかけ、足で漕ぐ。行き先を過ぎるか止まったら降りる（雪をかく力で、平らな段も越えられる）
 func _roam_ride(dt: float) -> void:
-	global_position = sled.to_global(seat)
+	global_position = sled.vis_point(seat)
 	_pose_doll()
 	_ride_t += dt
 	var at := Vector2(global_position.x, global_position.z)
@@ -1683,7 +1683,7 @@ func _team_board(t: Dictionary, dt: float) -> void:
 	_goal_best = INF
 	_goal_t = 0.0
 	_team = {}
-	global_position = s.to_global(seat)
+	global_position = s.vis_point(seat)
 	_pose_doll()
 
 
