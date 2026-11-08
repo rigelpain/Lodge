@@ -51,6 +51,9 @@ const ITEMS := [
 	["speedo", "滑る速さの表示（糸巻き）", "bool", true, null],
 	["hud_wind", "HUD が風で揺れる（滑るとき）", "bool", true, null],
 	["hud_debug", "確かめ用の数字（fps・通信）", "bool", false, null],
+	# 山をめぐる仲間（CPU）の数。一人で遊ぶときとホストで効き、途中で変えるとすぐ増える・減る（main.gd の set_cpu_count）。つなぐ側では触れない。
+	# 2026-11-09 代表「一人モードでもホストモードでもCPUの数を設定でかえれるようにしてほしい」
+	["cpus", "CPU の数", "float", 5.0, [0.0, 30.0, 1.0]],
 	["menu_scale", "メニューの大きさ", "float", 1.0, [0.7, 1.6, 0.05]],
 	["hud_scale", "HUD の大きさ", "float", 1.0, [0.7, 1.6, 0.05]],
 ]
@@ -220,6 +223,7 @@ func sync_ghost(active: bool, seen: bool) -> void:
 func _fmt(key: String, v: float) -> String:
 	match key:
 		"fov": return "%d°" % v
+		"cpus": return "%d 人" % roundi(v)
 		"cam_dist": return "%.1f m" % v
 		"cam_frame": return "%+d%%" % roundi(v * 100)
 		"scale", "wind", "ride_fov_amt", "vol_music", "vol_sfx", "vol_voice", "menu_scale", "hud_scale": return "%d%%" % round(v * 100)
@@ -263,6 +267,28 @@ func panel_rect() -> Rect2:
 	if _panel == null:
 		return Rect2()
 	return Rect2(_panel.position, _panel.size * _panel.scale)
+
+
+## 保存してある値（画面を作る前に読みたいとき。main.gd が起動のときの CPU の数に使う）。なければ fallback
+static func saved(key: String, fallback):
+	var cf := ConfigFile.new()
+	if cf.load(PATH) != OK:
+		return fallback
+	return cf.get_value("settings", key, fallback)
+
+
+## 項目を触れなくし、見出しの横に理由を書く（つなぐ側の CPU の数は、ホストが決める）
+func lock(key: String, why: String) -> void:
+	var c = _controls.get(key)
+	if c is Range:
+		c.editable = false
+	if c is BaseButton:
+		c.disabled = true
+	var row = c.get_parent() if c else null
+	if row is HBoxContainer and row.get_child(0) is Label:
+		var lb: Label = row.get_child(0)
+		lb.text += "（%s）" % why
+		row.modulate.a = 0.55
 
 
 ## 外から値を変えたとき（キー操作など）に、画面の表示も合わせる

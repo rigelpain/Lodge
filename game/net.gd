@@ -74,6 +74,9 @@ func receive(pid: int, m: Array) -> void:
 		"cpu":
 			if from_host:
 				_cpu(int(m[1]), m[2])
+		"cpu_gone":
+			if from_host:
+				_cpu_gone(int(m[1]))
 		"up":
 			_up(pid, m[1], m[2], m[3])
 		"down":
@@ -467,7 +470,30 @@ func _state(pid: int, s: Dictionary) -> void:
 
 
 ## 仲間の姿が届いた（はじめて届いたら、体を置く。あとから来た人にも、これで見える）。頭・肩の小物とミニオンも、ホストの画面と同じに
+## ホスト: 設定で CPU の数を減らして、仲間を消した（main.gd の set_cpu_count）。つなぐ側の体も消してもらう
+func cpu_gone(id: int) -> void:
+	if online and is_host() and not remotes.is_empty():
+		_sure.rpc("_in", ["cpu_gone", id])
+
+
+## つなぐ側: 仲間が消えた。体を片付け、あとから遅れて届く姿（"cpu"）では作り直さない（仲間の番号は使い回されない）
+func _cpu_gone(id: int) -> void:
+	_cpus_gone[id] = true
+	var r = cpus.get(id)
+	cpus.erase(id)
+	if r and is_instance_valid(r):
+		r._leave()
+		r.queue_free()   # 頭・肩の小物とミニオンも、持ち主が消えると消える（companions.gd）
+	if main.get("seats"):
+		main.seats.forget(id)
+
+
+var _cpus_gone := {}           # つなぐ側: 消えた仲間の番号
+
+
 func _cpu(id: int, s: Dictionary) -> void:
+	if _cpus_gone.has(id):
+		return
 	if not cpus.has(id):
 		cpus[id] = _add_body(id, "Cpu%d" % id)
 		main._add_pals(cpus[id])

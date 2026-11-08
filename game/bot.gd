@@ -217,6 +217,27 @@ func _ready() -> void:
 		seats.happened.connect(_on_seat)
 
 
+## 設定で CPU の数を減らしたとき（main.gd の set_cpu_count）: 乗っている・つかんでいるソリ、座っている席、組を手放して消える。
+## 米袋は帯に戻す。対決のさなかの仲間は main.gd が選ばない
+func retire() -> void:
+	if state == State.RIDE and seat != Vector3.INF and is_instance_valid(sled):
+		if roam:
+			_roam_get_off(false)
+		else:
+			sled.dismount(self)
+			seat = Vector3.INF
+	if is_instance_valid(sled):
+		let_go()
+	if not _team.is_empty():
+		_team.members.erase(self)
+		_team = {}
+	if seats and id >= 0:
+		seats.forget(id)
+	if hub and id >= 0:
+		hub.people.erase(id)
+	queue_free()
+
+
 ## 人形を替える出来事（通信では、ほかの人が衣装掛けで選んだ人形がここに届く）。人形を作り直す。
 ## 服を染めた出来事（dye・outfit）では、いまの人形ならその色に染め直す（作り直さない）
 func _on_craft(ev: Dictionary) -> void:
