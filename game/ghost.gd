@@ -71,11 +71,12 @@ static func gone(who: Object) -> bool:
 
 
 ## いま抜けられるか
-func can_enter() -> bool:
+## from_menu: 設定の画面の切り替えから（設定を開いたままでも抜けられる）
+func can_enter(from_menu := false) -> bool:
 	var p := player
-	if p == null or not is_instance_valid(p) or p.menu_open or p.shopping:
+	if p == null or not is_instance_valid(p) or (p.menu_open and not from_menu) or p.shopping:
 		return false
-	if main.settings != null and main.settings.is_open:
+	if main.settings != null and main.settings.is_open and not from_menu:
 		return false
 	if not p.mode in [p.Mode.WALK, p.Mode.GRIP, p.Mode.ROPE]:
 		return false
@@ -84,8 +85,8 @@ func can_enter() -> bool:
 	return not (p.ring and p.ring.visible)
 
 
-func enter() -> bool:
-	if active or not can_enter():
+func enter(from_menu := false) -> bool:
+	if active or not can_enter(from_menu):
 		return false
 	var p := player
 	if p.mode in [p.Mode.GRIP, p.Mode.ROPE]:
@@ -158,6 +159,8 @@ func _set_ghost(g: int) -> void:
 		main.self_cam.set_ghost_off(g != 0)
 	if main.has_method("_sync_pip_shown"):
 		main._sync_pip_shown()
+	if main.get("settings") and main.settings.has_method("sync_ghost"):
+		main.settings.sync_ghost(g != 0, g == 2)   # 設定の画面の切り替えも、O・U と同じ様子に
 
 
 ## 霊体の姿（net.gd が送る）。見えないときは位置を入れない

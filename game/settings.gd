@@ -8,6 +8,8 @@ const Icons := preload("res://hud_icons.gd")
 
 signal changed(key: String, value)
 signal to_start                # 「スタート画面へ」を押した（main.gd が net.leave で読み直す）
+signal ghost_set(on: bool)     # 霊体化の切り替えを押した（main.gd が ghost.gd の enter・leave へ）。保存しない
+signal ghost_seen_set(on: bool)  # 霊体のあいだ、見える・見えないの切り替えを押した
 
 const PATH := "user://settings.cfg"
 ## 画質の段: 選ぶと、下の 3D の解像度・くぼみの影・影・光のにじみが、まとめてその段の値になる（そのあと 1 つずつ変えてもよい）。
@@ -61,6 +63,10 @@ var _box: VBoxContainer
 var _controls := {}
 var _dragging := ""          # いま動かしているスライダー（メニューの大きさは離してから当てる）
 var net_note: Label          # 通信の様子（ホストの番号・つないでいる人数）。main.gd が入れる。一人なら空
+var _ghost_cb: CheckButton   # 霊体化（観戦モード）。ITEMS とは別で、保存しない（起動し直すと体に戻っている）
+var _seen_cb: CheckButton    # 霊体のあいだ、ほかの人から見える
+var _seen_row: HBoxContainer
+var _seen_pic: Control
 
 
 func _ready() -> void:
@@ -106,6 +112,7 @@ func _build() -> void:
 	title.add_theme_font_size_override("font_size", 20)
 	title.add_theme_color_override("font_color", Color.WHITE)
 	box.add_child(title)
+	_build_ghost(box)
 
 	for it in ITEMS:
 		var key: String = it[0]
@@ -184,6 +191,56 @@ func _build() -> void:
 	net_note.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
 	box.add_child(net_note)
 	box.add_child(foot)
+
+
+## 霊体化の 2 行（字なし）: 体から抜ける絵のワッペン＋切り替え、見える・見えないの目の絵のワッペン＋切り替え
+func _build_ghost(box: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	row.add_child(Pic.new("ghost_in"))
+	_ghost_cb = CheckButton.new()
+	_ghost_cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_ghost_cb.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_ghost_cb.toggled.connect(func(on: bool): ghost_set.emit(on))
+	row.add_child(_ghost_cb)
+	box.add_child(row)
+	_seen_row = HBoxContainer.new()
+	_seen_row.add_theme_constant_override("separation", 10)
+	_seen_pic = Pic.new("ghost_hidden")
+	_seen_row.add_child(_seen_pic)
+	_seen_cb = CheckButton.new()
+	_seen_cb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_seen_cb.alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_seen_cb.toggled.connect(func(on: bool): ghost_seen_set.emit(on))
+	_seen_row.add_child(_seen_cb)
+	box.add_child(_seen_row)
+	box.add_child(HSeparator.new())
+	sync_ghost(false, false)
+
+
+## 霊体の様子を、画面の切り替えに写す（ghost.gd が O・U・設定のどれで変わっても呼ぶ）。見える・見えないは霊体のあいだだけ触れる
+func sync_ghost(active: bool, seen: bool) -> void:
+	if _ghost_cb == null:
+		return
+	_ghost_cb.set_pressed_no_signal(active)
+	_seen_cb.set_pressed_no_signal(seen)
+	_seen_cb.disabled = not active
+	_seen_row.modulate.a = 1.0 if active else 0.35
+	(_seen_pic as Pic).name_ = "ghost_seen" if seen else "ghost_hidden"
+	_seen_pic.queue_redraw()
+
+
+## 行の頭の絵（案内と同じワッペン。キーは付けない）
+class Pic extends Control:
+	var name_ := ""
+
+	func _init(n: String) -> void:
+		name_ = n
+		custom_minimum_size = Vector2(76, 50)
+		mouse_filter = Control.MOUSE_FILTER_IGNORE
+
+	func _draw() -> void:
+		Icons.badge(self, [], name_, size / 2.0, 46.0)
 
 
 func _fmt(key: String, v: float) -> String:
