@@ -147,8 +147,7 @@ func choose(i: int) -> bool:
 		return false
 	_sel = i
 	var key: String = ks[i]
-	var ok := false
-	var bought := false
+	var ok := false   # 買った音は audio.gd が出来事から一度だけ鳴らす
 	if TABS[tab] == "lantern":
 		var have: int = craft.lantern_index(_who(), key)
 		_asked += 1   # 一人のときは send の中で出来事が起きるので、送る前に数える
@@ -156,7 +155,6 @@ func choose(i: int) -> bool:
 			ok = craft.send({"kind": "equip", "who": _who(), "gear": "lantern", "index": -1 if _worn() == key else have})
 		elif craft.wallet(_who()) >= Lantern.price(key):   # ボタンが足りなければ送らない（つなぐ側の send は、断られても true を返すので）
 			ok = craft.send({"kind": "lantern_buy", "who": _who(), "look": key})
-			bought = ok
 		if not ok:
 			_asked = maxi(0, _asked - 1)
 	else:
@@ -165,13 +163,8 @@ func choose(i: int) -> bool:
 			ok = craft.send({"kind": "pal_wear", "who": _who(), "slot": slot, "key": "" if _worn() == key else key})
 		else:
 			ok = craft.send({"kind": "pal_buy", "who": _who(), "key": key})
-			bought = ok
 		if ok and player.has_method("save_tag"):
 			player.save_tag()   # 次に起動しても同じ
-	if bought:
-		var au = main.get_node_or_null("Audio") if main else null
-		if au and au.has_method("coin"):
-			au.coin("brass")
 	if ok:
 		_pop = 1.0
 		_pop_key = key

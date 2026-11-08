@@ -126,11 +126,7 @@ func choose(i: int) -> bool:
 		var now: String = craft.pal_worn(_who(), slot)
 		ok = craft.send({"kind": "pal_wear", "who": _who(), "slot": slot, "key": "" if now == key else key})
 	else:
-		ok = craft.send({"kind": "pal_buy", "who": _who(), "key": key})
-		if ok:
-			var au = main.get_node_or_null("Audio") if main else null
-			if au and au.has_method("coin"):
-				au.coin("brass")
+		ok = craft.send({"kind": "pal_buy", "who": _who(), "key": key})   # 買った音は audio.gd が出来事から一度だけ鳴らす
 	if ok:
 		_pop = 1.0
 		_pop_key = key
