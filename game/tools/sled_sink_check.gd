@@ -63,7 +63,7 @@ func _run() -> void:
 var _verts := PackedVector3Array()
 func _body_verts() -> PackedVector3Array:
 	if _verts.is_empty():
-		var inv := sled.global_transform.affine_inverse()
+		var inv := (sled._body as Node3D).global_transform.affine_inverse()   # 形の座標で覚える（見た目の上下 vis_lift は、測るときの形の位置で入る）
 		for mi in sled._body.find_children("*", "MeshInstance3D", true, false) + ([sled._body] if sled._body is MeshInstance3D else []):
 			var m := mi as MeshInstance3D
 			if m.mesh == null or not m.is_visible_in_tree():
@@ -77,7 +77,7 @@ func _body_verts() -> PackedVector3Array:
 
 ## いまのコマで、雪面より下にある頂点のいちばん深い所 (m)
 func _deep_now() -> float:
-	var xf := sled.global_transform
+	var xf := (sled._body as Node3D).global_transform
 	var deep := 0.0
 	for v in _body_verts():
 		var w := xf * v

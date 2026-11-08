@@ -3,8 +3,9 @@ extends SceneTree
 ##   Godot --path game --resolution 1280x720 --fixed-fps 30 -s res://tools/sled_sink_shots.gd -- --sled=small --bots=0 --roam-bots=0 --lodge-bots=0 --no-sound --no-pip --no-selfcam --day=100000 --time=14 --dir=/path/shots
 ## --sled= のソリにあなたが乗る（米袋は N で出して乗る）。--tag= を名前の頭に付ける（直す前・後の見比べ用）
 
-const FLAT := Vector3(-30, 0, 30)    # 丘のふもとの西の平らな所（ロッジの外）
-const SLOPE := Vector3(0, 0, 20)
+## 撮る所は、吹きだまりのうねり（main.drift）が高い所から選ぶ（_pick）。平らな所（傾き 3° まで）と斜面（12〜25°）
+var FLAT := Vector3(-30, 0, 30)
+var SLOPE := Vector3(0, 0, 20)
 
 var args := {}
 var main: Node3D
@@ -74,6 +75,9 @@ func _run() -> void:
 	cam.fov = 45
 	root.add_child(cam)
 	kind = args.get("sled", "sack")
+	FLAT = _pick(0.0, 3.0)
+	SLOPE = _pick(12.0, 25.0)
+	print("撮る所: 平ら %s（うねり %.2f m）、斜面 %s（うねり %.2f m）" % [FLAT, main.drift(FLAT.x, FLAT.z), SLOPE, main.drift(SLOPE.x, SLOPE.z)])
 	if args.has("empty"):
 		await _empty()
 		quit()
@@ -91,10 +95,11 @@ func _run() -> void:
 	await _wait(0.3)
 	await _shot("slope_still")
 	follow.freeze = false
-	# 斜面を滑っている（ふもとへ）
-	_place(Vector3(0, 0, 8), PI)
-	follow.linear_velocity = Vector3(0, 0, 4.0)
-	await _wait(1.6)
+	# 斜面を滑っている（うねりのある斜面の上の方から、下りへ）
+	var down := Vector3(main.height(SLOPE.x - 0.5, SLOPE.z) - main.height(SLOPE.x + 0.5, SLOPE.z), 0, main.height(SLOPE.x, SLOPE.z - 0.5) - main.height(SLOPE.x, SLOPE.z + 0.5)).normalized()
+	_place(SLOPE - down * 4.0, atan2(down.x, down.z) + PI)
+	follow.linear_velocity = down * 3.0
+	await _wait(1.0)
 	await _shot("slope_slide")
 	quit()
 
@@ -148,3 +153,21 @@ func _look_in(name: String) -> void:
 	var tag: String = args.get("tag", "")
 	root.get_texture().get_image().save_png(_dir().path_join("%s%s_%s.png" % [tag + "_" if tag != "" else "", kind, name]))
 	print("撮った: ", kind, "_", name)
+
+
+## 傾きが lo〜hi 度で、まわり 2 m も同じくらいうねりが高い所のうち、うねりがいちばん高い所（丘のまわり 100 m 四方、1 m おき）
+func _pick(lo: float, hi: float) -> Vector3:
+	var best := -INF
+	var at := Vector3.ZERO
+	for x in range(-100, 101, 2):
+		for z in range(-100, 101, 2):
+			var gx: float = main.height(x + 0.5, z) - main.height(x - 0.5, z)
+			var gz: float = main.height(x, z + 0.5) - main.height(x, z - 0.5)
+			var deg := rad_to_deg(atan(Vector2(gx, gz).length()))
+			if deg < lo or deg > hi:
+				continue
+			var d: float = minf(main.drift(x, z), minf(minf(main.drift(x + 1, z), main.drift(x - 1, z)), minf(main.drift(x, z + 1), main.drift(x, z - 1))))
+			if d > best:
+				best = d
+				at = Vector3(x, 0, z)
+	return at
