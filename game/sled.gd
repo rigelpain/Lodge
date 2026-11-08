@@ -70,7 +70,10 @@ const EDGE_STOP := 3.0          # 端からこの距離までに止まる (m)
 # 地形の傾きで見るので、ジャンプ台の坂（当たりは地形の上に別にある）には効かない。押して登るときは _ride_forces を通らないので効かない
 const UPHILL_K := 0.7
 const UNPLANE_SPEED := 0.5     # これより遅くなると、また雪に沈む（KINDS の sink。止まりきらずにいつまでも這わないように）
-const RIDER_MASS := 45.0       # 乗っている人一人の重さ (kg)。止めるときにだけ効く（登りは速くも遅くもしない）
+const RIDER_MASS := 45.0       # 乗っている人一人の重さ (kg)。止めるときにだけ効く（登りの重さは RIDER_PUSH_MASS）
+## 押す・紐で引くときの、乗っている人一人の重さ (kg)（2026-11-08 代表「乗ってる分ソリが重くなって押すのが大変になるようにしてほしい」。push_share）。
+## 軽いソリほど効く（小 15 kg に 1 人で、押して登る速さが ×0.25）。重すぎたらここを下げる
+const RIDER_PUSH_MASS := 45.0
 const STOP_FORCE := 300.0      # つかんでいる人一人が止める力 (N)。押す力と同じ
 const DRAG_SPEED := 2.5        # これより速く下っているソリをつかむと、引きずられる (m/s)
 const DRAG_STOP_SPEED := 0.8   # 引きずられて、ここまで遅くなったら踏みとどまる（静止摩擦で留まる）
@@ -189,6 +192,9 @@ var holders := {}           # つかんでいる人 → つかんだ所（ソリ
 var rope_holder: Node3D = null
 var rope: Node3D            # 引き紐（見た目と、拾える先の位置）
 var _push_count := 0
+var _push_force := Vector3.ZERO      # 前のコマの押す・紐で引く力の合計（_pushing_uphill）
+var _push_force_now := Vector3.ZERO
+const UPHILL_PUSH_SLOPE := 0.05      # これより緩い坂（傾きの sin。約 3°）は、押していても登りに数えない
 var _steer := 0.0           # 乗っている人の左右の体重移動の合計（このコマ。一人 -1〜1 を足し合わせる。上限なし）
 var _n_fwd := 0             # このコマ前傾した人の数
 var _n_back := 0            # このコマ後傾した人の数
@@ -245,6 +251,15 @@ var _trail_n := TRAIL_N                          # 目の数（TRAIL_N × per）
 var _trail_chunk := TRAIL_CHUNK                  # 塊の目の数
 var _trail_rng := RandomNumberGenerator.new()
 var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定からずれる量。main が渡す
+# ---- 見た目を、見た目の雪面に載せる（2026-11-08 代表「二人乗りソリが雪に底が埋もれがち」「ソリのなかに雪が底から貫通するような感じ」）。
+# 見た目の雪面は、当たり判定の地面に吹きだまりのうねり（main.gd の drift。道の外で最大 ±0.35 m）を足してある。ソリは当たりの上に
+# 乗るので、うねりが高い所では見た目の雪が荷台の床を突き抜けていた（小は床が底から 1〜5 cm しかない）。
+# 当たりと物理はそのままにして、見た目（形・紐・名札）と、乗っている人の席・つかんでいる人の手（vis_point）だけを上下させる
+const VIS_LIFT_RATE := 18.0    # 見た目の雪面へ寄る速さ（1/s）。速く滑ってうねりを越えるときも、雪が床から出ないように速め
+const VIS_LIFT_ON := 0.15      # 底のどこも当たりの地面からこれより離れていたら（ロッジの床・ジャンプ台・宙）、合わせない (m)
+var vis_lift := 0.0            # いま見た目を上げている量 (m。ソリの上向きに。負は下げる)
+var _body_y0 := 0.0
+var _tag_y0 := 0.0
 var snow_plane := Callable()  # (x, z) → 見た目の雪面の向きと高さ Vector4(法線 x, y, z, 高さ)。main が渡す。なければ当たり判定＋snow_lift
 var _box_col: CollisionShape3D  # 当たりの箱
 var _crash_q: PhysicsShapeQueryParameters3D   # ぶつかる幹を探す問い合わせ（_check_crash）
@@ -317,6 +332,37 @@ func _make_body() -> void:
 		mi.material_override = m
 		_body = mi
 	add_child(_body)
+	_body_y0 = _body.position.y
+
+
+## ソリの座標の点 local の、見た目の位置（世界）。乗っている人の席・つかんでいる人の手・紐の結び先は、ここで見た目の雪面に合わせる
+func vis_point(local: Vector3) -> Vector3:
+	return to_global(local + Vector3(0, vis_lift, 0))
+
+
+## 見た目を見た目の雪面に載せる量を求めて、寄せる。底（ソリの座標の y = 0）の 3 × 5 の点で、見た目の雪面がいちばん上に出ている所に合わせる
+func _update_vis_lift(dt: float) -> void:
+	var want := 0.0
+	var w := get_parent()
+	if snow_lift.is_valid() and w and w.has_method("height") and not crashed and not racked:
+		var top := -INF
+		var near := INF
+		for i in 3:
+			for j in 5:
+				var p := to_global(Vector3((i - 1) * HALF.x * 0.9, 0.0, (j - 2) * 0.5 * HALF.y * 0.9))
+				var g: float = w.height(p.x, p.z)
+				near = minf(near, p.y - g)
+				top = maxf(top, g + float(snow_lift.call(p.x, p.z)) - p.y)
+		if near < VIS_LIFT_ON:
+			want = top
+	vis_lift = lerpf(vis_lift, want, 1.0 - exp(-VIS_LIFT_RATE * dt))
+	if absf(vis_lift - want) < 0.001:
+		vis_lift = want
+	if _body:
+		_body.position.y = _body_y0 + vis_lift
+	var tg := get_node_or_null("Tag") as Node3D
+	if tg:
+		tg.position.y = _tag_y0 + vis_lift
 
 
 ## いまの滑りあとの縫い目の名前（STITCHES）
@@ -476,7 +522,7 @@ func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> voi
 	if who:
 		_pushed_now[who] = true
 		helped[who] = _trail_now
-	var f: Vector3 = dir.normalized() * PUSH_FORCE * strength * min(1.0, dir.length())
+	var f: Vector3 = dir.normalized() * PUSH_FORCE * strength * min(1.0, dir.length()) * push_share()
 	f *= 1.0 - smoothstep(PUSH_FADE.x, PUSH_FADE.y, linear_velocity.dot(dir.normalized()))
 	# 力は手が触れている所にそのままかける。どう動くかは滑り木と重力が決める
 	var p := to_local(at)
@@ -485,6 +531,7 @@ func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> voi
 	p.y = 0.2
 	apply_force(f, global_basis * p)
 	_push_count += 1
+	_push_force_now += f
 
 
 ## 立っている所（世界座標）から、ソリの縁のいちばん近いつかみ所と、押す向きを返す
@@ -529,6 +576,25 @@ func load_mass() -> float:
 	return maxf(kind_mass + riders.size() * RIDER_MASS, 1.0)
 
 
+## 押す・紐で引く力のうち、ソリが動く分の割合（2026-11-08 代表「乗ってる分ソリが重くなって押すのが大変になるようにしてほしい」）。
+## 物理の体の重さ（mass）はソリだけなので、乗っている人の重さ（RIDER_PUSH_MASS）を足した重さで力を割り戻す。
+## 坂の重さ・雪の抵抗は体の重さに比べてかかるので、ソリと乗っている人をまとめて押したのと同じ速さになる。
+## 乗っていなければ 1（押し心地は前のまま）。力は中に 1 人で ×0.57、2 人で ×0.4、小に 1 人で ×0.25（小は軽いので、乗った人の重さが効く）。
+## 登る速さは、遅いときの静止摩擦（HOLD_FRICTION）も効くので、力ほどは落ちない（tools/ride_push_check.gd）。
+## 通信では、ホストの画面のソリにかかる力だけが効く（つなぐ側の人もホストの画面の体が push・pull_rope を呼ぶので、同じに重い）
+func push_share() -> float:
+	return mass / maxf(mass, maxf(kind_mass, 1.0) + riders.size() * RIDER_PUSH_MASS)
+
+
+## 前のコマの押す・紐で引く力の合計が、坂の上へ向いているか（坂が UPHILL_PUSH_SLOPE より緩ければ false）
+func _pushing_uphill() -> bool:
+	var n := _ground_normal()
+	var down := Vector3.DOWN - n * Vector3.DOWN.dot(n)   # 地面に沿った下り（長さは傾きの sin）
+	if down.length() < UPHILL_PUSH_SLOPE or _push_force.length() < 1.0:
+		return false
+	return _push_force.normalized().dot(down.normalized()) < -0.3
+
+
 ## ソリがこれより速く下っているか（押されて登っているときは数えない）
 func _downhill_fast(v: float) -> bool:
 	return linear_velocity.length() > v and (_pushed_by.is_empty() or linear_velocity.y < -0.1)
@@ -561,10 +627,11 @@ func pull_rope(hand: Vector3, strength := 1.0) -> float:
 		var dir := d
 		dir.y = 0
 		dir = dir.normalized()
-		var f: float = ROPE_FORCE * strength * minf(over / ROPE_TAKEUP, 1.0)
+		var f: float = ROPE_FORCE * strength * minf(over / ROPE_TAKEUP, 1.0) * push_share()
 		f *= 1.0 - smoothstep(PUSH_FADE.x, PUSH_FADE.y, linear_velocity.dot(dir))   # 押すときと同じ（人は走るより速く引けない）
 		apply_force(dir * f, anchor - global_position)
 		_push_count += 1
+		_push_force_now += dir * f
 		if rope_holder:
 			helped[rope_holder] = _trail_now
 	return over
@@ -758,11 +825,13 @@ func retag(d) -> void:
 		return
 	var tg: Node3D = preload("res://sled_tags.gd").hang(self, rope._ties[1] + Vector3(0.02, -0.02, 0), d, clampf(HALF.x * 0.32, 0.16, 0.26))
 	tg.rotation.y = PI / 2   # 紙の面を外（横）へ向ける
+	_tag_y0 = tg.position.y
+	tg.position.y += vis_lift
 
 
 ## 名札を吊るす結び目（世界の座標）。名札を外す・付けるのは、ここのそばで
 func tag_point() -> Vector3:
-	return to_global(rope._ties[1] + Vector3(0.02, -0.1, 0)) if rope else global_position
+	return vis_point(rope._ties[1] + Vector3(0.02, -0.1, 0)) if rope else global_position
 
 
 ## 乗っている人を降ろし、つかんでいる人と紐を持っている人の手を離させる
@@ -1446,11 +1515,14 @@ func _check_crash(dt: float) -> void:
 func _physics_process(dt: float) -> void:
 	_catch_fall()
 	_update_trail(dt)
+	_update_vis_lift(dt)
 	if racked:
 		return
 	_check_crash(dt)
 	pushers = _push_count
 	_push_count = 0
+	_push_force = _push_force_now
+	_push_force_now = Vector3.ZERO
 	_pushed_by = _pushed_now
 	_pushed_now = {}
 	if _right_t > 0.0:
@@ -1463,8 +1535,11 @@ func _physics_process(dt: float) -> void:
 		_crash_step(dt)
 		return
 	var riding := riders.size() > 0
-	# 押されて坂を登っている間は、乗っている人がいても登りの雪の抵抗。乗るだけで登りが速くならないように
-	var pushed_up := pushers > 0 and linear_velocity.y > 0.05
+	# 押されて坂を登っている間は、乗っている人がいても登りの雪の抵抗。乗るだけで登りが速くならないように。
+	# 坂の上へ向けて押されていてまだ遅い（DRAG_STOP_SPEED より遅い）ときも同じ（2026-11-08。乗っている人の重さで押す力が弱まると、
+	# 急な所で上へ動けずに滑り出しの沈み（KINDS の sink）がかかり、押してもほとんど進まなくなっていた）。
+	# 平らな所や下りへ押し出すときは前のまま（乗って滑る抵抗）
+	var pushed_up := pushers > 0 and (linear_velocity.y > 0.05 or (linear_velocity.length() < DRAG_STOP_SPEED and _pushing_uphill()))
 	# 乗って下っている: 雪をこする抵抗・沈み・体重移動は、ソリと乗る人をまとめた重さで動かす（_ride_forces）
 	var descent := riding and not pushed_up
 	# 誰も押していない空のソリは、ずり落ちる雪の抵抗（つかまれていても同じ。止める力はつかんだ人が出す）
@@ -1495,7 +1570,7 @@ func _physics_process(dt: float) -> void:
 	if descent:
 		_ride_forces(dt, fwd)
 	else:
-		# 押して登っているとき（乗っている人がいても）は前の作りのまま。乗る人で登りが速くも遅くもならない
+		# 押して登っているとき（乗っている人がいても）は前の作りのまま。乗っている人の重さは、押す・引く力の側で効かせる（push_share）
 		var steer: float = clamp(_steer, -1.0, 1.0)
 		for x in [-RUNNER_X, RUNNER_X]:
 			var r := global_basis * Vector3(x, 0, 0)
@@ -1509,7 +1584,7 @@ func _physics_process(dt: float) -> void:
 					c += CLIMB_BRAKE_DRAG
 			apply_force(-fwd * v_long * c * _k, r)
 	# 遅いソリは静止摩擦で坂に留まる。押せばその分だけ動く。
-	# 乗っている人がいても押されていれば効くので、乗る＋一人が押すは、一人で押すのと同じ速さで登る。
+	# 乗っている人がいても押されていれば効く（乗っている人の重さの分、押す力が弱まるので、一人で押すより遅く登る。push_share）。
 	# 押されていなければ、留める力は「つかんでいる人の止める力」と「空のソリの雪の摩擦」まで。
 	# 誰も触れていない空のソリは雪の摩擦だけなので、急な所ではずり落ち、緩い所（ふもと）で止まる
 	var speed := linear_velocity.length()

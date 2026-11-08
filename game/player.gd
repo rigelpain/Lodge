@@ -867,7 +867,7 @@ func _physics_process(dt: float) -> void:
 	_check_run_over()
 	match mode:
 		Mode.RIDE:
-			global_position = sled.to_global(seat)
+			global_position = sled.vis_point(seat)
 			ride_lean = Vector3(_key(KEY_D) - _key(KEY_A), _key(KEY_W), _key(KEY_S))
 			sled.lean(ride_lean.x, ride_lean.y > 0.0, ride_lean.z > 0.0)
 			prompt = "W 前傾　S 後傾で止まる　A/D 体重をかけて曲がる　E 降りる"
@@ -1309,7 +1309,7 @@ func _walk(dt: float, with_rope: bool) -> void:
 func _grip(dt: float) -> void:
 	# 手が縁に吸い付き、体はソリについて行く
 	_snap = min(1.0, _snap + dt * 5.0)
-	var target: Vector3 = sled.to_global(handle)
+	var target: Vector3 = sled.vis_point(handle)
 	global_position = global_position.lerp(target, _snap) if _snap < 1.0 else target
 	velocity = Vector3.ZERO
 
@@ -3035,7 +3035,7 @@ func _pose_fp_legs(fi: int) -> void:
 	_fp_legs.visible = show
 	if not show:
 		return
-	_fp_legs.global_transform = Transform3D(sled.global_basis.orthonormalized(), sled.to_global(seat))
+	_fp_legs.global_transform = Transform3D(sled.global_basis.orthonormalized(), sled.vis_point(seat))
 	if fi == _legs_frame:
 		return
 	_legs_frame = fi

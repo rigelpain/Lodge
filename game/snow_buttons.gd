@@ -6,6 +6,8 @@ extends Node3D
 ##   ソリは体重移動でゆっくりしか曲がらないので、いくつも拾うには、押し出す向きで狙い、乗っている人が息を合わせて体重をかける。
 ## 分け方: 取ったボタンは、そのソリに乗っていた全員に 1 つずつ入る（分け合って減らない）。そのソリを押したり紐で引いたり
 ##   して手伝ったけれど乗らなかった人にも、少し（HELPER_SHARE。端数はためて、1 つになったら入る）。奪い合いにはしない。
+## 押してもらっているあいだ（2026-11-08 代表）: 乗っていても、誰かに押されている・紐で引かれているソリでは稼げない
+##   （滑った分も、斜面のボタンも、ジャンプ台も。pushed）。手が離れて、自分で滑りだしてからの分だけ
 ## 新しいボタン: 空からひらひら降ってきて、落ちた所に糸がするっと縫い付く（12 fps のコマ撮り）。置き場所はランダムだが、
 ##   高い所から長く滑るほど通れる所に出やすい（_pick_spot）。時間がたつと雪に埋もれて消える。滑りあと（sled.gd）と同じく、
 ##   吹きだまりのまとまりと一つずつのばらつきで、まばらに消える。
@@ -473,12 +475,15 @@ func _track_runs(dt: float) -> void:
 			_traffic[c] *= pow(fade, 60.0)
 			if _traffic[c] < 0.002:
 				_traffic.erase(c)
-	# 一回の滑り: 乗っている人がいて、押されて登っているのでなく、1.5 m/s より速くなったら始まり、
-	# 0.5 m/s より遅いのが RIDE_STOP_T 続くか、誰も乗らなくなったら終わり
+	# 一回の滑り: 乗っている人がいて、誰にも押されて・紐で引かれていなくて、1.5 m/s より速くなったら始まり、
+	# 0.5 m/s より遅いのが RIDE_STOP_T 続くか、誰も乗らなくなったら終わり。
+	# 押してもらっている・紐で引いてもらっているあいだは、坂の向きによらず数えない（2026-11-08 代表「そりに乗って他人に押して
+	# もらってる時もお金が稼げてしまう。できなくしてほしい」。前は押されて登っているときだけ数えなかった）。押し出してもらって
+	# 手が離れてから、自分で滑った分だけ。押している途中で止まれば（RIDE_STOP_T）、そこまでの分が入る
 	for s in get_tree().get_nodes_in_group("sleds"):
 		var sled := s as RigidBody3D
 		var v := sled.linear_velocity.length()
-		var riding: bool = not sled.riders.is_empty() and not (sled.pushers > 0 and sled.linear_velocity.y > 0.05)
+		var riding: bool = not sled.riders.is_empty() and not pushed(sled)
 		var run: Dictionary = _runs.get(sled, {})
 		if run.is_empty():
 			if riding and v > 1.5:
@@ -705,11 +710,18 @@ func _rider_pay(run: Dictionary, id: int, at: Vector3, left: bool) -> void:
 
 # ================================================================ ホスト: 取る
 
-## 乗っている人のいる、動いているソリの滑り木が、休んでいるボタンの上を通ったら糸を切る
+## 押してもらっている・紐で引いてもらっているソリ（sled.gd の pushers。前のコマで押した・張った紐で引いた人の数）。
+## 乗っている人は稼げない（滑った分も、斜面のボタンも。空のソリを押すのと同じ）。押した・引いた人の取り分（HELPER_SHARE）は、
+## 手を離してから乗っている人が自分で滑って稼いだ分から、前と同じく入る
+static func pushed(sled: RigidBody3D) -> bool:
+	return sled.pushers > 0
+
+
+## 乗っている人のいる、動いているソリの滑り木が、休んでいるボタンの上を通ったら糸を切る（押してもらっているソリは切らない）
 func _check_hits() -> void:
 	for s in get_tree().get_nodes_in_group("sleds"):
 		var sled := s as RigidBody3D
-		if sled.riders.is_empty() or sled.linear_velocity.length() < MIN_SPEED:
+		if sled.riders.is_empty() or sled.linear_velocity.length() < MIN_SPEED or pushed(sled):
 			continue
 		var c := sled.global_position
 		var segs := runner_segments(sled)

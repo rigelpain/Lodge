@@ -207,8 +207,8 @@ func end_point() -> Vector3:
 
 ## 雪の上に、ソリの前へ伸ばして置き直す（始めと、ソリが遠くへ移されたとき）
 func _lay_out() -> void:
-	var l := sled.to_global(_ties[0])
-	var r := sled.to_global(_ties[1])
+	var l: Vector3 = sled.vis_point(_ties[0])
+	var r: Vector3 = sled.vis_point(_ties[1])
 	var fwd := -sled.global_basis.z
 	fwd.y = 0
 	fwd = fwd.normalized() if fwd.length() > 0.01 else Vector3.FORWARD
@@ -269,8 +269,8 @@ func _physics_process(dt: float) -> void:
 		if (get_instance_id() + Engine.get_physics_frames()) % 3 != 0:
 			return
 		dt *= 3.0
-	var l := sled.to_global(_ties[0])
-	var r := sled.to_global(_ties[1])
+	var l: Vector3 = sled.vis_point(_ties[0])
+	var r: Vector3 = sled.vis_point(_ties[1])
 	if r.distance_to(_last_tie) > 2.0:   # ふもとへ戻したときなど
 		_lay_out()
 	_last_tie = r
