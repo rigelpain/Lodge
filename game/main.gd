@@ -721,7 +721,7 @@ func _ready() -> void:
 			var to := shopkeeper.global_position
 			player.rotation.y = atan2(-(to.x - at.x), -(to.z - at.z))
 
-	if player:   # 観戦モード（霊体）。O で体から抜けて飛ぶ（ghost.gd）
+	if player:   # 観戦モード（霊体）。設定の画面の「霊体になる」で体から抜けて飛ぶ（ghost.gd）
 		ghost = Ghost.new()
 		ghost.name = "Ghost"
 		ghost.main = self

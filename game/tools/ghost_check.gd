@@ -1,7 +1,7 @@
 extends SceneTree
 ## 観戦モード（ghost.gd）の確かめ（数字だけ）:
 ##   Godot --headless --path game -s res://tools/ghost_check.gd -- --no-sound --no-pip
-## O で抜け、Ctrl で雪の下へ、W でロッジの壁を抜けて中へ、O で戻る。戻ったら、抜けた所・向き・当たり・名簿が元どおりか。
+## 抜け（ghost.gd の enter。設定の画面の「霊体になる」と同じ）、Ctrl で雪の下へ、W でロッジの壁を抜けて中へ、戻る（leave）。戻ったら、抜けた所・向き・当たり・名簿が元どおりか。
 ## 抜けているあいだ、名簿（emotes.people）・仲間（bot.gd の _humans）・連れから外れているか。
 ## 抜けたかどうかは、通った線を光線で調べ、間に当たる物（雪面・壁）があったかで見る
 
@@ -91,8 +91,9 @@ func _run() -> void:
 	var bots := root.get_tree().get_nodes_in_group("bots")
 	_check(main.emotes.people.get(id) == p, "抜ける前: 名簿にいる")
 
-	await _tap(KEY_O)
-	_check(g.active and int(p.ghost) == 1, "O で抜けた（見えない霊体）")
+	g.enter()
+	await process_frame
+	_check(g.active and int(p.ghost) == 1, "抜けた（見えない霊体）")
 	_check(not main.emotes.people.has(id), "名簿から外れた（施設・まち針・湿り気・雪玉が見ない）")
 	_check(p.process_mode == Node.PROCESS_MODE_DISABLED and p._col.disabled and p.collision_layer == 0, "体は止まって、当たりがない")
 	_check(not p.doll.visible, "体の人形は見えない")
@@ -125,16 +126,16 @@ func _run() -> void:
 	await process_frame
 	_check(g.speed > s0, "ホイールで速くなる（%.1f → %.1f m/s）" % [s0, g.speed])
 	# 4) 見える ⇄ 見えない
-	await _tap(KEY_U)
-	_check(int(p.ghost) == 2 and g.net_state().has("p"), "U で見える霊体（位置を送る）")
-	await _tap(KEY_U)
-	_check(int(p.ghost) == 1 and not g.net_state().has("p"), "もう一度 U で見えない霊体（位置を送らない）")
+	g.set_seen(true)
+	_check(int(p.ghost) == 2 and g.net_state().has("p"), "見える霊体（位置を送る）")
+	g.set_seen(false)
+	_check(int(p.ghost) == 1 and not g.net_state().has("p"), "見えない霊体（位置を送らない）")
 	_check(p.global_position.distance_to(at0) < 0.001, "抜けているあいだ、体は抜けた所から動かない")
 
 	# 5) 戻る
-	await _tap(KEY_O)
+	g.leave()
 	await create_timer(0.5).timeout
-	_check(not g.active and int(p.ghost) == 0, "O で体へ戻った")
+	_check(not g.active and int(p.ghost) == 0, "体へ戻った")
 	_check(p.global_position.distance_to(at0) < 0.05, "抜けた所に戻った（ずれ %.3f m）" % p.global_position.distance_to(at0))
 	_check(absf(angle_difference(p.rotation.y, yaw0)) < 0.01, "抜けたときの向き")
 	_check(main.emotes.people.get(id) == p, "名簿に戻った")
