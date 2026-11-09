@@ -28,6 +28,54 @@ func _put(path: String, x: float, z: float, yaw: float, r := 0.3) -> Node3D:
 	add_child(n)
 	return n
 
+## 置き終わった小物（木・岩・旗・縫い目など）の見た目を、同じ形・同じ素材ごと、BATCH_CELL 四方ごとに 1 つの MultiMesh にまとめる。
+## 1 本ずつ別の形のままだと、山の上から見渡したとき 1 本ごとに描く数が 1 つ要った（2026-11-09 測定: 大山だけで画面の中に 514）。
+## 当たり（木は tree_hits.gd、ジャンプ台は自分の体）は形と別に持っているので変わらない。動く物（スクリプト付き・骨付き）はまとめない。
+## まとめた形の名前は元の名前を引き継ぐ（main.gd の _split_pip_layers が名前で 360° の小窓に映すかを決める）
+const BATCH_CELL := 256.0      # 木はまばらに広く散っているので、64 m 四方では同じ形が 1〜2 本ずつにしか集まらない
+const BATCH_MIN := 3          # 同じ組がこれより少なければ、まとめない
+
+
+func _batch_props() -> void:
+	var groups := {}   # 組の鍵 → [見本の MeshInstance3D, 自分から見た置き方の配列, 元の形の配列]
+	var inv := global_transform.affine_inverse()
+	for mi in find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		if m.mesh == null or m.mesh.get_surface_count() != 1 or m.skin != null or m.get_script() != null or not m.is_visible_in_tree():
+			continue
+		if m.visibility_range_end > 0.0 or (m.get_parent() != self and m.get_parent().get_script() != null):   # 山の直下（縫い目）はまとめてよい
+			continue
+		var mat := m.get_active_material(0)
+		var xf: Transform3D = inv * m.global_transform
+		var cell := Vector2i(floori(xf.origin.x / BATCH_CELL), floori(xf.origin.z / BATCH_CELL))
+		var key := [m.mesh.get_rid(), mat.get_rid() if mat else RID(), m.cast_shadow, m.layers, cell]
+		var hk := str(key)
+		if not groups.has(hk):
+			groups[hk] = [m, [], []]
+		groups[hk][1].append(xf)
+		groups[hk][2].append(m)
+	for hk in groups:
+		var g: Array = groups[hk]
+		if g[1].size() < BATCH_MIN:
+			continue
+		var src: MeshInstance3D = g[0]
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = src.mesh
+		mm.instance_count = g[1].size()
+		for i in g[1].size():
+			mm.set_instance_transform(i, g[1][i])
+		var mmi := MultiMeshInstance3D.new()
+		mmi.name = String(src.name) + "_batch"
+		mmi.multimesh = mm
+		mmi.material_override = src.get_active_material(0)
+		mmi.cast_shadow = src.cast_shadow
+		mmi.layers = src.layers
+		add_child(mmi)
+		for m in g[2]:
+			(m as MeshInstance3D).queue_free()
+
+
 ## ジャンプ台: 雪を固めた台（踏み切りの坂・縁の先の平ら・後ろと脇の斜め）。形は雪面の上に、その場の高さに沿って作る。
 ## 縁には藍に染めたリボンを渡して白い糸で留め、坂の両肩は赤い糸で縫い、縁の両脇に赤と藍の旗を立てる。
 ## 当たりは、見た目と同じ面と、その下の中身の詰まった芯（ソリが坂を上がって縁から飛ぶ。台の中へ抜けない）
@@ -138,17 +186,21 @@ func _make_kicker(idx: int, k: Dictionary) -> void:
 
 
 ## 糸の 1 目（細い円柱）。basis の y が糸の向き
+## 円柱は長さ 1 m の 1 つを使い回し、長さの分だけ糸の向きに伸ばす（同じ形なので、_batch_props でまとめて描ける）
+static var _stitch_mesh: CylinderMesh
+
 func _stitch(at: Vector3, basis: Basis, len: float, mat: Material) -> void:
+	if _stitch_mesh == null:
+		_stitch_mesh = CylinderMesh.new()
+		_stitch_mesh.top_radius = 0.028
+		_stitch_mesh.bottom_radius = 0.028
+		_stitch_mesh.height = 1.0
+		_stitch_mesh.radial_segments = 6
+		_stitch_mesh.rings = 1
 	var m := MeshInstance3D.new()
-	var c := CylinderMesh.new()
-	c.top_radius = 0.028
-	c.bottom_radius = 0.028
-	c.height = len
-	c.radial_segments = 6
-	c.rings = 1
-	m.mesh = c
+	m.mesh = _stitch_mesh
 	m.material_override = mat
-	m.transform = Transform3D(basis, at)
+	m.transform = Transform3D(basis * Basis.from_scale(Vector3(1.0, len, 1.0)), at)
 	add_child(m)
 
 

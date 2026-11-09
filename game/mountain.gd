@@ -333,6 +333,7 @@ func _ready() -> void:
 	_markers()
 	_rail(Vector2(RAIL_X, RAIL_Z.x), Vector2(RAIL_X, RAIL_Z.y))
 	_trees()
+	_batch_props()   # 見た目をまとめて、描く数を減らす（mountain_deco.gd）
 
 
 ## 東の尾根の道しるべ: 背の脇に、藍の小さな旗を 36 m おきに左右かわるがわる（押して登る人が、なだらかな背を見つけられるように）
