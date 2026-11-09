@@ -5,6 +5,7 @@ extends Node3D
 ## 灯りは 1 つの OmniLight3D。揺れのコマで跳ばないよう、灯りはランタンの芯をなめらかに追う。
 ## 揺らぎは小さくゆっくり（±3% ほど、数秒の周期）。画面全体の明るさがちらつかないように、点け消しもふわっと変える。
 ## 影は落とさない: 腰の灯りは体の影で半分欠け、何人も持つと影の描画が重い。遠いランタンの灯りは消す（光る紙は見える）。
+## 消す距離は、見ているカメラの寄り具合で延ばす（双眼鏡で寄ると、遠くの人のランタンの灯りも見える。2026-11-09 代表「ランタンの明かりは描写してほしい」）。
 ## 見た目だけ。通信には乗せない（誰が点けたかは craft.gd の lamp の出来事、どの形かは equip・lantern_buy の出来事）。
 ##
 ## 形違い（2026-11-01 代表「ランタンのバリエーションも増やして売って欲しい」。絵 design/lantern-variety/01-sheet.jpg の L1〜L10）。
@@ -33,7 +34,8 @@ const ENERGY := 2.2
 const RANGE := 7.0
 const ATTEN := 1.2
 const FADE := 0.35                       # 点け消しにかかる秒
-const FAR := 40.0                        # この距離から先は灯りを薄くして消す
+const FAR := 40.0                        # この距離から先は灯りを薄くして消す（ふつうの画角のとき）
+const FAR_LEN := 10.0                    # 薄くしてから消えるまでの幅
 ## 帯の左の腰の少し後ろ（glb の座標、人形の大きさのまま）。doll.gd の BELT（右）を左右に返す。後ろから（三人称で）見えるように外へ出す
 const BELT := {"kasa": Vector3(-0.25, 0.6, 0.07), "origami": Vector3(-0.26, 0.8, 0.07), "news": Vector3(-0.27, 0.34, 0.07),
 	"robo": Vector3(-0.21, 0.27, 0.07), "musha": Vector3(-0.19, 0.28, 0.07), "ningyo": Vector3(-0.21, 0.42, 0.07), "golem": Vector3(-0.38, 0.45, 0.1)}
@@ -56,6 +58,7 @@ var _t := 0.0
 var _lit_paper := true
 var _paper_off: Material
 var _style := "calm"
+var _fade_k := 1.0             # いま灯りを消す距離に掛けている、カメラの寄り具合（_fit_fade）
 
 
 ## 形の glb（光る紙は形の色に染める）。ランタン掛けと売り台の札でも使う
@@ -143,7 +146,7 @@ func setup(skel: Skeleton3D, hips_rest: Transform3D, kind: String, scale_k: floa
 	_light.light_specular = 0.2
 	_light.distance_fade_enabled = true
 	_light.distance_fade_begin = FAR
-	_light.distance_fade_length = 10.0
+	_light.distance_fade_length = FAR_LEN
 	_light.visible = false
 	add_child(_light)
 
@@ -228,6 +231,7 @@ func follow(dt: float, yaw: float) -> void:
 	_show_paper(_level > 0.5)
 	_light.visible = _level > 0.001
 	if _light.visible:
+		_fit_fade()
 		# 揺らぎ: 形ごとの揺らぎ方（flicker）。芯の所へ、なめらかに寄せる
 		var flick := flicker(_style, _t, _seed)
 		if _paper_on is StandardMaterial3D and _style in ["breath", "candle", "firefly", "shimmer"]:
@@ -235,6 +239,18 @@ func follow(dt: float, yaw: float) -> void:
 		_light.light_energy = ENERGY * float(LOOK.get(_look, LOOK["box"]).energy) * flick * smoothstep(0.0, 1.0, _level)
 		var core := global_transform * _core
 		_light.global_position = core if _light.global_position == Vector3.ZERO else _light.global_position.lerp(core, 1.0 - exp(-dt * 12.0))
+
+
+## 灯りを消す距離を、見ているカメラの寄り具合に合わせる。寄り具合は doll.gd の view_lod と同じ（画角 75° を 1 として、狭いほど遠くまで）。
+## 双眼鏡で 24° なら 125 m、遠見の双眼鏡やテラスの台で寄りきると 450〜600 m まで灯る。灯りの数は増えるが、狭い画角では描く物が減る
+func _fit_fade() -> void:
+	var cam := get_viewport().get_camera_3d()
+	var k := clampf(cam.fov / 75.0, 0.02, 1.0) if cam else 1.0
+	if absf(k - _fade_k) < 0.005:
+		return
+	_fade_k = k
+	_light.distance_fade_begin = FAR / k
+	_light.distance_fade_length = FAR_LEN / k
 
 
 ## 灯りの芯（世界）。消えていれば INF
