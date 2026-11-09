@@ -62,7 +62,8 @@ const BALL_MAX := 5          # 持てる雪玉の数（右手に 1 つ、残り�
 ##   ball_kick  中の人が Space で暴れた（ホストが数え、足りたら崩す。k は崩れるまでの割合）
 ##   ball_hurt  大玉の耐久が減った（ホストが決める。dir は当たった所の向き（玉の座標）、amt は減った割合、k は減りきるまでの割合）
 ##   ball_break 大玉が崩れた（ホストが決める。inside の人は、それぞれの体を動かす画面で放り出される）
-const BALL_EVENTS := ["roll_seed", "ball_in", "ball_kick", "ball_hurt", "ball_break"]
+##   ball_bump  手袋なしの人が歩いて大玉に当たった（その人の画面が決め、ホストが玉を突く。imp は突く勢い。配らない）
+const BALL_EVENTS := ["roll_seed", "ball_in", "ball_kick", "ball_hurt", "ball_break", "ball_bump"]
 
 var balls := {}              # 番号 → 持っている雪玉の数
 var _making := {}            # 番号 → 丸めている雪玉ができるコマ（MAKE_READY。それまでにのけぞると、できない）
@@ -196,6 +197,11 @@ func _apply(ev: Dictionary) -> void:
 			var b := big_ball(int(ev.ball))
 			if b == null:
 				return   # もう崩れている（その人の画面は、玉が消えたのを見て出てくる）
+		"ball_bump":   # 玉の物理はホストが正。突いた玉の姿は、いつもの大玉の姿（net.gd の bigball）で届く
+			var b := big_ball(int(ev.ball))
+			if b:
+				b.bump(ev.imp)
+			return
 		"ball_kick":
 			var b := big_ball(int(ev.ball))
 			if b == null or not b.inside.has(ev.who):

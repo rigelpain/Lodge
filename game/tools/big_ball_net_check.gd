@@ -185,7 +185,7 @@ func _join_run() -> void:
 	await _key(KEY_W, false)
 	await create_timer(0.5).timeout
 	var moved := Vector2(b.global_position.x - at0.x, b.global_position.z - at0.z).length()
-	_ok(moved > 1.0 and b.r > BigBall.SEED_R + 0.05, "つなぐ側の大玉もホストのとおり動いて育つ（%.1f m、半径 %.2f m）" % [moved, b.r])
+	_ok(moved > 1.0 and b.r > BigBall.SEED_R + 0.02, "つなぐ側の大玉もホストのとおり動いて育つ（%.1f m、半径 %.2f m）" % [moved, b.r])   # 9 m で 0.19 m ほど（2026-11-09 に育ちを 3 分の 1 に）
 	_ok(await _until(func(): return p.rolled.active(), 8.0), "ホストが転がした大玉に取り込まれる（半径 %.2f m）" % (b.r if is_instance_valid(b) else 0.0))
 	await create_timer(0.3).timeout
 	_ok(p.third, "取り込まれると三人称")

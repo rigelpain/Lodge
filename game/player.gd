@@ -997,8 +997,14 @@ func _push_ball(dt: float, dir: Vector3) -> void:
 		global_position += to * pull
 
 
-## 手袋をはめていなければ、大玉に当たってもそれ以上は玉の方へ進まない（体で押し込んで、物理で玉が動いてしまわないように）
-func _ball_block() -> void:
+## 手袋をはめていなければ、大玉に当たってもそれ以上は玉の方へ進まない（体で押し込んで、物理で玉が動いてしまわないように）。
+## ただし当たった勢い（人の重さ × 当たる速さ）で、一度だけ玉を突く（2026-11-09 代表「ぶつかられた雪玉も物理演算で動いてほしい」。big_ball.gd の bump）。
+## 寄りかかり続けても突くのは当たったときだけ（BALL_BUMP_GAP のあいだ離れていなければ、もう突かない）
+const BALL_BUMP_MIN := 0.6      # これより遅く当たっても突かない (m/s)
+const BALL_BUMP_GAP := 0.5      # 一度離れてから、これより経てばまた突ける (s)
+var _ball_touch := {}           # 大玉 → 最後に触れていた時刻 (ms)
+
+func _ball_block(v_in: Vector3) -> void:
 	for b in get_tree().get_nodes_in_group("big_balls"):
 		if b.broken or _ball_gap(b, global_position) > 0.08:
 			continue
@@ -1007,10 +1013,37 @@ func _ball_block() -> void:
 		if to.length() < 0.01:
 			continue
 		to = to.normalized()
+		_ball_touch_at(b, to, v_in)
 		var into := velocity.x * to.x + velocity.z * to.z
 		if into > 0.0:
 			velocity.x -= to.x * into
 			velocity.z -= to.z * into
+
+
+## 歩いて体が大玉にぶつかった（move_and_slide の当たり）。体は玉の手前で物理に止められるので、_ball_block の近さに入らないことがある
+func _ball_bumped(v_in: Vector3) -> void:
+	for i in get_slide_collision_count():
+		var b := get_slide_collision(i).get_collider() as RigidBody3D
+		if b == null or not b.is_in_group("big_balls") or b.broken:
+			continue
+		var to: Vector3 = b.global_position - global_position
+		to.y = 0.0
+		if to.length() > 0.01:
+			_ball_touch_at(b, to.normalized(), v_in)
+
+
+## 大玉に触れている。触れはじめで、玉の方へ BALL_BUMP_MIN より速ければ、ホストに玉を突いてもらう（出来事 ball_bump）
+func _ball_touch_at(b: RigidBody3D, to: Vector3, v_in: Vector3) -> void:
+	var now := Time.get_ticks_msec()
+	var fresh: bool = now - int(_ball_touch.get(b, -100000)) > int(BALL_BUMP_GAP * 1000.0)
+	_ball_touch[b] = now
+	if _ball_touch.size() > 16:
+		for k in _ball_touch.keys():
+			if not is_instance_valid(k):
+				_ball_touch.erase(k)
+	var into := v_in.x * to.x + v_in.z * to.z
+	if into > BALL_BUMP_MIN and fresh and hub and b.ball_id >= 0:
+		hub.send({"kind": "ball_bump", "who": id, "ball": b.ball_id, "imp": to * into * b.BUMP_MASS})
 
 
 ## 雪玉ころがしの手袋をはめているか（craft.gd の gloves。2026-11-08 代表「雪玉ころがしは手袋を買って装備したらできるようにしましょう」）。
@@ -1272,10 +1305,13 @@ func _walk(dt: float, with_rope: bool) -> void:
 			_step_up(dir)
 	else:
 		velocity.y -= (GRAVITY if velocity.y > 0.0 else FALL_GRAVITY) * dt
+	var v_in := velocity
 	if not gloves_on():
-		_ball_block()
+		_ball_block(v_in)
 	var was_air := not is_on_floor()
 	move_and_slide()
+	if not gloves_on():
+		_ball_bumped(v_in)
 	if not with_rope:
 		_push_ball(dt, dir)
 	if was_air and is_on_floor() and _fall_v > 1.5:
