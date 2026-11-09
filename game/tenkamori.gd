@@ -110,6 +110,10 @@ func _ready() -> void:
 	lift.name = "Lift"
 	add_child(lift)
 	preload("res://hutte.gd").place(self)
+	var slope := preload("res://tenkamori_slope.gd").new()   # ゲレンデの作り込み（ネット・柱のマット・照明・小屋）
+	slope.name = "Slope"
+	slope.world = world
+	add_child(slope)
 
 
 # ---- 林の塗り分け ------------------------------------------------------------------
@@ -171,9 +175,11 @@ uniform vec3 road_b : source_color = vec3(0.58, 0.57, 0.60);
 uniform sampler2D grain : filter_linear_mipmap, repeat_enable;
 uniform float scale = 0.0028;
 varying vec3 wpos;
+varying vec3 wnrm;
 varying vec4 col;
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	wnrm = normalize((MODEL_MATRIX * vec4(NORMAL, 0.0)).xyz);
 	col = COLOR;
 }
 void fragment() {
@@ -183,10 +189,24 @@ void fragment() {
 	float ced = smoothstep(1.0 - c - 0.12, 1.0 - c + 0.12, n);
 	float br = col.g * smoothstep(0.25, 0.75, n2) * (0.45 + 0.55 * n);
 	vec3 k = mix(mix(vec3(1.0), bare, br), cedar, ced);
-	float fade = smoothstep(60.0, 220.0, length(wpos - CAMERA_POSITION_WORLD));
+	float dist = length(wpos - CAMERA_POSITION_WORLD);
+	float fade = smoothstep(60.0, 220.0, dist);
+	// ゲレンデ（頂点の色の a）: 圧雪車の筋。斜面を下る向きに細い畝（25 cm おき）と、5 m 幅の通り道の境のかすかな線。近くだけ（遠くはちらつくので消す）
+	vec2 down = -wnrm.xz;
+	float steep = length(down);
+	if (col.a > 0.01 && steep > 0.03) {
+		down /= steep;
+		float across = dot(wpos.xz, vec2(-down.y, down.x));
+		float rib = 0.5 + 0.5 * sin(across * 6.2832 / 0.25);
+		float lane = smoothstep(0.92, 1.0, abs(fract(across / 5.0) * 2.0 - 1.0));
+		float near_k = 1.0 - smoothstep(12.0, 45.0, dist);
+		k *= 1.0 - col.a * (rib * 0.07 * near_k + lane * 0.06 * (1.0 - smoothstep(40.0, 120.0, dist)));
+	}
 	// 道と駐車場（頂点の色の b）: 除雪して踏み固めた雪。轍の灰が少しまだらに
 	vec3 road = mix(road_a, road_b, smoothstep(0.3, 0.7, texture(grain, wpos.xz * 0.05).r));
 	ALBEDO = mix(mix(vec3(1.0), k, fade), road, col.b);
+	// 圧雪の筋は、林の色が溶けて出る遠さより手前だけ（k をそのまま使う所）
+	if (col.a > 0.01) { ALBEDO = mix(k, road, col.b); }
 }
 """
 
@@ -218,6 +238,8 @@ func _make_near(snow: Material) -> void:
 	world._add_height_body(h, N, Vector3(NEAR_X0 + (N - 1) * STEP * 0.5, 0, NEAR_Z0 + (N - 1) * STEP * 0.5), STEP)
 	var clear := FileAccess.get_file_as_bytes("res://tenkamori/clear.bin")
 	var road := FileAccess.get_file_as_bytes("res://tenkamori/road.bin")   # 道と駐車場の濃さ（bake_terrain.py）
+	var piste := FileAccess.get_file_as_bytes("res://tenkamori/piste.bin")   # ゲレンデの雪面の濃さ（圧雪の筋を描く所）
+	var forest := FileAccess.get_file_as_bytes("res://tenkamori/forest.bin")   # 空中写真の林（4 m おき）
 	var vs := PackedFloat32Array()
 	vs.resize(N * N)
 	for j in N:
@@ -254,10 +276,11 @@ func _make_near(snow: Material) -> void:
 					norms[v] = nrm
 					var slope := Vector2(nrm.x, nrm.z).length() / maxf(nrm.y, 0.05)
 					var cv := clear[clampi(int((z - NEAR_Z0) / 4.0), 0, 255) * 256 + clampi(int((x - NEAR_X0) / 4.0), 0, 255)]
-					var wk := smoothstep(4.0, 20.0, float(cv) - 1.0) if cv > 0 else 0.0   # ゲレンデ・道・リフトの下は林でない
-					var wc := _woods(x, z, slope, h[c])
+					var wk := 1.0 if cv > 0 else 0.0   # ゲレンデ・道・リフトの下は林でない
+					var fo := forest[clampi(int((z - NEAR_Z0) / 4.0), 0, 255) * 256 + clampi(int((x - NEAR_X0) / 4.0), 0, 255)] / 255.0   # 空中写真の林
+					var wc := Color(fo * 0.9, (1.0 - fo) * 0.25 * smoothstep(4.0, 11.0, rad_to_deg(atan(slope))), 0.0)
 					var rd := road[c] / 255.0
-					cols[v] = Color(wc.r * wk * (1.0 - rd), wc.g * wk * (1.0 - rd), rd)
+					cols[v] = Color(wc.r * wk * (1.0 - rd), wc.g * wk * (1.0 - rd), rd, piste[c] / 255.0)
 			add_child(_mesh("Near%d" % k, verts, norms, cols, ids, snow))
 			k += 1
 
@@ -356,50 +379,55 @@ static func _poly(pts: Array) -> PackedVector2Array:
 ## フェルトの木（props の glb）。ゲレンデの囲いの縁から 40 m までは 1 本ずつ置いて幹に当たりを付け（滑って突っ込める）、
 ## その外の林は MultiMesh でまとめて描く（何千本でも重くならないように）。杉の斑の濃い所ほど密に
 func _trees() -> void:
-	# 杉: とがった 2 つの形だけ（丸い木と小さな木は雑木に見えるので使わない）。色は本物の杉に近い濃い青緑（_cedar）
-	const TREES := ["res://props/tree_tall.glb", "res://props/tree_zigzag.glb", "res://props/tree_tall.glb", "res://props/tree_zigzag.glb"]
+	# 杉: とがった 2 つの形だけ（丸い木と小さな木は雑木に見えるので使わない）。色は本物の杉に近い濃い青緑（_cedar）。
+	# 立てる所は空中写真の林（forest.bin。2026-11-09 動画では林間コースもゲレンデの縁も杉の壁）。4.5 m おきの格子をずらして、林の濃さの割合で立てる。
+	# 見た目は全部 MultiMesh（何千本でも軽い）。開けた所（ゲレンデ・林間コース・道）から 12 m までの木には幹の当たりを付ける（滑って突っ込める）
+	const TREES := ["res://props/tree_tall.glb", "res://props/tree_zigzag.glb"]
+	const GAP := 4.5
 	var clear := FileAccess.get_file_as_bytes("res://tenkamori/clear.bin")   # 4 m おき 256 点四方（bake_terrain.py）
+	var forest := FileAccess.get_file_as_bytes("res://tenkamori/forest.bin")
+	var cell := func(x: float, z: float) -> int:
+		return clampi(int((z - NEAR_Z0) / 4.0), 0, 255) * 256 + clampi(int((x - NEAR_X0) / 4.0), 0, 255)
+	var open := func(x: float, z: float) -> bool:
+		var c: int = cell.call(x, z)
+		return clear[c] == 0 or forest[c] < 80
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 31
-	var near_n := 0
-	var bulk := {}   # glb → [Transform3D]
+	var bulk := {}
 	for path in TREES:
 		bulk[path] = []
-	for k in 160000:
-		if near_n >= 420 and k > 120000:
-			break
-		var x := rng.randf_range(NEAR_X0 + 6.0, NEAR_X1 - 6.0)
-		var z := rng.randf_range(NEAR_Z0 + 6.0, NEAR_Z1 - 6.0)
-		var keep := rng.randf()
-		var hgt := rng.randf_range(5.0, 11.0)
-		var yaw := rng.randf() * TAU
-		var path: String = TREES[k % TREES.size()]
-		var cv := clear[clampi(int((z - NEAR_Z0) / 4.0), 0, 255) * 256 + clampi(int((x - NEAR_X0) / 4.0), 0, 255)]
-		var gap := float(cv) - 1.0   # ゲレンデの囲いからの距離 (m)
-		if cv == 0 or gap < 4.0:
-			continue
-		var y := lift(x, z)
-		var gx := lift(x + 2.0, z) - lift(x - 2.0, z)
-		var gz := lift(x, z + 2.0) - lift(x, z - 2.0)
-		var slope := Vector2(gx, gz).length() * 0.25
-		var deg := rad_to_deg(atan(slope))
-		var dense := smoothstep(4.0, 11.0, deg) * (0.35 + 0.65 * smoothstep(0.42, 0.58, _patch(x, z)))
-		if keep > dense * 0.95 + 0.05:
-			continue
-		if gap < 40.0:
-			if near_n >= 420:
+		var proto := Props.make(path)   # 幹の太さと木の高さを一度だけ測る（tree_hits.gd）
+		TreeHits._sizes[path] = TreeHits._measure(proto)
+		proto.free()
+	var x := NEAR_X0 + 6.0
+	while x < NEAR_X1 - 6.0:
+		var z := NEAR_Z0 + 6.0
+		while z < NEAR_Z1 - 6.0:
+			var px := x + rng.randf_range(-1.8, 1.8)
+			var pz := z + rng.randf_range(-1.8, 1.8)
+			var keep := rng.randf()
+			var hgt := rng.randf_range(9.0, 16.0)
+			var yaw := rng.randf() * TAU
+			var path: String = TREES[rng.randi() % TREES.size()]
+			var c: int = cell.call(px, pz)
+			z += GAP
+			if clear[c] == 0 or keep * 255.0 > forest[c] or bulk[path].size() >= 40000:
 				continue
-			var tree := _cedar(Props.make(path))
-			tree.scale = Vector3.ONE * hgt / 6.0
-			tree.position = Vector3(x, world.foot_y(x, z, 0.35 * hgt / 6.0) - 0.05, z)
-			tree.rotation.y = yaw
-			add_child(tree)
-			hits.add_tree(tree)
-			near_n += 1
-		else:
-			if bulk[path].size() >= 5000:
-				continue
-			bulk[path].append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * hgt / 6.0), Vector3(x, y - 0.3, z)))
+			var y := lift(px, pz)
+			bulk[path].append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * hgt / 6.0), Vector3(px, y - 0.3, pz)))
+			var edge := false
+			for o in [Vector2(12, 0), Vector2(-12, 0), Vector2(0, 12), Vector2(0, -12), Vector2(8, 8), Vector2(-8, 8), Vector2(8, -8), Vector2(-8, -8)]:
+				if open.call(px + o.x, pz + o.y):
+					edge = true
+					break
+			if edge:   # 幹の当たりだけ（見た目は MultiMesh）
+				var stand := Node3D.new()
+				stand.scene_file_path = path
+				stand.position = Vector3(px, y - 0.3, pz)
+				stand.scale = Vector3.ONE * hgt / 6.0
+				hits.add_tree(stand)
+				stand.free()
+		x += GAP
 	for path in bulk:
 		_bulk_trees(path, bulk[path])
 
@@ -424,7 +452,8 @@ static func _cedar(tree: Node3D) -> Node3D:
 	return tree
 
 
-const WOODS_FAR := 420.0   # 林の木（MultiMesh）を描く遠さ (m)。区画のまんなかまでの距離
+const WOODS_FAR := 330.0   # 林の木（MultiMesh）を描く遠さ (m)。区画のまんなかまでの距離。その先の林は地面の林の色で見える
+const WOODS_CELL := 64.0   # 林を分ける区画の大きさ (m)
 
 ## 1 種類の木を MultiMesh で。glb の中の形ごとに 1 つずつ（素材はその形の面ごとに付け替えた物を写す）
 func _bulk_trees(path: String, xf: Array) -> void:
@@ -446,7 +475,7 @@ func _bulk_trees(path: String, xf: Array) -> void:
 		var cells := {}
 		for q in xf.size():
 			var o: Vector3 = (xf[q] as Transform3D).origin
-			var key := Vector2i(floori(o.x / 128.0), floori(o.z / 128.0))
+			var key := Vector2i(floori(o.x / WOODS_CELL), floori(o.z / WOODS_CELL))
 			if not cells.has(key):
 				cells[key] = []
 			cells[key].append(xf[q] * local)

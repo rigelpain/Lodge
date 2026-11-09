@@ -141,8 +141,18 @@ func get_off() -> void:
 	gs.source_code = SRC
 	gs.reload()
 	var at := Vector3(-400, 0, 640)
+	var face := atan2(-413.0, 669.0)   # 下る向き（北北東）へ前を向ける
+	if args.has("rinkan"):   # 林間コースの上から、道の向きへ
+		var rk: Array = []
+		for p in preload("res://tenkamori.gd").map().pistes:
+			if p.name == "夏虫沢林間コース":
+				rk.append_array(p.line)
+		var a: Vector2 = Vector2(rk[7][0], rk[7][1])
+		var b: Vector2 = Vector2(rk[9][0], rk[9][1])
+		at = Vector3(a.x, 0, a.y)
+		face = atan2(-(b - a).x, -(b - a).y)
 	sled.reset_to(Vector3(at.x, _y(at.x, at.z) + 0.6, at.z))
-	sled.rotation.y = atan2(-413.0, 669.0)   # 下る向き（北北東）へ前を向ける
+	sled.rotation.y = face
 	sled.parked = false
 	var d := Node3D.new()
 	d.set_script(gs)
@@ -161,7 +171,7 @@ func get_off() -> void:
 			var p := sled.global_position
 			print("ソリ %3.0f 秒: x=%5.0f z=%5.0f 雪から %.2f m  速さ %.1f m/s" % [w, p.x, p.z, p.y - _y(p.x, p.z), v])
 			next += 10.0
-		if w > 10.0 and v < 0.2:
+		if w > 10.0 and v < 0.2 and not args.has("rinkan") or w > 25.0 and v < 0.2:
 			break
 	var p := sled.global_position
 	print("止まった: x=%.0f z=%.0f（%.0f 秒、いちばん速いとき %.1f m/s）" % [p.x, p.z, w, top])
