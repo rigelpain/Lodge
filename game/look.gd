@@ -384,7 +384,7 @@ static func _wagara_ink(kind: String, x: int, y: int, s: int) -> bool:
 ## 弧の向きは位相の整数の部分: 0 でまっすぐ、1・2 で左・右へふくらむ弧（くさり縫いの輪の半分）。
 ## 目は原点（入る針穴）から -z へ長さぶん伸び、もう一方の針穴へ沈む。面 0 が糸、面 1 が針穴のくぼみと糸の下の影（乗算）。
 ## 糸の管には粗い形（LOD）を 2 段つける。Godot が画面での大きさから選ぶので、遠くの目と 360° 映像の小窓では粗い形になる
-static func stitch_mesh(color: Color) -> ArrayMesh:
+static func stitch_mesh(color: Color, holes := true) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	# 面 0: 糸の管。u（縫い目に沿って 0〜1、両端の沈む所を細かく）× a（まわり 0〜1）の格子
 	var nu := 14
@@ -420,6 +420,10 @@ static func stitch_mesh(color: Color) -> ArrayMesh:
 	mat.set_shader_parameter("color", color)
 	mesh.surface_set_material(0, mat)
 
+	if not holes:   # 糸だけ（大玉の縫い目。big_ball.gd・ball_stitches.gd。平らな四角は丸い玉の面に合わない）
+		mesh.custom_aabb = AABB(Vector3(-0.12, -0.06, -0.8), Vector3(0.24, 0.16, 0.9))
+		stitch_set_color(mesh, color)
+		return mesh
 	# 面 1: 目の下に敷く 1 枚の四角。針穴と影はシェーダーで描く
 	var q := []
 	q.resize(Mesh.ARRAY_MAX)
@@ -459,7 +463,8 @@ static func stitch_set_color(mesh: ArrayMesh, color: Color) -> void:
 	var thread: ShaderMaterial = mesh.surface_get_material(0)
 	thread.set_shader_parameter("color", color)
 	thread.set_shader_parameter("edge", edge)
-	(mesh.surface_get_material(1) as ShaderMaterial).set_shader_parameter("edge", edge)
+	if mesh.get_surface_count() > 1:
+		(mesh.surface_get_material(1) as ShaderMaterial).set_shader_parameter("edge", edge)
 
 
 ## 雪の色からの離れぐあいで、縁取りの強さ 0〜1 を決める（白で 1、赤や紺で 0）
@@ -478,18 +483,19 @@ static func stitch_set_shape(mesh: ArrayMesh, radius: float, bow: float) -> void
 	var thread: ShaderMaterial = mesh.surface_get_material(0)
 	thread.set_shader_parameter("radius", radius)
 	thread.set_shader_parameter("bow", bow)
-	(mesh.surface_get_material(1) as ShaderMaterial).set_shader_parameter("bow", bow)
+	if mesh.get_surface_count() > 1:
+		(mesh.surface_get_material(1) as ShaderMaterial).set_shader_parameter("bow", bow)
 
 
 ## 消え方: 0 は雪に埋もれる（白くなって沈む）、1 はほつれる（撚りがゆるみ、繊維がまんなかから切れていく）
 static func stitch_set_style(mesh: ArrayMesh, style: int) -> void:
-	for i in 2:
+	for i in mesh.get_surface_count():
 		(mesh.surface_get_material(i) as ShaderMaterial).set_shader_parameter("style", style)
 
 
 ## 滑りあとの時計（消え始める時刻と比べる、ソリごとの経過秒）
 static func stitch_set_time(mesh: ArrayMesh, t: float) -> void:
-	for i in 2:
+	for i in mesh.get_surface_count():
 		(mesh.surface_get_material(i) as ShaderMaterial).set_shader_parameter("now", t)
 
 

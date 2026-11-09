@@ -1,5 +1,6 @@
 extends Node
 
+const Gloves := preload("res://gloves.gd")
 const RemotePerson := preload("res://remote_person.gd")
 const Doll := preload("res://doll.gd")
 const Pipe := preload("res://net_pipe.gd")
@@ -70,7 +71,7 @@ func receive(pid: int, m: Array) -> void:
 				_sled(m[1], m[2], m[3], m[4])
 		"bigball":
 			if from_host:
-				_bigball(int(m[1]), m[2], m[3], m[4], float(m[5]))
+				_bigball(int(m[1]), m[2], m[3], m[4], float(m[5]), int(m[6]) if m.size() > 6 else 0, int(m[7]) if m.size() > 7 else -1)
 		"cpu":
 			if from_host:
 				_cpu(int(m[1]), m[2])
@@ -304,7 +305,7 @@ func _physics_process(dt: float) -> void:
 				t = 1.0 / (STILL_HZ if still else SLED_HZ)
 				_sleds.rpc("_in", ["sled", main.get_path_to(rb), rb.global_transform, rb.linear_velocity, rb.angular_velocity])
 			_sled_t[s] = t
-		# 転がす大玉（big_ball.gd）: ソリと同じ流れで、半径も
+		# 転がす大玉（big_ball.gd）: ソリと同じ流れで、半径と、固めた手袋の段（gloves.gd の番号）と置いた人も（縫い目の形・色と柄が決まる。ball_stitches.gd）
 		for b in get_tree().get_nodes_in_group("big_balls"):
 			if b.broken:
 				continue
@@ -312,7 +313,7 @@ func _physics_process(dt: float) -> void:
 			if t <= 0.0:
 				var still: bool = b.linear_velocity.length() < 0.05 and b.angular_velocity.length() < 0.05
 				t = 1.0 / (STILL_HZ if still else SLED_HZ)
-				_sleds.rpc("_in", ["bigball", b.ball_id, b.global_transform, b.linear_velocity, b.angular_velocity, b.r])
+				_sleds.rpc("_in", ["bigball", b.ball_id, b.global_transform, b.linear_velocity, b.angular_velocity, b.r, Gloves.rank(b.pack), b.maker])
 			_sled_t[b] = t
 		for k in _sled_t.keys():
 			if not is_instance_valid(k):
@@ -475,12 +476,16 @@ func _cpu(id: int, s: Dictionary) -> void:
 
 
 ## ホストの大玉の姿が届いた。まだない玉（あとから来た人）は、ここで置く
-func _bigball(id: int, at: Transform3D, lv: Vector3, av: Vector3, r: float) -> void:
+func _bigball(id: int, at: Transform3D, lv: Vector3, av: Vector3, r: float, grade := 0, maker := -1) -> void:
 	var b: RigidBody3D = main.emotes.big_balls.get(id)
 	if b == null:
-		b = main.emotes._spawn_big({"ball": id, "point": at.origin - Vector3.UP * r, "r": r})
+		b = main.emotes._spawn_big({"ball": id, "point": at.origin - Vector3.UP * r, "r": r, "who": maker})
 	if is_instance_valid(b) and not b.broken:
 		b.net_put(at, lv, av, r)
+		if b.maker != maker:   # 置いた人の柄で縫う
+			b.maker = maker
+			b.refresh_stitch()
+		b.pack = Gloves.ORDER[grade - 1] if grade > 0 and grade <= Gloves.ORDER.size() else ""
 
 
 ## ホストのソリの姿が届いた

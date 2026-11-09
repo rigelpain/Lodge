@@ -22,6 +22,9 @@ extends CanvasLayer
 ##     いつもの柄（針の印。これから縫うソリに付く）・自分のソリ（回る姿）・畳んだソリ・名札入れの外した名札。
 ##     押した札の名札だけが替わる（名札はソリごと。いつもの柄と名前と色は保存して、次に起動しても同じ）。
 ##     名札の段の 5 つ目の札は滑りあとの柄: 下の札でソリ（米袋・置いてある自分のソリ・畳んだ自分のソリ）を選び、右の棚で柄を押す。替えられるのは持ち主だけ。
+##     6 つ目の札は大玉の縫い目の柄（ball_stitches.gd。2026-11-09 代表「雪玉のステッチも売って欲しい」）: 右の棚のはじめが手袋の柄（はめている手袋の
+##     段の標準）、続けて山師の棚で売る柄。押すと、これから置く自分の大玉と、もう置いてある自分の大玉の柄が替わる。左に大きく、その柄の玉。
+##     縫い合わせの形と糸の色は、玉を固めた手袋の段のまま。買っていない柄は薄く、木のボタンの印（山師の棚で買う）
 ##     右の下に、手持ち（上の段）とかばん（下の段, 緑のフェルトの巾着）。引きずって入れ替える（行き先に物があれば入れ替わる）。
 ##     押して離すと上に小窓: できあがった料理なら食べる（おにぎり）、どれでも捨てる（編みかご）。装備の種類は craft.gd の GEARS（米袋とランタン。服は段を足す）。閉じるのは ×、I、Esc
 ##     左の下は持っているランタン（木の手提げ・提灯）。押すと帯の左に提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
@@ -40,6 +43,8 @@ const CraftIcons := preload("res://craft_icons.gd")
 const Craft := preload("res://craft.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Stitches := preload("res://stitches.gd")
+const BallStitches := preload("res://ball_stitches.gd")
+const Gloves := preload("res://gloves.gd")
 const Doll := preload("res://doll.gd")
 const PersonIcon := preload("res://person_icon.gd")
 const ABOVE_HOOP := 72.0   # 刺繍枠（自分の小窓）の上の縁から、I・N・R の札の下までの間（1080 で px）。上のねじ（30 px ほど）と、
@@ -255,6 +260,19 @@ func stitch_target() -> Array:
 	return list[0] if not list.is_empty() else [{}, {}, ""]
 
 
+## 名札の段の、大玉の縫い目の柄のページの番号（滑りあとの柄の次）
+func ball_page() -> int:
+	return preload("res://sled_tags.gd").PAGES.size() + 1
+
+
+## 自分の大玉に縫う柄を選ぶ（"" は手袋の段の標準。確かめ用の入口も兼ねる）
+func set_ball_stitch(nm: String) -> bool:
+	if not craft.ball_can_use(_who(), nm):
+		_shake = 1.0
+		return false
+	return craft.send({"kind": "ball_stitch_set", "who": _who(), "stitch": nm})
+
+
 ## いま替えているソリの柄を替える（確かめ用の入口も兼ねる）
 func set_stitch(nm: String) -> bool:
 	var key: Dictionary = stitch_target()[0]
@@ -279,6 +297,11 @@ func _on_craft(ev: Dictionary) -> void:
 				player.save_tag()
 		"sled_stitch":
 			if ev.has("sack") and player.has_method("save_tag"):
+				player.save_tag()
+		"ball_stitch_buy", "ball_stitch_set":   # 大玉の縫い目の柄（買った柄と選んだ柄は、次に起動しても同じ。ball_stitches.gd）
+			if ev.kind == "ball_stitch_buy":
+				_coin_pop = 1.0
+			if player.has_method("save_tag"):
 				player.save_tag()
 		"equip":   # はめた手袋は、次に起動しても同じ（gloves.gd）
 			if ev.get("gear", "") == "gloves" and player.has_method("save_tag"):
@@ -698,6 +721,8 @@ func _gear_input(e: InputEvent) -> void:
 						shuffle_tag()
 					"_stitch":
 						set_stitch(o[2])
+					"_ball":
+						set_ball_stitch(o[2])
 					_:
 						set_tag_part(o[1], o[2])
 				return
@@ -1405,6 +1430,51 @@ class View extends Control:
 		if named >= 0:
 			_name_tag(Stitches.ja(names[named]), Vector2((x + right) / 2.0, y - 12.0 * u), u, 1.0)
 
+	## 装備の画面の、大玉の縫い目の柄の棚（名札の 6 つ目のページ）。はじめが手袋の柄（段の標準）、続けて売っている柄。
+	## 糸はいまはめている手袋の色（はめていなければ毛糸）。買っていない柄は薄く、木のボタンの印（山師の棚で買う）
+	func _draw_ball_page(u: float, x: float, y: float, right: float, opts: Array) -> void:
+		var craft: Node = ui.craft
+		var who: int = ui._who()
+		var grade := _my_grade()
+		var names: Array = [""] + BallStitches.for_sale()
+		var mine: String = craft.ball_stitch_of(who)
+		var cols := 6
+		var gap := 6.0 * u
+		var cw := (right - x - gap * (cols - 1)) / cols
+		var ch := 66.0 * u
+		for i in names.size():
+			var nm: String = names[i]
+			var sr := Rect2(x + (i % cols) * (cw + gap), y + (i / cols) * (ch + gap), cw, ch)
+			var can: bool = craft.ball_can_use(who, nm)
+			Icons.screen()
+			Icons.patch(self, Icons.rr(sr.position.x, sr.position.y, sr.size.x, sr.size.y, 8.0 * u), Icons.CAP, 1.0 if can else 0.5, false)
+			var bs := minf(sr.size.x, sr.size.y) * 0.96
+			var br := Rect2(sr.get_center() - Vector2(bs, bs) / 2.0, Vector2(bs, bs))
+			BallStitches.draw_ball(self, BallStitches.pattern_of(nm, grade), grade, br, 1.0 if can else 0.4)
+			if nm == "":   # 手袋の柄: 右下に小さな手袋
+				Icons._o = sr.end - Vector2(12.0, 12.0) * u
+				Icons._s = u * 0.32
+				Gloves.icon(self, grade, 1.0)
+			if not can:
+				var bc := Vector2(sr.end.x - 8.0 * u, sr.end.y - 8.0 * u)
+				Icons.screen()
+				draw_circle(bc, 6.5 * u, Icons.WOOD)
+				draw_arc(bc, 4.8 * u, 0.0, TAU, 14, Icons.WOOD.darkened(0.3), 1.0 * u, true)
+				draw_circle(bc + Vector2(-1.6, 0) * u, 1.0 * u, Color(0.25, 0.16, 0.10))
+				draw_circle(bc + Vector2(1.6, 0) * u, 1.0 * u, Color(0.25, 0.16, 0.10))
+			if nm == mine:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(sr.position.x - 2.0 * u, sr.position.y - 2.0 * u, sr.size.x + 4.0 * u, sr.size.y + 4.0 * u, 8.0 * u), Icons.RED, 2.6 * u, 5.0 * u, 3.0 * u, 1.0, true)
+			elif ui._opt_hover == opts.size():
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(sr.position.x - 2.0 * u, sr.position.y - 2.0 * u, sr.size.x + 4.0 * u, sr.size.y + 4.0 * u, 8.0 * u), Icons.CAP, 2.0 * u, 5.0 * u, 3.0 * u, 0.8, true)
+			opts.append([sr, "_ball", nm])
+
+	## はめている手袋の段（はめていなければ毛糸）。大玉の柄の絵の糸の色と縫い合わせ
+	func _my_grade() -> String:
+		var g: String = ui.craft.glove_grade(ui._who())
+		return g if g != "" else "gloves"
+
 	## 柄を替えているソリの糸の色
 	func _target_color(t: Array) -> Color:
 		var look: Dictionary = t[1]
@@ -1677,7 +1747,12 @@ class View extends Control:
 		var mine: Dictionary = ui.edit_design()
 		var ty := r.position.y + 218.0 * u
 		var stitch_page: bool = ui.tag_page == Tags.PAGES.size()
-		if stitch_page:   # 替えているソリの柄を大きく
+		var ball_page: bool = ui.tag_page == ui.ball_page()
+		if ball_page:   # 自分の大玉の柄を大きく（はめている手袋の段で）
+			var big_r := Rect2(x0 + 50.0 * u, ty + 20.0 * u, 210.0 * u, 190.0 * u)
+			var g := _my_grade()
+			BallStitches.draw_ball(self, BallStitches.pattern_of(craft.ball_stitch_of(who), g), g, big_r)
+		elif stitch_page:   # 替えているソリの柄を大きく
 			var big_r := Rect2(x0 + 50.0 * u, ty + 26.0 * u, 210.0 * u, 170.0 * u)
 			var tgt: Array = ui.stitch_target()
 			draw_rect(big_r, Color(0.82, 0.86, 0.94))
@@ -1689,7 +1764,7 @@ class View extends Control:
 		var ox := x0 + 286.0 * u
 		var sw := 25.0 * u
 		# おまかせ（さいころ）: 名札の下
-		var dc := Vector2(x0 + 155.0 * u, (ty + 196.0 * u) if not stitch_page else -1000.0)
+		var dc := Vector2(x0 + 155.0 * u, (ty + 196.0 * u) if not stitch_page and not ball_page else -1000.0)
 		var ds := 40.0 * u * (1.08 if ui._opt_hover >= 0 and ui._opt_hover < ui._opt_rects.size() and ui._opt_rects[ui._opt_hover][1] == "_dice" else 1.0)
 		Icons.screen()
 		Icons.patch(self, Icons.rr(dc.x - ds / 2.0, dc.y - ds / 2.0, ds, ds, ds * 0.22), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
@@ -1697,7 +1772,7 @@ class View extends Control:
 			draw_circle(dc + q * ds * 0.24, ds * 0.08, Icons.RED)
 		opts.append([Rect2(dc - Vector2(ds, ds) / 2.0, Vector2(ds, ds)), "_dice", 0])
 		# ページの札
-		var page: int = clampi(ui.tag_page, 0, Tags.PAGES.size())
+		var page: int = clampi(ui.tag_page, 0, ui.ball_page())
 		var looks := [["shape", int(mine.get("shape", 0))], ["pattern", maxi(int(mine.get("pattern", 0)), 3) if int(mine.get("pattern", 0)) == 0 else int(mine.get("pattern", 0))],
 			["stitch", 3 if int(mine.get("stitch", 0)) == 1 else int(mine.get("stitch", 0))], ["motif", 2 if int(mine.get("motif", 0)) == 0 else int(mine.get("motif", 0))]]
 		for k in Tags.PAGES.size():
@@ -1718,12 +1793,23 @@ class View extends Control:
 			Icons.screen()
 			Icons.dashes(self, Icons.rr(str_r.position.x - 2.0 * u, str_r.position.y - 2.0 * u, str_r.size.x + 4.0 * u, str_r.size.y + 4.0 * u, 10.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
 		opts.append([str_r, "_page", Tags.PAGES.size()])
+		# 6 つ目の札: 大玉の縫い目の柄（菊かがりの玉）
+		var bal_r := Rect2(ox + ui.ball_page() * 54.0 * u, ty - (6.0 * u if ball_page else 0.0), 48.0 * u, 38.0 * u)
+		Icons.screen()
+		Icons.patch(self, Icons.rr(bal_r.position.x, bal_r.position.y, bal_r.size.x, bal_r.size.y, 9.0 * u), Icons.CAP if ball_page else Icons.PAPER_EDGE, 1.0 if ball_page else 0.75, ball_page, Icons.PAPER_EDGE)
+		BallStitches.draw_ball(self, "kiku", _my_grade(), bal_r.grow(-2.0 * u), 1.0 if ball_page else 0.6)
+		if ball_page:
+			Icons.screen()
+			Icons.dashes(self, Icons.rr(bal_r.position.x - 2.0 * u, bal_r.position.y - 2.0 * u, bal_r.size.x + 4.0 * u, bal_r.size.y + 4.0 * u, 10.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
+		opts.append([bal_r, "_page", ui.ball_page()])
 		# 部品の見本。まだ手に入れていない部品は薄く、木のボタンの印（あとで手に入る）
 		var per := maxi(1, int((r.end.x - 26.0 * u - ox) / (sw + 5.0 * u)))
 		var oy := ty + 50.0 * u
 		if stitch_page:
 			_draw_stitch_page(u, ox, oy, r.end.x - 26.0 * u, opts)
-		for part in ([] if stitch_page else Tags.PAGES[page]):
+		elif ball_page:
+			_draw_ball_page(u, ox, oy, r.end.x - 26.0 * u, opts)
+		for part in ([] if stitch_page or ball_page else Tags.PAGES[page]):
 			var n := Tags.part_count(part)
 			for i in n:
 				var sr := Rect2(ox + (i % per) * (sw + 5.0 * u), oy + (i / per) * (sw + 9.0 * u), sw + 2.0 * u, sw + 6.0 * u)
@@ -1746,7 +1832,10 @@ class View extends Control:
 				opts.append([sr, part, i])
 			oy += ceili(float(n) / per) * (sw + 9.0 * u) + 8.0 * u
 		ui._opt_rects = opts
-		_draw_edit_row(u, Rect2(x0, ty + 226.0 * u, 272.0 * u, 76.0 * u))
+		if ball_page:   # 大玉の柄は人ごと（替えるソリを選ぶ札はない）
+			ui._edit_rects = []
+		else:
+			_draw_edit_row(u, Rect2(x0, ty + 226.0 * u, 272.0 * u, 76.0 * u))
 		# 右下: 手持ちとかばん（引きずって入れ替える。押すと食べる・捨てる）
 		_draw_hand_and_bag(u, craft.bag(who), x0 + 4.0 * u, r.end.y - 30.0 * u - 2 * 82.0 * u - 10.0 * u)
 		# 右上: 閉じる

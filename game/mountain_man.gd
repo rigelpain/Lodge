@@ -257,6 +257,7 @@ func sold(buyer: Node3D) -> void:
 func _on_craft(ev: Dictionary) -> void:
 	var tool: bool = ev.get("kind", "") == "buy" and Goods.has(ev.get("item", {}).get("kind", ""))
 	var pet: bool = ev.get("kind", "") == "pal_buy" and Pals.slot_of(String(ev.get("key", ""))) == "pet"
+	tool = tool or ev.get("kind", "") == "ball_stitch_buy"   # 大玉の縫い目の柄（ball_stitches.gd）
 	if not tool and not pet:
 		return
 	sold(_person(int(ev.get("who", -1))))

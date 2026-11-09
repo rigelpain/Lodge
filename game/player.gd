@@ -3177,6 +3177,11 @@ func _load_tag() -> bool:
 	if cf.has_section("profile"):
 		craft.send({"kind": "profile", "who": id, "name": String(cf.get_value("profile", "name", craft.name_of(id))),
 			"color": int(cf.get_value("profile", "color", craft.colors.get(id, 0)))})
+	if cf.has_section("ball"):   # 買った大玉の縫い目の柄を戻してから、選んでいる柄（ball_stitches.gd）
+		for k in cf.get_value("ball", "owned", []):
+			craft.send({"kind": "ball_stitch_own", "who": id, "stitch": String(k)})
+		if String(cf.get_value("ball", "stitch", "")) != "":
+			craft.send({"kind": "ball_stitch_set", "who": id, "stitch": String(cf.get_value("ball", "stitch", ""))})
 	if cf.has_section("stitch"):   # 買った滑りあとの柄を戻してから、標準の米袋の柄
 		for k in cf.get_value("stitch", "owned", []):
 			craft.send({"kind": "stitch_own", "who": id, "stitch": String(k)})
@@ -3283,6 +3288,8 @@ func save_tag() -> void:
 	for part in owned:
 		cf.set_value("owned", part, owned[part])
 	cf.set_value("stitch", "owned", craft.stitch_owned.get(id, []))   # 買った滑りあとの柄（stitches.gd）
+	cf.set_value("ball", "owned", craft.ball_owned.get(id, []))   # 買った大玉の縫い目の柄と、選んでいる柄（ball_stitches.gd）
+	cf.set_value("ball", "stitch", craft.ball_stitch_of(id))
 	var sack0: Dictionary = craft.sacks.get(id, [{}])[0]
 	cf.set_value("stitch", "sack_color", String(sack0.get("fabric", "")) if preload("res://fabrics.gd").is_dyed(String(sack0.get("fabric", ""))) else "")
 	cf.set_value("stitch", "sack", String(craft.sacks.get(id, [{}])[0].get("stitch", "")))   # 標準の米袋の柄（縫ったソリと同じで、ほかのソリは持ち帰らない）
