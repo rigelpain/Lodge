@@ -2866,6 +2866,9 @@ func _peek_begin(kind: String, stand: Node3D, left := Binoculars.STAND_SECONDS) 
 			_night_sight = preload("res://night_sight.gd").new()
 			add_child(_night_sight)
 		_night_sight.begin(get_parent())
+		# 口から前へ出る自分の白い息が、のぞいている丸い視野をふさがないよう、自分の画面からだけ外す
+		# （2026-11-09 代表「夜目の双眼鏡は吐く息で見えなくならないようにしてほしい」）
+		doll.breath_in_view(false)
 	var hud = get_parent().get("hud")
 	if hud and kind == "hand":
 		hud.learn("scope_hand")
@@ -2879,6 +2882,7 @@ func peek_stop() -> void:
 	peek = ""
 	if _night_sight:
 		_night_sight.end()
+	doll.breath_in_view(true)
 	if was == "stand" and _peek_stand:
 		_peek_stand.hide_head(false)
 		if craft:
