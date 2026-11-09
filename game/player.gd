@@ -545,12 +545,12 @@ func _unhandled_input(e: InputEvent) -> void:
 			KEY_TAB:
 				if ring and not menu_open:
 					ring.open(hand, _height(), point_at != Vector3.INF)
-			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7:
-				# 輪と同じ 6 つ: 1 高い手のひら、2 低い手のひら、3 指さし、4 ウン、5 ンーン、6 首をかしげてウン？
+			KEY_1, KEY_2, KEY_3, KEY_4, KEY_5, KEY_6, KEY_7, KEY_8:
+				# 輪と同じ 8 つ: 1 高い手のひら、2 低い手のひら、3 指さし、4 ウン、5 ンーン、6 首をかしげてウン？、7 おーーーい、8 おう
 				if e.physical_keycode == KEY_1 and gliding():
 					toggle_hands_up()   # 滑っているあいだの 1 は、片手・両手の切り替えによらず両手で万歳（Space と同じ）
 				else:
-					_choose(["high", "low", "point", "un", "nn", "huh", "oi"][e.physical_keycode - KEY_1])
+					_choose(["high", "low", "point", "un", "nn", "huh", "oi", "ou"][e.physical_keycode - KEY_1])
 			KEY_Q:
 				# 片手 ⇄ 両手
 				_set_hand("both" if hand != "both" else _one_hand)
@@ -1750,7 +1750,7 @@ func _place_shapes_fp(em: Array) -> void:
 func available() -> Dictionary:
 	var busy := rooted() or _winding
 	return {
-		"wa": true, "un": true, "nn": true, "huh": true, "oi": true,
+		"wa": true, "un": true, "nn": true, "huh": true, "oi": true, "ou": true,
 		"breath": not busy,
 		"clap": not busy and hands_name == "high_both",
 		"make_ball": not busy and mode == Mode.WALK and crouching,   # 持てる数がいっぱいでも、押し続けて大玉の種にできる
@@ -2246,6 +2246,8 @@ func _emote_cam(kind: String, k: int) -> Vector3:
 			return Vector3(-0.04 if k < 2 else 0.08, 0, 0)
 		"oi":
 			return Vector3(-0.05 if k < 2 else (0.1 if k < 15 else 0.03), 0, 0)   # 顔を上げて呼ぶ
+		"ou":
+			return Vector3(-0.04 if k < 1 else (0.06 if k < 9 else 0.02), 0, 0)   # あごを引いてから、上げる
 	return Vector3.ZERO
 
 
@@ -2356,18 +2358,39 @@ func _emote_hand(s: int) -> Vector3:
 			if k >= 2 and k < 12:
 				return Vector3(s * 0.3, -0.3, -0.42)   # さあ？と両手を少し外へ
 		"oi":
-			# 空いた手（手のひらも指さしもしていない手。右から）を口の横へ。画面の下の端に、手袋の先がのぞく
+			# 空いた手（手のひらも指さしもしていない手。右から）を口の横へ。画面の下の端に、手袋の先がのぞく。
+			# もう一方の手も空いていれば、画面の上のほうで大きく振る（人形と同じ 4 コマで 1 往復）
 			if k >= 1 and k < 16:
-				var free := 0
-				for sd in [1, -1]:
-					if free == 0 and doll.hand_shapes[0 if sd > 0 else 1] == "" and not (point_at != Vector3.INF and sd in Palm.sides_of(hand)):
-						free = sd
-				if s == free:
+				var free := _free_sides()
+				if not free.is_empty() and s == free[0]:
 					return Vector3(0.1 * s, -0.2, -0.22)
+				if free.size() > 1 and s == free[1]:
+					var w: float = [1.0, 0.0, -1.0, 0.0][k % 4]
+					return Vector3(s * (0.3 + 0.08 * w), 0.06 - 0.02 * absf(w), -0.5)
+		"ou":
+			# 空いた手（右から）を、ため 1 コマで下げてから、画面の横の上のほうへさっと上げる
+			var free := _free_sides()
+			if not free.is_empty() and s == free[0] and k < 11:
+				if k == 0:
+					return Vector3(0.2 * s, -0.36, -0.4)
+				if k == 1:
+					return Vector3(0.27 * s, -0.04, -0.48)
+				if k < 9:
+					return Vector3(0.26 * s, 0.09 if k == 2 else 0.07, -0.5)
+				return Vector3(0.27 * s, -0.1 if k == 9 else -0.24, -0.48)
 		"nn":
 			if s > 0 and k < 12:
 				return Vector3(0.04 + (0.06 if (k / 2) % 2 == 0 else -0.06), -0.08, -0.32)   # 顔の前で手を振る
 	return Vector3.INF
+
+
+## 手のひらも指さしもしていない手（右から。1 が右、-1 が左）。おーい・おうで使う
+func _free_sides() -> Array:
+	var out := []
+	for sd in [1, -1]:
+		if doll.hand_shapes[0 if sd > 0 else 1] == "" and not (point_at != Vector3.INF and sd in Palm.sides_of(hand)):
+			out.append(sd)
+	return out
 
 
 ## B を離した（または息が切れた）: 吐くのをやめる

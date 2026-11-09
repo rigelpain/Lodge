@@ -1,6 +1,6 @@
 extends SceneTree
 ## 手の形と身ぶり（エモート）を一つずつ出して、いちばん大きく動くコマで撮る（確かめ用）。
-##   Godot --path game --resolution 960x540 -s res://tools/emote_shots.gd -- --dir=/path/to/dir [--view=fp|tp|front] [--only=wa,bow] [--bare]
+##   Godot --path game --resolution 960x540 -s res://tools/emote_shots.gd -- --dir=/path/to/dir [--view=fp|tp|front] [--only=wa,bow] [--bare] [--dolls=kasa,golem]
 ## fp 一人称（あなたの目。手と息が見えるか）、tp 三人称（C の視点）、front 正面から（人形の形）。
 ## あなたと仲間を向かい合わせて立たせ、仲間は動かさない（ハイタッチの相手は、配り役へ直接送る）。
 ## 「high_R_ball」「low_R_ball」は右手に雪玉を持ったまま、「high_R_food」はできた料理を持ったまま手のひらを掲げる。
@@ -49,6 +49,9 @@ const SHOTS := [
 	["huh", "huh", 5],
 	["oi", "oi", 6],
 	["oi_high", "oi_high", 6],
+	["oi_wave", "oi", 8],
+	["ou", "ou", 4],
+	["ou_dip", "ou", 0],
 	["banzai", "banzai", 4],
 ]
 
@@ -112,40 +115,45 @@ func _run() -> void:
 	p.set_third(view == "tp")   # 保存された設定に関わらず、撮る視点で始める
 	var dir: String = args.get("dir", "/tmp")
 	DirAccess.make_dir_recursive_absolute(dir)
-	for shot in SHOTS:
-		if not only.is_empty() and not shot[0] in only:
-			continue
-		await _stage(shot[1])
-		var f := await _act(shot[1])
-		await _wait_pose(f + shot[2])
-		_camera(view, shot[1])
-		await process_frame
-		await process_frame
-		var path := dir.path_join("%s_%s.png" % [shot[0], view])
-		RenderingServer.force_draw()   # 窓が隠れていると描き直しが止まり、古い絵を保存してしまうので
-		root.get_texture().get_image().save_png(path)
-		print("保存: ", path, "  人形=", p.doll.emote_now(), " 手=", p.doll.hand_shapes)
-		# 身ぶりが終わるまで（振りかぶりは離すまで続くので、ここで解く）。手の形は下ろす
-		if shot[1] == "windup":
+	# --dolls=kasa,golem…: 人形を替えながら、同じ身ぶりを撮る（名前_視点_人形.png）
+	for dk in (args["dolls"].split(",") if args.has("dolls") else [""]):
+		if dk != "":
+			p.set_doll(dk)
+			await _wait_frames(20)
+		for shot in SHOTS:
+			if not only.is_empty() and not shot[0] in only:
+				continue
+			await _stage(shot[1])
+			var f := await _act(shot[1])
+			await _wait_pose(f + shot[2])
+			_camera(view, shot[1])
+			await process_frame
+			await process_frame
+			var path := dir.path_join("%s_%s%s.png" % [shot[0], view, "" if dk == "" else "_" + dk])
+			RenderingServer.force_draw()   # 窓が隠れていると描き直しが止まり、古い絵を保存してしまうので
+			root.get_texture().get_image().save_png(path)
+			print("保存: ", path, "  人形=", p.doll.emote_now(), " 手=", p.doll.hand_shapes)
+			# 身ぶりが終わるまで（振りかぶりは離すまで続くので、ここで解く）。手の形は下ろす
+			if shot[1] == "windup":
+				p._winding = false
+				p.doll.emote = {}
+			if p.ring.visible:
+				p.ring.close()
+			_key(KEY_B, false)
+			_key(KEY_CTRL, false)
+			hub.send({"kind": "hands", "who": p.id, "hands": ""})
+			hub.send({"kind": "hands", "who": bot.id, "hands": ""})
+			p.point_at = Vector3.INF
+			p._set_hand("R")
+			while not p.doll.emote.is_empty() or p.rooted() or not bot.doll.emote.is_empty():
+				await physics_frame
+			await _wait_frames(30)
+			p.holding_ball = false
 			p._winding = false
-			p.doll.emote = {}
-		if p.ring.visible:
-			p.ring.close()
-		_key(KEY_B, false)
-		_key(KEY_CTRL, false)
-		hub.send({"kind": "hands", "who": p.id, "hands": ""})
-		hub.send({"kind": "hands", "who": bot.id, "hands": ""})
-		p.point_at = Vector3.INF
-		p._set_hand("R")
-		while not p.doll.emote.is_empty() or p.rooted() or not bot.doll.emote.is_empty():
-			await physics_frame
-		await _wait_frames(30)
-		p.holding_ball = false
-		p._winding = false
-		hub.balls.erase(p.id)
-		if main.craft:
-			main.craft.bags.erase(p.id)
-			main.craft.hands.erase(p.id)
+			hub.balls.erase(p.id)
+			if main.craft:
+				main.craft.bags.erase(p.id)
+				main.craft.hands.erase(p.id)
 	quit()
 
 
@@ -327,7 +335,7 @@ func _camera(view: String, kind: String) -> void:
 			if kind == "banzai":
 				tgt = me + Vector3(0, 0.6, 0)
 				cam.look_at_from_position(me + Vector3(2.8, 1.2, -2.2), tgt)
-			elif kind.begins_with("high_") or kind.begins_with("low_") or kind.begins_with("point_") or kind in ["clap", "ring", "huh", "oi", "oi_high"]:
+			elif kind.begins_with("high_") or kind.begins_with("low_") or kind.begins_with("point_") or kind in ["clap", "ring", "huh", "oi", "oi_high", "ou"]:
 				# 手の形は前（見ている先の側）から: 相手から見た形
 				cam.look_at_from_position(me + Vector3(-1.3, 1.2, -2.8), me + Vector3(0, 0.85, 0))
 			elif kind == "sled":

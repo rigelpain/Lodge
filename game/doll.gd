@@ -2168,7 +2168,7 @@ func _damp_now() -> float:
 ## emotes.gd の KINDS と同じ長さ（コマ）。0 は終わりを持ち主が決める
 const EMOTE_FRAMES := {
 	"high_five": 12, "shake": 24, "whiff": 12, "breath": 0, "make_ball": 22, "windup": 0, "throw": 7,
-	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18, "eat": 16, "catch": 10,
+	"hit": 16, "clap": 16, "wa": 14, "un": 7, "nn": 14, "huh": 16, "oi": 18, "ou": 12, "eat": 16, "catch": 10,
 }
 ## 雪合戦の決着の舞台（duel_stage.gd）だけの身ぶり。長さは len で渡す。ゲームの世界の人形には出さない
 const STAGE_EMOTES := ["stage_toss", "stage_flail", "stage_shrug"]
@@ -2354,6 +2354,10 @@ func _emote_body(kind_: String, k: int) -> float:
 				return 0.12
 			_em_head.y = 0.22 if k < 15 else 0.08
 			return -0.12 if k < 15 else -0.04
+		"ou":
+			# おう: 小さくあごを引いて（ため）、手を上げるのと一緒にあごを上げ、胸を少し張る。戻りはゆっくり
+			_em_head.y = [-0.1, 0.2, 0.24, 0.2, 0.16, 0.14, 0.12, 0.1, 0.08, 0.05, 0.02, 0.0][k]
+			return [0.05, -0.06, -0.08, -0.07, -0.06, -0.05, -0.04, -0.04, -0.03, -0.02, -0.01, 0.0][k]
 		"huh":
 			# 首をかしげる: 小さく引いて（ため）、ことんと横へ傾けて止め、ゆっくり戻す。肩も少しすくめる
 			_em_roll = [-0.08, -0.08, 0.38, 0.45, 0.45, 0.45, 0.45, 0.45, 0.45, 0.42, 0.38, 0.3, 0.2, 0.12, 0.05, 0.0][k]
@@ -2377,6 +2381,21 @@ func _arm(side: String, up_dir: Vector3, fore_dir: Vector3) -> void:
 func _hand_to(side: String, target: Vector3) -> void:
 	_hold[0 if side == "L" else 1] = null
 	_reach(side, target)
+
+
+## 手のひらも指さしもしていない手（右から。1 が右、-1 が左）
+func _free_sides() -> Array:
+	var out := []
+	for sd in [1, -1]:
+		if hand_shapes[0 if sd > 0 else 1] == "" and not (point != Vector3.INF and (sd in point_sides or point_sides.is_empty())):
+			out.append(sd)
+	return out
+
+
+## 手を上げて振る（4 コマで 1 往復）。k は身ぶりのコマ
+func _wave_arm(side: String, k: int) -> void:
+	var w: float = [0.55, 0.1, -0.35, 0.1][k % 4]
+	_arm(side, Vector3(0.7, 0.65, -0.15), Vector3(0.25 + w * 0.6, 1.0, -0.1))
 
 
 func _emote_arms(kind_: String, k: int) -> void:
@@ -2496,14 +2515,31 @@ func _emote_arms(kind_: String, k: int) -> void:
 			_hand_to("R", low.lerp(mouth, f))
 		"oi":
 			if k >= 1 and k < 16:
-				# 空いた手を口の横に当てて、メガホンに（高い片手のひらで場所を示しながら呼べる）
-				var free := 0
-				for sd in [1, -1]:
-					if free == 0 and hand_shapes[0 if sd > 0 else 1] == "" and not (point != Vector3.INF and (sd in point_sides or point_sides.is_empty())):
-						free = sd
-				if free != 0:
+				# 空いた手を口の横に当てて、メガホンに（高い片手のひらで場所を示しながら呼べる）。
+				# もう一方の手も空いていれば、上げて大きく振る（4 コマで 1 往復。仲間が呼ばれて振る手と同じ形）
+				var free := _free_sides()
+				if free.size() > 0:
 					var arm_r := _len(_id("upper_arm.R")) + _len(_id("forearm.R"))
-					_hand_to("R" if free > 0 else "L", head + Vector3(0.16 * float(free), -0.06, -0.55) * arm_r)
+					_hand_to("R" if free[0] > 0 else "L", head + Vector3(0.16 * float(free[0]), -0.06, -0.55) * arm_r)
+				if free.size() > 1:
+					_wave_arm("R" if free[1] > 0 else "L", k)
+		"ou":
+			# 空いた手（右から）を、ため 1 コマで下げてから、さっと上げる。肘を横に張り、前腕を立てて手のひらを前へ
+			var free := _free_sides()
+			if not free.is_empty():
+				var side := "R" if free[0] > 0 else "L"
+				if k == 0:
+					_arm(side, Vector3(0.3, -0.9, 0.1), Vector3(0.15, -0.3, -0.9))
+				elif k == 1:
+					_arm(side, Vector3(0.7, 0.5, -0.25), Vector3(0.3, 1.0, -0.3))
+				elif k == 2:
+					_arm(side, Vector3(0.9, 0.5, -0.2), Vector3(0.18, 1.0, 0.05))   # 上げきって、少し行きすぎる
+				elif k < 9:
+					_arm(side, Vector3(0.9, 0.45, -0.2), Vector3(0.3, 1.0, -0.1))   # 手を頭（笠）の外に出して、横からも前からも見える所に
+				elif k == 9:
+					_arm(side, Vector3(0.6, -0.05, -0.3), Vector3(0.35, 0.4, -0.6))
+				elif k == 10:
+					_arm(side, Vector3(0.35, -0.75, -0.2), Vector3(0.2, -0.6, -0.5))
 		"huh":
 			if k >= 2 and k < 12:
 				# 肩をすくめて、両の前腕を少し外へ開く（さあ？の手）
@@ -2557,6 +2593,10 @@ func _emote_breath(kind_: String, k: int) -> void:
 				_puff(1.9, 1.6)
 			_long.emitting = k >= 2 and k < 15
 			_next_breath = _frame + 30
+		"ou":
+			if k == 1:
+				_puff(1.2, 0.7)
+				_next_breath = _frame + 24
 		"nn":
 			if k == 0 or k == 6:
 				_puff(1.2, 0.7)
