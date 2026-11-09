@@ -14,7 +14,7 @@ func _initialize() -> void:
 	cap.radius = 0.3
 	cap.height = 1.7
 	var routes := {
-		"ゲレンデの側から": [Vector3(1.4, 0, 14), Vector3(1.4, 0, 11.5), Vector3(1.4, 0, 10.0), Vector3(1.2, 0, 8.5), Vector3(1.2, 0, 7.9), Vector3(1.0, 0, 6.0), Vector3(0, 0, 3), Vector3(0, 0, 0), Vector3(3.0, 0, 0), Vector3(6.0, 0, 1.3), Vector3(10.0, 0, 1.3)],
+		"ゲレンデの側から": [Vector3(-1.6, 0, 17), Vector3(-1.6, 0, 13), Vector3(-1.6, 0, 10.5), Vector3(-1.6, 0, 8.5), Vector3(-1.6, 0, 7.9), Vector3(-1.0, 0, 6.0), Vector3(0, 0, 3), Vector3(0, 0, 0), Vector3(3.0, 0, 0), Vector3(6.0, 0, 1.3), Vector3(10.0, 0, 1.3)],
 		"駐車場の側から": [Vector3(-1.4, 0, -14), Vector3(-1.4, 0, -11.5), Vector3(-1.4, 0, -10.0), Vector3(-1.2, 0, -8.5), Vector3(-1.2, 0, -7.9), Vector3(-1.0, 0, -6.0), Vector3(0, 0, -3), Vector3(0, 0, 0)],
 	}
 	var bad := 0

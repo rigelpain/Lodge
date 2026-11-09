@@ -65,29 +65,28 @@ ax.text(-12.8, 11.7, "破線 = 屋根の外形（灰 = 休憩室の切妻、黒 
 ax.set_xticks([]); ax.set_yticks([])
 
 # ---------------- 入口の妻 ----------------
-ax = fig.add_axes([0.62, 0.50, 0.36, 0.44]); ax.set_aspect("equal"); ax.set_title("入口の妻（ゲレンデの側も駐車場の側も同じ）", loc="left", fontsize=12)
+ax = fig.add_axes([0.62, 0.50, 0.36, 0.44]); ax.set_aspect("equal"); ax.set_title("入口の妻（ゲレンデの側。柱の左が入口・右が券売の窓。駐車場の側は右が白い戸）", loc="left", fontsize=12)
 ax.set_xlim(-7.5, 7.5); ax.set_ylim(-0.5, r_a + 1)
 eh = FL + A_EAVE - 1.5 * 0  # 軒
 base = A_HALF + OV_SIDE
 ey = FL + A_EAVE - OV_SIDE * t(A_PITCH)
 poly(ax, [(-base, ey), (0, r_a + 0.25), (base, ey), (base - 0.5, ey), (0, r_a - 0.4), (-base + 0.5, ey)], fc=ROOF, ec="k")
 poly(ax, [(-A_HALF + 0.4, FL + A_EAVE + 0.3), (0, r_a - 0.6), (A_HALF - 0.4, FL + A_EAVE + 0.3)], fc=SOFFIT, ec="k", lw=0.8)  # 妻の板（奥）
-rect(ax, (-2.25, 2.25), (FL, FL + GABLE_BEAM_Y), fc=WALL, ec="k")     # 風除室の前の壁
-rect(ax, (0.3, 2.1), (FL + 0.05, FL + 2.6), fc=GLASS, ec="k")          # ガラスの戸
-for k in range(1, 4):
-    ax.plot([0.3 + 0.45 * k] * 2, [FL + 0.05, FL + 2.6], color="k", lw=0.8)
-rect(ax, (-1.9, -0.6), (FL + 0.05, FL + 2.3), fc="#eee", ec="k")        # 白い戸
+rect(ax, (-4.6, 4.6), (FL, FL + GABLE_BEAM_Y), fc=WALL, ec="k")       # 風除室の前の壁（A 字の軒の線まで）
+rect(ax, (-3.4, -0.25), (FL + 0.02, FL + 2.7), fc=GLASS, ec="#6b4a2e", lw=2)   # 木の框のガラスの入口（柱の左）
+for u in (-2.5, -1.6, -0.7):
+    ax.plot([u] * 2, [FL + 0.02, FL + 2.7], color="#6b4a2e", lw=1.6)
+rect(ax, (0.6, 2.8), (FL + 1.0, FL + 2.1), fc=GLASS, ec="k")            # 券売の窓（ゲレンデの側。駐車場の側は白い戸）
 rect(ax, (-A_HALF + 0.2, A_HALF - 0.2), (FL + GABLE_BEAM_Y - 0.15, FL + GABLE_BEAM_Y + 0.15), fc=LOG, ec="k")   # 横の丸太の梁
-rect(ax, (0.4, 2.6), (FL + GABLE_BEAM_Y + 0.15, FL + GABLE_BEAM_Y + 0.55), fc="#e9dcc0", ec="k")                # 看板
-label(ax, 1.5, FL + GABLE_BEAM_Y + 0.35, "夏虫沢ヒュッテ", 8)
+rect(ax, (-2.9, -0.3), (FL + GABLE_BEAM_Y + 0.15, FL + GABLE_BEAM_Y + 0.65), fc="#e9dcc0", ec="k")                # 看板（入口の上）
+label(ax, -1.6, FL + GABLE_BEAM_Y + 0.4, "夏虫沢ヒュッテ", 8)
+ax.add_patch(Circle((1.3, FL + GABLE_BEAM_Y), 0.22, fc="white", ec="k"))   # 時計
 label(ax, 0, FL + 5.2, "天下森スキー場（板の文字）", 8, color="white")
 rect(ax, (-GABLE_POST_R, GABLE_POST_R), (0.0, r_a - 0.5), fc=LOG, ec="k")  # 丸太の柱 1 本
 rect(ax, (-6.5, 6.5), (0, FL), fc=DECK, ec="k", alpha=0.6)
-rect(ax, (-1.5, 1.5), (0, FL), fc="#ddd", ec="k")
-for k in range(1, 5):
-    ax.plot([-1.5, 1.5], [FL * k / 5] * 2, color="k", lw=0.6)
+rect(ax, (-4.5, 4.5), (FL - 0.3, FL), fc="#bbb", ec="k")   # コンクリートの土間（ゲレンデの側は雪と同じ高さ。駐車場の側は段）
 ax.annotate("まんなかの丸太の柱 1 本（デッキから頂まで）", xy=(0.1, 7.5), xytext=(2.2, 9.5), fontsize=9, arrowprops=dict(arrowstyle="->"))
-ax.annotate("横の丸太の梁 1 本（床から 3.2 m）", xy=(-4, FL + GABLE_BEAM_Y), xytext=(-7.2, FL + 5.0), fontsize=9, arrowprops=dict(arrowstyle="->"))
+ax.annotate("横の丸太の梁 1 本（入口の上端のすぐ上、床から 2.95 m）", xy=(-4, FL + GABLE_BEAM_Y), xytext=(-7.2, FL + 5.0), fontsize=9, arrowprops=dict(arrowstyle="->"))
 ax.annotate("A 字の屋根（46°）。軒は隣の屋根の軒と同じ高さ", xy=(-4.6, ey + 0.6), xytext=(-7.3, 1.0), fontsize=9, arrowprops=dict(arrowstyle="->"))
 ax.set_xticks([]); ax.set_yticks(range(0, int(r_a) + 2, 2)); ax.set_ylabel("高さ (m)")
 
@@ -115,7 +114,7 @@ def elev_long(ax, from_slope):
     poly(ax, [(-base, ey), (0, r_a + 0.25), (base, ey)], fc=ROOF, ec="k")
     poly(ax, [(-A_HALF + 0.5, ey + 0.6), (0, r_a - 0.6), (A_HALF - 0.5, ey + 0.6)], fc=SOFFIT, ec="k", lw=0.6)
     rect(ax, (-2.25, 2.25), (FL, FL + GABLE_BEAM_Y), fc=WALL, ec="k")
-    rect(ax, (0.3, 2.1) if from_slope else (-2.1, -0.3), (FL + 0.05, FL + 2.6), fc=GLASS, ec="k")
+    rect(ax, (-3.4, -0.25) if from_slope else (0.25, 3.4), (FL + 0.02, FL + 2.7), fc=GLASS, ec="k")
     rect(ax, (-A_HALF + 0.2, A_HALF - 0.2), (FL + GABLE_BEAM_Y - 0.15, FL + GABLE_BEAM_Y + 0.15), fc=LOG, ec="k")
     rect(ax, (-GABLE_POST_R, GABLE_POST_R), (0, r_a - 0.5), fc=LOG, ec="k")
     # デッキと段
