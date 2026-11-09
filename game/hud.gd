@@ -1045,10 +1045,12 @@ func _update_plates() -> void:
 		var g := Speedo.layout(speedo_box_now(), _spd_pop)
 		# 回る向き: 糸はボビンの左下から下へ出ていくので、左側が下へ動く向き（画面で反時計回り）に回して糸を送り出す。
 		# 平らな絵（speedo.gd の _spool）と同じ向き。板の 3D は +Z まわりの正の角が画面で反時計回り（2026-10-30 代表「糸巻きの回転方向、逆だね？」）
-		plates.model("bobbin", "res://props/hud/hud_bobbin.glb", g.c, g.r / 0.5, _spd_spin, [4.0, 0.0, 0.03, 2.0 * u], _spd_a)
+		# 薄さは、HUD 本体に描く糸・弧・待ち針・結び目（View._draw_speedo）と同じ ease にそろえて、全部が一緒に消える
+		var e := ease(_spd_a, 0.6)
+		plates.model("bobbin", "res://props/hud/hud_bobbin.glb", g.c, g.r / 0.5, _spd_spin, [4.0, 0.0, 0.03, 2.0 * u], e)
 		var rb: Rect2 = g.ribbon
 		plates.plate("ribbon", _painter.bind("ribbon"), rb, 8.0 * u, 5.0 * u, "felt", Vector2(rb.get_center().x, rb.position.y),
-			[6.0, 0.05, 0.05, 1.5 * u], _spd_a)
+			[6.0, 0.05, 0.05, 1.5 * u], e)
 	plates.end()
 
 
@@ -1076,6 +1078,11 @@ func _view_stamp() -> Array:
 		s.append(_dbg.hash())   # 確かめ用の数字（fps は 1 秒に 1 回変わる）
 	if (main and main.settings and main.settings.is_open) or (plates == null and _spd_a > 0.01):
 		s.append(Engine.get_process_frames())   # 設定の札・平らなときの速さの帯は毎コマ
+	elif _spd_a > 0.0 and _spd_a < 1.0:
+		# 立体の板のときも、速さの表示が出る・消える途中は毎コマ（ボビンのまわりの糸・弧・待ち針・結び目はこの本体に描く。
+		# 前は風が止んでいると描き直されず、ボビンとリボンの板が消えたあとも、それらが消える途中の濃さのまま残っていた）。
+		# 消えきったコマ（0）で印が変わるので、そこでもう一度描いて何も残さない
+		s.append(Engine.get_process_frames())
 	return s
 
 ## 名札の中身の印。これが変わったときだけ名札を描き直す（2026-11-02、M2 で名札を毎コマ描くと 1 コマに 4〜5 ms かかっていた）。
