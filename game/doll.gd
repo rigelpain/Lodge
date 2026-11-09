@@ -26,8 +26,10 @@ const SCENES := {
 	"kasa": "res://person/kasa.glb", "origami": "res://person/origami.glb", "news": "res://person/news.glb",
 	"robo": "res://person/robo.glb", "musha": "res://person/musha.glb", "ningyo": "res://person/ningyo.glb", "golem": "res://person/golem.glb",
 }
-## ゲームでの大きさ。news がいちばん小さく、目の高さが origami のお尻あたり。golem がいちばん大きい
-const SCALE := {"kasa": 1.15, "origami": 1.1, "news": 1.05, "robo": 1.15, "musha": 1.1, "ningyo": 1.1, "golem": 1.35}
+## ゲームでの大きさ。news がいちばん小さく、目の高さが origami のお尻あたり。golem がいちばん大きい。
+## origami は 1.1 から少し小さく（2026-11-09 代表「origamiの女性キャラの身長少し小さくしてほしい。ゴーレムが一番大きく」）。
+## 一人称の目の高さも EYE × SCALE（player.gd の eye_height）なので、ここを変えると目の高さも変わる
+const SCALE := {"kasa": 1.15, "origami": 1.04, "news": 1.05, "robo": 1.15, "musha": 1.1, "ningyo": 1.1, "golem": 1.35}
 ## 足もとの影の半径（人形の大きさのまま）
 const FOOT_SHADOW := {"kasa": 0.46, "origami": 0.44, "news": 0.38, "robo": 0.36, "musha": 0.32, "ningyo": 0.36, "golem": 0.62}
 ## 目の所（glb の座標、人形の大きさのまま。立ったとき）。乗っているときの一人称のカメラを合わせる

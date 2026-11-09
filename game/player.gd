@@ -48,7 +48,11 @@ const SPEED := 2.0           # 雪の中をじりじり歩く速さ
 const DASH := 3.4            # Shift で走る速さ
 const SPEED_TAUT := 1.5      # 紐が張っているときの歩く速さ。ソリがこれより速く動いていれば、ついて行ける（sled.gd の taut_walk_speed）
 const SPEED_CROUCH := 0.8    # しゃがんで歩く速さ
-const CROUCH_EYE := 0.5      # しゃがむと目がこれだけ下がる (m)
+const CROUCH_EYE := 0.5      # しゃがむと目がこれだけ下がる (m)。目の高さが EYE_BASE の人形のとき。ほかは目の高さに比べて縮める
+## 一人称の目の高さは、人形の立った目の所（doll.gd の EYE × SCALE）。これは前の、どの人形でも同じだった目の高さ (m)。
+## しゃがむ・身ぶり・引きずられるときの視点の上下の幅は、この高さのときの値で書いてあり、人形の目の高さに比べて縮める
+## （2026-11-09 代表「一人称視点ってキャラに依って高さ変わんないんだ。変わってほしい」）
+const EYE_BASE := 1.55
 # ジャンプは雪の上でのその場跳びくらい: 高さ約 42 cm、宙にいるのは約 0.43 秒（2026-11-02 代表「ジャンプがふわっとしててリアルじゃない。
 # もっと飛び上がりと着地までの時間は短いほうが良い」。前は 4.5 m/s・9.8 で、高さ 1.07 m・0.95 秒）。
 # 下りは上がりより重力を強くして、てっぺんでふわっと浮かない。段から落ちるときも FALL_GRAVITY（仲間の bot.gd も同じ）
@@ -231,7 +235,7 @@ func _ready() -> void:
 	floor_max_angle = deg_to_rad(50)
 
 	cam = Camera3D.new()
-	cam.position.y = 1.55
+	cam.position.y = EYE_BASE
 	cam.fov = 75
 	cam.near = 0.05
 	cam.cull_mask = (1 << 0) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 7)   # 世界と手と飾りと風と太陽（main.gd の SUN_LAYER）。自分の体（層 2）は映さない
@@ -329,6 +333,18 @@ func set_doll(kind: String, again := false) -> void:
 	_held_key = "-"
 	_make_body(kind)
 	doll.global_transform = at
+	if not third and mode == Mode.WALK:
+		cam.position.y = eye_height()   # 着替えたら、目の高さはすぐ新しい人形の目へ（すっと追わせない。座る・乗るときは _place_camera が追う）
+
+
+## 立ったときの目の高さ（足もとから m）。一人称のカメラ、音を聞く所、霊体の抜け出す所
+func eye_height() -> float:
+	return doll.eye_point(false).y if doll else EYE_BASE
+
+
+## 人形の目の高さの、EYE_BASE に対する割合。視点の上下の幅（しゃがむ・身ぶり・引きずられる）をこれで縮める
+func eye_k() -> float:
+	return eye_height() / EYE_BASE
 
 
 ## トラックパッドのピンチ（2026-10-30 代表「ピンチイン・アウトはカメラ距離の調整」）。指を閉じると引き、開くと寄る。
@@ -1389,7 +1405,8 @@ func _land_dip(dt: float) -> float:
 
 
 func _place_camera(dt: float, bob: float, working: bool) -> void:
-	var eye_y := 1.55 + (bob * 0.02 if working else 0.0)
+	var ek := eye_k()
+	var eye_y := eye_height() + (bob * 0.02 * ek if working else 0.0)
 	_drag_k = move_toward(_drag_k, 1.0 if mode == Mode.GRIP and sled.is_dragged(self) else 0.0, dt * 4.0)
 	# 引きずられているときの体勢の崩れ（人形と同じコマで刻む）: 雪のでこぼこ（コマごと）、左右のよろけ（ゆっくり）、
 	# ときどき膝ががくっと抜けて沈む。視点の揺れを切ると弱く
@@ -1404,7 +1421,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 		dip = (0.1 if f % 14 < 3 else 0.0) * _drag_k * calm
 	var fv := fling.view(Doll.frame_index(), 1.0 if bob_enabled else 0.3)   # 吹き飛んでいるあいだ、視点が回って低くなる（flung.gd）
 	if not third:
-		var eye := Vector3(0, eye_y - 0.3 * _drag_k - dip + jolt - fv.z, -0.35 * _drag_k)
+		var eye := Vector3(0, eye_y + (-0.3 * _drag_k - dip + jolt - fv.z) * ek, -0.35 * _drag_k * ek)
 		if mode == Mode.RIDE and doll.sack_seated():
 			# 乗っているときは、座った人形の目の所（席や人形が変わっても合う）。ソリが傾けば一緒に傾く。
 			# 乗り降りは同じ lerp で、すっと立ち上がる・腰を下ろす。米袋は、袋を広げ終えて腰を下ろしてから下がる
@@ -1425,7 +1442,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 				eye.y = maxf(eye.y, to_local(Vector3(0, float(st.table.y) + TABLE_EYE, 0)).y)
 		if peek == "stand" and _peek_stand:
 			eye = to_local(_peek_stand.eye_world())   # 台をのぞく: 目は頭の軸の所
-		eye.y += _cam_em.z
+		eye.y += _cam_em.z * ek   # しゃがむ・身ぶりで目が下がる幅も、人形の背丈に合わせる
 		# 着地の沈みは目の高さの追いかけ（lerp）の外で足す（なまらず、すとんと沈んですっと戻る）
 		cam.position.y += _dip_shown
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))

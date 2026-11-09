@@ -18,7 +18,7 @@ extends Node
 
 const Doll := preload("res://doll.gd")
 
-const EYE := 1.55             # 抜けるときの目の高さ（player.gd のカメラ）
+## 抜けるときの目の高さは、player.gd の eye_height()（人形ごとの立った目の高さ）
 const SPEED := 6.0            # はじめの飛ぶ速さ (m/s)
 const SPEED_RANGE := Vector2(0.5, 80.0)
 const SPEED_STEP := 1.25      # ホイール 1 目盛りで掛ける・割る
@@ -103,7 +103,7 @@ func enter(from_menu := false) -> bool:
 	_yaw = p.rotation.y
 	_pitch = p._pitch
 	cam.fov = p.base_fov
-	cam.global_transform = Transform3D(Basis.from_euler(Vector3(_pitch, _yaw, 0)), p.global_position + Vector3.UP * EYE)
+	cam.global_transform = Transform3D(Basis.from_euler(Vector3(_pitch, _yaw, 0)), p.global_position + Vector3.UP * p.eye_height())
 	_vel = Vector3.ZERO
 	p.velocity = Vector3.ZERO
 	p.collision_layer = 0
@@ -165,7 +165,7 @@ func _set_ghost(g: int) -> void:
 func net_state() -> Dictionary:
 	var s := {"gh": 2 if seen else 1, "m": 0, "d": player.doll.kind}
 	if seen:
-		s["p"] = cam.global_position - Vector3.UP * EYE
+		s["p"] = cam.global_position - Vector3.UP * player.eye_height()
 		s["y"] = _yaw
 	return s
 
