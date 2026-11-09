@@ -2,12 +2,12 @@ extends Control
 
 const Palm := preload("res://palm.gd")
 ## 身ぶりの輪。Tab を押しているあいだ画面のまんなかに出て、マウスを動かした向きのものを選び、離すと出す。
-## 挨拶のボタンではなく、手と声の材料。7 つ: 上が高い手のひら、右回りにおーーーい（遠くへ呼ぶ）・ウン・ンーン・低い手のひら・
-## 首をかしげてウン？・指さし。手の 3 つは、いま選んでいる手（右・左・両手。Q と X で替える）で出す。
+## 挨拶のボタンではなく、手と声の材料。8 つ: 上が高い手のひら、右回りにおーーーい（遠くへ呼ぶ）・おう（片手をさっと上げる）・
+## ウン・ンーン・低い手のひら（真下）・首をかしげてウン？・指さし。手の 3 つは、いま選んでいる手（右・左・両手。Q と X で替える）で出す。
 ## 文字は出さない。紙の丸に、ゲームの手と同じ紙の手形（アップリケ）と、墨の線の絵。いま掲げている手には赤い縁。
 ## まんなかに、いまの手（右・左・両手）を小さな手袋で描く。
 
-const SLOTS := ["high", "oi", "un", "nn", "low", "huh", "point"]
+const SLOTS := ["high", "oi", "ou", "un", "nn", "low", "huh", "point"]
 const NONE := "?"            # 何も選ばずに離した
 const RING_R := 112.0
 const DISC_R := 38.0
@@ -163,6 +163,19 @@ func _icon(name_: String, c: Vector2, k: float) -> void:
 			for i in 3:
 				var r := (9.0 + i * 6.0) * k
 				draw_arc(c + Vector2(8, 0) * k, r, -0.6, 0.6, 10, INK, 2.0, true)
+		"ou":
+			# おう: 頭と肩の線、肘を横に張って片手をさっと上げる。手のわきに、ぱっと上げた小さな線
+			var h := c + Vector2(-9, 3) * k
+			draw_arc(h, 10.0 * k, 0, TAU, 20, INK, 2.6, true)
+			_line(h + Vector2(-13, 16) * k, h + Vector2(13, 16) * k)
+			var elbow := h + Vector2(22, 12) * k
+			_line(h + Vector2(11, 16) * k, elbow)
+			_line(elbow, elbow + Vector2(0, -12) * k)
+			_hand("palm", -1, elbow + Vector2(0, -21) * k, 110.0 * k, 0.12)
+			for a in [-0.5, 0.0, 0.5]:
+				var d := Vector2(sin(a), -cos(a))
+				var at := elbow + Vector2(0, -24) * k + d * 15.0 * k
+				_line(at, at + d * 5.0 * k, 2.0)
 		"huh":
 			# かしげた頭（傾いた肩の線）と、問いかけの小さな巻き
 			var h := c + Vector2(-4, 0) * k

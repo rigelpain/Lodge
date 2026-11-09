@@ -737,7 +737,7 @@ func _on_emote(ev: Dictionary) -> void:
 		return
 	var near := global_position.distance_to(them.global_position)
 	match ev.kind:
-		"wa", "un", "nn":
+		"wa", "un", "nn", "ou":
 			if near < 15.0 and not ev.get("auto", false):
 				_reply(randf_range(0.35, 0.8), {"kind": ev.kind})
 		"huh":

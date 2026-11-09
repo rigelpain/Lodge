@@ -1175,6 +1175,7 @@ const EMOTE_SOUNDS := {
 	"nn": [[0, "voice_nn", 3, -5.0, 1.0]],
 	"huh": [[2, "voice_unq", 3, -5.0, 1.0]],
 	"oi": [[2, "voice_oi", 3, -1.0, 1.0]],    # 遠くまで届く（_emote_sound で、届く距離を長く）
+	"ou": [[1, "voice_ou", 3, -4.0, 1.0]],    # 手を上げきるコマで「おう」
 	"hit": [[0, "voice_surprise", 3, -4.0, 1.0]],   # 雪玉が当たって、わっ
 	"flung": [[0, "voice_surprise", 3, -2.0, 1.08], [0, "till_snow", 3, -8.0, 0.8]],   # ソリに轢かれて、わっ（flung.gd）
 	"ball_in": [[0, "voice_surprise", 3, -2.0, 1.15], [0, "till_snow", 3, -5.0, 0.6]],   # 転がる大玉に取り込まれて、わっ（rolled.gd）
@@ -1228,7 +1229,7 @@ func _on_emote(ev: Dictionary) -> void:
 			return
 	if who == null or not EMOTE_SOUNDS.has(ev.kind):
 		return
-	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "oi", "hit", "flung", "breath"]
+	var voice: bool = ev.kind in ["wa", "un", "nn", "huh", "oi", "ou", "hit", "flung", "breath"]
 	for s in EMOTE_SOUNDS[ev.kind]:
 		var p: float = s[4] * (rng.randf_range(0.98, 1.02) if voice else rng.randf_range(0.95, 1.05))
 		# 声（voice_*）はその人形の 1 つ。ほかの音は毎回選ぶ
