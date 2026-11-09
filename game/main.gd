@@ -67,6 +67,7 @@ const ROAM_DOLLS := ["origami", "news", "robo", "ningyo", "golem"]
 const Sled := preload("res://sled.gd")
 const Mountain := preload("res://mountain.gd")
 const Grand := preload("res://grand_mountain.gd")
+const Tenka := preload("res://tenkamori.gd")
 const TreeHits := preload("res://tree_hits.gd")
 const Crash := preload("res://sled_crash.gd")
 const Props := preload("res://props.gd")
@@ -178,6 +179,33 @@ var duel_hud: CanvasLayer   # 対決の画面（duel_hud.gd）
 var duel_focus := false     # 自分が雪合戦で戦っているあいだ（set_duel_focus）
 var hud: CanvasLayer        # 画面の表示（hud.gd）。文字を使わず、アイコンと形で伝える
 var args := {}
+## いまのワールド（2026-11-09）: "plain" 今までの世界（ロッジと丘と大きな山と大山）/ "tenkamori" 天下森（tenkamori.gd）。
+## スタート画面で選ぶ（start.gd）。--world=tenkamori でも。地面の高さ（ground・height）が静的な関数なので、ここも静的
+static var stage := "plain"
+const WORLDS := ["plain", "tenkamori"]
+const WORLD_CFG := "user://world.cfg"   # 前に選んだワールド
+
+
+static func tenka() -> bool:
+	return stage == "tenkamori"
+
+
+## 起動の引数がなければ、前に選んだワールド。確かめの道具（引数あり）は --world がなければ今までの世界
+static func saved_world() -> String:
+	var cf := ConfigFile.new()
+	var w := String(cf.get_value("world", "last", "plain")) if cf.load(WORLD_CFG) == OK else "plain"
+	return w if w in WORLDS else "plain"
+
+
+static func save_world(w: String) -> void:
+	var cf := ConfigFile.new()
+	cf.set_value("world", "last", w)
+	cf.save(WORLD_CFG)
+
+
+## 始める所（ソリと遊ぶ人。つなぐ側は、ここからずらす）
+static func start_pos() -> Vector3:
+	return Tenka.start_pos() if tenka() else START
 var elapsed := 0.0
 var log_t := 0.0
 var _duty := 0
@@ -234,11 +262,15 @@ static func bowl(x: float, z: float) -> float:
 
 ## ロッジでならす前の地面: 丘とくぼみと、南の大きな山と、東の大山
 static func ground(x: float, z: float) -> float:
+	if tenka():
+		return Tenka.lift(x, z)
 	return hill(x, z) + bowl(x, z) + Mountain.lift(x, z) + Grand.lift(x, z)
 
 
 ## 地面の端までの距離 (m)。地面は x ±128・z -128〜640 の長方形（丘と大きな山）と、東の大山の長方形。どちらにも入っていなければ負（一方の縁までの深さの大きいほう）
 static func edge_gap(x: float, z: float) -> float:
+	if tenka():
+		return Tenka.edge_gap(x, z)
 	var hill_side := minf(minf(x + SIZE * 0.5, SIZE * 0.5 - x), minf(z - TILES_Z[0] + SIZE * 0.5, TILES_Z[TILES_Z.size() - 1] + SIZE * 0.5 - z))
 	var grand_side := minf(minf(x - Grand.GX0, Grand.GX1 - x), minf(z - Grand.GZ0, Grand.GZ1 - z))
 	# 2 つの長方形の重なる帯（丘の東の端から大山へ続く所）。継ぎ目は地面の端ではない
@@ -281,6 +313,8 @@ static func lodge_weight(x: float, z: float) -> float:
 
 
 static func height(x: float, z: float) -> float:
+	if tenka():
+		return Tenka.lift(x, z)
 	return lerpf(ground(LODGE_POS.x, LODGE_POS.y), ground(x, z), lodge_weight(x, z))
 
 
@@ -298,6 +332,8 @@ static func _drift_at(x: float, z: float) -> float:
 
 ## 見た目の雪面だけにある吹きだまりのうねり（当たり判定にはない）。地面の 1 m 刻みの点の値
 static func drift(x: float, z: float) -> float:
+	if tenka():
+		return _drift_at(x, z) * 0.3 * Tenka.drift_k(x, z)
 	return _drift_at(x, z) * 0.35 * lodge_weight(x, z) * (1.0 - maxf(maxf(path_weight(x, z), Mountain.path_weight(x, z)), Grand.path_weight(x, z))) * Grand.seam_fade(x, z)
 
 
@@ -315,7 +351,7 @@ static func _drift_on(x: float, z: float) -> float:
 
 ## 見た目の雪面が当たり判定の地面からずれている量。1 m 刻みの点のあいだは直線でつなぐ（滑りあとを雪面に載せる用）
 static func snow_lift(x: float, z: float) -> float:
-	if Grand.on_ground(x, z):   # 大山の地面は 2 m おき
+	if tenka() or Grand.on_ground(x, z):   # 大山と天下森の地面は 2 m おき
 		var gx := floorf(x * 0.5) * 2.0
 		var gz := floorf(z * 0.5) * 2.0
 		var tx := (x - gx) * 0.5
@@ -344,7 +380,7 @@ static func _snow_vertex(x: float, z: float) -> float:
 ## 見た目の雪面の、(x, z) の所の向きと高さ Vector4(法線 x, y, z, 高さ)。地面の三角と同じ割り方（格子の対角線は右上から左下）で求めるので、
 ## 雪面にぴったり載る（滑りあと用）。snow_lift は格子の四隅をならした値なので、三角の中では数 cm ずれる
 static func snow_plane(x: float, z: float) -> Vector4:
-	var s := 2.0 if Grand.on_ground(x, z) else 1.0   # 大山の地面は 2 m おき
+	var s := 2.0 if tenka() or Grand.on_ground(x, z) else 1.0   # 大山と天下森の地面は 2 m おき
 	var gx := floorf(x / s) * s
 	var gz := floorf(z / s) * s
 	var tx := (x - gx) / s
@@ -416,7 +452,22 @@ func _ready() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
-	args.merge(Net.boot, true)   # スタート画面で選んだホスト・つなぐ
+	var from_cmdline := not args.is_empty()
+	args.merge(Net.boot, true)   # スタート画面で選んだホスト・つなぐ（とワールド）
+	stage = String(args.get("world", "plain" if from_cmdline else saved_world()))
+	if not stage in WORLDS:
+		stage = "plain"
+	_snow_cache.clear()
+	_drift_memo.clear()
+	if tenka():
+		# 天下森には、まだロッジ（夏虫沢ヒュッテ）と、山をめぐる仲間と、雪のボタンがない
+		args["no-lodge"] = "1"
+		args["no-buttons"] = "1"
+		args["roam-bots"] = "0"
+		var old := get_node_or_null("Lodge")   # main.tscn に置いてある今までのロッジ
+		if old:
+			remove_child(old)
+			old.free()
 	if args.has("join"):
 		# 仲間（CPU）はホストの画面だけが動かす。つなぐ側には、ホストから姿が届く（net.gd の "cpu"）。数はホストの --roam-bots など（一人で遊ぶときと同じ）
 		args["bots"] = "0"
@@ -444,7 +495,8 @@ func _ready() -> void:
 	sled.trail_fade = args.get("trail-fade", sled.TRAIL_FADE)
 	if args.has("sled-color"):
 		sled.main_color = Color.from_string(args["sled-color"], Color(0, 0, 0, 0))
-	sled.position = START + Vector3(0, height(START.x, START.z - 3) + 0.6 + sled.place_lift(), -3)   # 長いソリが坂に埋まらないように
+	var st := start_pos()
+	sled.position = st + Vector3(0, height(st.x, st.z - 3) + 0.6 + sled.place_lift(), -3)   # 長いソリが坂に埋まらないように
 	sled.snow_lift = snow_lift
 	sled.snow_plane = snow_plane
 	sled.name = "Sled"   # 出来事（snow_buttons.gd の snip）は、ソリを名前で指す
@@ -485,7 +537,7 @@ func _ready() -> void:
 		player.point_level = not args.has("point-tilt")   # 確かめ用: 指さしの手形を、前の腕に沿った向きに
 		player.point_lift = float(args.get("point-lift", str(player.point_lift)))   # 確かめ用: 指さしの手形を目のほうへ起こす角度
 		player.sled = sled
-		player.position = START + Vector3(0, height(START.x, START.z) + 0.2, 0)
+		player.position = st + Vector3(0, height(st.x, st.z) + 0.2, 0)
 		add_child(player)
 		player.look_at(sled.position, Vector3.UP)
 		player.rotation.x = 0
@@ -508,7 +560,7 @@ func _ready() -> void:
 			var ds: PackedStringArray = String(args["bot-dolls"]).split(",")
 			b.doll_kind = ds[i % ds.size()]
 		b.lean_mode = args.get("bot-lean", "follow")
-		b.position = START + Vector3(2.0 * b.side, height(START.x + 2.0 * b.side, START.z) + 0.2, 1)
+		b.position = st + Vector3(2.0 * b.side, height(st.x + 2.0 * b.side, st.z) + 0.2, 1)
 		add_child(b)
 		_bot_lantern(b, i)
 		_add_pals(b)
@@ -538,7 +590,7 @@ func _ready() -> void:
 	if player and net.spawn_slot() > 0:
 		# つなぐ側は、ホストの横に並んで始める（同じ所に重ならないように）
 		var slot := net.spawn_slot()
-		var at := START + Vector3(2.5 * ceili(slot / 2.0) * (1 if slot % 2 == 1 else -1), 0, 1.5)
+		var at := st + Vector3(2.5 * ceili(slot / 2.0) * (1 if slot % 2 == 1 else -1), 0, 1.5)
 		player.position = at + Vector3(0, height(at.x, at.z) + 0.2, 0)
 
 	if not args.has("no-buttons"):
@@ -597,6 +649,8 @@ func _ready() -> void:
 	_cpu_ready = true   # ここからの CPU の数の変更は、設定の画面から（起動のときは上で出した数のまま）
 	if args.has("join"):
 		settings.lock("cpus", "ホストが決める")
+	elif tenka():
+		settings.lock("cpus", "天下森にはまだいない")
 	if get_tree().current_scene == self:
 		use_game_pacing()
 	if args.has("settings"):   # 確かめ用: 設定画面を開いた状態で始める
@@ -718,6 +772,10 @@ func _ready() -> void:
 		ghost.player = player
 		add_child(ghost)
 
+	if tenka():   # 谷の向かいの山（〜5 km）と地平線の山なみ（〜20 km）まで描く
+		for c in find_children("*", "Camera3D", true, false):
+			if (c as Camera3D).far >= 1000.0:
+				(c as Camera3D).far = 30000.0
 	# 引数なしで起動した: スタート画面（一人・ホスト・つなぐ）。スタート画面からつなぎに行ったときは、つながるまで出しておく
 	var waiting := Net.boot.has("join") and net.online and not net.joined()
 	if Start.wanted(args) or waiting:
@@ -767,7 +825,7 @@ func delivery_spot(kind: String) -> Transform3D:
 	var yaw := LODGE_YAW + PI
 	var k: Dictionary = Sled.KINDS.get(kind, Sled.KINDS["mid"])
 	for dx in [0.0, 3.0, -3.0, 6.0, -6.0]:
-		var p := lodge.to_global(Vector3(-13.4 + dx, 0, DELIVER_Z)) if lodge else START
+		var p := lodge.to_global(Vector3(-13.4 + dx, 0, DELIVER_Z)) if lodge else start_pos()
 		p.y = height(p.x, p.z)
 		var q := PhysicsShapeQueryParameters3D.new()
 		var box := BoxShape3D.new()
@@ -781,7 +839,7 @@ func delivery_spot(kind: String) -> Transform3D:
 				clear = false
 		if clear:
 			return Transform3D(Basis(Vector3.UP, yaw), p)
-	var p0 := lodge.to_global(Vector3(-13.4, 0, DELIVER_Z)) if lodge else START
+	var p0 := lodge.to_global(Vector3(-13.4, 0, DELIVER_Z)) if lodge else start_pos()
 	p0.y = height(p0.x, p0.z)
 	return Transform3D(Basis(Vector3.UP, yaw), p0)
 
@@ -1218,6 +1276,9 @@ func _make_world() -> void:
 	env.fog_enabled = true                               # 遠くは空の色に青く霞む。陽の側は明るく
 	env.fog_light_color = Color(0.74, 0.82, 0.95)
 	env.fog_density = 0.0016   # 南の大きな山（300〜500 m 先）が霞みすぎないよう
+	if tenka():   # 天下森: 谷の向かいの山（1〜5 km 先）が見えることがいちばん大事。遠くの山なみ（〜20 km）はほどよく霞む
+		env.fog_density = 0.00018
+		env.fog_aerial_perspective = 0.6
 	env.fog_aerial_perspective = 0.4
 	env.fog_sun_scatter = 0.08
 	env.fog_sky_affect = 0.15
@@ -1248,6 +1309,8 @@ func _make_world() -> void:
 	sun_light = sun
 	add_child(sun)
 
+	if tenka():   # 天下森の遠景は本物の山（tenkamori.gd の mid・far）
+		return
 	# 遠景: 地平線にフェルトの山なみ。地面（x は ±128 m、z は -128〜640 m の長方形と、東の大山の長方形）の外周に沿って、すき間なく並べ、
 	# 地面の端を隠す。高台の高さぶん持ち上げる。大山の地面に重なる分は並べない（乱数は引いておく。ほかの山の位置が変わらないように）
 	var rng := RandomNumberGenerator.new()
@@ -1509,7 +1572,7 @@ func _add_roamer() -> Node3D:
 ## 設定の「CPU の数」: 山をめぐる仲間をこの数にする（一人で遊ぶ画面とホストの画面。つなぐ側では動かさない。仲間はホストの画面が動かす）。
 ## 減らすときは、あとから出した仲間から、人と対決していない・人と一緒に乗っていない仲間を消す（消せない分は _keep_cpu_count があとで）
 func set_cpu_count(n: int) -> void:
-	if args.has("join"):
+	if args.has("join") or tenka():   # 天下森には、まだ山をめぐる仲間の道がない
 		return
 	_cpu_want = maxi(0, n)
 	var roam: Array = get_children().filter(func(c): return c.get_script() == Bot and c.roam and not c.is_queued_for_deletion())
@@ -1806,6 +1869,12 @@ func _shelter_snow(lodge: Node3D) -> void:
 
 
 func _make_ground() -> void:
+	if tenka():
+		var tk := Tenka.new()
+		tk.name = "Tenkamori"
+		tk.world = self
+		add_child(tk)
+		return
 	var half := SIZE / 2.0
 	var z0: float = TILES_Z[0] - half
 	var rows := int(TILES_Z[TILES_Z.size() - 1] + half - z0) + 1
@@ -2188,7 +2257,8 @@ func _physics_process(dt: float) -> void:
 
 ## ソリをふもとに戻す（Backspace。通信ではホストの画面だけ。net.gd）
 func reset_sled() -> void:
-	sled.reset_to(START + Vector3(0, height(START.x, START.z - 3) + 0.6, -3))
+	var st := start_pos()
+	sled.reset_to(st + Vector3(0, height(st.x, st.z - 3) + 0.6, -3))
 
 
 ## 音量の区分のバス。音楽は Speaker → Music → Outdoor、効果音は Inside・Self → SFX → Master、
