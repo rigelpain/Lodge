@@ -23,22 +23,34 @@ const Gloves := preload("res://gloves.gd")
 
 # ---- 大きさ
 const SEED_R := 0.16         # 置いたばかりの玉の半径 (m)。手で丸めた雪玉（doll.gd の BALL_R 0.075）を、雪の上で一回り転がした大きさ
-const MAX_R := 2.4           # これより大きくならない (m)。人の背丈の 3 倍ほど
-const GROW_A := 0.006        # 1 m 転がると半径がこれだけ伸びる（小さいとき）。2026-11-08 代表「雪玉の成長率が高いかも。」で 0.012 から半分に
-const GROW_B := 0.025        # …大きいほど、半径 1 m あたりこれだけ足す（0.05 から半分に）。毛糸の手袋で 0.16 → 0.5 m に約 25 m、→ 1 m に約 45 m、
-                             # → 2.4 m に約 75 m（丘の頂上から斜面を下りきってふもとの溝を越えるくらい）。手袋の grow（gloves.gd）で割った道のりになる
+const MAX_R := 2.4           # これより大きくならない (m)。人の背丈の 3 倍ほど（2026-11-09 代表「最大サイズはいまのままでいいよ」）
+## 育つ速さ（2026-11-08 代表「雪玉の成長率が高いかも。」で半分に。2026-11-09 代表「いまの最大サイズになるまでにいまの3倍の移動距離が必要になってほしい」で、さらに 3 分の 1 に）。
+## A と B を同じ割合で下げるので、育ち方の形（大きいほど速い）と手袋の差はそのままで、道のりがちょうど 3 倍になる。
+## 毛糸の手袋で 0.16 → 0.5 m に約 74 m、→ 1 m に約 136 m、→ 2.4 m に約 226 m。手袋の grow（gloves.gd）で割った道のりになる
+const GROW_A := 0.002        # 1 m 転がると半径がこれだけ伸びる（小さいとき）。0.012 → 0.006 → 0.002
+const GROW_B := 0.025 / 3.0  # …大きいほど、半径 1 m あたりこれだけ足す。0.05 → 0.025 → 0.0083
 const DENSITY := 200.0       # 重さ (kg/m³)。半径 0.5 m で 105 kg、1 m で 840 kg、2 m で 6700 kg
 const MIN_MASS := 3.0        # 物理の重さの下限 (kg)
 # ---- 転がり
-const ROLL_RES := 0.04       # 雪の転がり抵抗（重さに対する割合）。一人の押す力で、平らな所を半径およそ 0.9 m まで押せる（0.8 m でじりじり、1 m は動かない）
+const ROLL_RES := 0.04       # 雪の転がり抵抗（重さに対する割合）。一人の押す力で、平らな所を半径およそ 0.9 m まで押せる（0.8 m でじりじり、1 m は動かない）。
+                             # ぶつかられて転がる玉は、この抵抗（0.39 m/s²）と PLOW で止まる。これより急な坂（約 2°）なら、はじかれた玉は転がり続ける
 const PLOW := 20.0           # 雪を押しのける抵抗 (N per (m/s)² per m²)。坂の下りの速さの上限を決める（丘・大山の頂上から放すと 8〜9 m/s まで）
-const SETTLE := 1.2          # 誰も押していない遅い玉（PUSH_SPEED より遅い）が、緩い所（坂の傾きが SETTLE_TAN より緩い）で雪に沈んで止まる減速 (m/s²)。
-                             # 押すのをやめると 2 m/s から 1.5 秒ほどで止まる。坂から勢いよく来た玉は、平らな所でも惰性で転がる
+const SETTLE := 1.2          # 押すのをやめた遅い玉（PUSH_SPEED より遅い）が、緩い所（坂の傾きが SETTLE_TAN より緩い）で雪に沈んで止まる減速 (m/s²)。
+                             # 押すのをやめると 2 m/s から 1.5 秒ほどで止まる。効くのは押すのをやめてから SETTLE_AFTER のあいだだけ
+                             # （坂から転がってきた玉・ぶつかられた玉は、転がり抵抗だけで惰性で転がる。2026-11-09 から）
+const SETTLE_AFTER := 2.5    # 押すのをやめてから、SETTLE が効くあいだ (s)
 const SETTLE_TAN := 0.18     # この坂（約 10°）より急なら沈まずに転がり続ける
 const HOLD_TAN := 0.12       # 止まっていて、誰も押していなければ、これより緩い坂（約 7°）では転がり出さない
 const HOLD_SPEED := 0.25     # これより遅ければ「止まっている」(m/s)
 const PUSH_FORCE := 300.0    # 一人が押す力 (N)。ソリと同じ（sled.gd の PUSH_FORCE）
 const PUSH_SPEED := 2.6      # 押して出せる速さ (m/s)。ここに近づくほど押す力が弱まる（歩く 2 m/s・走る 3.4 m/s のあいだ）
+# ---- ぶつかられる（2026-11-09 代表「ぶつかられた雪玉も物理演算で動いてほしい」）
+## ソリ・人・投げた雪玉・別の大玉に当たられると「はじかれた」玉になり（knock）、止める（HOLD_*）・沈める（SETTLE）のをやめて、
+## 雪の転がり抵抗（ROLL_RES）と PLOW だけで自然に止まるまで転がる。坂ならそのまま転がっていく。押されると、ふつうの玉に戻る
+const KNOCK_REST := 0.4      # はじかれてから、これより経って遅くなれば（HOLD_SPEED）、止まった玉に戻る (s)
+const BUMP_MASS := 45.0      # 手袋なしで歩いて当たった人の重さ (kg)。当たったときに一度だけ、ぶつかり合いの勢いで玉を突く（player.gd の _ball_block）:
+                             # 玉の速さ = 当たる速さ × 人の重さ / (人 + 玉の重さ) × (1 + BUMP_BOUNCE)。歩いて（2 m/s）半径 0.3 m の玉に 1.7 m/s、0.5 m に 0.8 m/s
+const BUMP_BOUNCE := 0.3     # 人と玉のはね返り（0 はくっつく、1 は弾む）
 # ---- 耐久（減る量の単位は「点」。どれも代表が遊んで決める前の仮の値）
 const WEAR_BASE := 6.0       # 耐えられる量 = (WEAR_BASE + WEAR_PER_R × 半径) × 手袋の hard（gloves.gd）。毛糸で半径 0.16 m は 7、0.8 m は 11、2.4 m は 20
 const WEAR_PER_R := 6.0
@@ -92,6 +104,8 @@ var _mat: StandardMaterial3D
 var _mat_r := -1.0           # 材質の模様の大きさを合わせた半径
 var _v_prev := Vector3.INF
 var _push_t := 99.0          # 最後に押されてから (s)
+var _loose := false          # はじかれて、止める・沈めるのをやめている（ホスト）
+var _knock_t := 99.0         # 最後にはじかれてから (s)
 var _wob := 0.0              # 暴れて揺れている強さ（0〜）
 var _wob_t := 0.0
 var _body: MeshInstance3D    # 玉の面（へこむと、へこんだ形の ArrayMesh に替わる）
@@ -226,6 +240,7 @@ func _physics_process(dt: float) -> void:
 	_v_prev = v
 	_note_sleds(p)
 	_push_t += dt
+	_knock_t += dt
 	var hit := _ground_hit(p)
 	if hit.is_empty():
 		return   # 宙にいる
@@ -233,14 +248,15 @@ func _physics_process(dt: float) -> void:
 	var vt := v - n * v.dot(n)
 	var sp := vt.length()
 	var slope := Vector2(n.x, n.z).length() / maxf(n.y, 0.01)
-	if _push_t > 0.2 and sp < HOLD_SPEED and slope < HOLD_TAN:
-		# 止まっている: 緩い坂では、雪に沈んで動かない
+	if _push_t > 0.2 and sp < HOLD_SPEED and slope < HOLD_TAN and (not _loose or _knock_t > KNOCK_REST):
+		# 止まっている: 緩い坂では、雪に沈んで動かない（はじかれた玉は、転がって遅くなってから）
+		_loose = false
 		linear_velocity = n * v.dot(n)
 		angular_velocity *= 0.5
 		return
 	if sp > 0.02:
 		var res := ROLL_RES * 9.8 * n.y
-		if _push_t > 0.2 and slope < SETTLE_TAN and sp < PUSH_SPEED:
+		if _push_t > 0.2 and _push_t < SETTLE_AFTER and slope < SETTLE_TAN and sp < PUSH_SPEED and not _loose:
 			res += SETTLE * 1.4   # 転がる玉は回りの分だけ減速しにくいので、1.4 倍の力で SETTLE の減速に
 		apply_central_force(-vt / sp * minf(res * mass, mass * sp / dt * 0.5))
 		apply_central_force(-vt * sp * PLOW * r * r)
@@ -283,6 +299,7 @@ func push(dir: Vector3, k := 1.0, grade := "") -> void:
 	if broken or net_follow:
 		return
 	_push_t = 0.0
+	_loose = false   # 押した玉は、離すと沈んで止まる（SETTLE）
 	if Gloves.rank(grade) > Gloves.rank(pack):
 		pack = grade
 	k *= Gloves.stat(grade, "push")
@@ -349,7 +366,11 @@ func _note_sleds(p: Vector3) -> void:
 
 ## 何かに触れはじめた（ホスト）。ソリなら、重さ（乗る人も）× 近づく速さで減る
 func _on_body(body: Node) -> void:
-	if broken or net_follow or not body.is_in_group("sleds"):
+	if broken or net_follow:
+		return
+	if body is RigidBody3D:
+		knock()   # ソリ・投げた雪玉・別の大玉に当たられた: 物理のまま転がる（人の当たりは bump。押す人の体が触れ直すたびに、はじかれたとしないように）
+	if not body.is_in_group("sleds"):
 		return
 	var s := body as RigidBody3D
 	var d := global_position - s.global_position
@@ -368,6 +389,21 @@ func _on_body(body: Node) -> void:
 	var amt := (m * closing - SLED_FREE) / SLED_K
 	if amt > 0.0:
 		_queue_hurt(amt, global_position - d * r, "sled")
+
+
+## はじかれた（ホスト）: 止める・沈めるのをやめて、物理のまま転がる
+func knock() -> void:
+	_loose = true
+	_knock_t = 0.0
+
+
+## 手袋なしの人が歩いて当たった（ホスト。出来事 ball_bump。player.gd の _ball_block）。imp は突く勢い (kg·m/s)
+func bump(imp: Vector3) -> void:
+	if broken or net_follow:
+		return
+	knock()
+	var k := mass / (BUMP_MASS + mass) * (1.0 + BUMP_BOUNCE)   # 人の勢いのうち玉に渡る分（ぶつかり合い）
+	apply_central_impulse(Vector3(imp.x, 0.0, imp.z) * k)
 
 
 ## 中の人が暴れた（ホスト。出来事 ball_kick）。回数が足りたら崩れる。崩れるまでの割合を返す

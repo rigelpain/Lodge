@@ -9,6 +9,8 @@ extends SceneTree
 ##   --case=push   平らな雪の板の上で、半径ごとに一人で W を押し続ける。4 秒後の速さ、両手が玉に伸びているか、体が玉から離れないか
 ##   --case=slope  本物の丘の上から放す。速さ・半径・崩れたか（--at=mountain で大山の頂上から）
 ##   --case=bump   板の上の壁にぶつける・高い所から落とす。強いと崩れ、弱いと崩れない
+##   --case=knock  ぶつかられて動く: ソリ（--sled= の大きさ）を 3・6 m/s で、手袋なしの人が歩いて・走って、投げた雪玉、別の大玉、坂の上でソリ。
+##                 玉が動いた距離・いちばん速い速さ
 ##   --case=wear   耐久: 壁に 5 m/s で 2 回、投げた雪玉を当て続ける、ソリ（main の --sled= の大きさ）を 6 m/s でぶつけ続ける。減る量と、何回で崩れるか
 ##   --case=catch  速い大玉を、立っているあなたに当てる。取り込まれ、Space の連打で崩れて放り出され、着いたら歩ける。遅い玉は取り込まない
 ##   --case=bot    （--bots=1）仲間に当てる。取り込まれた仲間は、ひとりでに暴れて出てくる
@@ -60,6 +62,8 @@ func _run() -> void:
 			await _bump_case()
 		"wear":
 			await _wear_case()
+		"knock":
+			await _knock_case()
 		"catch":
 			await _catch_case()
 		"bot":
@@ -195,14 +199,14 @@ func _buy_gloves(kind := "gloves") -> void:
 
 func _grow_case() -> void:
 	_stand(p, Vector3(-100, LAB_Y + 0.1, -100))
-	var b := _ball(Vector3(-60, LAB_Y, 0), BigBall.SEED_R)
+	var b := _ball(Vector3(-115, LAB_Y, 0), BigBall.SEED_R)   # 板は x −120〜120。上限まで約 226 m
 	await _ticks(10)
 	var start := b.global_position
 	var marks := [0.3, 0.5, 0.75, 1.0, 1.5, 2.0, BigBall.MAX_R]
 	var mi := 0
 	var last_r: float = b.r
 	print("道のり (m)  半径 (m)  重さ (kg)")
-	for i in 60 * 60:
+	for i in 60 * 90:
 		b.linear_velocity = Vector3(3.0, b.linear_velocity.y, 0)
 		b.angular_velocity = Vector3(0, 0, -3.0 / b.r)
 		await physics_frame
@@ -395,6 +399,137 @@ func _bump_case() -> void:
 	await _clear_balls()
 
 
+# ---------------------------------------------------------------- ぶつかられる
+
+## 玉が止まるまで（最長 t 秒）見て、[動いた水平の距離, いちばん速い速さ, 崩れたか]
+func _watch_move(b: RigidBody3D, t: float) -> Array:
+	var at0: Vector3 = b.global_position
+	var top := 0.0
+	var far := 0.0
+	var n := int(t * 60.0)
+	var still := 0
+	for i in n:
+		await physics_frame
+		if not is_instance_valid(b) or b.broken:
+			return [far, top, true]
+		var v := Vector2(b.linear_velocity.x, b.linear_velocity.z).length()
+		top = maxf(top, v)
+		far = Vector2(b.global_position.x - at0.x, b.global_position.z - at0.z).length()
+		still = still + 1 if v < 0.02 and i > 30 else 0
+		if still > 30:
+			break
+	return [far, top, false]
+
+
+func _knock_case() -> void:
+	var at := Vector3(40.0, 0.0, 100.0)   # くぼみの外の高台（平ら）
+	at.y = main.height(at.x, at.z)
+	var sled: RigidBody3D = main.sled
+	print("ソリ（%s、重さ %.0f kg）を当てる（平らな高台）" % [sled.kind, sled.load_mass()])
+	for c in [[0.5, 3.0], [0.5, 6.0], [1.0, 6.0], [2.0, 6.0]]:
+		sled.reset_to(Vector3(0, main.height(0, 38) + 0.3, 38))   # 前の回のソリを、玉を置く所からどける
+		await _clear_balls()
+		_stand(p, at + Vector3(0, 0.5, 20.0))
+		var b := _ball(at, c[0])
+		await _ticks(30)
+		var bp: Vector3 = b.global_position
+		var from := Vector2(bp.x - (b.r + sled.HALF.y + 1.0), bp.z)
+		sled.crashed = false
+		sled.reset_to(Vector3(from.x, main.height(from.x, from.y) + 0.3, from.y))
+		sled.rotation.y = atan2(-1.0, 0.0)
+		sled.parked = false
+		await _ticks(20)
+		sled.linear_velocity = Vector3(c[1], 0, 0)
+		var kg: float = b.mass
+		var m: Array = await _watch_move(b, 8.0)
+		print("  半径 %.1f m（%4.0f kg）に %.0f m/s: 動いた %.2f m、いちばん速く %.2f m/s%s" % [c[0], kg, c[1], m[0], m[1], "、崩れた" if m[2] else ""])
+		if kg < sled.load_mass() * 20.0:   # ずっと重い玉は、物理のとおりほとんど動かない（数だけ出す）
+			_say(m[2] or m[0] > 0.05, "    ソリに当てられると動く")
+	sled.reset_to(Vector3(0, main.height(0, 38) + 0.3, 38))
+	# 手袋なしの人が歩いて・走って当たる
+	_wear(false)
+	await _ticks(3)
+	print("手袋なしの人が当たる（平らな雪の板）")
+	for c in [[0.3, false], [0.5, false], [0.5, true], [0.8, true]]:
+		await _clear_balls()
+		_stand(p, Vector3(0, LAB_Y + 0.05, c[0] + 3.0), 0.0)   # 玉の +z 側で、-z（玉）を向く
+		await _ticks(3)
+		var b := _ball(Vector3(0, LAB_Y, 0), c[0])
+		await _ticks(20)
+		if c[1]:
+			await _key(KEY_SHIFT, true)
+		await _key(KEY_W, true)
+		var at0: Vector3 = b.global_position
+		var top := 0.0
+		for i in 110:   # 玉の面まで 2.7 m（歩く 2 m/s でも届く）
+			await physics_frame
+			top = maxf(top, Vector2(b.linear_velocity.x, b.linear_velocity.z).length())
+		await _key(KEY_W, false)
+		await _key(KEY_SHIFT, false)
+		var m: Array = await _watch_move(b, 6.0)
+		var far := Vector2(b.global_position.x - at0.x, b.global_position.z - at0.z).length()
+		print("  半径 %.1f m（%3.0f kg）に%s: 動いた %.1f m、いちばん速く %.2f m/s" % [c[0], b.mass, "走って" if c[1] else "歩いて", far, maxf(top, m[1])])
+		_say(far > 0.05, "    人が当たると動く")
+	# 投げた雪玉（種の大きさの玉に、3 m 先から 12 m/s で 3 個）
+	await _clear_balls()
+	_stand(p, Vector3(-100, LAB_Y + 0.1, -100))
+	var sb := _ball(Vector3(0, LAB_Y, 0), BigBall.SEED_R)
+	await _ticks(20)
+	var s0: Vector3 = sb.global_position
+	var stop := 0.0
+	for k in 3:
+		var from: Vector3 = sb.global_position + Vector3(0, 0.1, 1.5)
+		main.emotes._spawn_ball({"who": p.id, "ball": 9500 + k, "origin": from, "velocity": (sb.global_position - from).normalized() * 12.0})
+		var m: Array = await _watch_move(sb, 3.0)
+		stop = maxf(stop, m[1])
+	var sfar := Vector2(sb.global_position.x - s0.x, sb.global_position.z - s0.z).length()
+	print("雪玉 3 個を種（半径 %.2f m、%.0f kg）に: 動いた %.2f m、いちばん速く %.2f m/s" % [sb.r, sb.mass, sfar, stop])
+	_say(sfar > 0.05, "  雪玉が当たると、小さな玉は動く")
+	# 別の大玉（半径 0.8 m を 3 m/s で、止まっている半径 0.5 m へ）
+	await _clear_balls()
+	var hit := _ball(Vector3(0, LAB_Y, 0), 0.5)
+	var roll := _ball(Vector3(0, LAB_Y, 3.0), 0.8)
+	await _ticks(20)
+	roll.linear_velocity = Vector3(0, 0, -3.0)
+	roll.angular_velocity = Vector3(-3.0 / roll.r, 0, 0)
+	roll._v_prev = roll.linear_velocity
+	roll.knock()   # 坂から転がってきた玉と同じに（押していない）
+	var mb: Array = await _watch_move(hit, 8.0)
+	print("半径 0.8 m の玉を 3 m/s で半径 0.5 m の玉へ: 動いた %.1f m、いちばん速く %.2f m/s" % [mb[0], mb[1]])
+	_say(mb[0] > 0.5, "  別の大玉に当てられると動く")
+	# 坂の上（止まる玉がとどまる緩い坂、4〜7°）: ソリで当てると、そのまま坂を転がる
+	await _clear_balls()
+	var sp := Vector3.INF
+	for z in range(30, 60):
+		var h0: float = main.height(4.0, float(z))
+		var h1: float = main.height(4.0, float(z) + 1.0)
+		var tn := absf(h1 - h0)
+		if tn > 0.075 and tn < 0.11:
+			sp = Vector3(4.0, h0, float(z))
+			break
+	if sp == Vector3.INF:
+		print("4〜7° の坂が見つからない")
+		return
+	_stand(p, sp + Vector3(12, 1, 0))
+	var sbb := _ball(sp, 0.5)
+	await _ticks(90)
+	var rest := Vector2(sbb.linear_velocity.x, sbb.linear_velocity.z).length()
+	_say(rest < 0.05, "坂（傾き %.2f）の上に置いた玉は、止まったまま（%.2f m/s）" % [absf(main.height(4.0, sp.z + 1.0) - main.height(4.0, sp.z)), rest])
+	# 坂の上の側から、手袋なしの人が歩いて当たる（下りの向き = +z）
+	_wear(false)
+	_stand(p, sbb.global_position + Vector3(0, 0.1, -(sbb.r + 2.5)), PI)   # 玉の -z 側で、+z（玉）を向く
+	await _ticks(3)
+	await _key(KEY_W, true)
+	for i in 70:
+		await physics_frame
+	await _key(KEY_W, false)
+	_stand(p, sbb.global_position + Vector3(12, 1, -6))   # 転がる玉の行く手からどく
+	var ms: Array = await _watch_move(sbb, 15.0)
+	print("坂の玉（半径 0.5 m）に上の側から人が歩いて当たる: 動いた %.1f m、いちばん速く %.2f m/s%s" % [ms[0], ms[1], "、崩れた" if ms[2] else ""])
+	_say(ms[2] or ms[0] > 2.0, "  はじかれた玉は、坂をそのまま転がっていく")
+	await _clear_balls()
+
+
 # ---------------------------------------------------------------- 耐久
 
 func _wear_case() -> void:
@@ -526,7 +661,7 @@ func _catch_case() -> void:
 	await _clear_balls()
 	b = await _roll_at(p, 1.0, 7.0)
 	var caught := false
-	for i in 120:
+	for i in 180:   # 玉の面が人に届くまで 2 秒ほど
 		await physics_frame
 		if args.has("trace") and i % 6 == 0:
 			print("  玉 z=%.2f y=%.2f 速さ %.2f　人 z=%.2f y=%.2f" % [b.global_position.z, b.global_position.y, b.linear_velocity.length(), p.global_position.z, p.global_position.y])
