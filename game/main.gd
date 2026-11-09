@@ -539,7 +539,7 @@ func _ready() -> void:
 		player.sled = sled
 		player.position = st + Vector3(0, height(st.x, st.z) + 0.2, 0)
 		add_child(player)
-		player.look_at(sled.position, Vector3.UP)
+		player.look_at(Tenka.start_look() if tenka() else sled.position, Vector3.UP)   # 天下森: ヒュッテの入口を向いて始める
 		player.rotation.x = 0
 		_add_pals(player)
 

@@ -30,8 +30,6 @@ const FAR_Z0 := -19200.0
 const FAR_STEP := 96.0
 const FAR_N := 401
 
-## 始める所: 天下森コースの下の端、リフトの乗り場の少し上（ソリは坂の上の側に置く）
-const START := Vector3(-14.0, 0.0, 26.0)
 const SEAM_SINK := 40.0     # 細かい地面の下に隠れる粗い地面を、これだけ下げる (m)。16 m おきの粗い地面は、狭い沢で細かい地面より高く出る
 const EDGE_FADE := 24.0     # 近くの地面の縁から、粗い地面へ溶かす幅（見た目の吹きだまりを消す）
 
@@ -86,7 +84,15 @@ static func drift_k(x: float, z: float) -> float:
 
 
 static func start_pos() -> Vector3:
-	return START
+	var f: Vector2 = preload("res://hutte.gd").front_spot()
+	return Vector3(f.x, 0.0, f.y)
+
+
+## 始めたときに向く所（ヒュッテの入口の妻）
+static func start_look() -> Vector3:
+	var H := preload("res://hutte.gd")
+	var f: Vector2 = H.to_world(0.0, -H.VEST_V)
+	return Vector3(f.x, lift(f.x, f.y) + 3.0, f.y)
 
 
 func _ready() -> void:

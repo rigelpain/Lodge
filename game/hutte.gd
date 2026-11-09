@@ -15,6 +15,8 @@ extends Node3D
 
 const Look := preload("res://look.gd")
 const Lift := preload("res://tenkamori_lift.gd")   # 箱と筒の形の部品
+const Lodge := preload("res://lodge/lodge.gd")       # 今までのロッジの素材（板・丸太・ガラス・鉄・玄関マット）を流用する
+const Props := preload("res://props.gd")
 
 const AT := Vector2(48.0, 21.0)
 const YAW_DEG := 26.0
@@ -23,6 +25,8 @@ const FL := 0.75
 const HALL_U := Vector2(-2.25, 2.25)
 const HALL_V := Vector2(-4.5, 4.5)
 const VEST_V := 8.0                       # 風除室の外の壁（± 両側）
+## 風除室の幅の半分（2026-11-09 代表「壁なかったり」: 入口の両脇の A 字の屋根の下が筒抜けだった。A 字の軒の線まで壁で囲う）
+const VEST_U := 5.0
 const REST_U := Vector2(2.25, 17.0)
 const KITCHEN_U := Vector2(17.0, 21.3)
 const WING_U := Vector2(-10.85, -2.25)
@@ -39,12 +43,14 @@ const A_V := 9.5
 const OV_SIDE := 0.9
 const OV_GABLE := 1.2
 const DECK_S_V := Vector2(4.5, 6.4)
-const DECK_N := Rect2(2.25, -7.2, 4.35, 2.7)   # u, v, 幅, 奥行き
+const DECK_N := Rect2(5.0, -7.2, 4.35, 2.7)    # u, v, 幅, 奥行き（風除室の東）
 const PORCH := Vector2(4.5, 0.9)                # 風除室の前の土間: u の半分の幅、奥行き
 const STEPS_U := Vector2(0.2, 2.6)              # ゲレンデの側（駐車場の側は u を裏返す）
 const STEPS_LEN := 2.2
 const POST_R := 0.18
 const BEAM_Y := 3.2
+const GLASS_U := Vector2(0.3, 2.1)              # ガラスの自動ドアの開口（ゲレンデの側。駐車場の側は u を裏返す）
+const WHITE_U := Vector2(-1.9, -0.6)            # 白い開き戸の開口
 const T := 0.25                                 # 壁の厚さ
 
 const BOARD := Color(0.36, 0.24, 0.16)    # 焦げ茶の横板の壁（日に焼けた茶）
@@ -64,6 +70,18 @@ const SIGN := Color(0.90, 0.84, 0.70)
 var _st := {}
 var _body: StaticBody3D
 var _lights: Array[Vector3] = []
+
+
+## 遊びの座標（x, z）。u, v はこの節点の中の座標
+static func to_world(u: float, v: float) -> Vector2:
+	var c := cos(deg_to_rad(YAW_DEG))
+	var s := sin(deg_to_rad(YAW_DEG))
+	return AT + Vector2(u * c - v * s, u * s + v * c)
+
+
+## 始める所: 駐車場の側の入口の段の前（2026-11-09 代表「スポーン場所をロッジの前にしてほしい」「駐車場側というか」）
+static func front_spot() -> Vector2:
+	return to_world(-1.4, -VEST_V - PORCH.y - STEPS_LEN - 2.5)
 
 
 static func place(world: Node3D) -> Node3D:
@@ -86,6 +104,7 @@ func _ready() -> void:
 	_gables()
 	_decks()
 	_inside()
+	_doors()
 	for key in _st:
 		var mi := MeshInstance3D.new()
 		mi.name = "Hutte_" + key
@@ -101,19 +120,27 @@ func _ready() -> void:
 		add_child(l)
 
 
+## 素材は今までのロッジ（lodge/lodge.gd）の物を流用する（2026-11-09 代表「テクスチャが全然なかった」「デフォルトワールドから流用できるものいっぱいある」）:
+## 壁・床・デッキ・天井は幅 40 cm の荒い板（_planks）、丸太の柱と梁は木肌と樹皮のむら（_log_wood）、ガラス（_glass）、戸の框（_metal）
 func _material(key: String) -> Material:
 	var m: BaseMaterial3D
 	match key:
-		"board": m = Look.wood(BOARD)
-		"log": m = Look.wood(LOG)
+		"board": m = Lodge._planks(BOARD, true)
+		"log":
+			var lm: ShaderMaterial = Lodge._log_wood().duplicate()
+			var sh := Shader.new()
+			sh.code = Lodge.LOG_SHADER.replace("render_mode diffuse_burley;", "render_mode diffuse_burley, cull_disabled;")
+			lm.shader = sh
+			return lm
 		"roof": m = Look.felt(ROOF, 1.2)
 		"blue": m = Look.felt(BLUE, 1.2)
-		"deck": m = Look.wood(DECK)
+		"deck": m = Lodge._planks(DECK)
+		"step": m = Lodge._planks(DECK, true)
 		"base": m = Look.felt(BASE, 2.0)
-		"soffit": m = Look.wood(SOFFIT)
-		"ceiling": m = Look.wood(CEILING)
-		"floor": m = Look.wood(FLOOR)
-		"table": m = Look.wood(TABLE)
+		"soffit": m = Lodge._planks(SOFFIT, true)
+		"ceiling": m = Lodge._planks(CEILING, true)
+		"floor": m = Lodge._planks(FLOOR)
+		"table": m = Lodge._planks(TABLE, true)
 		"chair": m = Look.felt(CHAIR, 1.4)
 		"snow": m = Look.snow()
 		"inner":
@@ -123,16 +150,15 @@ func _material(key: String) -> Material:
 			m.emission_energy_multiplier = 0.15
 		"sign": m = Look.paper(SIGN)
 		"door": m = Look.paper(Color(0.93, 0.93, 0.92))
+		"metal": m = Lodge._metal()
+		"mat_out": m = Lodge._doormat(false)
+		"mat_in": m = Lodge._doormat(true)
 		"lamp":
 			m = Look.paper(Color(0.98, 0.90, 0.72))
 			m.emission_enabled = true
 			m.emission = Color(1.0, 0.78, 0.48)
 			m.emission_energy_multiplier = 1.4
-		"glass":
-			m = StandardMaterial3D.new()
-			m.albedo_color = Color(0.62, 0.70, 0.78, 0.30)
-			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-			m.roughness = 0.05
+		"glass": return Lodge._glass()
 		_: m = Look.felt(Color.MAGENTA)
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	return m
@@ -202,10 +228,10 @@ func _log(a: Vector3, b: Vector3, r: float, col := false) -> void:
 
 func _floors() -> void:
 	# 基礎と床（ホール・風除室・休憩室・厨房・北西の棟）
-	for r in [Rect2(HALL_U.x, -VEST_V, HALL_U.y - HALL_U.x, VEST_V * 2.0), Rect2(REST_U.x, HALL_V.x, KITCHEN_U.y - REST_U.x, HALL_V.y - HALL_V.x),
+	for r in [Rect2(-VEST_U, -VEST_V, VEST_U * 2.0, VEST_V * 2.0), Rect2(REST_U.x, HALL_V.x, KITCHEN_U.y - REST_U.x, HALL_V.y - HALL_V.x),
 			Rect2(WING_U.x, WING_V.x, WING_U.y - WING_U.x, WING_V.y - WING_V.x)]:
 		_span("base", Vector3(r.position.x, -0.6, r.position.y), Vector3(r.end.x, FL - 0.04, r.end.y), true)
-	_span("floor", Vector3(HALL_U.x + T, FL - 0.04, -VEST_V + T), Vector3(HALL_U.y, FL, VEST_V - T))
+	_span("floor", Vector3(-VEST_U + T, FL - 0.04, -VEST_V + T), Vector3(VEST_U - T, FL, VEST_V - T))
 	_span("floor", Vector3(REST_U.x, FL - 0.04, HALL_V.x + T), Vector3(REST_U.y - T, FL, HALL_V.y - T))
 
 
@@ -484,22 +510,26 @@ func _walls() -> void:
 	_span("board", Vector3(KITCHEN_U.x, FL, HALL_V.x), Vector3(KITCHEN_U.y, FL + KITCHEN_EAVE, HALL_V.y), true)
 	_span("glass", Vector3(KITCHEN_U.y, FL + 1.0, -3.4), Vector3(KITCHEN_U.y + 0.04, FL + 2.0, -1.4))
 	_span("door", Vector3(KITCHEN_U.y, FL, 2.0), Vector3(KITCHEN_U.y + 0.05, FL + 2.1, 3.6))
-	# ホール・風除室の壁（u = ±2.25）。北西の棟へは戸、休憩室へは大きく開ける
-	var vl := VEST_V * 2.0
-	_pwall(Vector2(HALL_U.x + hz, -VEST_V), Vector2(HALL_U.x + hz, VEST_V), [[VEST_V - 1.2, VEST_V + 1.2, 0.0, 2.2, "open"]])
-	_pwall(Vector2(HALL_U.y - hz, -VEST_V), Vector2(HALL_U.y - hz, VEST_V), [[VEST_V + HALL_V.x + 0.6, VEST_V + HALL_V.y - 0.6, 0.0, 2.8, "open"]])
-	# 風除室の外の壁（両側）: 柱の右にガラスの戸（開いている）、左に白い戸。上は A 字の屋根の裏まで
+	# ホールの壁（u = ±2.25）。北西の棟へは開き戸、休憩室へは大きく開ける。風除室の所には壁がない（広い風除室）
+	_pwall(Vector2(HALL_U.x + hz, WING_V.x), Vector2(HALL_U.x + hz, HALL_V.y), [[-1.2 - WING_V.x, 1.2 - WING_V.x, 0.0, 2.2, "open"]])
+	_pwall(Vector2(HALL_U.y - hz, HALL_V.x), Vector2(HALL_U.y - hz, HALL_V.y), [[0.6, HALL_V.y * 2.0 - 0.6, 0.0, 2.8, "open"]])
+	# 風除室の脇の壁（A 字の軒の線 u = ±5）。南は休憩室・北西の棟の壁から、北は休憩室の壁と北西の棟の壁から
+	_pwall(Vector2(-VEST_U + hz, HALL_V.y), Vector2(-VEST_U + hz, VEST_V), [[1.2, 2.4, 1.0, 2.2, "win"]])
+	_pwall(Vector2(VEST_U - hz, HALL_V.y), Vector2(VEST_U - hz, VEST_V), [[1.2, 2.4, 1.0, 2.2, "win"]])
+	_pwall(Vector2(-VEST_U + hz, -VEST_V), Vector2(-VEST_U + hz, WING_V.x), [])
+	_pwall(Vector2(VEST_U - hz, -VEST_V), Vector2(VEST_U - hz, HALL_V.x), [[1.0, 2.2, 1.0, 2.2, "win"]])
+	# 風除室の外の壁（入口の妻。両側）: 柱の右にガラスの自動ドア、左に白い開き戸、その外に小窓。上は A 字の屋根の裏まで
 	for s in [1.0, -1.0]:
 		var z: float = s * (VEST_V - hz)
-		var a := Vector2(HALL_U.x, z)
-		var b := Vector2(HALL_U.y, z)
-		var gx := Vector2(0.3, 2.1) if s > 0.0 else Vector2(-2.1, -0.3)
-		var dx := Vector2(-1.9, -0.6) if s > 0.0 else Vector2(0.6, 1.9)
-		_pwall(a, b, [[gx.x - HALL_U.x, gx.y - HALL_U.x, 0.0, 2.6, "open"], [dx.x - HALL_U.x, dx.y - HALL_U.x, 0.0, 2.3, "door"]])
-		for k in 4:   # ガラスの戸 4 枚の枠（開け放してある: 当たりなし）
-			var x0 := gx.x + k * 0.45
-			_span("log", Vector3(x0, FL, z - 0.06), Vector3(x0 + 0.06, FL + 2.6, z + 0.06))
-			_span("glass", Vector3(x0 + 0.06, FL + 0.05, z - 0.02), Vector3(x0 + 0.42, FL + 2.55, z + 0.02))
+		var gx: Vector2 = GLASS_U * s
+		var dx: Vector2 = WHITE_U * s
+		var hs := [[minf(gx.x, gx.y) + VEST_U, maxf(gx.x, gx.y) + VEST_U, 0.0, 2.6, "open"], [minf(dx.x, dx.y) + VEST_U, maxf(dx.x, dx.y) + VEST_U, 0.0, 2.3, "open"],
+				[0.6, 1.8, 1.0, 2.2, "win"], [VEST_U * 2.0 - 1.8, VEST_U * 2.0 - 0.6, 1.0, 2.2, "win"]]
+		_pwall(Vector2(-VEST_U, z), Vector2(VEST_U, z), hs)
+		# 玄関マット: 外は目の粗い棕櫚、中は裂き織り（今までのロッジと同じ）
+		var gc: float = (gx.x + gx.y) * 0.5
+		_box("mat_out", Vector3(gc, FL + 0.012, s * (VEST_V + 0.45)), Vector3(1.6, 0.025, 0.7))
+		_box("mat_in", Vector3(gc, FL + 0.012, s * (VEST_V - 0.9)), Vector3(1.6, 0.025, 1.0))
 	# 北西の棟: 外の壁（窓 1 つずつ）と、端の戸口
 	var wl := WING_U.y - WING_U.x
 	_pwall(Vector2(WING_U.x, WING_V.y - hz), Vector2(HALL_U.x, WING_V.y - hz), _windows(wl, 1.4, 4.0, 1.0, 2.0))
@@ -516,7 +546,7 @@ func _gables() -> void:
 		# 梁の上の三角の板（妻の壁。A 字の屋根の裏まで）
 		var y0 := FL + BEAM_Y + 0.2
 		var w0 := A_HALF - (BEAM_Y + 0.2 - A_EAVE) / tan(A_PITCH)
-		_tri("soffit", [Vector3(-w0, y0, zf), Vector3(w0, y0, zf), Vector3(0.0, apex - 0.35, zf)], 0.12)
+		_tri("soffit", [Vector3(-w0, y0, zf + s * 0.08), Vector3(w0, y0, zf + s * 0.08), Vector3(0.0, apex - 0.35, zf + s * 0.08)], 0.06)
 		# 横の丸太の梁 1 本（A 字の幅いっぱい）と看板（柱の右）
 		var wb := A_HALF - (BEAM_Y - A_EAVE) / tan(A_PITCH)
 		var zb: float = zf + s * 0.3
@@ -550,7 +580,7 @@ func _steps(u: Vector2, z0: float, s: float) -> void:
 		var y := FL * (n - k) / float(n + 1)
 		var za := z0 + s * STEPS_LEN * k / float(n)
 		var zb := z0 + s * STEPS_LEN * (k + 1) / float(n)
-		_span("deck", Vector3(u.x, y - 0.06, minf(za, zb)), Vector3(u.y, y + 0.04, maxf(za, zb)))
+		_span("step", Vector3(u.x, y - 0.06, minf(za, zb)), Vector3(u.y, y + 0.04, maxf(za, zb)))
 	var a := atan2(FL, STEPS_LEN)
 	var slen := sqrt(FL * FL + STEPS_LEN * STEPS_LEN)
 	_col(Vector3((u.x + u.y) * 0.5, FL * 0.5 - 0.1, z0 + s * STEPS_LEN * 0.5), Vector3(u.y - u.x, 0.2, slen), Basis(Vector3.RIGHT, a * s))
@@ -558,8 +588,8 @@ func _steps(u: Vector2, z0: float, s: float) -> void:
 
 func _decks() -> void:
 	# ゲレンデの側: 全長のデッキ（風除室の所は風除室）
-	_deck(Rect2(WING_U.x, DECK_S_V.x, HALL_U.x - WING_U.x, DECK_S_V.y - DECK_S_V.x))
-	_deck(Rect2(HALL_U.y, DECK_S_V.x, REST_U.y - HALL_U.y, DECK_S_V.y - DECK_S_V.x))
+	_deck(Rect2(WING_U.x, DECK_S_V.x, -VEST_U - WING_U.x, DECK_S_V.y - DECK_S_V.x))
+	_deck(Rect2(VEST_U, DECK_S_V.x, REST_U.y - VEST_U, DECK_S_V.y - DECK_S_V.x))
 	# 駐車場の側: 風除室の東
 	_deck(DECK_N)
 	# 風除室の前の土間（両側）と段
@@ -608,24 +638,37 @@ func _inside() -> void:
 		for z in [-2.6, 0.0, 2.6]:
 			_table(Vector3(x, FL, z))
 		x += 3.0
-	# 灯り
+	# 灯り（今までのロッジの吊り灯り）
 	x = REST_U.x + 2.5
 	while x < REST_U.y - 1.0:
-		_box("lamp", Vector3(x, FL + REST_EAVE + 0.8, 0.0), Vector3(0.45, 0.35, 0.45))
-		_lights.append(Vector3(x, FL + REST_EAVE, 0.0))
+		_hang("res://props/furniture/pendant_drum.glb", Vector3(x, 0.0, 0.0), FL + 3.0)
+		_lights.append(Vector3(x, FL + REST_EAVE - 0.3, 0.0))
 		x += 4.5
-	# ホールと風除室の中の白い壁（写真の中は白い壁に木の柱）
+	# ホールの中の白い壁（写真の中は白い壁に木の柱）
 	var hx := HALL_U.y - T * 0.5 - 0.02
-	for wx in [hx, -hx]:
-		var d := -0.03 if wx > 0.0 else 0.03
-		_span("inner", Vector3(wx, FL, -VEST_V + T), Vector3(wx + d, FL + 3.4, HALL_V.x + 0.6))
-		_span("inner", Vector3(wx, FL, HALL_V.y - 0.6), Vector3(wx + d, FL + 3.4, VEST_V - T))
+	_span("inner", Vector3(hx, FL + 2.8, HALL_V.x), Vector3(hx - 0.03, FL + 3.4, HALL_V.y))
 	_span("inner", Vector3(-hx, FL + 2.2, -1.2), Vector3(-hx + 0.03, FL + 3.4, 1.2))
-	_span("inner", Vector3(-hx, FL, HALL_V.x + 0.6), Vector3(-hx + 0.03, FL + 3.4, -1.2))
-	_span("inner", Vector3(-hx, FL, 1.2), Vector3(-hx + 0.03, FL + 3.4, HALL_V.y - 0.6))
-	_box("lamp", Vector3(0.0, FL + 6.0, 0.0), Vector3(0.5, 0.5, 0.5))
-	for z in [-5.5, 0.0, 5.5]:   # 吹き抜けのホールを明るく
+	_span("inner", Vector3(-hx, FL, HALL_V.x), Vector3(-hx + 0.03, FL + 3.4, -1.2))
+	_span("inner", Vector3(-hx, FL, 1.2), Vector3(-hx + 0.03, FL + 3.4, HALL_V.y))
+	# 吹き抜けのホールの吊り灯り（今までのロッジのこたつの上の筒の灯り）
+	for z in [-5.5, 0.0, 5.5]:
+		_hang("res://props/furniture/pendant_drum.glb", Vector3(0.0, 0.0, z), FL + 3.6)
 		_lights.append(Vector3(0.0, FL + 4.5, z))
+
+
+## 今までのロッジの吊り灯りを、屋根の裏からコードで吊る（傘の上端が床から y_top）
+func _hang(path: String, at: Vector3, y_top: float) -> void:
+	var lamp := Props.make(path)
+	add_child(lamp)
+	var box := AABB()
+	var first := true
+	for mi in lamp.find_children("*", "MeshInstance3D", true, false):
+		var b: AABB = (lamp.global_transform.affine_inverse() * (mi as MeshInstance3D).global_transform) * (mi as MeshInstance3D).get_aabb()
+		box = b if first else box.merge(b)
+		first = false
+	lamp.position = Vector3(at.x, y_top - box.end.y, at.z)
+	var ceil_y := _env(at.x, at.z) - ROOF_T
+	Lift.cyl(_s("metal"), Vector3(at.x, y_top, at.z), Vector3(at.x, ceil_y, at.z), 0.012, 4)
 
 
 ## 長机 1 つ（2.0 × 0.8 m）とオレンジの椅子 6 脚
@@ -643,3 +686,152 @@ func _table(c: Vector3) -> void:
 			for lx in [-0.18, 0.18]:
 				for lz in [-0.17, 0.17]:
 					_box("table", p + Vector3(lx, 0.21, lz), Vector3(0.025, 0.42, 0.025))
+
+
+# ---- 戸（今までのロッジの自動ドアと開き戸と同じ動き） ------------------------------------
+## 2026-11-09 代表「出入り口のドアがあかなかったり」: 入口のガラスの戸は自動ドア（人が前後 3 m に入ると左右へ引き分ける）、
+## 白い戸とホールから北西の棟への戸は開き戸（近づいた人の向こう側へ開く）。当たりはない（今までのロッジと同じ。開口は通れる）
+
+const AUTO_REACH := 3.0
+const SWING_OPEN := deg_to_rad(95.0)
+const SWING_REACH := 2.0
+
+var _autos := []
+var _swings := []
+
+
+## 戸の板 1 枚（幅 w・高さ h・厚さ th）。glass なら鉄の框にガラス、でなければ板
+func _leaf(w: float, h: float, glass: bool) -> Node3D:
+	var n := Node3D.new()
+	var frame := SurfaceTool.new()
+	frame.begin(Mesh.PRIMITIVE_TRIANGLES)
+	if glass:
+		var f := 0.06
+		Lift.box(frame, Vector3(0, f * 0.5, 0), Vector3(w, f, 0.05))
+		Lift.box(frame, Vector3(0, h - f * 0.5, 0), Vector3(w, f, 0.05))
+		Lift.box(frame, Vector3(-w * 0.5 + f * 0.5, h * 0.5, 0), Vector3(f, h, 0.05))
+		Lift.box(frame, Vector3(w * 0.5 - f * 0.5, h * 0.5, 0), Vector3(f, h, 0.05))
+		var mi := MeshInstance3D.new()
+		mi.mesh = frame.commit()
+		mi.material_override = _material("metal")
+		n.add_child(mi)
+		var gl := SurfaceTool.new()
+		gl.begin(Mesh.PRIMITIVE_TRIANGLES)
+		Lift.box(gl, Vector3(0, h * 0.5, 0), Vector3(w - 0.1, h - 0.1, 0.02))
+		var gm := MeshInstance3D.new()
+		gm.mesh = gl.commit()
+		gm.material_override = _material("glass")
+		n.add_child(gm)
+	else:
+		Lift.box(frame, Vector3(0, h * 0.5, 0), Vector3(w, h, 0.05))
+		var mi := MeshInstance3D.new()
+		mi.mesh = frame.commit()
+		mi.material_override = _material("door")
+		n.add_child(mi)
+		var knob := SurfaceTool.new()
+		knob.begin(Mesh.PRIMITIVE_TRIANGLES)
+		Lift.box(knob, Vector3(w * 0.5 - 0.1, 1.0, 0), Vector3(0.04, 0.16, 0.12))
+		var km := MeshInstance3D.new()
+		km.mesh = knob.commit()
+		km.material_override = _material("metal")
+		n.add_child(km)
+	return n
+
+
+func _sensor(center: Vector3, size: Vector3) -> Area3D:
+	var area := Area3D.new()
+	var cs := CollisionShape3D.new()
+	var sh := BoxShape3D.new()
+	sh.size = size
+	cs.shape = sh
+	area.add_child(cs)
+	area.position = center
+	add_child(area)
+	return area
+
+
+func _doors() -> void:
+	var hz := T * 0.5
+	for s in [1.0, -1.0]:
+		# ガラスの自動ドア（2 枚。風除室の中の側を、壁の内側へ引き分ける）
+		var g: Vector2 = GLASS_U * s
+		var u0 := minf(g.x, g.y)
+		var u1 := maxf(g.x, g.y)
+		var w := (u1 - u0) * 0.5
+		var z: float = s * (VEST_V - T - 0.05)
+		var d := {"leaves": [], "home": [], "dir": [], "open": 0.0}
+		for k in 2:
+			var leaf := _leaf(w, 2.55, true)
+			leaf.position = Vector3(u0 + w * (k + 0.5), FL, z)
+			add_child(leaf)
+			d.leaves.append(leaf)
+			d.home.append(leaf.position.x)
+			d.dir.append(-1.0 if k == 0 else 1.0)
+		d["area"] = _sensor(Vector3((u0 + u1) * 0.5, FL + 1.2, s * VEST_V), Vector3(u1 - u0 + 1.0, 2.6, AUTO_REACH * 2.0))
+		_autos.append(d)
+		# 白い開き戸（壁の線に蝶番。柱から遠い側）
+		var wd: Vector2 = WHITE_U * s
+		var a0 := minf(wd.x, wd.y)
+		var a1 := maxf(wd.x, wd.y)
+		var hinge := Vector3(a0 if s > 0.0 else a1, FL, s * (VEST_V - hz))
+		_add_swing([[hinge, Vector3(1, 0, 0) * (1.0 if s > 0.0 else -1.0), a1 - a0]], Vector3(0, 0, s), false, 2.3)
+	# ホールから北西の棟への両開き（u = -2.25、v = -1.2〜1.2）
+	var hx := HALL_U.x + hz
+	_add_swing([[Vector3(hx, FL, -1.2), Vector3(0, 0, 1), 1.2], [Vector3(hx, FL, 1.2), Vector3(0, 0, -1), 1.2]], Vector3(1, 0, 0), false, 2.2)
+
+
+## 開き戸: leaves = [[蝶番の位置, 蝶番から板の先への向き, 幅]]、normal は戸の面に垂直な向き
+func _add_swing(leaves: Array, normal: Vector3, glass: bool, h: float) -> void:
+	var d := {"pivots": [], "signs": [], "normal": normal, "side": 0, "a": 0.0}
+	var center := Vector3.ZERO
+	for lf in leaves:
+		var hinge: Vector3 = lf[0]
+		var along: Vector3 = lf[1]
+		var w: float = lf[2]
+		var pivot := Node3D.new()
+		pivot.position = hinge
+		pivot.rotation.y = atan2(-along.z, along.x)   # 板の x を along へ
+		add_child(pivot)
+		var leaf := _leaf(w, h, glass)
+		leaf.position = Vector3(w * 0.5, 0, 0)
+		pivot.add_child(leaf)
+		d.pivots.append(pivot)
+		d.signs.append(1.0 if Vector3.UP.cross(along).dot(normal) > 0.0 else -1.0)
+		center += hinge + along * w * 0.5
+	center /= leaves.size()
+	d["center"] = center
+	d["base"] = (d.pivots as Array).map(func(p): return (p as Node3D).rotation.y)
+	d["area"] = _sensor(center + Vector3(0, 1.2, 0), Vector3.ONE * 0.6 + (Vector3.ONE - normal.abs()) * 2.4 + normal.abs() * SWING_REACH * 2.0)
+	_swings.append(d)
+
+
+func _someone(area: Area3D) -> Node3D:
+	var best: Node3D = null
+	var bd := INF
+	for b in area.get_overlapping_bodies():
+		if b is CharacterBody3D:
+			var dd: float = (b as Node3D).global_position.distance_to(area.global_position)
+			if dd < bd:
+				bd = dd
+				best = b
+	return best
+
+
+func _process(dt: float) -> void:
+	for d in _autos:
+		var on := _someone(d.area) != null
+		d.open = move_toward(d.open, 1.0 if on else 0.0, dt / (0.9 if on else 1.6))
+		var e: float = d.open * d.open * (3.0 - 2.0 * d.open)
+		for k in d.leaves.size():
+			var leaf: Node3D = d.leaves[k]
+			leaf.position.x = d.home[k] + d.dir[k] * (GLASS_U.y - GLASS_U.x) * 0.5 * e
+	for d in _swings:
+		var near := _someone(d.area)
+		if near and d.side == 0:   # 閉まっている戸を、人の向こう側へ開く
+			d.side = -1 if (to_local(near.global_position) - d.center).dot(d.normal) > 0.0 else 1
+		d.a = move_toward(d.a, 1.0 if near else 0.0, dt / (0.45 if near else 1.2))
+		if d.a <= 0.0:
+			d.side = 0
+		var e: float = d.a * d.a * (3.0 - 2.0 * d.a)
+		for k in d.pivots.size():
+			(d.pivots[k] as Node3D).rotation.y = d.base[k] + d.signs[k] * d.side * SWING_OPEN * e
