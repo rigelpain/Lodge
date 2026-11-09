@@ -4,6 +4,7 @@ const Snowball := preload("res://snowball.gd")
 const Look := preload("res://look.gd")
 const Props := preload("res://props.gd")
 const Gloves := preload("res://gloves.gd")
+const BallStitches := preload("res://ball_stitches.gd")
 ## 転がす大玉（2026-11-07 代表「ctrl+F でつくれる雪玉を転がしておおきな雪玉にしていける機能が欲しい。移動距離に従って大きくなり、
 ## 大きくなるに従って成長率も上がっていく」「坂上から転がしたら重力に従って（雪玉の大きさ＝重さも物理演算して）転がり、
 ## ぶつかったり跳ねたりしたときのある程度の衝撃で崩壊」「転がる雪玉に轢かれたキャラクターは雪玉に取り込まれる」）。
@@ -67,7 +68,13 @@ var maker := -1              # 置いた人の番号
 var r := SEED_R              # いまの半径 (m)
 var inside := {}             # 中の人の番号 → [取り込まれた所の向き（玉の座標）, 頭の向き（玉の座標）]。出来事 ball_in で全員の画面に
 var kicks := 0.0             # 中から暴れた回数（ホスト）
-var pack := ""               # この玉を固めた手袋の段（押した人の手袋のうち、いちばんよいもの。gloves.gd）。育つ速さと丈夫さが上がる（ホスト）
+var pack := "":              # この玉を固めた手袋の段（押した人の手袋のうち、いちばんよいもの。gloves.gd）。育つ速さと丈夫さが上がる。
+	set(v):                  # ホストが決め、つなぐ側には大玉の姿と一緒に届く（net.gd の "bigball"）。縫い目の形と糸の色も段で決まる（ball_stitches.gd）
+		if v == pack:
+			return
+		pack = v
+		if _seam:
+			refresh_stitch()
 var broken := false
 var born := 0.0              # 生まれてから (s)
 var wear := 0.0              # 減った量（点。ホスト）。尽きる（max_wear に届く）と崩れる
@@ -95,7 +102,10 @@ var _push_t := 99.0          # 最後に押されてから (s)
 var _wob := 0.0              # 暴れて揺れている強さ（0〜）
 var _wob_t := 0.0
 var _body: MeshInstance3D    # 玉の面（へこむと、へこんだ形の ArrayMesh に替わる）
-var _stitches := []          # 縫い目の目 [MeshInstance3D, 玉の座標の向き]。へこんだ所の目ははじけ飛ぶ
+var _seam: MultiMeshInstance3D   # 縫い目の目（ball_stitches.gd。玉 1 つで 1 回描く）。へこんだ所の目ははじけ飛ぶ
+var _seam_key := ""         # 縫っている "柄:段"
+var _seam_segs: Array = []  # 縫い目の目（半径 1 の玉の上）[入る針穴, 出る針穴, 弧の向き]
+var _seam_off := PackedByteArray()   # はじけた目は 1
 var _dents := []             # へこみ [玉の座標の向き, 深さ（半径に対する割合）, 広がりの cos]
 var _dent_r := 0.0           # へこみを作ったときの半径（育つと埋まる）
 var _sled_v := {}            # 近くのソリ → [2 コマ前, 前のコマ] の速さ（触れはじめの知らせが届くときは、もう跳ね返ったあとの速さなので。ホスト）
@@ -138,7 +148,7 @@ func _ready() -> void:
 	_mat.albedo_color = COLOR_NEW   # 雪面より少しだけ沈めて、地面から浮き立たせる
 	body.material_override = _mat
 	_look.add_child(body)
-	_add_seam()
+	_make_seam()
 	_set_r(r)
 	born = 0.0
 
@@ -147,37 +157,69 @@ const COLOR_NEW := Color(0.93, 0.94, 0.97)
 const COLOR_WORN := Color(0.80, 0.83, 0.90)   # 減りきる手前の色（押し固められて、少し灰がかった雪）
 
 
-## 転がっているのが読めるように、玉を一周する縫い目（ソリの滑りあとと同じ、なみ縫い）
-func _add_seam() -> void:
-	var thread := Look.felt(Color("6F86A3"), 2.0)
-	thread.rim = 0.0
-	var dash := BoxMesh.new()
-	dash.size = Vector3(0.14, 0.05, 0.05)
-	var n := 28
-	for i in n:
-		if i % 2 == 1:
+## 転がっているのが読めるように、玉を縫い目で縫う（2026-11-09 代表「作られた手袋のグレードによって雪玉のステッチの模様変えてほしい」）。
+## 縫い合わせの形と糸の色は固めた手袋の段（pack）、柄は置いた人が持ち物で選んだ柄（craft.gd の ball_stitch）か、段の標準。形は ball_stitches.gd
+func _make_seam() -> void:
+	_seam = MultiMeshInstance3D.new()
+	_seam.name = "Seam"
+	_seam.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_seam.custom_aabb = AABB(Vector3(-1.3, -1.3, -1.3), Vector3(2.6, 2.6, 2.6))   # 目の範囲をエンジンに数えさせない（原点まで広がることがある）
+	_look.add_child(_seam)
+	refresh_stitch()
+
+
+## 置いた人が選んでいる柄（買った柄。選んでいなければ ""）
+func chosen_stitch() -> String:
+	var cr = hub.get_parent().get("craft") if hub and hub.get_parent() else null
+	if cr == null or not cr.has_method("ball_stitch_of"):
+		return ""
+	return cr.ball_stitch_of(maker)
+
+
+## 縫っている柄の名前（ball_stitches.gd）
+func stitch_name() -> String:
+	return BallStitches.pattern_of(chosen_stitch(), pack)
+
+
+## 柄か段が替わったら縫い直す（どの画面でも。craft.gd の ball_stitch_set と、pack が替わったとき）。へこんだ所の目は、はじけたまま
+func refresh_stitch() -> void:
+	var nm := stitch_name()
+	var key := nm + ":" + pack
+	if key == _seam_key or _seam == null:
+		return
+	_seam_key = key
+	_seam_segs = BallStitches.segments(nm, pack)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_custom_data = true
+	mm.mesh = BallStitches.mesh(nm, pack)
+	mm.instance_count = _seam_segs.size()
+	_seam_off = PackedByteArray()
+	_seam_off.resize(_seam_segs.size())
+	for i in _seam_segs.size():
+		mm.set_instance_transform(i, BallStitches.xform(_seam_segs[i]))
+		mm.set_instance_custom_data(i, BallStitches.custom(_seam_segs[i], i))
+	_seam.multimesh = mm
+	for d in _dents:
+		_pop_seam(d[0], d[2], null)
+
+
+## 向き dir（玉の座標）のまわり（cos が ca より近い）の目をはじく。w があれば、そのうち何本かを飛ばす
+func _pop_seam(dir: Vector3, ca: float, w: Node3D, most := 12) -> void:
+	var mm := _seam.multimesh if _seam else null
+	if mm == null:
+		return
+	var flown := 0
+	for i in _seam_segs.size():
+		if _seam_off[i] == 1:
 			continue
-		var a := TAU * i / n
-		var m := MeshInstance3D.new()
-		m.mesh = dash
-		m.material_override = thread
-		m.position = Vector3(cos(a), 0.0, sin(a)) * 1.005
-		m.rotation = Vector3(0.0, -a - PI * 0.5, 0.0)
-		_look.add_child(m)
-		_stitches.append([m, m.position.normalized()])
-	# もう一本、斜めに（どちらへ転がっても回るのが見える）
-	for i in n:
-		if i % 2 == 0:
-			continue
-		var a := TAU * i / n
-		var m := MeshInstance3D.new()
-		m.mesh = dash
-		m.material_override = thread
-		var p := Vector3(cos(a), sin(a), 0.0) * 1.005
-		m.position = Basis(Vector3.UP, 1.1) * p
-		m.basis = Basis(Vector3.UP, 1.1) * Basis(Vector3.BACK, a + PI * 0.5)
-		_look.add_child(m)
-		_stitches.append([m, m.position.normalized()])
+		var seg: Array = _seam_segs[i]
+		if ((seg[0] as Vector3) + (seg[1] as Vector3)).normalized().dot(dir) > ca - 0.04:
+			_seam_off[i] = 1
+			mm.set_instance_custom_data(i, BallStitches.custom(seg, i, true))
+			if w and flown < most:
+				flown += 1
+				_fly_seg(w, i)
 
 
 ## 半径を変える（当たり・重さ・見た目）
@@ -433,11 +475,7 @@ func show_hurt(ev: Dictionary) -> void:
 	_reshape()
 	# へこんだ所の縫い目の目が、はじけ飛ぶ
 	var w := get_parent() as Node3D
-	for st in _stitches:
-		var m: MeshInstance3D = st[0]
-		if m.visible and (st[1] as Vector3).dot(dir) > ca - 0.04:
-			m.visible = false
-			_fly_stitch(w, m)
+	_pop_seam(dir, ca, w)
 	# 雪のかけらと綿の粉
 	var at := global_position + global_basis * dir * r
 	var out := (global_basis * dir).normalized()
@@ -504,14 +542,20 @@ static func _sphere_arrays() -> Array:
 	return _sphere_a
 
 
-## 縫い目の目を一つ、玉から飛ばす
-func _fly_stitch(w: Node3D, m: MeshInstance3D) -> void:
+## 縫い目の目を一つ、玉から飛ばす（i は _seam_segs の番号。糸の色のフェルトの細い棒）
+func _fly_seg(w: Node3D, i: int) -> void:
+	var seg: Array = _seam_segs[i]
+	var t := BallStitches.xform(seg)
+	var len := (seg[1] as Vector3).distance_to(seg[0])
+	var th := float(BallStitches.LIST.get(_seam_key.get_slice(":", 0), {}).get("radius", 0.03)) * 1.4
+	len *= 0.55   # ちぎれた糸のきれはし
 	var f := Flyer.new()
-	f.mesh = m.mesh
-	f.material_override = m.material_override
+	f.mesh = BallStitches.dash_mesh()
+	f.material_override = BallStitches.dash_mat(pack)
+	f.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	w.add_child(f)
-	f.global_transform = m.global_transform
-	var out := (m.global_position - global_position).normalized()
+	f.global_transform = _look.global_transform * Transform3D(Basis(t.basis.x * th, t.basis.y * th, t.basis.z * len), t.origin - t.basis.z * len * 0.5)
+	var out := (f.global_position - global_position).normalized()
 	f.vel = out * randf_range(1.5, 3.0) + Vector3.UP * randf_range(1.0, 2.5) + linear_velocity * 0.5
 	f.spin = Vector3(randf_range(-9, 9), randf_range(-9, 9), randf_range(-9, 9))
 	f.size = 0.03 * r
@@ -571,11 +615,12 @@ func crumble(ev: Dictionary) -> void:
 		var v := d * sp + Vector3.UP * randf_range(1.0, 3.0) * (0.6 + 0.4 * sqrt(rr)) + carry
 		_fly_chunk(w, c + d * rr * 0.55, v, sz)
 	var torn := 0
-	for st in _stitches:
-		var m: MeshInstance3D = st[0]
-		if m.visible and randf() < 0.35 and torn < 10:
+	for k in mini(_seam_segs.size(), 40):
+		var i := randi() % _seam_segs.size()
+		if _seam_off[i] == 0 and torn < 10:
+			_seam_off[i] = 1
 			torn += 1
-			_fly_stitch(w, m)
+			_fly_seg(w, i)
 	var g: float = w.height(c.x, c.z)
 	Snowball.splat_at(w, Vector3(c.x, g + 0.05, c.z), Vector3.UP, false, 3.0 + rr * 4.0)
 	_leave_pile(w, Vector3(c.x, g, c.z), rr)

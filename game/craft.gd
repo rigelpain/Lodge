@@ -100,6 +100,7 @@ const FABRIC_PRICE := 10
 ## ペグの名前・値段・束の本数は peg.gd（品目の定義をそこにまとめる）
 const Peg := preload("res://peg.gd")
 const Stitches := preload("res://stitches.gd")
+const BallStitches := preload("res://ball_stitches.gd")
 ## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
 ## 1 回に染める部位の数ごとの染め代（0〜4 部位）。部位が多いほど高く、まとめて染めると 1 部位ぶんずつは少し安い
 ## （2026-11-03 代表「部位数ごとに値段を上げてほしい」）
@@ -133,6 +134,8 @@ const Gloves := preload("res://gloves.gd")
 var tag_designs := {}          # 人の番号 → 自分の名札（sled_tags.gd の部品の辞書）。通信では「誰が」の印として配る
 var tag_owned := {}            # 人の番号 → 手に入れた「あとで手に入る」名札の部品 {部品: [番号, ...]}（最初から使える部品は書かない）
 var stitch_owned := {}         # 人の番号 → 買った滑りあとの柄の名前の配列（stitches.gd。標準の柄は入れない）
+var ball_owned := {}           # 人の番号 → 買った大玉の縫い目の柄の名前の配列（ball_stitches.gd。山師の棚で買う。標準の柄は入れない）
+var ball_stitch := {}          # 人の番号 → 自分の大玉に縫う柄（ball_stitches.gd。"" は固めた手袋の段の標準）
 var sacks := {}                # 人の番号 → 持っている米袋の配列 [{fabric}]（0 番は標準。米袋に名札は付けない）
 var loose_tags := {}           # 人の番号 → 帯の名札入れの、外した名札の柄の配列（付け直せる）
 var names := {}                # 人の番号 → 名前（装備の画面で決める。HUD の札で頭の上に出す）
@@ -170,6 +173,8 @@ func join(who: int) -> void:
 	tag_designs[who] = preload("res://sled_tags.gd").default_design(who)
 	tag_owned[who] = {}
 	stitch_owned[who] = []
+	ball_owned[who] = []
+	ball_stitch[who] = ""
 	sacks[who] = [{"fabric": ""}]   # 標準の米袋
 	loose_tags[who] = []
 	names[who] = NAMES[posmod(who - 1, NAMES.size())]
@@ -187,6 +192,17 @@ func join(who: int) -> void:
 ## 滑りあとの柄を使えるか（標準の柄か、買った柄）
 func stitch_can_use(who: int, name: String) -> bool:
 	return Stitches.has(name) and (Stitches.price(name) == 0 or name in stitch_owned.get(who, []))
+
+
+## 大玉の縫い目の柄を使えるか（"" は手袋の段の標準で、誰でも。ほかは買った柄）
+func ball_can_use(who: int, name: String) -> bool:
+	return name == "" or BallStitches.price(name) > 0 and name in ball_owned.get(who, [])
+
+
+## その人の大玉に縫う柄（"" は手袋の段の標準）
+func ball_stitch_of(who: int) -> String:
+	var nm := String(ball_stitch.get(who, ""))
+	return nm if ball_can_use(who, nm) else ""
 
 
 ## 名札の部品 part の i 番を使えるか（最初から使える部品か、手に入れた部品）
@@ -529,7 +545,7 @@ func snapshot() -> Dictionary:
 	for s in get_tree().get_nodes_in_group("sleds") if is_inside_tree() else []:
 		if is_instance_valid(s.peg):
 			pegs.append({"sled": sled_path(s), "at": s.peg.global_position, "color": s.peg.color})
-	return {"pegs": pegs, "wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "stitch_owned": stitch_owned, "sacks": sacks,
+	return {"pegs": pegs, "wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "stitch_owned": stitch_owned, "ball_owned": ball_owned, "ball_stitch": ball_stitch, "sacks": sacks,
 		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
 		"lantern_sel": lantern_sel, "lamps": lamps, "gloves": gloves, "gloves_sel": gloves_sel, "next_sled": _next_sled, "sleds": placed, "sack_out": out,
 		"fires": lit, "next_fire": _next_fire, "scope_who": world.binocular_stands.map(func(st): return int(st.who)) if world else [], "scope_paid": _scope_paid_left()}
@@ -554,10 +570,13 @@ func load_snapshot(d: Dictionary) -> void:
 		var scoped: Array = d.get("scope_who", [])
 		for i in mini(scoped.size(), world.binocular_stands.size()):
 			world.binocular_stands[i].who = int(scoped[i])
-	for key in ["wallets", "bags", "hands", "tag_designs", "tag_owned", "stitch_owned", "sacks", "loose_tags", "names", "colors", "dolls",
+	for key in ["wallets", "bags", "hands", "tag_designs", "tag_owned", "stitch_owned", "ball_owned", "ball_stitch", "sacks", "loose_tags", "names", "colors", "dolls",
 			"sack_sel", "lanterns", "lantern_sel", "lamps", "gloves", "gloves_sel"]:
 		var mine: Dictionary = get(key)
 		mine.merge(d.get(key, {}), true)
+	if is_inside_tree():   # 届く前に置かれた大玉も、置いた人の柄で縫い直す（ball_stitches.gd）
+		for b in get_tree().get_nodes_in_group("big_balls"):
+			b.refresh_stitch()
 	for s in sleds.values():
 		if is_instance_valid(s):
 			s.queue_free()
@@ -827,6 +846,27 @@ func _apply(ev: Dictionary) -> bool:
 				return false
 			if not nm in stitch_owned[who]:
 				stitch_owned[who].append(nm)
+		"ball_stitch_buy":   # 大玉の縫い目の柄を買う（山師の棚。持ち物の場所は使わない。人ごとに一度買えばよい）
+			var nm := String(ev.get("stitch", ""))
+			if not BallStitches.has(nm) or BallStitches.price(nm) <= 0 or nm in ball_owned.get(who, []) or wallets[who] < BallStitches.price(nm):
+				return false
+			wallets[who] -= BallStitches.price(nm)
+			ball_owned[who].append(nm)
+		"ball_stitch_own":   # 前に買った大玉の柄を戻す（起動したとき。値はここでは取らない。player.gd の _load_tag）
+			var nm := String(ev.get("stitch", ""))
+			if not BallStitches.has(nm) or BallStitches.price(nm) <= 0:
+				return false
+			if not nm in ball_owned[who]:
+				ball_owned[who].append(nm)
+		"ball_stitch_set":   # 自分の大玉に縫う柄を選ぶ（持ち物の画面。"" は手袋の段の標準）。もう置いてある自分の玉も縫い直す
+			var nm := String(ev.get("stitch", ""))
+			if not ball_can_use(who, nm):
+				return false
+			ball_stitch[who] = nm
+			if is_inside_tree():
+				for b in get_tree().get_nodes_in_group("big_balls"):
+					if int(b.maker) == who and not b.broken:
+						b.refresh_stitch()
 		"sled_dye", "sled_dye_own":     # sled_dye_own は、前に染めた標準の米袋の色を戻す（起動したとき。値はここでは取らない。player.gd の _load_tag）。見本帳でソリを染める（color は "#RRGGBB"。"" は元の色に戻す）。持ち主だけ。相手は id（置いてある・立てかけ台のソリ）・slot（畳んだ包み）・sack（米袋）
 			var hex := String(ev.get("color", ""))
 			if hex != "" and not Fabrics.is_dyed(hex):
