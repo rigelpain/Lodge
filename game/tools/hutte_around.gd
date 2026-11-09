@@ -51,6 +51,8 @@ func _run() -> void:
 	await _shot("in_rest_to_hall", hu.to_global(Vector3(10, 1.8, 0)), hu.to_global(Vector3(-2, 4, 0)), 90.0)
 	await _shot("in_vest", hu.to_global(Vector3(0, 1.8, -3)), hu.to_global(Vector3(0, 2.5, -8)), 90.0)
 	await _shot("in_rest_up", hu.to_global(Vector3(6, 1.8, 0)), hu.to_global(Vector3(4, 8, 2)), 90.0)
+	await _shot("in_rest_se", hu.to_global(Vector3(6, 1.7, 0)), hu.to_global(Vector3(17, 4.5, 0)), 90.0)   # 南東の妻（代表の画面と同じ向き）
+	await _shot("in_hall_nw", hu.to_global(Vector3(1.5, 1.7, 0)), hu.to_global(Vector3(-3, 5.5, 0)), 90.0)
 	# 入口（駐車場の側）: 閉まっている戸 → 人が近づいて開いた戸
 	await _shot("door_closed", hu.to_global(Vector3(-1.2, 1.8, -16)), hu.to_global(Vector3(-0.8, 2.0, -8)), 60.0)
 	var body := CharacterBody3D.new()
@@ -69,6 +71,8 @@ func _run() -> void:
 	for i in 90:
 		await physics_frame
 	await _shot("door_wing", hu.to_global(Vector3(1.5, 1.8, 2.5)), hu.to_global(Vector3(-2.25, 1.4, 0)), 75.0)
+	# ゲレンデの側の入口（代表の冬の写真と同じ向き）
+	await _shot("slope_entry", hu.to_global(Vector3(1.8, 1.5, 14.5)), hu.to_global(Vector3(-0.6, 2.6, 8)), 75.0)
 	# 始める所から
 	var st: Vector3 = main.start_pos()
 	await _shot("spawn", Vector3(st.x, main.height(st.x, st.z) + 1.6, st.z), preload("res://tenkamori.gd").start_look(), 75.0)
