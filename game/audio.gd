@@ -767,26 +767,38 @@ func button(what: String, at: Vector3, frame: int, tier := 0, other := false) ->
 
 
 # ---- 売り台で買う・厨房で調理する（2026-11-01 代表「購入音、ミシンでの制作音、食べ物の調理音をしっかり作ってほしい」） --------
-# 画面の決定音にはしない。番台のお皿・レジ・品物を包む手もとで鳴る音として、店の所から 3D で鳴らす（Inside）。
+# 画面の決定音にはしない。番台のお皿・レジ・品物を包む手もとで鳴る音として、店の所から 3D で鳴らす。
+# 店がロッジの中なら Inside、外（下屋のソリ屋・見本帳、テラスの双眼鏡台）なら OutdoorSfx を通す（2026-11-09 代表「買い物したときに
+# 買い物完了音がならないことがある」: 外の店の音も Inside に流していて、外で聞くと Inside は -10 dB と 600 Hz のこもりで、ほとんど聞こえなかった）。
+# お金を払う所はどこでも、払えたら一度だけ鳴らす（工房の出来事から拾う。_on_craft）。
 # 音は sound/gen/shop.py と sound/gen/cook_device.py。ミシンの音は sewing_machine.gd が自分で鳴らす
 
-## 店ごとの 3 つの層: [払いの音, その数, レジ, 包む]。払いは、払った数（木のボタンの段に分けた枚数）だけ粒を落とす
+## 店ごとの 3 つの層: [払いの音, その数, レジ, 包む（"" は包まない）]。払いは、払った数（木のボタンの段に分けた枚数）だけ粒を落とす
 const SHOP_SOUNDS := {
-	"patch": ["pay_button", 6, "till_patch", "wrap_paper"],    # パッチワークのおじいさんの番台（型紙と布）
+	"patch": ["pay_button", 6, "till_patch", "wrap_paper"],    # パッチワークのおじいさんの番台（型紙と布・滑りあとの柄）
 	"snow": ["pay_snowball", 3, "till_snow", "wrap_bag"],      # 雪だるまの番台（ペレット。お代は雪玉）
-	"pal": ["pay_button", 6, "till_pal", "wrap_tissue"],       # 2 階の衣装掛けの横の紙細工屋さん（提灯と頭・肩の小物）
+	"pal": ["pay_button", 6, "till_pal", "wrap_tissue"],       # 1 階のテントの紙細工屋さん（提灯と頭・肩の小物）
 	"mountain": ["pay_button", 6, "till_patch", "wrap_paper"], # 1 階の山師（山の道具とミニオン）
+	"book": ["pay_button", 6, "till_patch", ""],               # 布の見本帳でソリを染める（品物は渡さないので包まない）
+	"dye": ["pay_button", 6, "till_pal", ""],                  # 人台の桶で服を染める
+	"scope": ["pay_button", 6, "till_patch", ""],              # テラスの双眼鏡台に木のボタンを入れる
+	"scope_ball": ["pay_snowball", 3, "till_snow", ""],        # 双眼鏡台に雪玉を入れる
 }
-## 店の所（ロッジの中の節の名前）。見つからなければ買った人の所で鳴らす
-const SHOP_NODES := {"patch": "Bandai_counter_patch", "snow": "Bandai_counter_indigo", "pal": "PaperLady", "mountain": "MountainMan"}
+## 店の所（ロッジの中の節の名前）。候補が 2 つ以上あれば、買った人にいちばん近いもの（滑りあとの柄は、ソリ屋でも見本帳でも買える）。
+## 見つからなければ買った人の所で鳴らす
+const SHOP_NODES := {
+	"patch": ["Bandai_counter_patch", "SledBook"], "snow": ["Bandai_counter_indigo"], "pal": ["PaperLady"], "mountain": ["MountainMan"],
+	"book": ["SledBook"], "dye": ["DyeVat"], "scope": [], "scope_ball": [],
+}
 const PAY_GAP := 0.075     # 払いの粒の間 (s)。sound/gen/shop.py の PAY_GAP と同じ
 const TILL_AFTER := 0.12   # 最後の払いからレジまで
 const WRAP_AFTER := 0.55   # レジから包むまで
 var _purses := {}          # 人の番号 → 前に見た財布の中身（払った数を、出来事の前後の差で知る）
 
 
-## 工房（craft.gd）の出来事から、買ったことを拾う。buy はおじいさん、pal_buy と lantern_buy は 2 階の紙細工屋さん、
-## 名前に food か pellet を含む買う出来事は雪だるまの店（feature/snowman-food の売り場が出す名前に合わせる）
+## 工房（craft.gd）の出来事から、払ったことを拾う。buy はおじいさんか山師、stitch_buy はおじいさんか見本帳（近いほう）、
+## pal_buy と lantern_buy は紙細工屋さん（ミニオンは山師）、sled_dye は見本帳、dye は人台の桶、scope_on は双眼鏡台、
+## 名前に food か pellet を含む買う出来事は雪だるまの店。染め直しが ただ（元の色に戻す）・双眼鏡の払った時間の中は、払っていないので鳴らさない
 func _on_craft(ev: Dictionary) -> void:
 	var craft: Node = world.get_node_or_null("Craft")
 	var who: int = ev.get("who", -1)
@@ -794,38 +806,66 @@ func _on_craft(ev: Dictionary) -> void:
 	var paid: int = int(_purses.get(who, now)) - now
 	_purses[who] = now
 	var kind := String(ev.get("kind", ""))
-	if kind != "buy" and not kind.ends_with("_buy"):
+	var shop := ""
+	var spot: Node3D = null
+	var n := 0
+	match kind:
+		"buy":
+			paid = Craft.price(ev.item) if ev.get("item") is Dictionary else paid
+			shop = "patch"
+			if ev.get("item") is Dictionary and preload("res://mountain_goods.gd").has(String(ev.item.get("kind", ""))):
+				shop = "mountain"   # 山師の棚の道具
+		"stitch_buy":
+			shop = "patch"
+		"pal_buy":
+			shop = "mountain" if preload("res://pals.gd").slot_of(String(ev.get("key", ""))) == "pet" else "pal"   # ミニオンは山師、小物は紙細工屋さんから買う
+		"lantern_buy":
+			shop = "pal"   # 提灯も紙細工屋さん
+		"sled_dye", "dye":
+			paid = int(ev.get("price", 0))
+			if paid > 0:
+				shop = "book" if kind == "sled_dye" else "dye"
+		"scope_on":
+			var how := String(ev.get("paid", ""))
+			if how != "":
+				shop = "scope_ball" if how == "ball" else "scope"
+				paid = 1 if how == "button" else 0
+				n = 1
+				var i := int(ev.get("stand", -1))
+				var stands = world.get("binocular_stands")
+				if stands != null and i >= 0 and i < stands.size():
+					spot = stands[i]
+		_:
+			if kind.ends_with("_buy") and ("food" in kind or "pellet" in kind):
+				shop = "snow"
+				n = int(ev.get("n", ev.get("count", 1)))
+	if shop == "":
 		return
-	if kind == "buy" and ev.get("item") is Dictionary:
-		paid = Craft.price(ev.item)
-	var shop := "patch"
-	if kind == "pal_buy":
-		shop = "mountain" if preload("res://pals.gd").slot_of(String(ev.get("key", ""))) == "pet" else "pal"   # ミニオンは山師、小物は紙細工屋さんから買う
-	elif kind == "lantern_buy":
-		shop = "pal"   # 提灯も紙細工屋さん
-	elif kind == "buy" and ev.get("item") is Dictionary and preload("res://mountain_goods.gd").has(String(ev.item.get("kind", ""))):
-		shop = "mountain"   # 山師の棚の道具
-	elif "food" in kind or "pellet" in kind:
-		shop = "snow"
 	var hub := world.get_node_or_null("Emotes")
 	var buyer: Node3D = hub.who_of(who) if hub and hub.has_method("who_of") else null
 	var at: Vector3 = buyer.global_position + Vector3.UP * 1.0 if buyer else _listener()
-	var n: int = int(ev.get("n", ev.get("count", 1)))
-	if shop != "snow":
+	if n <= 0:
 		n = Craft.pieces(paid).size() if paid > 0 else 1
-	purchase(shop, at, n, Craft.pieces(paid) if paid > 0 else [], buyer != null and buyer != player)
+	purchase(shop, at, n, Craft.pieces(paid) if paid > 0 else [], buyer != null and buyer != player, spot)
 
 
-## 買ったときの音。shop は SHOP_SOUNDS の店、near は店が見つからないときに鳴らす所、count は払いの粒の数、
-## looks は払ったボタンの段（"wood" "brass" "pearl" "raden"。真鍮・白蝶貝の粒はその素材の音で落ちる）、
-## other はほかの人が買った（ほかの人の音の決まりで）
-func purchase(shop: String, near: Vector3, count := 1, looks := [], other := false) -> void:
+## 買ったときの音。shop は SHOP_SOUNDS の店、near は買った人の所（店を選ぶ目安。店が見つからなければここで鳴らす）、
+## count は払いの粒の数、looks は払ったボタンの段（"wood" "brass" "pearl" "raden"。真鍮・白蝶貝の粒はその素材の音で落ちる）、
+## other はほかの人が買った（ほかの人の音の決まりで）、spot は鳴らす所の節（双眼鏡台のように、同じ店がいくつもあるとき）
+func purchase(shop: String, near: Vector3, count := 1, looks := [], other := false, spot: Node3D = null) -> void:
 	var s: Array = SHOP_SOUNDS.get(shop, SHOP_SOUNDS.patch)
 	var at := near
-	if lodge:
-		var node := lodge.find_child(SHOP_NODES.get(shop, ""), true, false) as Node3D
-		if node:
-			at = node.global_position + Vector3.UP * 0.95   # 台の上（お皿・レジの高さ）
+	var node := spot
+	if node == null and lodge:
+		var best := INF
+		for nm in SHOP_NODES.get(shop, []):
+			var c := lodge.find_child(nm, true, false) as Node3D
+			if c and c.global_position.distance_to(near) < best:
+				best = c.global_position.distance_to(near)
+				node = c
+	if node and is_instance_valid(node):
+		at = node.global_position + Vector3.UP * 0.95   # 台の上（お皿・レジの高さ）
+	var bus := "Inside" if zone_at(lodge, at) == 2 else "OutdoorSfx"   # 外の店は外の音（Inside は外で聞くとこもって小さい）
 	var t := 0.0
 	count = clampi(count, 1, 6)
 	for i in count:
@@ -834,11 +874,12 @@ func purchase(shop: String, near: Vector3, count := 1, looks := [], other := fal
 		if s[0] == "pay_button":   # 01〜03 木・04〜05 真鍮・06 白蝶貝（螺鈿も貝の音）
 			pick = {"wood": rng.randi_range(1, 3), "brass": rng.randi_range(4, 5)}.get(look, 6)
 		var name_: String = "%s_%02d" % [s[0], pick] if pick > 0 else _pick_name(s[0], s[1])
-		_one_shot(at, name_, -10.0 - 1.0 * i, rng.randf_range(0.94, 1.06), t, other)
+		_one_shot(at, name_, -10.0 - 1.0 * i, rng.randf_range(0.94, 1.06), t, other, bus)
 		t += PAY_GAP * rng.randf_range(0.8, 1.25)
 	t += TILL_AFTER
-	_one_shot(at, _pick_name(s[2], 3), -6.0, rng.randf_range(0.98, 1.02), t, other)
-	_one_shot(at, _pick_name(s[3], 3), -9.0, rng.randf_range(0.95, 1.05), t + WRAP_AFTER, other)
+	_one_shot(at, _pick_name(s[2], 3), -6.0, rng.randf_range(0.98, 1.02), t, other, bus)
+	if s[3] != "":
+		_one_shot(at, _pick_name(s[3], 3), -9.0, rng.randf_range(0.95, 1.05), t + WRAP_AFTER, other, bus)
 
 
 ## 厨房の装置の音（雪だるまの食べ物屋の調理が呼ぶ）。device は "iron"（アイロン台）・"press"（プレス機）・
@@ -881,12 +922,12 @@ func cook(device: String, step: String, at: Variant) -> void:
 				_one_shot(pos, _pick_name("cook_%s_done" % device, 2), db, rng.randf_range(0.96, 1.04))
 
 
-## 1 回だけ鳴らす 3D の音（delay 秒あとに、at で）。鳴り終わったら消える
-func _one_shot(at: Vector3, name_: String, db: float, pitch := 1.0, delay := 0.0, other := false) -> void:
+## 1 回だけ鳴らす 3D の音（delay 秒あとに、at で、bus を通して）。鳴り終わったら消える
+func _one_shot(at: Vector3, name_: String, db: float, pitch := 1.0, delay := 0.0, other := false, bus := "Inside") -> void:
 	var s := _wav(name_)
 	if s == null:
 		return
-	var p := _p3_other(world, "Inside", db - OTHER_DROP) if other else _p3(world, "Inside", db, 3.0, 35.0)
+	var p := _p3_other(world, bus, db - OTHER_DROP) if other else _p3(world, bus, db, 3.0, 35.0)
 	p.global_position = at
 	p.stream = s
 	p.pitch_scale = pitch

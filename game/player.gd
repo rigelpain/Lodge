@@ -2480,10 +2480,7 @@ func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != id:
 		return
 	match ev.kind:
-		"scope_on":   # 双眼鏡台に払えた（通信ではホストが確かめて届く）
-			var coin_audio = get_parent().get_node_or_null("Audio")
-			if coin_audio and String(ev.get("paid", "")) == "button":
-				coin_audio.coin("wood", 0)
+		"scope_on":   # 双眼鏡台に払えた（通信ではホストが確かめて届く）。払った音は audio.gd が出来事から一度だけ鳴らす
 			_peek_begin("stand", get_parent().binocular_stands[int(ev.stand)], float(ev.get("left", Binoculars.STAND_SECONDS)))
 		"doll":   # 衣装掛けで選んだ人形に着替える
 			set_doll(String(ev.doll))
