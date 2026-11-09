@@ -103,6 +103,9 @@ var crashed := false           # 打ち上がってから止まるまで。乗�
 var _crash_t := 0.0
 var _crash_still := 0.0
 var _right_t := 0.0
+const TIP_UP := 0.5             # ソリの上向きの y がこれより小さい（60° より傾いた）と、縦や横倒し。乗れない・つかめない
+const TIP_WAIT := 0.5           # 縦や横倒しのまま、これだけ続いたら跳ねて起き直る (s)
+var _tip_t := 0.0
 
 # ---- ペグで斜面に留める（2026-11-01 代表「斜面にそりを留める消耗品があると休憩したり焚き火ができる」。形と動きは peg.gd）
 # 引き紐の先をペグに結ぶ。留めているあいだは、乗っていても、どんな坂でも止まっている（休める・そばで焚き火ができる）。
@@ -529,9 +532,25 @@ func push(dir: Vector3, at: Vector3, who: Node3D = null, strength := 1.0) -> voi
 	p.x = clamp(p.x, -HALF.x, HALF.x)
 	p.z = clamp(p.z, -HALF.y, HALF.y)
 	p.y = 0.2
-	apply_force(f, global_basis * p)
+	_apply_level(f, global_basis * p)
 	_push_count += 1
 	_push_force_now += f
+
+
+## 縦や横倒しになっている（起き直っている途中も）
+func tipped() -> bool:
+	return global_basis.y.y < TIP_UP or _right_t > 0.0
+
+
+## 人が押す・紐で引く力 f を、ソリの r（体の中心からの、世界の向きの位置）にかける。ただし回す力は、ソリの上向きの軸のまわり（向きを変える分）だけにする。
+## 縁を押せば向きが変わるのは前のまま。前後・左右に傾ける分は捨てる（2026-11-09 代表「おかしな挙動してる」）。
+## 押す手（台の上 0.2 m）と紐の結び目（前の 0.3 m）は重心（台の下）より上なので、押す・引くたびに傾ける力がかかっていた。
+## 軽い小のソリ（15 kg）を紐で引きながら仲間が後ろの縁を押すと起き上がり、立つと押す所が高くなってさらに立ち、
+## 鼻先を下に縦に立ったまま、仲間が宙でつかんで運んでいた（tools/sled_tip_check.gd --case=rope）
+func _apply_level(f: Vector3, r: Vector3) -> void:
+	apply_central_force(f)
+	var up := global_basis.y
+	apply_torque(up * up.dot(r.cross(f)))
 
 
 ## 立っている所（世界座標）から、ソリの縁のいちばん近いつかみ所と、押す向きを返す
@@ -548,7 +567,7 @@ func grip_point_near(world_pos: Vector3) -> Array:
 
 
 func take_handle(who: Node3D, h: Vector3) -> bool:
-	if racked:
+	if racked or tipped():   # 縦や横倒しのソリはつかめない（つかむ所が宙にある。起き直ってから）
 		return false
 	for other in holders:
 		if other != who and holders[other].distance_to(h) < 0.7:
@@ -629,7 +648,7 @@ func pull_rope(hand: Vector3, strength := 1.0) -> float:
 		dir = dir.normalized()
 		var f: float = ROPE_FORCE * strength * minf(over / ROPE_TAKEUP, 1.0) * push_share()
 		f *= 1.0 - smoothstep(PUSH_FADE.x, PUSH_FADE.y, linear_velocity.dot(dir))   # 押すときと同じ（人は走るより速く引けない）
-		apply_force(dir * f, anchor - global_position)
+		_apply_level(dir * f, anchor - global_position)
 		_push_count += 1
 		_push_force_now += dir * f
 		if rope_holder:
@@ -640,7 +659,7 @@ func pull_rope(hand: Vector3, strength := 1.0) -> float:
 
 
 func mount(who: Node3D) -> Vector3:
-	if racked or crashed or global_basis.y.y < 0.5 or riders.size() >= SEATS.size() or who in riders:   # 打ち上がっている・ひっくり返っているソリには乗れない
+	if racked or crashed or tipped() or riders.size() >= SEATS.size() or who in riders:   # 打ち上がっている・ひっくり返っているソリには乗れない
 		return Vector3.INF
 	var at := free_seat(who)
 	riders.append(who)
@@ -1465,9 +1484,14 @@ func _crash_step(dt: float) -> void:
 func _crash_end() -> void:
 	crashed = false
 	angular_damp = 6.0
-	var up := global_basis.y
-	if up.y >= 0.5:
+	if global_basis.y.y >= 0.5:
 		return
+	_right_up()
+
+
+## 跳ねて起き直る（長いソリも回りきれるだけ高く）。打ち上がったあとと、縦や横倒しのまま戻らないとき
+func _right_up() -> void:
+	var up := global_basis.y
 	var axis := up.cross(Vector3.UP)
 	axis = axis.normalized() if axis.length() > 0.05 else global_basis.z
 	var t := 2.0 * sqrt(2.0 * (HALF.y + 0.3) / 9.8)
@@ -1560,14 +1584,19 @@ func _physics_process(dt: float) -> void:
 	# どれだけ弱めるかは大きさごと（小さいほどその場で回しやすく、横にずらしやすい。大は滑り木が雪に食い込む）
 	var K: Dictionary = KINDS[kind]
 	var slip_k: float = SLIP_RESIST * (K.stand_slip if linear_velocity.length() < K.stand_speed else 1.0)
-	for z in [-RUNNER_Z, RUNNER_Z]:
+	# 縦や横倒しのあいだは、滑り木は雪に着いていないので効かせない（傾いた滑り木の横滑りを止める力が翼のように上向きにかかり、
+	# 押されて傾いたソリが人ごと宙を飛んでいた）
+	var on_runners := global_basis.y.y >= TIP_UP
+	for z in ([-RUNNER_Z, RUNNER_Z] if on_runners else []):
 		var r := global_basis * Vector3(0, 0, z)
 		var v_point := linear_velocity + angular_velocity.cross(r)
 		var slip := side * v_point.dot(side)
 		apply_force(-slip * mass * slip_k * 0.5, r)
 	# 左右の滑り木の前後方向の抵抗。体重をかけた側が雪に食い込んで抵抗が増え、曲がる。
 	# 後ろに体重をかけると両側が食い込んで止まる
-	if descent:
+	if not on_runners:
+		pass
+	elif descent:
 		_ride_forces(dt, fwd)
 	else:
 		# 押して登っているとき（乗っている人がいても）は前の作りのまま。乗っている人の重さは、押す・引く力の側で効かせる（push_share）
@@ -1637,3 +1666,10 @@ func _physics_process(dt: float) -> void:
 	var up := global_basis.y
 	if up.y < 0.5:
 		apply_torque(up.cross(Vector3.UP) * 400.0 * _k)
+	# それでも縦や横倒しのまま TIP_WAIT 続いたら、つかんでいる・紐を持っている・乗っている人の手を離させ、跳ねて起き直る
+	# （傾いたソリの席やつかみ所に付いた人は、ソリの向きのまま宙に浮く。人が離れれば、押されて立ったままにもならない）
+	_tip_t = _tip_t + dt if up.y < TIP_UP and _right_t <= 0.0 and not net_follow and not freeze else 0.0
+	if _tip_t > TIP_WAIT:
+		_tip_t = 0.0
+		let_everyone_go()
+		_right_up()

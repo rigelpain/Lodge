@@ -475,7 +475,7 @@ func _physics_process(dt: float) -> void:
 				# 頂上で滑る向きへ回しているあいだは、前へ押さない（行き先は下りなので、押すと回し終える前に頂上から滑り落ちる）
 				push_dir = fwd * ahead if not _team.route.is_empty() else Vector3.ZERO
 				if _team.go and absf(err) > 0.2:
-					sled.apply_torque(Vector3.UP * clampf(err, -1.0, 1.0) * sled.mass * TEAM_TWIST)
+					sled.apply_torque(sled.global_basis.y * clampf(err, -1.0, 1.0) * sled.mass * TEAM_TWIST)   # ソリの上向きの軸のまわり（傾けない）
 			var waiting: bool = not _team.is_empty() and not _team.go   # みんながつかむまで押さない
 			if push_dir.length() > 0.05 and not sled.is_dragged(self) and not waiting:
 				push_world = push_dir.normalized()
