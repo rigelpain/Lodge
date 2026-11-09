@@ -8,11 +8,15 @@ const Net := preload("res://net.gd")
 ##   つなぐ: 友達の番号を打って、その人の所へ行く
 ## ホスト・つなぐは、世界を作り直して始める（net.gd の boot に入れて、場面を読み直す。仲間はホストの画面だけが動かすので、つなぐ側は置かずに始める）。
 ## つながらなかった・ホストが帰ったときは、この画面に戻り、つなぐの札に×を縫って見せる
+## 札の上に、ワールドを選ぶ小さな札が 2 枚（2026-11-09）: 今までの世界（ロッジと丘と山）と、天下森（ヒュッテとリフトと杉の山）。
+## 押すと、そのワールドで世界を作り直して、この画面のまま後ろの景色が替わる。選んだワールドは覚えておく（main.gd の WORLD_CFG）。
+## ホストになると、つないで来た人もホストのワールドへ移る（net.gd の _world）
 
 const NET_CFG := "user://net.cfg"   # 前に打った番号
 const CARD := Vector2(320, 360)     # 札の大きさ（1080 の高さで）
 const GAP := 44.0
 const SPIN := 0.035                 # 後ろの雪山を回る速さ (rad/s)
+const WORLD_CARD := Vector2(190, 140)   # ワールドの札の大きさ（1080 の高さで）
 
 static var done := false            # 一度選んだら、読み直しても出さない
 static var force := false           # 設定の「スタート画面へ」から戻った
@@ -93,6 +97,13 @@ func _dial() -> Control:
 
 func _place_cam() -> void:
 	var a := 2.2 + _t * SPIN
+	if main.tenka():   # 天下森: ゲレンデの中ほどに立って、コースを下る向き（谷の向かいの山）を左右にゆっくり見わたす
+		_cam.far = 30000.0
+		var at := Vector3(-215, 0, 350)
+		_cam.position = Vector3(at.x, main.height(at.x, at.z) + 2.4, at.z)
+		var look := Vector3(413, 0, -669).normalized().rotated(Vector3.UP, sin(_t * 0.05) * 0.6)
+		_cam.look_at(_cam.position + look * 1000.0 + Vector3(0, -70, 0))
+		return
 	var c := Vector3(-8, 6, 40)
 	_cam.position = c + Vector3(sin(a), 0, cos(a)) * 34.0 + Vector3(0, 9, 0)
 	_cam.look_at(c + Vector3(0, 3, 0))
@@ -154,6 +165,14 @@ func _layout() -> void:
 	for name in ["solo", "host", "join"]:
 		_cards[name] = Rect2(Vector2(x, top), size)
 		x += size.x + gap
+	# ワールドの札: 3 枚の札の上に、まんなかへ 2 枚
+	var ws := WORLD_CARD * u
+	var wg := gap * 0.8
+	var wx := vs.x * 0.5 - ws.x - wg * 0.5
+	var wy := top - ws.y - 92.0 * u
+	for wn in main.WORLDS:
+		_cards["w_" + wn] = Rect2(Vector2(wx, wy), ws)
+		wx += ws.x + wg
 	var jr: Rect2 = _cards.join
 	var field := Rect2(jr.position + Vector2(jr.size.x * 0.07, jr.size.y * 0.72), Vector2(jr.size.x * 0.68, jr.size.y * 0.13))
 	_ip.position = field.position
@@ -181,6 +200,9 @@ func _unhandled_input(e: InputEvent) -> void:
 					_ip.grab_focus()
 				else:
 					_join()
+			var hit:
+				if String(hit).begins_with("w_"):
+					_world(String(hit).substr(2))
 		get_viewport().set_input_as_handled()
 
 
@@ -208,6 +230,20 @@ func _solo() -> void:
 	queue_free()
 
 
+## ワールドを替える: 選んだワールドを覚えて、世界を作り直す（この画面は出したまま）
+func _world(w: String) -> void:
+	if w == main.stage:
+		return
+	main.save_world(w)
+	Net.boot = {"world": w}   # 読み直した main.gd が引数に足す（確かめ用に引数つきで起動していても、選んだワールドで作る）
+	_busy = "w_" + w
+	force = true
+	fail = ""
+	await get_tree().process_frame   # 砂時計を描いてから
+	await get_tree().process_frame
+	get_tree().reload_current_scene()
+
+
 func _host() -> void:
 	_go({"host": "1"})
 
@@ -230,6 +266,7 @@ func _go(a: Dictionary) -> void:
 	done = true
 	force = false
 	fail = ""
+	a["world"] = main.stage   # ホスト・つなぐでも、いま選んでいるワールドのまま（つなぐ側は、ホストのワールドが届いたらそれへ移る）
 	Net.boot = a
 	await get_tree().process_frame   # 砂時計を描いてから
 	await get_tree().process_frame
@@ -308,10 +345,74 @@ func _paint(ci: Control) -> void:
 				_join_pic(ci, c, big)
 				_field_pic(ci, rr, u)
 		ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+	for w in main.WORLDS:
+		_world_tag(ci, w, u)
 	# 入力の欄は、札と一緒に揺れない本物の欄（いま揺れている札の上に重ねる）
 	var jr: Rect2 = _cards.join
 	var jl := -8.0 * u if _hover == "join" or _busy == "join" else 0.0
 	_ip.position.y = jr.position.y + jr.size.y * 0.72 + jl
+
+
+## ワールドの札。いまのワールドの札は持ち上げて、赤い糸の破線で囲う
+func _world_tag(ci: Control, w: String, u: float) -> void:
+	var key := "w_" + w
+	var r: Rect2 = _cards[key]
+	var on: bool = w == main.stage
+	var lift := -10.0 * u if on else (-5.0 * u if _hover == key else 0.0)
+	var sway := Icons.wind_angle(r.position.x * 0.01, 0.0, 0.15) * 0.3
+	var pin := Vector2(r.get_center().x, r.position.y - 22.0 * u)
+	Icons.screen()
+	Icons.thread(ci, PackedVector2Array([pin, r.position + Vector2(r.size.x * 0.5, lift + 2)]), Icons.THREAD, 1.4 * u)
+	ci.draw_circle(pin, 3.5 * u, Icons.RED)
+	ci.draw_set_transform(pin, sway, Vector2.ONE)
+	var rr := Rect2(r.position - pin + Vector2(0, lift), r.size)
+	Icons.paper_tag(ci, rr, 18.0 * u, u)
+	var c := rr.position + Vector2(rr.size.x * 0.5, rr.size.y * 0.52)
+	if _busy == key:
+		Icons.icon(ci, "hourglass", c, rr.size.y * 0.6, 1.0)
+	elif w == "tenkamori":
+		_tenka_pic(ci, c, rr.size.x * 0.82)
+	else:
+		_plain_pic(ci, c, rr.size.x * 0.82)
+	if on:
+		Icons.screen()
+		var g := rr.grow(-6.0 * u)
+		Icons.dashes(ci, Icons.rr(g.position.x, g.position.y, g.size.x, g.size.y, 10 * u), Icons.RED, 2.2 * u, 6 * u, 4 * u, 1.0, true)
+	ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+
+## 今までの世界: 藍の屋根のロッジと、丸い丘と、奥の大きな山
+func _plain_pic(ci: Control, c: Vector2, size: float) -> void:
+	_at(c, size)
+	Icons.patch(ci, PackedVector2Array([Vector2(-6, 16), Vector2(14, -22), Vector2(32, 16)]), Color(0.62, 0.72, 0.86), 1.0)
+	Icons.patch(ci, PackedVector2Array([Vector2(8, -15), Vector2(14, -22), Vector2(20, -15), Vector2(16, -13), Vector2(12, -14)]), Icons.PAPER, 1.0, false)
+	var hill := PackedVector2Array()
+	for k in 13:
+		var a := PI * k / 12.0
+		hill.append(Vector2(-12, 16) + Vector2(-cos(a) * 22.0, -sin(a) * 14.0))
+	Icons.patch(ci, hill, Color(0.93, 0.95, 0.99), 1.0)
+	_house(ci, Vector2(12, 22), true)
+
+
+## 天下森: 杉の濃い帯の山なみ、斜めに上るゲレンデとリフトの柱、麓の大きな三角屋根のヒュッテ
+func _tenka_pic(ci: Control, c: Vector2, size: float) -> void:
+	_at(c, size)
+	var cedar := Color(0.26, 0.33, 0.35)
+	Icons.patch(ci, PackedVector2Array([Vector2(-32, 2), Vector2(-20, -10), Vector2(-8, -4), Vector2(6, -14), Vector2(20, -6), Vector2(32, -9), Vector2(32, 6), Vector2(-32, 6)]), Color(0.86, 0.89, 0.94), 1.0)
+	Icons.patch(ci, PackedVector2Array([Vector2(-32, 3), Vector2(-18, -3), Vector2(-4, 1), Vector2(10, -5), Vector2(32, 0), Vector2(32, 8), Vector2(-32, 8)]), cedar, 1.0, false)
+	# ゲレンデ: 左奥の上から右手前へ下りる白い帯
+	Icons.patch(ci, PackedVector2Array([Vector2(-30, -2), Vector2(-20, -6), Vector2(14, 22), Vector2(-8, 22)]), Color(0.97, 0.98, 1.0), 1.0)
+	# リフトの柱と線
+	for k in 4:
+		var p := Vector2(-20, -2).lerp(Vector2(10, 18), k / 3.0)
+		Icons.thread(ci, PackedVector2Array([p, p + Vector2(0, -7)]), Color(0.36, 0.55, 0.42), 1.6)
+	Icons.thread(ci, PackedVector2Array([Vector2(-22, -9), Vector2(12, 11)]), Icons.THREAD, 1.0)
+	# ヒュッテ: 焦げ茶の壁、灰の大屋根、正面の三角は木の色
+	var f := Vector2(20, 22)
+	Icons.patch(ci, PackedVector2Array([f + Vector2(-14, 0), f + Vector2(12, 0), f + Vector2(12, -9), f + Vector2(-14, -9)]), Color(0.27, 0.22, 0.20), 1.0)
+	Icons.patch(ci, PackedVector2Array([f + Vector2(-17, -8), f + Vector2(-4, -8), f + Vector2(-2, -15), f + Vector2(-15, -15)]), Color(0.74, 0.76, 0.80), 1.0)
+	Icons.patch(ci, PackedVector2Array([f + Vector2(-4, -8), f + Vector2(14, -8), f + Vector2(5, -24)]), Color(0.74, 0.76, 0.80), 1.0)
+	Icons.patch(ci, PackedVector2Array([f + Vector2(-1, -9), f + Vector2(11, -9), f + Vector2(5, -20)]), Color(0.80, 0.52, 0.28), 1.0, false)
 
 
 ## 一人: あなたがソリを押し、仲間（CPU）が二人ついて来る

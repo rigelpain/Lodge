@@ -62,8 +62,13 @@ func receive(pid: int, m: Array) -> void:
 		return
 	if lag > 0.0:
 		await get_tree().create_timer(lag, true, true).timeout
+	if _moving:   # ホストのワールドへ移るところ: 読み直すまで何も受けない
+		return
 	var from_host := pid == 1
 	match String(m[0]):
+		"world":
+			if from_host:
+				_world(String(m[1]))
 		"state":
 			_state(pid, m[1])
 		"sled":
@@ -171,8 +176,29 @@ func _on_peer(pid: int) -> void:
 	remotes[pid] = _add_body(pid, "Remote%d" % pid)
 	print("来た: 番号 ", pid)
 	if is_host():
+		_sure.rpc_id(pid, "_in", ["world", main.stage])   # つなぐ側のワールドがちがえば、ホストのワールドで作り直してつなぎ直す（_world）
 		_sure.rpc_id(pid, "_in", ["snap", main.craft.snapshot(), main.emotes.snapshot(), main.damp.snapshot() if main.get("damp") else {},
 			main.seats.snapshot() if main.get("seats") else {}])
+
+
+var _moving := false
+
+## つなぐ側: ホストのワールドを聞いた。ちがうワールドなら、ホストのワールドで世界を作り直して、同じ番号へつなぎ直す
+func _world(w: String) -> void:
+	if w == main.stage or not w in main.WORLDS:
+		return
+	print("ホストのワールドへ移る: ", w)
+	_moving = true
+	boot["world"] = w
+	if not boot.has("join"):   # 引数でつないだとき: 引数を写す（読み直すと引数は残るが、ワールドは boot から足す）
+		boot["join"] = String(main.args.get("join", ""))
+		if main.args.has("port"):
+			boot["port"] = main.args["port"]
+	var st = load("res://start.gd")
+	st.done = true
+	multiplayer.multiplayer_peer.close()
+	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+	get_tree().reload_current_scene.call_deferred()
 
 
 ## ほかの人（仲間）の体を置く
@@ -181,7 +207,7 @@ func _add_body(id: int, nm: String) -> RemotePerson:
 	r.name = nm
 	r.peer = id
 	r.net = self
-	r.position = main.START
+	r.position = main.start_pos()
 	main.add_child(r)
 	var au := main.get_node_or_null("Audio")
 	if au and au.has_method("add_walker"):   # 足音も、自分や仲間と同じ決まりで（audio.gd）
