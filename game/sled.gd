@@ -7,6 +7,7 @@ const Snowball := preload("res://snowball.gd")
 const Stitches := preload("res://stitches.gd")
 const Flung := preload("res://flung.gd")
 const TreeHits := preload("res://tree_hits.gd")
+const Doll := preload("res://doll.gd")
 ## 大きなソリ。誰が押しても push() を呼ぶだけ（あなたも仲間も、のちの通信の相手も同じ）。
 ## 押す人が少ないとじりじり、多いと目に見えて速く登る。乗る人がいると減速をゆるめて一気に滑る。
 ## 誰も触れていない空のソリは、坂をゆっくりずり落ちる。速く下っているソリをつかむと引きずられ、
@@ -261,6 +262,11 @@ var snow_lift := Callable()   # (x, z) → 見た目の雪面が当たり判定�
 const VIS_LIFT_RATE := 18.0    # 見た目の雪面へ寄る速さ（1/s）。速く滑ってうねりを越えるときも、雪が床から出ないように速め
 const VIS_LIFT_ON := 0.15      # 底のどこも当たりの地面からこれより離れていたら（ロッジの床・ジャンプ台・宙）、合わせない (m)
 var vis_lift := 0.0            # いま見た目を上げている量 (m。ソリの上向きに。負は下げる)
+## 遠いか画面の外のソリは、見た目の雪面合わせ（雪面を 15 点測る）を VIS_LIFT_FAR_EVERY 歩に 1 回にする（見た目だけなので、遠くでは分からない）。
+## CPU の仲間のソリが増えると、全部のソリが毎歩測るのが重かった（2026-11-09 測定）。doll.gd の thin_far で切れる
+const VIS_LIFT_FAR_EVERY := 4
+var _lift_dt := 0.0
+var _lift_tick := 0
 var _body_y0 := 0.0
 var _tag_y0 := 0.0
 var snow_plane := Callable()  # (x, z) → 見た目の雪面の向きと高さ Vector4(法線 x, y, z, 高さ)。main が渡す。なければ当たり判定＋snow_lift
@@ -1539,7 +1545,11 @@ func _check_crash(dt: float) -> void:
 func _physics_process(dt: float) -> void:
 	_catch_fall()
 	_update_trail(dt)
-	_update_vis_lift(dt)
+	_lift_dt += dt
+	_lift_tick += 1
+	if not Doll.thin_far or (_lift_tick + get_instance_id()) % VIS_LIFT_FAR_EVERY == 0 or Doll.view_lod(self, global_position) == 0:
+		_update_vis_lift(_lift_dt)
+		_lift_dt = 0.0
 	if racked:
 		return
 	_check_crash(dt)

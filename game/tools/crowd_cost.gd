@@ -1,9 +1,11 @@
 extends SceneTree
 ## 仲間が大勢そばにいるときの重さを、項目ごとに分けて測る。縦同期と 60 の頭打ちを外し、ふつうと「その項目を消した」を交互に測って、
 ## 1 コマの時間（ms）の中央値の差を出す（仲間が動くぶんと熱のぶんを、交互にして打ち消す）。
-##   Godot --path game --resolution 1280x720 -s res://tools/crowd_cost.gd -- --roam-bots=30 --roam-all-hill --no-sound --time=21 [--per=3] [--rounds=3] [--warm=15] [--freeze]
+##   Godot --path game --resolution 1280x720 -s res://tools/crowd_cost.gd -- --roam-bots=30 --roam-all-hill --no-sound --time=21 [--per=3] [--rounds=3] [--warm=15] [--freeze] [--at=x,z,向き] [--steps=N]
 ## --freeze: 測る前に仲間を止める（描く重さだけを比べる）。--still: 仲間の考えと歩みだけ止める（人形は動く）。--trace: 段ごとの様子。--only=番号,…: 項目を選ぶ。
 ## Mac が熱いと全体が何倍も遅くなるので、冷えてから続けて回さずに測る
+## 仲間のソリ・頭の小物の項目は、止めているあいだにソリが流れたりペットが置いていかれたりして、戻したあとの動きが乱れる。
+## その後ろの項目は時間とともに重くなることがあるので、--only で 1 つずつ測る
 
 var args := {}
 var main: Node3D
@@ -34,6 +36,8 @@ func _initialize() -> void:
 	root.add_child(main)
 	current_scene = main
 	AudioServer.set_bus_mute(0, true)
+	if args.has("steps"):   # 1 コマに進める物理の歩みの上限（遊ぶときは main.gd の GAME_STEPS）
+		Engine.max_physics_steps_per_frame = int(args["steps"])
 	_util_thread = Thread.new()
 	_util_thread.start(_util_loop)
 	_steps = [
@@ -49,6 +53,9 @@ func _initialize() -> void:
 		["人形ぜんぶ", func(on): _bots(on)],
 		["仲間の考えと歩み（bot.gd）", func(on): _brains(on)],
 		["人形の姿勢づくり（doll.gd）", func(on): _poses(on)],
+		["仲間のソリ（sled.gd）", func(on): _script_nodes(on, "res://sled.gd", true)],
+		["頭の小物・ペット（companions.gd）", func(on): _script_nodes(on, "res://companions.gd", false)],
+		["遠くの人の間引き（doll.gd の thin_far。消した側が前の作り）", func(on): preload("res://doll.gd").thin_far = on],
 	]
 	if args.has("only"):   # --only=0,9,10 のように、測る項目の番号を選ぶ
 		var keep := []
@@ -154,6 +161,14 @@ func _bots(on: bool, far := 0.0) -> void:
 		(b as Node3D).visible = on
 
 
+## script の付いた物の物理を止める。bots_only なら、あなたのソリ（main.sled）は止めない
+func _script_nodes(on: bool, script: String, skip_mine: bool) -> void:
+	for n in main.find_children("*", "", true, false):
+		var sc: Script = n.get_script()
+		if sc and sc.resource_path == script and not (skip_mine and n == main.sled):
+			n.set_physics_process(on)
+
+
 func _brains(on: bool) -> void:
 	for b in _bot_list():
 		b.set_physics_process(on)
@@ -181,6 +196,17 @@ func _process(dt: float) -> bool:
 	match _phase:
 		"wait":
 			if t > float(args.get("warm", "15")):
+				if args.has("at"):   # --at=x,z,向き(度): あなたをそこに立たせる（向き 0 は北 = -z）
+					var v := String(args["at"]).split(",")
+					var p: CharacterBody3D = main.player
+					var x := float(v[0])
+					var z := float(v[1])
+					p.global_position = Vector3(x, preload("res://main.gd").ground(x, z) + 0.2, z)
+					p.velocity = Vector3.ZERO
+					p.rotation.y = deg_to_rad(float(v[2]) if v.size() > 2 else 0.0)
+					t = 0.0
+					_phase = "settle"
+					return false
 				print("仲間 %d 人 窓 %s" % [_bot_list().size(), str(root.size)])
 				print(_census())
 				if args.has("freeze"):   # 仲間を止めて、描く重さだけを比べる（動くとぶれる）
@@ -191,6 +217,11 @@ func _process(dt: float) -> bool:
 						b.set_physics_process(false)
 				_phase = "run"
 				_begin()
+		"settle":   # 立たせた所に慣れるまで（描く物の読み込み）
+			if t > 3.0:
+				args.erase("at")
+				t = 999.0
+				_phase = "wait"
 		"run":
 			if t > 0.8 and _last_us > 0:
 				if _samples.is_empty():

@@ -190,6 +190,11 @@ var _peek_kind := ""              # …その段
 var _hold: Array = [null, null]   # 手ごとに [基準のノード, その座標での手の所] か null
 var _arm_base := {}          # コマで決めた腕の回転（毎フレームここから伸ばし直す）
 var _lod_dt := 0.0           # 遠くて間引いたあいだに進んだ時間（view_lod）
+## 見えているがとても遠い人形（寄り具合込みでこの距離より先）は、姿勢のコマを FAR_POSE_EVERY 回に 1 回にする。
+## 大きな山の上からは景色が見渡せて、仲間の多くが遠くに見えている（2026-11-09 測定: 30 人のうち 26 人が 130 m より先で画面の中）
+const FAR_POSE := 90.0
+const FAR_POSE_EVERY := 2.0
+static var thin_far := true  # 遠くの人の処理を間引く（ソリの見た目の雪面合わせも、sled.gd がこれを見る）。確かめの道具が比べるときに切る
 var _lod_frame := -1
 var _lod_quiet := false
 var _pose_stale := false     # 見えないので姿勢を作らずにいる（当たりを聞かれたら _ensure_pose で作る）
@@ -362,12 +367,15 @@ func body_hit(p: Vector3, r: float) -> bool:
 
 ## カメラから見た遠さの段（CPU の仲間が増えても重くならないように。2026-11-07 測定）。望遠のときはそのぶん近い扱い。
 ##   0 近い  1 少し遠い（mid より遠く、画面に入っている）  2 見えない（mid より遠くて画面の外か、gone より遠い）
-## 別の小窓の中の人形は、その小窓のカメラで見る
+## 別の小窓の中の人形は、その小窓のカメラで見る。最後に見た遠さ（寄り具合込み、m）は view_d に残す
+static var view_d := 0.0
 static func view_lod(n: Node, p: Vector3, mid := 30.0, gone := 220.0) -> int:
 	var cam := n.get_viewport().get_camera_3d()
 	if cam == null:
+		view_d = 0.0
 		return 0
 	var d := cam.global_position.distance_to(p) * clampf(cam.fov / 75.0, 0.02, 1.0)
+	view_d = d
 	if d <= mid:
 		return 0
 	if d > gone or not cam.is_position_in_frustum(p):
@@ -1246,9 +1254,12 @@ func _physics_process(dt: float) -> void:
 	_lod_quiet = false
 	_pose_stale = false
 	var posed := false
+	var step := pose_step
+	if lod == 1 and thin_far and view_d > FAR_POSE:
+		step *= FAR_POSE_EVERY   # とても遠い: 姿勢のコマも間引く（画面で小さく、6 fps でも動きは分かる）
 	if fi != _frame and fi >= _pose_due:
 		# 湿っているとコマを飛ばす（12 → 10 → 8 fps）。飛ばしたぶんは次へ持ち越し、間隔をならす
-		_pose_due = _pose_due + pose_step if _pose_due + pose_step > fi else fi + pose_step
+		_pose_due = _pose_due + step if _pose_due + step > fi else fi + step
 		_frame = fi
 		_pose()
 		posed = true

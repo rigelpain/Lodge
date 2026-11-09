@@ -604,6 +604,7 @@ func _ready() -> void:
 		if player: player.menu_open = true
 
 	call_deferred("_split_pip_layers")   # 全部が置かれたあとで
+	call_deferred("_lodge_far_cull")     # 全部が置かれたあとで
 
 	hud = Hud.new()
 	hud.main = self
@@ -1153,10 +1154,17 @@ func _process(_dt: float) -> void:
 
 
 ## 裏に回ったゲームは 15 コマ／秒に落とす。閉じ忘れた窓が CPU と GPU を使い続けて、手前で遊んでいるゲームまで遅くしていた
-## （2026-11-05 測定。熱の余裕も食う）。物理は 1 コマに何歩でも進むので、ゲームの中の時間と通信は同じ速さで進む。
+## （2026-11-05 測定。熱の余裕も食う）。物理は 1 コマに 4 歩まで進むので（BACKGROUND_STEPS）、ゲームの中の時間と通信は同じ速さで進む。
 ## 確かめの道具（-s で動かす）は current_scene が空なので、落とさない
 const BACKGROUND_FPS := 15
 const GAME_FPS := 60
+## 1 コマに進める物理の歩みの上限。Godot の既定（8）のままだと、1 コマが 16.7 ms を超えたとき遅れを取り戻そうと
+## 1 コマに何歩も進め、その分さらに重くなって遅れる悪循環になる（2026-11-09 測定: CPU 30 人で大きな山を 3 人乗りで
+## 下ると、1 コマ 8 歩・133 ms・7 fps に張りついた。上限 2 歩なら 33 ms・30 fps で、ゲームの時間も遅れない）。
+## 遊んでいる窓は 2 歩まで（30 fps を下回るときだけ、ゲームの時間が少しゆっくりになる）。裏に回った窓は 15 コマ／秒なので、
+## 4 歩まで進めて時間を合わせる（通信の相手と同じ速さで進む）
+const GAME_STEPS := 2
+const BACKGROUND_STEPS := 4
 var _game_pacing := false
 
 
@@ -1165,8 +1173,37 @@ func _notification(what: int) -> void:
 		return
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		Engine.max_fps = BACKGROUND_FPS
+		Engine.max_physics_steps_per_frame = BACKGROUND_STEPS
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		Engine.max_fps = GAME_FPS
+		Engine.max_physics_steps_per_frame = GAME_STEPS
+
+
+## ロッジの中の小さな物（家具・小物・壁の灯りの道具）は、カメラから LODGE_INNER_SEE より遠いと描かない。
+## 大きな山の上から見ると、370 m 先のロッジの中の物（灯りの道具だけで形 1,227 個）を全部描いていて、景色の描く数の半分近くを使っていた
+## （2026-11-09 測定: 描く数 2,819 のうちロッジが 1,218〜1,313）。中の物は外からはほとんど見えない（窓の奥で小さい）。
+## 距離はロッジの端から端（約 50 m）より長くとって、ロッジの中から見て消えないようにする。壁・屋根・床などの大きな物と、外の物には付けない
+const LODGE_INNER_SEE := 70.0
+const LODGE_INNER_BOX := Vector3(21.8, 12.0, 12.7)   # ロッジの中とみなす箱（ロッジの座標の半分の幅・高さ・奥行き。audio.gd の LODGE_HALF）
+const LODGE_INNER_SMALL := 4.0                        # これより小さい物（形の箱の対角、m）だけ
+
+
+func _lodge_far_cull() -> void:
+	var lodge: Node3D = get_node_or_null("Lodge")
+	if lodge == null:
+		return
+	var inv := lodge.global_transform.affine_inverse()
+	for g in lodge.find_children("*", "GeometryInstance3D", true, false):
+		var gi := g as GeometryInstance3D
+		if gi.visibility_range_end > 0.0:
+			continue
+		var ab: AABB = gi.global_transform * gi.get_aabb()
+		if ab.size.length() > LODGE_INNER_SMALL:
+			continue
+		var c: Vector3 = inv * ab.get_center()
+		if absf(c.x) < LODGE_INNER_BOX.x and absf(c.z) < LODGE_INNER_BOX.z and c.y > -1.0 and c.y < LODGE_INNER_BOX.y:
+			gi.visibility_range_end = LODGE_INNER_SEE
+			gi.visibility_range_end_margin = 5.0   # 境目で出たり消えたりをくり返さない
 
 
 ## 遊ぶときのコマの出し方: 縦同期を切り、60 FPS で頭打ちにする。縦同期があると 1 コマが 16.7 ms を少し超えただけで
@@ -1174,6 +1211,7 @@ func _notification(what: int) -> void:
 ## ズレが気になるときは設定の「縦同期」で戻せる。確かめの道具（-s）は、速く回せるように当てない
 func use_game_pacing() -> void:
 	Engine.max_fps = GAME_FPS
+	Engine.max_physics_steps_per_frame = GAME_STEPS
 	_game_pacing = true
 	_apply_setting("vsync", settings.values.get("vsync", false))
 
