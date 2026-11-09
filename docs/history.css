@@ -1,0 +1,251 @@
+/* 軌跡: 縦に長い道。まん中に背骨の線を通し、出来事を左右に置く。
+   重要なものほど大きく、節目は道をまたいで光らせる。色は index.css の墨・紺・珊瑚に、種類の色を 3 つ足す */
+.hist {
+  --k-add: #ff4f30;   /* 追加 */
+  --k-fix: #2a52b4;   /* 修正 */
+  --k-tune: #7a52d1;  /* 調整 */
+  --k-perf: #0f8f7d;  /* 軽く */
+  --k-base: #6b7390;  /* 土台 */
+  --side-w: clamp(230px, 18vw, 290px);
+  grid-template-columns: var(--side-w) minmax(0, 1fr);
+  align-items: start;
+}
+.hist > .hist-hero, .hist > .hist-top { grid-column: 1 / -1; }
+.hist-side { grid-column: 1; position: sticky; top: var(--gutter); max-height: calc(100dvh - 2 * var(--gutter)); overflow: auto; overscroll-behavior: contain; scrollbar-width: thin; padding: clamp(16px, 1.6vw, 24px); }
+.hist-road { grid-column: 2; position: relative; min-width: 0; }
+@media (max-width: 1000px) {
+  .hist { grid-template-columns: minmax(0, 1fr); }
+  .hist-side { display: none; }
+  .hist-road { grid-column: 1; }
+}
+
+/* display を持つ要素でも、絞り込みで隠したものは消す */
+.hist [hidden] { display: none !important; }
+
+/* 種類の色を一か所で */
+.k-add { --k: var(--k-add); }
+.k-fix { --k: var(--k-fix); }
+.k-tune { --k: var(--k-tune); }
+.k-perf { --k: var(--k-perf); }
+.k-base { --k: var(--k-base); }
+
+/* ---- 上: 何を目指したか と 数 ---- */
+.hist-hero h1 { max-width: 20em; }
+.hist-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; }
+.hist-stats > div { padding: 12px 14px 10px; border-radius: 18px; background: rgba(255, 255, 255, 0.42); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95); }
+.hist-stats dt { font-size: var(--t-xs); color: var(--ink-2); font-weight: 700; display: flex; align-items: center; gap: 0.45em; }
+.hist-stats dt i { width: 8px; height: 8px; border-radius: 50%; background: var(--k, var(--ink-3)); }
+.hist-stats dd { font-family: "Manrope", sans-serif; font-weight: 800; font-size: clamp(28px, 2.4vw + 12px, 46px); letter-spacing: -0.04em; line-height: 1.1; }
+.hist-stats dd small { font-family: "Noto Sans JP", sans-serif; font-size: var(--t-xs); font-weight: 400; color: var(--ink-2); margin-left: 0.2em; letter-spacing: 0; }
+
+/* ---- 上: 目次（章のカードと、日ごとの棒） ---- */
+.hist-chapters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr)); gap: 10px; }
+.hist-chapters a { display: grid; gap: 2px; height: 100%; padding: 12px 14px; border-radius: 18px; text-decoration: none; color: var(--ink); background: rgba(255, 255, 255, 0.4); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95); transition: background 300ms var(--ease), transform 300ms var(--ease), box-shadow 300ms var(--ease); }
+.hist-chapters a:hover { background: rgba(255, 255, 255, 0.75); transform: translateY(-2px); }
+.hist-chapters a.on { background: rgba(255, 255, 255, 0.85); box-shadow: inset 0 1px 0 #fff, 0 0 0 2px var(--coral), 0 6px 18px -8px rgba(255, 79, 48, 0.5); }
+.hist-chapters .no { font-family: "Manrope", sans-serif; font-size: var(--t-xs); font-weight: 800; color: var(--coral); letter-spacing: 0.06em; }
+.hist-chapters .nm { font-weight: 700; font-size: var(--t-s); line-height: 1.4; word-break: auto-phrase; }
+.hist-chapters .dt { font-size: var(--t-xs); color: var(--ink-2); }
+.hist-chapters .ct { font-size: var(--t-xs); color: var(--ink-3); }
+.hist-chapters a.zero { opacity: 0.45; }
+
+.hist-days { display: grid; grid-template-columns: repeat(var(--n, 15), minmax(0, 1fr)); gap: 4px; align-items: end; margin-top: clamp(14px, 1.6vw, 22px); height: clamp(110px, 10vw, 150px); }
+.hist-day { display: flex; flex-direction: column; justify-content: flex-end; align-items: stretch; height: 100%; min-width: 0; border: 0; padding: 0; background: none; font: inherit; cursor: pointer; border-radius: 8px; color: var(--ink-2); }
+.hist-day .stack { display: flex; flex-direction: column-reverse; border-radius: 6px; overflow: hidden; background: rgba(255, 255, 255, 0.5); min-height: 3px; transition: height 600ms var(--ease); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8); }
+.hist-day .stack i { display: block; background: var(--k); flex: none; transition: height 600ms var(--ease); }
+.hist-day .lb { font-family: "Manrope", sans-serif; font-size: 11px; font-weight: 700; text-align: center; margin-top: 4px; white-space: nowrap; }
+.hist-day .n { font-family: "Manrope", sans-serif; font-size: 11px; font-weight: 800; text-align: center; color: var(--ink); margin-bottom: 2px; }
+.hist-day:hover .stack, .hist-day:focus-visible .stack { box-shadow: 0 0 0 2px #fff, 0 4px 12px -4px rgba(30, 50, 110, 0.4); }
+.hist-day.on .lb { color: var(--coral); }
+.hist-day.on .stack { box-shadow: 0 0 0 2px var(--coral); }
+.hist-day:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+.hist-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 10px; font-size: var(--t-xs); color: var(--ink-2); }
+.hist-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.hist-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--k); }
+
+/* ---- 絞り込み（上と横で同じものを 2 つ描き、状態は一つ） ---- */
+.hist-fh { margin-top: clamp(18px, 2vw, 26px); }
+.hist-filter { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 14px 22px; }
+.hist-filter fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+.hist-filter legend { font-size: var(--t-xs); font-weight: 700; color: var(--ink-3); letter-spacing: 0.08em; margin-bottom: 6px; padding: 0; }
+.hist-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.hist-chip { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border-radius: 999px; border: 0; font: inherit; font-weight: 700; font-size: var(--t-xs); color: var(--ink-2); background: rgba(255, 255, 255, 0.45); box-shadow: inset 0 0 0 1.5px rgba(20, 28, 54, 0.12); cursor: pointer; transition: background 200ms var(--ease), color 200ms var(--ease), box-shadow 200ms var(--ease); }
+.hist-chip:hover { color: var(--ink); background: rgba(255, 255, 255, 0.7); }
+.hist-chip[aria-pressed="true"] { color: var(--ink); background: rgba(255, 255, 255, 0.95); box-shadow: inset 0 0 0 1.5px var(--k, var(--ink)), 0 2px 8px -2px rgba(30, 50, 110, 0.25); }
+.hist-chip i { width: 8px; height: 8px; border-radius: 50%; background: var(--k, var(--ink-3)); }
+.hist-chip[aria-pressed="false"] i { background: transparent; box-shadow: inset 0 0 0 1.5px var(--k, var(--ink-3)); }
+.hist-chip .c { font-family: "Manrope", sans-serif; color: var(--ink-3); font-weight: 600; }
+.hist-chip:focus-visible, .hist-reset:focus-visible, .hist-search input:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+.hist-chip .stars { color: var(--coral); letter-spacing: -0.1em; font-size: 0.9em; }
+.hist-search { display: flex; gap: 8px; align-items: center; }
+.hist-search input { flex: 1; min-width: 0; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 0; font: inherit; font-size: var(--t-s); color: var(--ink); background: rgba(255, 255, 255, 0.7); box-shadow: inset 0 1px 3px rgba(30, 50, 110, 0.15), inset 0 0 0 1.5px rgba(20, 28, 54, 0.1); }
+.hist-search input::placeholder { color: var(--ink-3); }
+.hist-reset { min-height: 36px; padding: 0 14px; border-radius: 999px; border: 0; font: inherit; font-weight: 700; font-size: var(--t-xs); color: #fff; background: var(--ink); cursor: pointer; white-space: nowrap; }
+.hist-reset[disabled] { opacity: 0.25; cursor: default; }
+.hist-filter.compact { grid-template-columns: 1fr; gap: 10px; }
+.hist-filter.compact legend { margin-bottom: 4px; }
+.hist-filter.compact .hist-chips { gap: 4px; }
+.hist-filter.compact .hist-chip { min-height: 26px; padding: 0 9px; font-size: 11px; }
+.hist-filter.compact .hist-chip .c { display: none; }
+
+/* ---- 横: 目次（章と日、いまいる所を光らせる） ---- */
+.hist-progress { height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.6); overflow: hidden; margin: -4px 0 12px; }
+.hist-progress span { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--navy), var(--coral)); }
+.hist-toc > li + li { margin-top: 6px; }
+.hist-toc .ch { display: grid; grid-template-columns: 1.9em minmax(0, 1fr) auto; gap: 4px; align-items: baseline; padding: 6px 8px; border-radius: 12px; text-decoration: none; color: var(--ink); font-weight: 700; font-size: var(--t-s); line-height: 1.35; transition: background 250ms var(--ease); }
+.hist-toc .ch .no { font-family: "Manrope", sans-serif; font-size: var(--t-xs); color: var(--coral); font-weight: 800; }
+.hist-toc .ch .ct, .hist-toc .dy .ct { font-family: "Manrope", sans-serif; font-size: var(--t-xs); color: var(--ink-3); font-weight: 600; }
+.hist-toc .ch:hover, .hist-toc .dy:hover { background: rgba(255, 255, 255, 0.6); }
+.hist-toc .ch.on { background: rgba(255, 255, 255, 0.85); box-shadow: inset 3px 0 0 var(--coral); }
+.hist-toc ol { margin: 2px 0 0 1.9em; }
+.hist-toc .dy { display: flex; justify-content: space-between; gap: 8px; padding: 3px 8px; border-radius: 10px; text-decoration: none; color: var(--ink-2); font-size: var(--t-xs); transition: background 250ms var(--ease), color 250ms var(--ease); }
+.hist-toc .dy b { font-weight: 600; }
+.hist-toc .dy .stars { color: var(--coral); }
+.hist-toc .dy.on { color: var(--ink); background: rgba(255, 255, 255, 0.85); font-weight: 700; }
+.hist-toc .zero { opacity: 0.4; }
+.hist-toc a:focus-visible { outline: 2px solid var(--coral); outline-offset: 1px; }
+
+/* ---- 道: 背骨の線と、伸びていく色 ---- */
+.hist-road { --spine-x: 50%; padding: 4px 0 40px; }
+.hist-spine { position: absolute; top: 0; bottom: 0; left: var(--spine-x); width: 6px; margin-left: -3px; border-radius: 3px; background: rgba(255, 255, 255, 0.6); box-shadow: inset 0 1px 2px rgba(30, 50, 110, 0.12); }
+.hist-spine span { display: block; width: 100%; height: 0; border-radius: 3px; background: linear-gradient(180deg, var(--navy) 0%, #8a63e0 50%, var(--coral) 100%); box-shadow: 0 0 12px rgba(255, 79, 48, 0.35); }
+
+/* 章の見出し: 道をまたぐ大きな帯 */
+.hist-ch { position: relative; margin: clamp(28px, 4vw, 56px) 0 clamp(18px, 2vw, 28px); scroll-margin-top: 16px; }
+.hist-ch:first-child { margin-top: 0; }
+.hist-ch .tile { text-align: center; padding: clamp(22px, 2.6vw, 40px) var(--pad); background: linear-gradient(135deg, rgba(255, 255, 255, 0.7) 0%, rgba(255, 255, 255, 0.45) 100%); }
+.hist-ch .no { font-family: "Manrope", sans-serif; font-weight: 800; font-size: var(--t-xs); letter-spacing: 0.2em; color: var(--coral); }
+.hist-ch h2 { display: block; font-size: var(--t-xl); color: var(--ink); font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; margin: 0.15em 0 0.25em; word-break: auto-phrase; }
+.hist-ch .dt { font-size: var(--t-s); color: var(--ink-2); font-weight: 700; }
+.hist-ch .sm { font-size: var(--t-m); color: var(--ink-2); max-width: 40em; margin: 0.6em auto 0; line-height: 1.8; }
+
+/* 日の区切り: 道を横切る線と、まん中の大きな日付 */
+.hist-dayhead { position: relative; z-index: 2; display: flex; align-items: center; gap: clamp(10px, 1.4vw, 20px); margin: clamp(30px, 3.6vw, 52px) 0 clamp(12px, 1.4vw, 20px); scroll-margin-top: 64px; }
+.hist-dayhead::before, .hist-dayhead::after { content: ""; flex: 1; height: 2px; border-radius: 1px; background: linear-gradient(90deg, rgba(20, 28, 54, 0) 0%, rgba(20, 28, 54, 0.28) 100%); }
+.hist-dayhead::after { background: linear-gradient(270deg, rgba(20, 28, 54, 0) 0%, rgba(20, 28, 54, 0.28) 100%); }
+.hist-dayhead .dh { display: inline-flex; flex-direction: column; align-items: center; gap: 2px; padding: 10px 22px 8px; border-radius: 20px; background: var(--ink); color: #fff; box-shadow: 0 10px 26px -10px rgba(20, 28, 54, 0.6), 0 0 0 5px rgba(255, 255, 255, 0.55); }
+.hist-dayhead time { display: inline-flex; align-items: baseline; gap: 0.35em; line-height: 1.1; }
+.hist-dayhead time b { font-size: var(--t-l); font-weight: 800; letter-spacing: -0.02em; }
+.hist-dayhead time i { font-style: normal; font-weight: 700; font-size: var(--t-s); opacity: 0.8; }
+.hist-dayhead small { font-size: var(--t-xs); opacity: 0.65; }
+
+/* 画面の上に貼りつく、いまいる日（高さ 0 の箱なので、道の長さは変えない） */
+.hist-now { position: sticky; top: 10px; z-index: 5; height: 0; display: flex; justify-content: center; align-items: flex-start; pointer-events: none; }
+.hist-now .pill { display: inline-flex; align-items: baseline; gap: 0.5em; padding: 6px 16px; border-radius: 999px; background: rgba(20, 28, 54, 0.9); color: #fff; -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); box-shadow: 0 8px 22px -8px rgba(20, 28, 54, 0.6); opacity: 0; transform: translateY(-8px); transition: opacity 300ms var(--ease), transform 300ms var(--ease); white-space: nowrap; }
+.hist-now.on .pill { opacity: 1; transform: none; }
+.hist-now b { font-size: var(--t-m); font-weight: 800; }
+.hist-now i { font-style: normal; font-weight: 700; font-size: var(--t-xs); opacity: 0.8; }
+.hist-now .pill > span { font-size: var(--t-xs); opacity: 0.65; }
+
+/* 出来事: 3 列（左の札・背骨・右の札） */
+.ev { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) 56px minmax(0, 1fr); margin-top: 14px; scroll-margin-top: 24px; }
+.ev.lap { margin-top: -26px; }
+.ev > .card { grid-column: 1; grid-row: 1; justify-self: end; width: 100%; }
+.ev.r > .card { grid-column: 3; justify-self: start; }
+.ev > .node { grid-column: 2; grid-row: 1; justify-self: center; align-self: start; margin-top: 18px; position: relative; z-index: 1; width: 14px; height: 14px; border-radius: 50%; background: var(--k); box-shadow: 0 0 0 3px #fff, 0 2px 6px rgba(30, 50, 110, 0.3); }
+/* 札から背骨へ伸びる細い枝 */
+.ev > .node::before { content: ""; position: absolute; top: 50%; height: 2px; width: 22px; margin-top: -1px; right: 100%; background: linear-gradient(90deg, transparent, var(--k)); opacity: 0.7; }
+.ev.r > .node::before { right: auto; left: 100%; background: linear-gradient(270deg, transparent, var(--k)); }
+
+.card { position: relative; min-width: 0; padding: 14px 18px 14px; border-radius: 22px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.58) 0%, rgba(255, 255, 255, 0.32) 100%); -webkit-backdrop-filter: blur(22px) saturate(1.8); backdrop-filter: blur(22px) saturate(1.8); box-shadow: 0 14px 34px -18px rgba(30, 50, 110, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 0 0 1px rgba(255, 255, 255, 0.35); transition: opacity 650ms var(--ease), transform 650ms var(--ease), box-shadow 300ms var(--ease); }
+.card::before { content: ""; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--k); opacity: 0.85; }
+.ev.r .card::before { left: 0; }
+.ev:not(.r) .card::before { left: auto; right: 0; border-radius: 3px 0 0 3px; }
+.card .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--t-xs); color: var(--ink-2); }
+.card .when { font-weight: 700; color: var(--ink); padding: 0 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.75); box-shadow: inset 0 0 0 1px rgba(20, 28, 54, 0.08); white-space: nowrap; }
+.ev.i4 .card .when { background: rgba(255, 255, 255, 0.9); }
+.card .kind { display: inline-flex; align-items: center; gap: 5px; font-weight: 800; color: var(--k); }
+.card .kind::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--k); }
+.card .imp { color: var(--coral); letter-spacing: -0.08em; }
+.card .imp b { letter-spacing: 0; margin-left: 0.3em; font-weight: 800; }
+.card .area { padding: 0 8px; border-radius: 999px; background: rgba(255, 255, 255, 0.6); color: var(--ink-2); }
+.card .pr { margin-left: auto; font-family: "Manrope", sans-serif; font-weight: 800; color: var(--navy); text-decoration: none; }
+.card .pr:hover { text-decoration: underline; }
+.card .st { padding: 0 8px; border-radius: 999px; font-weight: 700; }
+.card .st.closed { background: rgba(20, 28, 54, 0.75); color: #fff; }
+.card .st.open { background: var(--coral-soft); color: var(--coral); }
+.card h3 { font-size: var(--t-m); font-weight: 700; line-height: 1.45; margin: 0.35em 0 0; word-break: auto-phrase; text-wrap: pretty; }
+.card .body { display: grid; gap: 6px; margin-top: 10px; }
+.card .body > div { display: grid; grid-template-columns: 4.6em minmax(0, 1fr); gap: 8px; font-size: var(--t-xs); line-height: 1.65; }
+.card .body dt { font-weight: 700; color: var(--ink-3); letter-spacing: 0.04em; }
+.card .body dd { color: var(--ink); }
+.card .body .res dd { font-weight: 700; }
+.card .body .left dd { color: var(--ink-2); }
+.card .qt { margin-top: 4px; padding-left: 10px; border-left: 2px solid var(--coral); color: var(--ink-2); font-weight: 500; }
+.card .qt span { margin-right: 0.5em; color: var(--ink-3); font-size: 0.9em; font-weight: 400; }
+.card q { quotes: "「" "」"; }
+.card details summary { list-style: none; cursor: pointer; }
+.card details summary::-webkit-details-marker { display: none; }
+.card details summary h3::after { content: "＋"; display: inline-block; margin-left: 0.5em; color: var(--ink-3); font-size: 0.8em; transition: transform 300ms var(--ease); }
+.card details[open] summary h3::after { transform: rotate(45deg); }
+.card details summary:focus-visible { outline: 2px solid var(--coral); outline-offset: 4px; border-radius: 6px; }
+.card .num-hl { font-family: "Manrope", sans-serif; font-weight: 800; color: var(--coral); }
+
+/* 重要度で大きさを変える */
+.ev.i1 .card { padding: 9px 14px; border-radius: 16px; max-width: 30em; }
+.ev.i1 .card h3 { font-size: var(--t-s); font-weight: 500; margin-top: 0.15em; }
+.ev.i1 > .node { width: 9px; height: 9px; margin-top: 16px; box-shadow: 0 0 0 2px #fff; }
+.ev.i1 .card::before { top: 10px; bottom: 10px; opacity: 0.5; }
+.ev.i2 .card { max-width: 34em; }
+.ev.i3 .card { padding: 18px 22px; border-radius: 26px; background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.45) 100%); box-shadow: 0 22px 44px -20px rgba(30, 50, 110, 0.5), inset 0 1px 0 #fff, inset 0 0 0 1.5px color-mix(in srgb, var(--k) 35%, transparent); }
+.ev.i3 .card h3 { font-size: var(--t-l); font-weight: 800; letter-spacing: -0.01em; line-height: 1.35; }
+.ev.i3 .card .body > div { font-size: var(--t-s); grid-template-columns: 5em minmax(0, 1fr); }
+.ev.i3 .card::before { width: 4px; opacity: 1; }
+.ev.i3 > .node { width: 20px; height: 20px; margin-top: 24px; box-shadow: 0 0 0 4px #fff, 0 0 0 9px color-mix(in srgb, var(--k) 20%, transparent), 0 3px 10px rgba(30, 50, 110, 0.35); }
+
+/* 節目: 道をまたぐ。縁を光らせ、入ってきたときに光が一度走る */
+.ev.i4 { grid-template-columns: minmax(0, 1fr); margin: 34px 0 28px; }
+.ev.i4 > .node { grid-column: 1 / -1; grid-row: 1; position: absolute; left: 50%; top: -18px; margin: 0 0 0 -22px; width: 44px; height: 44px; display: grid; place-items: center; background: linear-gradient(135deg, var(--coral), #ff9a5c); color: #fff; font-size: 20px; box-shadow: 0 0 0 5px #fff, 0 0 0 12px var(--coral-soft), 0 8px 20px rgba(255, 79, 48, 0.45); z-index: 2; }
+.ev.i4 > .node::before { display: none; }
+.ev.i4 > .node::after { content: ""; position: absolute; inset: -12px; border-radius: 50%; border: 2px solid var(--coral); opacity: 0; }
+.ev.i4.seen > .node::after { animation: hist-ping 2.4s var(--ease) 600ms 3; }
+@keyframes hist-ping { 0% { transform: scale(0.7); opacity: 0.8; } 100% { transform: scale(1.8); opacity: 0; } }
+.ev.i4 > .card { grid-column: 1; justify-self: stretch; padding: clamp(34px, 3.4vw, 50px) clamp(22px, 3vw, 48px) clamp(22px, 2.6vw, 36px); border-radius: var(--radius); background: linear-gradient(135deg, rgba(255, 255, 255, 0.86) 0%, rgba(255, 244, 238, 0.72) 100%); box-shadow: 0 30px 70px -26px rgba(255, 79, 48, 0.55), 0 2px 6px rgba(30, 50, 110, 0.06), inset 0 1px 0 #fff, inset 0 0 0 2px rgba(255, 79, 48, 0.35); overflow: hidden; }
+.ev.i4 .card::before { display: none; }
+.ev.i4 .card::after { content: ""; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.85) 50%, transparent 65%); transform: translateX(-120%); }
+.ev.i4.seen .card::after { animation: hist-shine 1.6s var(--ease) 350ms 1 both; }
+@keyframes hist-shine { to { transform: translateX(120%); } }
+.ev.i4 .card .meta { justify-content: center; font-size: var(--t-s); }
+.ev.i4 .card .pr { margin-left: 0; }
+.ev.i4 .card h3 { text-align: center; font-size: var(--t-xl); font-weight: 800; letter-spacing: -0.025em; line-height: 1.2; margin: 0.3em auto 0; max-width: 18em; }
+.ev.i4 .card .body { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 14px; margin-top: clamp(18px, 2vw, 28px); }
+.ev.i4 .card .body > div { display: block; padding: 14px 16px; border-radius: 18px; background: rgba(255, 255, 255, 0.6); box-shadow: inset 0 1px 0 #fff; font-size: var(--t-s); }
+.ev.i4 .card .body dt { color: var(--coral); margin-bottom: 4px; }
+.ev.i4 .card .body .res { grid-column: 1 / -1; background: linear-gradient(135deg, rgba(255, 79, 48, 0.12), rgba(255, 154, 92, 0.1)); }
+.ev.i4 .card .body .res dd { font-size: var(--t-m); }
+
+/* 現れ方: 背骨の側から滑り込む */
+.js-anim .ev .card { opacity: 0; transform: translateX(-28px); }
+.js-anim .ev.r .card { transform: translateX(28px); }
+.js-anim .ev.i4 .card { transform: translateY(26px) scale(0.97); }
+.js-anim .ev > .node { transform: scale(0); transition: transform 500ms var(--ease) 150ms; }
+.js-anim .ev.seen .card { opacity: 1; transform: none; }
+.js-anim .ev.seen > .node { transform: none; }
+.ev.hit .card { box-shadow: 0 0 0 3px var(--coral), 0 20px 40px -18px rgba(255, 79, 48, 0.5); }
+
+.hist-empty { opacity: 1; transform: none; text-align: center; margin-top: 20px; }
+
+/* 狭いとき: 背骨を左へ寄せ、札はみな右に */
+@media (max-width: 760px) {
+  .hist-road { --spine-x: 14px; }
+  .hist-dayhead::before { flex: 0 0 8px; }
+  .ev, .ev.r { grid-template-columns: 28px minmax(0, 1fr); }
+  .ev > .card, .ev.r > .card { grid-column: 2; justify-self: stretch; max-width: none; }
+  .ev > .node, .ev.r > .node { grid-column: 1; }
+  .ev.lap { margin-top: 10px; }
+  .ev > .node::before, .ev.r > .node::before { display: none; }
+  .ev:not(.r) .card::before { left: 0; right: auto; border-radius: 0 3px 3px 0; }
+  .ev.i4 { grid-template-columns: minmax(0, 1fr); }
+  .ev.i4 > .card { grid-column: 1; }
+  .hist-dayhead { justify-content: flex-start; }
+  .js-anim .ev:not(.r) .card { transform: translateX(28px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .js-anim .ev .card, .js-anim .ev.r .card, .js-anim .ev.i4 .card, .js-anim .ev > .node { opacity: 1; transform: none; transition: none; }
+  .ev.i4.seen > .node::after, .ev.i4.seen .card::after { animation: none; }
+  .hist-day .stack, .hist-day .stack i { transition: none; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .card { background: rgba(255, 255, 255, 0.9); }
+}

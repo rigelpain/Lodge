@@ -28,6 +28,8 @@ function paint() {
     renderSound(data.sound); reveal();
   } else if (page === 'decisions') {
     loadDecisions();
+  } else if (page === 'history') {
+    loadHistory();
   } else render(data);
 }
 
@@ -259,6 +261,30 @@ function openFromHash() {
   el.scrollIntoView({ block: 'center' });
   el.classList.add('dec-hit');
   setTimeout(() => el.classList.remove('dec-hit'), 1600);
+}
+
+// 軌跡: 量が多いので、描く道具（history.js / history.css）も中身（history.json）も、開いたときに読む
+function once(tag, attrs) {
+  const key = attrs.src || attrs.href;
+  const had = document.querySelector(`${tag}[${attrs.src ? 'src' : 'href'}^="${key.split('?')[0]}"]`);
+  if (had) return had.dataset.ready === '0' ? new Promise((ok, ng) => { had.addEventListener('load', ok); had.addEventListener('error', ng); }) : Promise.resolve();
+  return new Promise((ok, ng) => {
+    const el = Object.assign(document.createElement(tag), attrs);
+    el.dataset.ready = '0';
+    el.addEventListener('load', () => { el.dataset.ready = '1'; ok(); });
+    el.addEventListener('error', () => ng(new Error(`${key} を読めない`)));
+    document.head.append(el);
+  });
+}
+function loadHistory() {
+  Promise.all([
+    once('link', { rel: 'stylesheet', href: 'history.css?v=2' }),
+    once('script', { src: 'history.js?v=2' }),
+    fetch('history.json', { cache: 'no-cache' }).then((r) => { if (!r.ok) throw new Error(r.status); return r.json(); }),
+  ]).then(([, , h]) => { window.renderHistory(h); reveal(); })
+    .catch((e) => {
+      $('main').insertAdjacentHTML('afterbegin', `<p class="tile in" style="grid-column:span 12" role="alert">軌跡を読めませんでした（${esc(e.message)}）。</p>`);
+    });
 }
 
 // ページの行き来: 読み込み直さず、相手のページの main だけ取ってきて差し替える

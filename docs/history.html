@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lodge 開発の軌跡</title>
+<meta name="description" content="Lodge の開発の軌跡。PR とコミットから、どこで何をなぜ足し、何をどう直し、その結果どうなったかを日付の順に。重要度・種類・分野で絞り込める。">
+<meta name="color-scheme" content="light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="index.css?v=8">
+<link rel="stylesheet" href="history.css?v=2">
+</head>
+<body>
+<a class="skip" href="#main">本文へ移る</a>
+
+<nav class="tabs" aria-label="ページ">
+  <a href="./" data-page="all">全体</a>
+  <a href="history.html" data-page="history" aria-current="page">軌跡</a>
+  <a href="art.html" data-page="art">アート</a>
+  <a href="sound.html" data-page="sound">音</a>
+  <a href="layout.html" data-page="layout">間取り</a>
+  <a href="decisions.html" data-page="decisions">判断</a>
+</nav>
+
+<!-- 軌跡: PR とコミットを日付の順に。中身は history.json、描くのは history.js -->
+<main id="main" class="grid hist" data-page="history">
+  <header class="tile hero hist-hero" aria-labelledby="hist-goal">
+    <p class="kicker">開発の軌跡<span class="dot" aria-hidden="true"></span><time id="hist-updated"></time> 更新</p>
+    <h1 id="hist-goal"></h1>
+    <p class="pitch" id="hist-pitch"></p>
+    <dl class="hist-stats" id="hist-stats"></dl>
+  </header>
+
+  <section class="tile hist-top" aria-labelledby="hist-top-h">
+    <h2 id="hist-top-h">目次</h2>
+    <ol class="hist-chapters" id="hist-chapters"></ol>
+    <div class="hist-days" id="hist-days" role="list" aria-label="日ごとの件数"></div>
+    <div class="hist-legend" id="hist-legend" aria-hidden="true"></div>
+    <h2 class="hist-fh">絞り込み <span class="count num" id="hist-count-top"></span></h2>
+    <div class="hist-filter" data-where="top"></div>
+  </section>
+
+  <aside class="tile hist-side" aria-labelledby="hist-side-h">
+    <h2>絞り込み <span class="count num" id="hist-count-side"></span></h2>
+    <div class="hist-filter compact" data-where="side"></div>
+    <h2 id="hist-side-h" class="hist-fh">目次</h2>
+    <div class="hist-progress" aria-hidden="true"><span id="hist-progress"></span></div>
+    <ol class="hist-toc" id="hist-toc"></ol>
+  </aside>
+
+  <section class="hist-road" id="hist-road" aria-label="開発の軌跡（古い順）">
+    <div class="hist-now" id="hist-now" aria-hidden="true"></div>
+    <div class="hist-spine" aria-hidden="true"><span id="hist-spine-fill"></span></div>
+    <div id="hist-entries"></div>
+    <p class="tile hist-empty" id="hist-empty" hidden>この絞り込みに当てはまるものはありません。</p>
+  </section>
+</main>
+
+<script src="index.js?v=9"></script>
+</body>
+</html>
