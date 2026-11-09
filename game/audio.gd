@@ -1135,7 +1135,7 @@ func spawn_point(where: String) -> Vector3:
 
 func _listener() -> Vector3:
 	if player and not Ghost.gone(player):   # 観戦モードで抜けているあいだは、霊体のカメラで聞く
-		return player.global_position + Vector3.UP * 1.55
+		return player.global_position + Vector3.UP * player.eye_height()   # 一人称の目の高さ（人形ごと）
 	var cam := get_viewport().get_camera_3d()
 	return cam.global_position if cam else Vector3.ZERO
 
