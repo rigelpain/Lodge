@@ -7,6 +7,9 @@
   mid.bin   谷の向かいの山。見た目だけ。16 m おき 501 点四方（8 km）。標高 10 m（dem）
   far.bin   地平線までの山なみ。見た目だけ。96 m おき 401 点四方（38 km）。標高 30 m 相当（dem の z12）
   road.bin  道と駐車場の濃さ。near と同じ 2 m おき 513 点四方の uint8（0〜255）。見た目で踏み固めた雪の色にする
+  piste.bin ゲレンデの雪面（圧雪の筋を描く所）の濃さ。near と同じ 2 m おき 513 点四方の uint8
+  forest.bin 林の濃さ。clear.bin と同じ 4 m おき 256 点四方の uint8。国土地理院のシームレス空中写真（z17）で、暗い緑の所を林と見る
+            （2026-11-09: OSM のスキー場の囲いが林間コースのまわりの林まで含んでいて、林間コースが開けて見えた。写真の林のとおりに木を立てる）
   clear.bin 木を立ててよい所。4 m おき 256 点四方の uint8。0 = 立てない（ゲレンデの中・リフトの下・道・建物）、
             1〜255 = ゲレンデの囲いからの距離 (m) + 1
   map.json  ゲレンデの囲い・コース・リフト・ヒュッテの形（OpenStreetMap）。遊びの座標で
@@ -161,6 +164,87 @@ def dist_to(pts, X, Z):
     return D
 
 
+RINKAN_W = 9.0        # 林間コースの幅 (m)。動画（代表がくれた「天下森スキー場◆ヒュッテをリニューアルします！」）で 8〜10 m
+RINKAN_BLEND = 7.0    # 道の縁から地面へ戻す幅 (m)
+RINKAN_SMOOTH = 15    # 道の中心の高さを、この数の点（2 m おき）でならす
+RINKAN_BANK = 1.0     # 谷の側（盛り土の側）の雪の壁の高さ (m)
+RINKAN_BANK_AT = 1.0  # 道の縁から雪の壁の頂までの距離 (m)
+
+
+def rinkan_lines(m):
+    """林間コース（OSM の夏虫沢林間コース。2 本の線をつなぐ）"""
+    ls = [p["line"] for p in m["pistes"] if p["name"] == "夏虫沢林間コース"]
+    if len(ls) == 2 and np.allclose(ls[0][-1], ls[1][0]):
+        return [ls[0] + ls[1][1:]]
+    return ls
+
+
+def carve_rinkan(m, X, Z, H):
+    """林間コース: 中心の線の高さ（長さでならす）で幅の中を横に平らにし（山の側を切り、谷の側を盛る）、谷の側の縁の外に雪の壁。
+    戻り値: 高さ、道の濃さ（0〜1）"""
+    mask = np.zeros(X.shape)
+    for line in rinkan_lines(m):
+        pts = dense_points(line, 2.0)
+        ii = np.clip(((pts[:, 1] - Z[0, 0]) / (Z[1, 0] - Z[0, 0])).round().astype(int), 0, X.shape[0] - 1)
+        jj = np.clip(((pts[:, 0] - X[0, 0]) / (X[0, 1] - X[0, 0])).round().astype(int), 0, X.shape[1] - 1)
+        hc = H[ii, jj]
+        k = np.ones(RINKAN_SMOOTH) / RINKAN_SMOOTH
+        hc = np.convolve(np.pad(hc, RINKAN_SMOOTH // 2, mode="edge"), k, "valid")
+        reach = RINKAN_W / 2 + RINKAN_BLEND
+        box = (X > pts[:, 0].min() - reach) & (X < pts[:, 0].max() + reach) & (Z > pts[:, 1].min() - reach) & (Z < pts[:, 1].max() + reach)
+        bx, bz = X[box], Z[box]
+        best = np.full(bx.shape, np.inf)
+        bh = np.zeros(bx.shape)
+        for c in range(0, len(pts), 100):
+            q = pts[c:c + 100]
+            d = np.hypot(bx[:, None] - q[:, 0], bz[:, None] - q[:, 1])
+            a = d.argmin(1)
+            dm = d[np.arange(len(bx)), a]
+            better = dm < best
+            best[better] = dm[better]
+            bh[better] = hc[c + a[better]]
+        half = RINKAN_W / 2
+        wt = np.clip(1 - (best - half) / RINKAN_BLEND, 0, 1)
+        wt = wt * wt * (3 - 2 * wt)
+        h0 = H[box]
+        h1 = h0 * (1 - wt) + bh * wt
+        # 谷の側（もとの地面が道より低い側）の縁の外に雪の壁
+        valley = (h0 < bh - 0.3) & (best > half)
+        h1 = h1 + valley * RINKAN_BANK * np.exp(-0.5 * ((best - half - RINKAN_BANK_AT) / 0.9) ** 2)
+        H[box] = h1
+        mask[box] = np.maximum(mask[box], np.clip(1 - (best - half) / 1.0, 0, 1))
+    return H, mask
+
+
+def forest_mask():
+    """空中写真の林（0〜1）。clear.bin と同じ格子"""
+    s, n = 4.0, 256
+    z = 17
+    nt = 2 ** z
+    def px(lat, lon):
+        return (lon + 180) / 360 * nt * 256, (1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * nt * 256
+    x0, y0 = px(*to_ll(NEAR["x0"], NEAR["z0"]))
+    x1, y1 = px(*to_ll(NEAR["x0"] + n * s, NEAR["z0"] + n * s))
+    tx0, ty0, tx1, ty1 = int(x0 // 256), int(y0 // 256), int(x1 // 256), int(y1 // 256)
+    W = Image.new("RGB", ((tx1 - tx0 + 1) * 256, (ty1 - ty0 + 1) * 256))
+    for tx in range(tx0, tx1 + 1):
+        for ty in range(ty0, ty1 + 1):
+            p = os.path.join(TILES, f"seamlessphoto_{z}_{tx}_{ty}.jpg")
+            if not os.path.exists(p):
+                req = urllib.request.Request(f"https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{tx}/{ty}.jpg", headers={"User-Agent": "lodge-terrain-bake"})
+                try:
+                    open(p, "wb").write(urllib.request.urlopen(req, timeout=30).read())
+                except Exception:
+                    continue
+            W.paste(Image.open(p).convert("RGB"), ((tx - tx0) * 256, (ty - ty0) * 256))
+    W = W.crop((int(x0 - tx0 * 256), int(y0 - ty0 * 256), int(x1 - tx0 * 256), int(y1 - ty0 * 256))).resize((n * 4, n * 4))
+    a = np.asarray(W).astype(float)
+    bright = a.mean(axis=2)
+    f = ((bright < 92) & (a[..., 1] >= a[..., 0] - 2)).astype(float)
+    f = f.reshape(n, 4, n, 4).mean(axis=(1, 3))
+    return blur(f, 1.0)
+
+
 def clear_mask(m):
     s = 4.0
     xs = NEAR["x0"] + np.arange(256) * s + s / 2
@@ -168,9 +252,12 @@ def clear_mask(m):
     X, Z = np.meshgrid(xs, zs)
     D = dist_to(dense_points(m["area"]), X, Z)
     out = np.clip(D + 1, 1, 255)
-    out[inside_plain(m["area"], X, Z)] = 0
+    # スキー場の囲いの中でも、林は空中写真のとおり（forest.bin）。囲いは林間コースのまわりの林まで含むので、ここでは木を払わない
+    out[inside_plain(m["area"], X, Z)] = 1
     for l in m["lifts"]:
         out[dist_to(dense_points(l["line"]), X, Z) < 8.0] = 0
+    for pl in rinkan_lines(m):   # 林間コースの道（幅と雪の壁の外まで）
+        out[dist_to(dense_points(pl), X, Z) < RINKAN_W / 2 + 3.0] = 0
     for r in m["roads"]:
         out[dist_to(dense_points(r["line"]), X, Z) < 7.0] = 0
     for b in m["buildings"] + ([m["hutte"]] if m["hutte"] else []) + m.get("parking", []):
@@ -290,6 +377,19 @@ def main():
     json.dump(m, open(os.path.join(OUT, "map.json"), "w"), ensure_ascii=False, indent=1)
     cm = clear_mask(m)
     cm.tofile(os.path.join(OUT, "clear.bin"))
+    fm = forest_mask()
+    # 林間コースの両脇は杉の壁（動画）。OSM の線と写真の道は数 m ずれるので、道の縁の外 3〜25 m は林にする（始まりと終わりの 6% は除く）
+    s = 4.0
+    FX, FZ = np.meshgrid(NEAR["x0"] + np.arange(256) * s + s / 2, NEAR["z0"] + np.arange(256) * s + s / 2)
+    for line in rinkan_lines(m):
+        pts = dense_points(line, 2.0)
+        k0, k1 = int(len(pts) * 0.06), int(len(pts) * 0.94)
+        ka, kb = int(len(pts) * 0.52), int(len(pts) * 0.66)   # 中ほどは林が切れて谷の向かいの山が見える（動画 455 秒）
+        d = dist_to(np.vstack([pts[k0:ka], pts[kb:k1]]), FX, FZ)
+        band = (d > RINKAN_W / 2 + 3.0) & (d < 25.0)
+        fm = np.where(band, np.maximum(fm, 0.95), fm)
+    (np.clip(fm, 0, 1) * 255).astype(np.uint8).tofile(os.path.join(OUT, "forest.bin"))
+    print("forest", (fm > 0.5).mean())
     print("clear", (cm > 0).mean())
 
     # 近く: 5 m → 10 m で埋める。道路の切り土などの細かい段は雪がならすので、全体を σ 2 m、ゲレンデの中は σ 5 m でならす
@@ -303,7 +403,11 @@ def main():
     area = inside_plain(m["area"], X, Z).astype(float)
     w = blur(area, 6.0)
     H = soft * (1 - w) + softer * w
+    H, rk = carve_rinkan(m, X, Z, H)
+    piste = np.maximum(inside_plain(m["area"], X, Z).astype(float), rk)
     H, road = roads_and_parking(m, X, Z, H)
+    (np.clip(piste * (1 - road), 0, 1) * 255).astype(np.uint8).tofile(os.path.join(OUT, "piste.bin"))
+    print("piste", (piste > 0.5).mean())
     (np.clip(road, 0, 1) * 255).astype(np.uint8).tofile(os.path.join(OUT, "road.bin"))
     print("road", (road > 0.5).mean())
     # ヒュッテとリフトの乗り場・降り場の足もとをならす（囲いの外 PAD_PAD m まで平ら、そこから PAD_BLEND m で地面へ戻す）

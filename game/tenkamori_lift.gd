@@ -2,7 +2,10 @@ extends Node3D
 ## 天下森の第一ペアリフト（2026-11-09）。2026-11-09 代表「リフトって作れるの？」
 ## 線は OpenStreetMap の線（tenkamori/map.json の lifts。点が 14 個: 乗り場・柱 12 本・降り場）。787 m、高さの差 139 m。
 ## 形は PV の乗り場の絵から: 薄緑の鉄の骨組みに横倒しの大きな滑車、その上の床と手すりと黒い機械小屋、脇に木の小屋。
-## 柱は灰の鉄の筒に腕木と滑車。椅子は 2 人掛けで、索に吊られて回り続ける（乗れるのはまだ。見た目だけ）。
+## 柱は灰の鉄の筒に腕木と滑車。椅子は 2 人掛けで、索に吊られて回り続ける。
+## 乗る（2026-11-09 代表「リフトに乗れるようにしてほしい」）: 乗り場の乗る所（board_point）で F。次に来る椅子を待って座り、降り場で降ろされる（player.gd の lift_*）。
+## 自分のソリがそばにあれば、椅子の下に吊って一緒に上げ、降り場の脇に置く（carry。ソリの物理はホストの画面が動かすので、つなぐ側はホストに頼む）。
+## 椅子の位置は時計（世界の時刻）から決めるので、どの画面でも同じ所にある。
 ## 素材は手芸の世界に合わせてフェルト（look.gd）。当たりは柱と乗り場の柱だけ（ソリがぶつかる）
 
 const Look := preload("res://look.gd")
@@ -10,11 +13,17 @@ const Tenka := preload("res://tenkamori.gd")
 
 const GAUGE := 2.3          # 索のまんなかから、上りと下りの索までの横の幅 (m)
 const HEAD := 8.6           # 柱の腕木の、地面からの高さ (m)
-const WHEEL_Y := 4.3        # 乗り場・降り場の滑車の、床からの高さ (m)
+const WHEEL_Y := 2.9        # 乗り場・降り場の滑車の、床からの高さ (m)。椅子の座面が床から SEAT_UP になる高さ（索 − 吊り）
 const SAG := 0.012          # 柱と柱のあいだの索のたるみ（あいだの長さに掛ける）
 const DROP := 2.45          # 索から椅子の座面までの吊り (m)
 const SPEED := 2.0          # 索の速さ (m/s)
 const SPACING := 14.0       # 椅子の間 (m)
+const SEAT_UP := 0.45        # 乗り場・降り場で、椅子の座面が床から上にある高さ (m)
+const SEAT_LOCAL := [Vector3(0.22, -DROP + 0.05, -0.33), Vector3(0.22, -DROP + 0.05, 0.33)]   # 2 人の座面（椅子の座標。x が進む向き）
+const BOARD_S := 1.5         # 乗る所: 乗り場の滑車を回りきってから索に沿った距離 (m)
+const UNLOAD_BACK := 3.0     # 降りる所: 上りの索の終わりの手前 (m)
+const BOARD_REACH := 2.6     # 乗る所からこれだけ近ければ F で乗れる (m。水平)
+const SLED_HANG := 1.2       # 吊ったソリの、座面からの下がり (m)
 
 const GREEN := Color(0.55, 0.72, 0.62)    # 乗り場の骨組み（PV の薄緑）
 const STEEL := Color(0.46, 0.48, 0.51)    # 柱
@@ -27,6 +36,9 @@ var _len := 0.0
 var _cum := PackedFloat32Array()
 var _chairs: MultiMeshInstance3D
 var _s := 0.0
+var _up_len := 0.0               # 上りの索の長さ（輪の 0 からここまでが上り）
+var _side := Vector3.ZERO        # 上りの索の側（水平）
+var _carried := {}               # 吊っているソリ → [椅子, 2 人のどちら]（ホストか一人の画面）
 
 
 func _ready() -> void:
@@ -62,6 +74,9 @@ func _ready() -> void:
 	var down := _span_points(heads, -side * GAUGE)
 	down.reverse()
 	_loop = up
+	_side = Vector3(side.x, 0, side.y)
+	for k in up.size() - 1:
+		_up_len += up[k].distance_to(up[k + 1])
 	_turn(_loop, heads[heads.size() - 1], side, d, true)
 	_loop.append_array(down)
 	_turn(_loop, heads[0], side, d, false)
@@ -326,8 +341,127 @@ func _place_chairs() -> void:
 		mm.set_instance_transform(i, Transform3D(b, p))
 
 
-func _process(dt: float) -> void:
+func _process(_dt: float) -> void:
 	if _len <= 0.0:
 		return
-	_s = fposmod(_s + SPEED * dt, _len)
+	_s = fposmod(SPEED * Time.get_unix_time_from_system(), _len)   # どの画面でも同じ時刻なら同じ所
 	_place_chairs()
+	_carry_step()
+
+
+# ---- 乗る ----------------------------------------------------------------------------
+
+func chairs() -> int:
+	return _chairs.multimesh.instance_count if _chairs else 0
+
+
+## 椅子 i の、輪の上の位置 (m)
+func chair_s(i: int) -> float:
+	return fposmod(_s + i * (_len / chairs()), _len)
+
+
+## 椅子 i の姿（原点が索の握り、x が進む向き）
+func chair_xform(i: int) -> Transform3D:
+	var r := _at(chair_s(i))
+	var dir: Vector3 = r[1]
+	dir.y = 0.0
+	dir = dir.normalized() if dir.length() > 0.001 else Vector3.RIGHT
+	return Transform3D(Basis(dir, Vector3.UP, dir.cross(Vector3.UP)), r[0])
+
+
+## 椅子 i の座面 side（0 / 1）の所（世界）
+func seat_point(i: int, side: int) -> Vector3:
+	return chair_xform(i) * (SEAT_LOCAL[side] as Vector3)
+
+
+## 椅子の進む向き（水平）
+func chair_dir(i: int) -> Vector3:
+	return chair_xform(i).basis.x
+
+
+## 乗る所（座面の真下の地面。2 人のどちらか）
+func board_point(side := 0) -> Vector3:
+	var p: Vector3 = (_at(BOARD_S)[0] as Vector3)
+	var b := Transform3D(Basis((_at(BOARD_S)[1] as Vector3).normalized(), Vector3.UP, (_at(BOARD_S)[1] as Vector3).normalized().cross(Vector3.UP)), p)
+	var sp: Vector3 = b * (SEAT_LOCAL[side] as Vector3)
+	return Vector3(sp.x, sp.y - SEAT_UP, sp.z)
+
+
+## (x, z) から乗る所までの水平の距離
+func board_dist(at: Vector3) -> float:
+	var b := board_point(0).lerp(board_point(1), 0.5)
+	return Vector2(at.x - b.x, at.z - b.z).length()
+
+
+## 乗る所へ次に来る椅子（乗る所までの残りが、間の半分より大きいもの。すぐ前を過ぎた椅子には乗らない）
+func next_chair() -> int:
+	var best := -1
+	var gap := INF
+	for i in chairs():
+		var d := fposmod(BOARD_S - chair_s(i), _len)
+		if d > 0.3 and d < gap:
+			gap = d
+			best = i
+	return best
+
+
+## 椅子 i が乗る所へ着くまでの距離 (m。過ぎたら負)
+func to_board(i: int) -> float:
+	var d := fposmod(BOARD_S - chair_s(i), _len)
+	return d if d < _len * 0.5 else d - _len
+
+
+## 椅子 i が降りる所を過ぎたか（上りの索の終わりの手前）
+func past_unload(i: int) -> bool:
+	var s := chair_s(i)
+	return s > _up_len - UNLOAD_BACK and s < _up_len + 20.0
+
+
+## 降りて立つ所: 降りる所の座面の真下から、索の外へ少し出た地面
+func unload_point(side: int) -> Vector3:
+	var s := _up_len - UNLOAD_BACK
+	var r := _at(s)
+	var dir: Vector3 = r[1]
+	dir.y = 0.0
+	dir = dir.normalized()
+	var p: Vector3 = Transform3D(Basis(dir, Vector3.UP, dir.cross(Vector3.UP)), r[0]) * (SEAT_LOCAL[side] as Vector3)
+	p += dir * 1.5 + _side * (1.2 if side == 0 else 0.6)
+	return Vector3(p.x, Tenka.lift(p.x, p.z), p.z)
+
+
+# ---- ソリを吊って上げる ------------------------------------------------------------------
+
+## ソリを椅子 i の下に吊る。ホストか一人の画面で（つなぐ側は player.gd が net.up("lift") で頼む）
+func carry(sled: RigidBody3D, i: int, side: int) -> void:
+	if sled == null or not is_instance_valid(sled) or _carried.has(sled):
+		return
+	sled.let_everyone_go()
+	sled.unpeg(false)
+	sled.freeze = true
+	sled.parked = true
+	_carried[sled] = [i, side]
+
+
+func _carry_step() -> void:
+	for sled in _carried.keys():
+		if not is_instance_valid(sled):
+			_carried.erase(sled)
+			continue
+		var c: Array = _carried[sled]
+		var i: int = c[0]
+		var side: int = c[1]
+		if past_unload(i):
+			# 降り場の脇の雪へ置く
+			_carried.erase(sled)
+			var at := unload_point(side) + _side * 2.5 + chair_dir(i) * 2.0
+			sled.freeze = false
+			sled.reset_to(Vector3(at.x, Tenka.lift(at.x, at.z) + 0.6, at.z))
+			sled.reset_physics_interpolation()
+			continue
+		var xf := chair_xform(i)
+		var p: Vector3 = xf * ((SEAT_LOCAL[side] as Vector3) + Vector3(-0.1, -SLED_HANG, 0.0))
+		# ソリは進む向きに長く、前を上へ少し起こして吊る
+		var b := Basis(xf.basis.x.cross(Vector3.UP).normalized(), Vector3.UP, -xf.basis.x).rotated(xf.basis.z.normalized(), 0.35)
+		sled.global_transform = Transform3D(b.orthonormalized(), p)
+		sled.linear_velocity = xf.basis.x * SPEED   # 通信で、動いているソリとして多めに送られるように
+		sled.angular_velocity = Vector3.ZERO

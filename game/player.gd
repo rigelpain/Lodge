@@ -41,6 +41,8 @@ const Binoculars := preload("res://binoculars.gd")
 ## ロッジの席（椅子・丸椅子・暖炉のまわりのソファ・揺り椅子・ビーズクッション・こたつの座布団。seats.gd）: 空いた席のそばで、席の方を向いて F で座る。
 ## 椅子の後ろへ歩み寄って向きを変え、腰を下ろす（12 コマ）。目線は座った人形の目の高さへ。もう一度 F か、移動キーで立つ。
 ## 座っているあいだも、身ぶり・声・手に持った物は使える。
+## 天下森のペアリフト（tenkamori_lift.gd）: 乗り場の乗る所で F。次の椅子を待って座り、降り場でひとりでに降りる（座っているのと同じ Mode.SIT。seat_i は -1、
+## lift_chair が乗っている椅子）。そばに自分のソリがあれば、椅子の下に吊って一緒に上がる（2026-11-09 代表「リフトに乗れるようにしてほしい」）。
 ## 厨房の乾燥機（cook_station.gd）: 手にペレットを持たずに前で F で中へとび込み、胴の中で丸まって回って乾く（Mode.DRUM）。
 ## 乾ききったら、ひとりでに戸からとび出す。もう一度 F でも出る。一人称は胴の真ん中から丸い戸の窓ごしに外を見る。
 
@@ -213,6 +215,11 @@ var last_item := {}          # 最後に触ったソリを畳んで持ってい�
 const SLED_SWITCH := 0.8     # 近いソリへ持ち替える差 (m)。行ったり来たりしないよう
 var seats: Seats             # ロッジの席の配り役（main.gd が置く。なければ座れない）
 var seat_i := -1             # 座っている席の番号（seats.gd）
+var lift: Node               # 天下森のリフト（tenkamori_lift.gd。なければ乗れない）
+var lift_chair := -1         # 乗っている（待っている）椅子の番号
+var lift_side := 0           # 椅子の 2 人のどちら
+var _lift_wait := false      # 乗る所で椅子を待っている
+const LIFT_DROP := 0.5       # 椅子に座った人形の、座面から足の先まで（足はぶら下がる）
 var _drum: Node              # 入っている乾燥機（cook_station.gd。Mode.DRUM のとき）
 var _sit_frame := -1         # 座る出来事のコマ
 var _stand_frame := -1       # 立つ出来事のコマ（座っているあいだは -1）
@@ -478,10 +485,14 @@ func _unhandled_input(e: InputEvent) -> void:
 				if rooted():
 					return
 				if mode == Mode.SIT:
+					if lift_chair >= 0:
+						return   # リフトの上では降りない（降り場でひとりでに降りる）
 					stand_up()
 					return
 				if mode == Mode.DRUM:
 					_drum.leave(id)   # 乾燥機から出る
+					return
+				if lift_try():
 					return
 				var pg := peg_near()
 				if pg:
@@ -662,6 +673,61 @@ func _sit_step(dt: float) -> void:
 		_sit_keys_free = true
 	elif _sit_keys_free and _sit_stage == 2 and not menu_open and not shopping:
 		stand_up()   # 移動キーでも立つ
+
+
+## 天下森のリフトの乗る所なら乗る（F）。乗ったら true
+func lift_try() -> bool:
+	if lift == null:
+		lift = get_parent().get_node_or_null("Tenkamori/Lift")
+	if lift == null or mode != Mode.WALK or rooted() or dueling() or lift.board_dist(global_position) > lift.BOARD_REACH:
+		return false
+	var ch: int = lift.next_chair()
+	if ch < 0:
+		return false
+	# 乗る所の 2 人のどちらに近いか
+	lift_side = 0 if global_position.distance_to(lift.board_point(0)) <= global_position.distance_to(lift.board_point(1)) else 1
+	# そばの自分のソリは椅子の下に吊って上げる
+	if sled and is_instance_valid(sled) and not sled.racked and sled.global_position.distance_to(global_position) < 10.0:
+		var net = get_parent().get("net")
+		if net and net.online and not net.is_host():
+			net.up("lift", {"sled": String(get_parent().get_path_to(sled)), "chair": ch, "side": lift_side})
+		else:
+			lift.carry(sled, ch, lift_side)
+	elif mode == Mode.GRIP or mode == Mode.ROPE:
+		let_go()
+	lift_chair = ch
+	_lift_wait = true
+	mode = Mode.SIT
+	seat_i = -1
+	_sit_stage = 0
+	_col.disabled = true
+	velocity = Vector3.ZERO
+	crouching = false
+	return true
+
+
+## リフト: 乗る所で椅子を待つ → 座って上がる → 降り場で降りる
+func _lift_step(_dt: float) -> void:
+	velocity = Vector3.ZERO
+	if _lift_wait:
+		var at: Vector3 = lift.board_point(lift_side)
+		global_position = global_position.lerp(at, 0.2)
+		var dir: Vector3 = lift.chair_dir(lift_chair)
+		rotation.y = lerp_angle(rotation.y, atan2(-dir.x, -dir.z), 0.15)   # 上る向きを向いて待つ
+		var left: float = lift.to_board(lift_chair)
+		_sit_stage = 1 if left < 1.2 else 0   # 椅子が来たら腰を落とす
+		if left <= 0.0:
+			_lift_wait = false
+			_sit_stage = 2
+		return
+	_sit_stage = 2
+	global_position = lift.seat_point(lift_chair, lift_side)
+	if lift.past_unload(lift_chair):   # 降り場: 椅子から立って、索の外の雪へ
+		global_position = lift.unload_point(lift_side) + Vector3.UP * 0.1
+		lift_chair = -1
+		mode = Mode.WALK
+		_sit_stage = 0
+		_col.disabled = false
 
 
 ## 乾燥機に入る出来事が配られた（cook_station.gd の begin_ride）
@@ -903,7 +969,10 @@ func _physics_process(dt: float) -> void:
 				_walk(dt, false)
 				_keep_above_ground(FALL_NET)
 		Mode.SIT:
-			_sit_step(dt)
+			if lift_chair >= 0:
+				_lift_step(dt)
+			else:
+				_sit_step(dt)
 		Mode.DRUM:
 			_drum_step(dt)
 	_keep_in_duel()
@@ -1129,7 +1198,12 @@ func _pose_doll() -> void:
 	doll.facing = (sled.global_basis * push_dir) if mode == Mode.GRIP else Vector3.ZERO
 	doll.rock_axis = Vector3.ZERO
 	doll.rock_turns = false
-	if mode == Mode.SIT:
+	if mode == Mode.SIT and lift_chair >= 0:
+		doll.facing = lift.chair_dir(lift_chair)
+		doll.sit_stage = _sit_stage
+		doll.seat_drop = LIFT_DROP
+		doll.seat_edge = 0.2
+	elif mode == Mode.SIT:
 		var st := seats.seat(seat_i)
 		doll.facing = st.face
 		if st.kind == "beanbag" and _sit_stage == 2 and _stand_frame < 0:
@@ -1146,7 +1220,7 @@ func _pose_doll() -> void:
 			doll.rock_at = st.rock_at
 			doll.rock_roll = float(st.get("rock_roll", 0.0))
 			doll.rock = Seats.rock_of(st, Doll.frame_index(), _sit_frame, _stand_frame)
-	doll.seat_soft = mode == Mode.SIT and seats.seat(seat_i).kind == "zabuton"
+	doll.seat_soft = mode == Mode.SIT and seat_i >= 0 and seats.seat(seat_i).kind == "zabuton"
 	doll.eat_table = table_ctx()
 	doll.peek = _peek_grade if peek != "" else ""
 	if mode == Mode.DRUM:
@@ -1437,7 +1511,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			# ロッジの席: 座った人形の目の所（中腰のあいだは半ば）。揺り椅子・ビーズクッションでは、傾いて動いた人形の目の所（視点は傾けない）
 			var e := doll.eye_point(true) if _sit_stage == 2 else doll.eye_point(false).lerp(doll.eye_point(true), 0.55)
 			eye = to_local(doll.global_transform * e)
-			var st := seats.seat(seat_i)
+			var st := seats.seat(seat_i) if seat_i >= 0 else {}
 			if _sit_stage == 2 and st.has("table"):   # 机より目が下だと、天板の裏しか見えない（掘りごたつの座布団）。机の面の少し上へ
 				eye.y = maxf(eye.y, to_local(Vector3(0, float(st.table.y) + TABLE_EYE, 0)).y)
 		if peek == "stand" and _peek_stand:
