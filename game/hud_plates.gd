@@ -190,6 +190,7 @@ func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float
 		for sh in v.shadows:
 			sh.queue_free()
 		v.shadows = _make_shadows(vp, v.mesh)
+		v.erase("fade")   # 作り直した影にも薄さをかけ直す
 	# 板: 支点で風に揺れ、板の真ん中を表の面に
 	var base := _wind_xform(pivot, wind) * Transform3D(Basis(Vector3.BACK, -tilt).scaled(Vector3(maxf(squash, 0.01), 1, 1)),
 		Vector3(lift.x / PX, -lift.y / PX, -depth))
@@ -216,6 +217,7 @@ func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float
 	v.used = a > 0.01
 	v.node.visible = v.used
 	p.visible = v.used
+	_fade(v, a)
 
 
 ## glb の形（ボビン・刺繍枠）を出す。center は画面の px、size は 1 単位あたりの px、spin は奥行きの軸のまわりの回り
@@ -243,7 +245,24 @@ func model(id: String, path: String, center: Vector2, size: float, spin: float, 
 	_place_shadows(v.shadows, base * turn)
 	v.used = a > 0.01
 	v.node.visible = v.used
+	_fade(v, a)
 	return v.node
+
+
+## 板・形の体と落ち影も、印刷と同じだけ薄くする（2026-11-09 代表「スピードメーター代わりの糸巻きが消えていくときに一部パーツが残っちゃってます」。
+## 前は体と影は薄さを見ず、薄くなりきったところでぱっと消えていたので、消えていくあいだボビンとリボンの板だけが濃く残っていた）。
+## 影の材質の薄さ（0.16）にも掛かる。濃いとき（a = 1）は透けない描き方のまま
+func _fade(v: Dictionary, a: float) -> void:
+	var t := 1.0 - clampf(a, 0.0, 1.0)
+	if t < 0.002:
+		t = 0.0
+	if is_equal_approx(float(v.get("fade", -1.0)), t):
+		return
+	v["fade"] = t
+	for n in [v.node] + v.shadows:
+		for g in ([n] + n.find_children("*", "GeometryInstance3D", true, false)):
+			if g is GeometryInstance3D:
+				g.transparency = t
 
 
 ## 落ち影の部品（同じ形を 3 枚。平たくつぶして奥へ置く）
