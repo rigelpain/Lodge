@@ -11,6 +11,7 @@ const Mountain := preload("res://mountain.gd")
 const Grand := preload("res://grand_mountain.gd")
 const SackLook := preload("res://sack_look.gd")
 const Ghost := preload("res://ghost.gd")
+const Visit := preload("res://bot_visit.gd")
 ## 押すのを手伝う仲間（CPU）。動かすのは一人で遊ぶ画面かホストの画面だけ。つなぐ側へは姿が配られる（net.gd の "cpu"）。
 ## 説明の「あなた」は、遊んでいる人（通信では、つないでいる人もみんな。_humans）。
 ## ソリの下り側に回って頂上へ押す → 頂上であなたが乗ったら一緒に乗る → 下で降りてまた押す。
@@ -39,6 +40,9 @@ const Ghost := preload("res://ghost.gd")
 ##   ソリ運び: 次の山を選ぶときに、ソリがあれば近くの仲間を誘う。みんなでつかむまで待ち、尾根を押して登り、頂上で向きを変えて一緒に乗って滑る。
 ##   使うソリは、自分のソリか、ロッジのソリ（人が近くにいなくて、誰も触っていないときだけ。丘の中だけで使う）。
 ##   ソリを買う: 滑って拾ったボタンがたまったら、売り子のおじさんから小の型紙と布を買い、ミシンで縫う（人と同じ buy・sew の出来事。自分のソリを持つのは CPU_SLEDS まで）
+## ロッジへの寄り道（bot_visit.gd）: 次の山を選ぶときに、ときどき（visit_odds）ロッジへ寄って、座って休む・2 階のこたつでゆっくりする・
+## ランタンや小物を買う・人台で着替える・染める・鏡や見本帳を見る。山をめぐる仲間は外で濡れ（stays_dry = false。main.gd）、
+## 水のゲージがいっぱいになったら帰ってきて、暖炉のまわりで乾かす
 
 enum State { PUSH, WAIT, RIDE }
 
@@ -137,6 +141,8 @@ var _lost_t := 0.0           # ソリまで歩いている秒
 var own_sled: RigidBody3D    # 自分のソリ（買って縫った）
 var _errand := ""            # ソリを買う用事: "shop" 店へ行く、"sew" ミシンへ行く、"sewing" 縫い上がるのを待つ
 var _errand_t := 0.0         # 用事を待っている残り (s)
+var visit: Visit             # ロッジへの寄り道（山をめぐる仲間だけ。bot_visit.gd）
+var visit_odds := 0.35       # 次の山を選ぶときに、ロッジへ寄る割合（main.gd の --cpu-visit=）
 var post: Node3D = null      # 持ち場（ミシンの足踏みなど）。あればソリを押さず、そこに立って post_look を向く
 var post_look := Vector3.INF
 var _col: CollisionShape3D
@@ -144,7 +150,7 @@ var _still := 0.0
 var _wait := 0.0
 var hub: Emotes
 var id := -1
-var stays_dry := true         # 一人プレイの仲間（CPU）は場所や動きでは湿らない。雪玉・吹き飛びで濡れた分はひとりでに乾く（damp.gd の CPU_DRY。乾かしに行かないので。2026-11-01 代表「一人プレイの時の CPU は濡れないように」）
+var stays_dry := true         # 山をめぐる仲間は false（外で濡れ、いっぱいになったらロッジへ乾かしに帰る。2026-11-09。main.gd が入れる）。ほかの仲間（CPU）は場所や動きでは湿らない。雪玉・吹き飛びで濡れた分はひとりでに乾く（damp.gd の CPU_DRY。乾かしに行かないので。2026-11-01 代表「一人プレイの時の CPU は濡れないように」）
 var _replies: Array = []     # [残り秒, 身ぶり]
 var _five_with := -1         # ハイタッチをしにいく相手の番号
 var _five_until := 0         # このコマまでに届かなければやめる
@@ -179,6 +185,8 @@ const HEARTH_LIKE := 0.7     # 次の席を選ぶとき、暖炉のまわりか�
 
 func _ready() -> void:
 	add_to_group("bots")
+	if roam:
+		visit = Visit.new(self)
 	fling = Flung.new(self)
 	rolled = Rolled.new(self)
 	_col = CollisionShape3D.new()
@@ -203,9 +211,31 @@ func _ready() -> void:
 		_fill_wallet()
 		craft.happened.connect(_on_craft)
 		craft.send({"kind": "doll", "who": id, "doll": doll.kind})   # いまの人形をみんなに知らせる
+		random_outfit(doll.kind)
 	seats = get_parent().get_node_or_null("Seats")
 	if seats:
 		seats.happened.connect(_on_seat)
+
+
+## 設定で CPU の数を減らしたとき（main.gd の set_cpu_count）: 乗っている・つかんでいるソリ、座っている席、組を手放して消える。
+## 米袋は帯に戻す。対決のさなかの仲間は main.gd が選ばない
+func retire() -> void:
+	if state == State.RIDE and seat != Vector3.INF and is_instance_valid(sled):
+		if roam:
+			_roam_get_off(false)
+		else:
+			sled.dismount(self)
+			seat = Vector3.INF
+	if is_instance_valid(sled):
+		let_go()
+	if not _team.is_empty():
+		_team.members.erase(self)
+		_team = {}
+	if seats and id >= 0:
+		seats.forget(id)
+	if hub and id >= 0:
+		hub.people.erase(id)
+	queue_free()
 
 
 ## 人形を替える出来事（通信では、ほかの人が衣装掛けで選んだ人形がここに届く）。人形を作り直す。
@@ -228,6 +258,23 @@ func _on_craft(ev: Dictionary) -> void:
 	doll.outfit = craft.outfit_of(id, doll.kind)
 	add_child(doll)
 	doll.global_transform = at
+
+
+## 服を部位ごとに、キャラの色のパレット（craft.gd の COLORS）から気まぐれに染める。染め代は取らない（保存した色を戻すのと同じ outfit の出来事）。
+## 2026-11-09 代表「全員デフォカラーは怖いからランダムにするかカラーパレット使って染色して」。人台で人形を替えたときも、新しい人形を染める（bot_visit.gd）
+func random_outfit(kind: String) -> void:
+	if craft == null or id < 0:
+		return
+	var n := preload("res://outfit.gd").cloth_count(kind)
+	var cols := []
+	var last := -1
+	for i in n:
+		var c: int = randi() % craft.COLORS.size()
+		if c == last:   # となりの部位と同じ色にしない
+			c = (c + 1 + randi() % (craft.COLORS.size() - 1)) % craft.COLORS.size()
+		last = c
+		cols.append((craft.COLORS[c] as Color).to_html(false))
+	craft.send({"kind": "outfit", "who": id, "doll": kind, "colors": cols})
 
 
 ## 暗くなったらランタンを点け、明るくなったら消す（あなたと同じ lamp の出来事。見直すたびに少しずつ間をずらす）
@@ -353,10 +400,15 @@ func _physics_process(dt: float) -> void:
 	if roam:
 		_keep_sled()
 		_team_cool = maxf(0.0, _team_cool - dt)
+		if visit:
+			visit.tick(dt)
 	_update_replies(dt)
 	_mind_lamp(dt)
 	_regrab = maxf(0.0, _regrab - dt)
 	if _run_over_step(dt):
+		return
+	if visit and visit.inside:   # ロッジに寄っている（座っているあいだも bot_visit.gd が _lounge を呼ぶ）
+		visit.step(dt)
 		return
 	if lounge:
 		_lounge(dt)
@@ -1077,13 +1129,17 @@ func _roam_walk(dt: float) -> void:
 		if _roam_rest > 0.0:
 			_settle_walk(Vector3.ZERO, dt)
 			return
-		if _try_errand() or _try_team():
+		if (visit and visit.want()) or _try_errand() or _try_team():
 			return
 		_area = _pick_area()
 		_route = _route_of(_area)
 		_wp_best = INF
 		_wp_t = 0.0
 	if _route.is_empty():
+		if _area == "lodge":   # ロッジの前に着いた: 中へ（bot_visit.gd）
+			visit.enter()
+			_settle_walk(Vector3.ZERO, dt)
+			return
 		if _errand != "":
 			_errand_step(dt)
 			_settle_walk(Vector3.ZERO, dt)
@@ -1423,7 +1479,7 @@ func _helping(dt: float) -> bool:
 		if state == State.RIDE:
 			get_off()
 		state = State.PUSH
-		if _area != "":
+		if ROAM_AREAS.has(_area):   # 山へ向かっていた（ロッジ・用事へ向かっていたなら、行き先の点はそのまま）
 			_route = _route_of(_area)
 	return false
 
@@ -1458,7 +1514,8 @@ func _keep_sled() -> void:
 
 ## 雪合戦に誘える（山めぐりの途中で、ほかのことをしていない）
 func _free_for_fun() -> bool:
-	return roam and state != State.RIDE and _team.is_empty() and _errand == "" and _five_with < 0 and _help_t <= 0.0 and not _ghost
+	return roam and state != State.RIDE and _team.is_empty() and _errand == "" and _five_with < 0 and _help_t <= 0.0 and not _ghost \
+		and not (visit and visit.busy())
 
 
 func _vs_bot(them: Node3D) -> bool:
@@ -1777,7 +1834,7 @@ func _on_seat(ev: Dictionary) -> void:
 			_col.disabled = true
 			velocity = Vector3.ZERO
 			_goal = -1
-			_rest = randf_range(REST.x, REST.y)
+			_rest = visit.sit_time() if visit and visit.inside else randf_range(REST.x, REST.y)
 		"stand":
 			_stand_frame = int(ev.frame)
 			_left = seat_i
@@ -1813,6 +1870,10 @@ func _lounge(dt: float) -> void:
 			_col.disabled = false
 			global_position = pl[0] + Vector3.UP * 0.05
 			_rest = randf_range(0.5, 2.0)
+			if visit and visit.inside:   # 寄り道: 立ちきったら、次のことへ（bot_visit.gd）
+				visit.seat_done()
+				_pose_lounge()
+				return
 		else:
 			global_position = pl[0]
 			# あなたが近くに座ったら、長く座っている。遠くに座ったら、少しして寄っていく
@@ -1820,6 +1881,8 @@ func _lounge(dt: float) -> void:
 			if not mine.is_empty() and not near and not _near_was:
 				_rest = minf(_rest, randf_range(2.0, 6.0))
 			_near_was = not mine.is_empty()
+			if visit and visit.inside and visit.hold_seat(dt):   # 濡れて帰ってきた: 乾くまで座っている
+				_rest = maxf(_rest, 1.0)
 			_rest -= dt
 			if _rest <= 0.0 and _stand_frame < 0 and _sit_stage == 2:
 				if near:
@@ -1831,21 +1894,18 @@ func _lounge(dt: float) -> void:
 	# 立っている: 次の席を選んで歩いて行く
 	if _goal < 0:
 		_rest -= dt
-		if _rest > 0.0:
+		if _rest > 0.0 and not (visit and visit.inside):
 			_pose_lounge()
 			return
-		_goal = _pick_seat(mine)
-		_near_d = INF
-		_near_t = 0.0
-		_via = []
-		if _goal >= 0 and seats.seat(_goal).kind in HEARTH_SEATS:
-			var st: Dictionary = seats.seat(_goal)
-			var d: Vector3 = st.stand - global_position
-			d.y = 0
-			var nook = seats.lodge.find_child("HearthNook", true, false) if seats.lodge else null
-			if nook and test_move(global_transform, d):   # まっすぐ行けなければ、入り口を通る
-				_via = nook.route(global_position, st.stand)
-		_stuck = 0.0
+		if visit and visit.inside:   # 寄り道: 寄れなかった席の代わり。なければあきらめて次のことへ
+			var again := visit.repick()
+			if again < 0:
+				visit.seat_done()
+				_pose_lounge()
+				return
+			_lounge_to(again)
+		else:
+			_lounge_to(_pick_seat(mine))
 		if _goal < 0:
 			_rest = 2.0
 			_pose_lounge()
@@ -1878,7 +1938,11 @@ func _lounge(dt: float) -> void:
 	var before := global_position
 	velocity.x = dir.x * SPEED * 0.7 * damp_k(false)
 	velocity.z = dir.z * SPEED * 0.7 * damp_k(false)
-	velocity.y = 0.0 if is_on_floor() else velocity.y - GRAVITY * dt
+	if is_on_floor():
+		velocity.y = 0.0
+		_step_up(dir)   # 2 階の畳の小上がり（こたつの座布団）へ
+	else:
+		velocity.y -= GRAVITY * dt
 	move_and_slide()
 	look_at(global_position + dir, Vector3.UP)
 	# 机などに当たって進めなければ、別の席にする
@@ -1910,7 +1974,7 @@ var _turn_sign := 1.0        # 机をよけて回り込む向き（ふさがれ�
 ## 前に選んだ回り込みの向きを先に試すので、机の縁に沿って端まで回り込める
 func _detour(want: Vector3) -> Vector3:
 	var at := global_transform
-	if not test_move(at, want * 0.35):
+	if not test_move(at, want * 0.35) or _can_step(want):
 		return want
 	for a in [0.6, 1.1, 1.6, 2.2]:
 		for sg in [_turn_sign, -_turn_sign]:
@@ -1919,6 +1983,87 @@ func _detour(want: Vector3) -> Vector3:
 				_turn_sign = sg
 				return d
 	return want
+
+
+const STEP_UP := 0.45        # 歩くだけで乗り上げる段差の高さ (m。player.gd の STEP_UP と同じ。畳の小上がり 0.4 m・広場の段)
+
+
+## 前の段に乗り上げられるか（持ち上げると前へ進める）。_detour が段を壁と見てよけないように
+func _can_step(dir: Vector3) -> bool:
+	var up := Vector3(0, STEP_UP, 0)
+	return not test_move(global_transform, up) and not test_move(global_transform.translated(up), dir * 0.35)
+
+
+## 小さな段差（STEP_UP まで）は、歩くだけで乗り上げる（player.gd の _step_up と同じ考え。歩ける斜面は段と見ない）
+func _step_up(dir: Vector3) -> void:
+	if dir.length() < 0.1:
+		return
+	var ahead := dir * 0.3
+	var block := KinematicCollision3D.new()
+	if not test_move(global_transform, ahead, block):
+		return
+	var walkable := cos(floor_max_angle)
+	if block.get_normal().y >= walkable:
+		ahead = ahead.slide(block.get_normal())
+		if not test_move(global_transform, ahead, block) or block.get_normal().y >= walkable:
+			return
+	var up := Vector3(0, STEP_UP, 0)
+	if test_move(global_transform, up):
+		return
+	var raised := global_transform.translated(up)
+	if test_move(raised, ahead):
+		return
+	var col := KinematicCollision3D.new()
+	if not test_move(raised.translated(ahead), -up, col):
+		return
+	if col.get_normal().y < 0.7 or col.get_collider() is RigidBody3D:
+		return
+	var rise := STEP_UP + ahead.y - col.get_travel().length()
+	if rise > 0.02:
+		global_position.y += rise + 0.01
+
+
+## ロッジの中を歩く 1 コマ（寄り道。段は乗り上げる）
+func _indoor_walk(dir: Vector3, dt: float) -> void:
+	velocity.x = dir.x * SPEED * damp_k(false)
+	velocity.z = dir.z * SPEED * damp_k(false)
+	if is_on_floor():
+		velocity.y = 0.0
+		_step_up(dir)
+	else:
+		velocity.y -= GRAVITY * dt
+	move_and_slide()
+	if dir.length() > 0.1:
+		look_at(global_position + dir, Vector3.UP)
+	_pose_doll()
+
+
+## 物の前に立って、look を見る（寄り道で、店の棚・鏡・人台などを眺める）
+func _stand_look(look: Vector3, dt: float) -> void:
+	var face := look - global_position
+	face.y = 0
+	if face.length() > 0.1:
+		look_at(global_position + face, Vector3.UP)
+	_indoor_walk(Vector3.ZERO, dt)
+	doll.gaze = look
+
+
+## くつろぐ仲間の歩き方で、席 i へ向かう（-1 なら向かわない）。暖炉のまわりの席へまっすぐ行けなければ、入り口を通る
+func _lounge_to(i: int) -> void:
+	_goal = i
+	_near_d = INF
+	_near_t = 0.0
+	_via = []
+	_stuck = 0.0
+	if visit and visit.inside:
+		_started = true   # 寄り道: 歩いて来ている（席のそばへ移さない）
+	if _goal >= 0 and seats.seat(_goal).kind in HEARTH_SEATS:
+		var st: Dictionary = seats.seat(_goal)
+		var d: Vector3 = st.stand - global_position
+		d.y = 0
+		var nook = seats.lodge.find_child("HearthNook", true, false) if seats.lodge else null
+		if nook and test_move(global_transform, d):   # まっすぐ行けなければ、入り口を通る
+			_via = nook.route(global_position, st.stand)
 
 
 ## 次に座る席: あなたが座っていれば、そのそばの空いた席。でなければ、近くの空いた席から気まぐれに

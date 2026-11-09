@@ -19,8 +19,12 @@ const Look := preload("res://look.gd")
 ##   --no-buttons  雪に縫い留められたボタン（snow_buttons.gd）を出さない
 ##   --bot-lanterns=形,形…  仲間の帯に提げるランタン（lantern.gd の LOOKS。ソリを押す仲間、ロッジの仲間の順に。確かめ用）
 ##   --spawn=lanterns  おじいさんの番台の横のランタン掛けの前から始める（F でランタンを買って提げ替える）
-##   --roam-bots=N  山をめぐる仲間の数（既定 5。--bots か --lodge-bots か --no-player を書いたときは 0）。自分で山を選んで登り、米袋で滑り降りて、別の山へ（bot.gd の roam）
+##   --roam-bots=N  山をめぐる仲間の数（既定は設定の「CPU の数」。--bots か --lodge-bots か --no-player を書いたときは 0）。自分で山を選んで登り、米袋で滑り降りて、別の山へ（bot.gd の roam）
 ##   --roam-all-hill  確かめ用: 山をめぐる仲間をみんな丘のそばから始める
+##   CPU の数: 山をめぐる仲間の数は、設定の画面の「CPU の数」（保存する。一人で遊ぶときとホスト。遊んでいる途中で増やす・減らすと、すぐ出る・消える）。
+##                  --roam-bots を書けば、起動のときはそちら
+##   --cpu-visit=割合  山をめぐる仲間が、次の山を選ぶときにロッジへ寄る割合（既定 0.35。0 なら濡れきったときだけ帰る。bot_visit.gd）。
+##                  重さを見るなら --roam-bots=20 と合わせる（20 人でも、はじめの所は ROAM_START の 5 か所の近くに散らす）
 ##   --lodge-bots=N  ロッジでくつろぐ仲間の数（既定 0。--bots か --no-player を書いたときは 2）。ソリは押さず、ロッジの空いた席に座り、ときどき席を替える
 ##   --spawn=wardrobe  1 階の人台の前から始める（F で人形を選び直す）
 ##   --spawn=mirror    入口の横の大きな鏡の前から始める（F で自分の人形が映る）
@@ -487,31 +491,14 @@ func _ready() -> void:
 		player.rotation.x = 0
 		_add_pals(player)
 
-	# 山をめぐる仲間（bot.gd の roam）。1 人目はゆき。はじめから、ばらけた所にいる
+	# 山をめぐる仲間（bot.gd の roam）。1 人目はゆき。はじめから、ばらけた所にいる。
+	# 数は設定の「CPU の数」（保存した値。途中で変えると set_cpu_count で増やす・減らす）。確かめの道具が --roam-bots か仲間を指定していれば、それ
 	var cast_named := args.has("bots") or args.has("lodge-bots") or args.has("no-player")   # 確かめの道具が仲間を指定している
-	var roamers := int(args.get("roam-bots", "0" if cast_named else "5"))
+	_cpu_fixed = args.has("roam-bots") or cast_named
+	var roamers := int(args.get("roam-bots", "0" if cast_named else str(Settings.saved("cpus", CPU_DEFAULT))))
 	var pushers := int(args.get("bots", "1" if cast_named else "0"))
 	for i in roamers:
-		var spot: Array = ROAM_START[i % ROAM_START.size()]
-		var at: Vector2 = spot[1]
-		if args.has("roam-all-hill"):   # 確かめ用（いちばん重いとき）: みんな丘の、遊ぶ人のそばから
-			spot = ["hill", Vector2(2.0 + 3.0 * i, 41.0)]
-			at = spot[1]
-		var b := Bot.new()
-		b.sled = sled
-		b.player = player
-		b.roam = true
-		b.side = 1 if i % 2 == 0 else -1
-		if args.has("bot-dolls"):
-			var ds: PackedStringArray = String(args["bot-dolls"]).split(",")
-			b.doll_kind = ds[i % ds.size()]
-		else:
-			b.doll_kind = ROAM_DOLLS[i % ROAM_DOLLS.size()]
-		b.position = Vector3(at.x, height(at.x, at.y) + 0.2, at.y)
-		add_child(b)
-		b.roam_from(spot[0])
-		_bot_lantern(b, i)
-		_add_pals(b)
+		_add_roamer()
 	for i in pushers:
 		var b := Bot.new()
 		b.sled = sled
@@ -607,6 +594,9 @@ func _ready() -> void:
 	settings.ghost_seen_set.connect(func(on: bool): if ghost: ghost.set_seen(on))
 	for key in settings.values:
 		_apply_setting(key, settings.values[key])
+	_cpu_ready = true   # ここからの CPU の数の変更は、設定の画面から（起動のときは上で出した数のまま）
+	if args.has("join"):
+		settings.lock("cpus", "ホストが決める")
 	if get_tree().current_scene == self:
 		use_game_pacing()
 	if args.has("settings"):   # 確かめ用: 設定画面を開いた状態で始める
@@ -1475,6 +1465,95 @@ func _hang_pendant(hook: Node3D, cord: float, kind := KOTATSU_PENDANT) -> void:
 			mi.scale.y = cord / (mi.get_aabb().size.y * k)
 
 
+const CPU_DEFAULT := 5        # 設定の「CPU の数」の既定（settings.gd の ITEMS と同じ）
+var _roam_n := 0              # これまでに出した山をめぐる仲間の数（はじめの所・人形を順に選ぶ）
+var _cpu_fixed := false       # 起動の引数で仲間の数が決まっている（設定の保存した値を起動のときには当てない）
+var _cpu_want := -1           # 設定の CPU の数（減らしきれなかった分は _keep_cpu_count が続けて減らす）
+var _cpu_keep_t := 0.0
+
+
+## 山をめぐる仲間（bot.gd の roam）を 1 人出す。はじめの所は ROAM_START を順に（6 人目からは少しずつずらす）
+func _add_roamer() -> Node3D:
+	var i := _roam_n
+	_roam_n += 1
+	var spot: Array = ROAM_START[i % ROAM_START.size()]
+	var at: Vector2 = spot[1]
+	if args.has("roam-all-hill"):   # 確かめ用（いちばん重いとき）: みんな丘の、遊ぶ人のそばから
+		spot = ["hill", Vector2(2.0 + 3.0 * i, 41.0)]
+		at = spot[1]
+	elif i >= ROAM_START.size():   # 6 人目からは、同じ所に重ならないよう少しずらす
+		at += Vector2.from_angle(i * 2.4) * (3.0 + 1.5 * float(i / ROAM_START.size()))
+	var b := Bot.new()
+	b.sled = sled
+	b.player = player
+	b.roam = true
+	b.stays_dry = false   # 外で濡れる。いっぱいになったらロッジへ乾かしに帰る（bot_visit.gd）
+	b.visit_odds = float(args.get("cpu-visit", str(b.visit_odds)))
+	b.side = 1 if i % 2 == 0 else -1
+	if args.has("bot-dolls"):
+		var ds: PackedStringArray = String(args["bot-dolls"]).split(",")
+		b.doll_kind = ds[i % ds.size()]
+	else:
+		b.doll_kind = ROAM_DOLLS[i % ROAM_DOLLS.size()]
+	b.position = Vector3(at.x, height(at.x, at.y) + 0.2, at.y)
+	add_child(b)
+	b.roam_from(spot[0])
+	_bot_lantern(b, i)
+	_add_pals(b)
+	var au := get_node_or_null("Audio")
+	if au:
+		au.add_walker(b)   # 途中で足した仲間の足音（はじめの仲間は audio.gd の setup で入る）
+	return b
+
+
+## 設定の「CPU の数」: 山をめぐる仲間をこの数にする（一人で遊ぶ画面とホストの画面。つなぐ側では動かさない。仲間はホストの画面が動かす）。
+## 減らすときは、あとから出した仲間から、人と対決していない・人と一緒に乗っていない仲間を消す（消せない分は _keep_cpu_count があとで）
+func set_cpu_count(n: int) -> void:
+	if args.has("join"):
+		return
+	_cpu_want = maxi(0, n)
+	var roam: Array = get_children().filter(func(c): return c.get_script() == Bot and c.roam and not c.is_queued_for_deletion())
+	for k in _cpu_want - roam.size():
+		_add_roamer()
+	var extra := roam.size() - _cpu_want
+	roam.reverse()
+	for b in roam:
+		if extra <= 0:
+			break
+		if _cpu_busy(b):
+			continue
+		if net and net.is_host():
+			net.cpu_gone(b.id)
+		b.retire()
+		extra -= 1
+
+
+## 消すと人の遊びが途切れる仲間: 人と雪合戦をしている・人と同じソリに乗っている・人のソリを押している。
+## 仲間どうしの雪合戦なら消してよい（いなくなった側の負けで片付く。duel.gd）
+func _cpu_busy(b: Node3D) -> bool:
+	var duel := get_node_or_null("Duel")
+	if duel and not duel.of(b.id).is_empty():
+		var them: Node3D = emotes.who_of(duel.opponent(duel.of(b.id), b.id)) if emotes else null
+		if them and not them.is_in_group("bots"):
+			return true
+	if b._help_t > 0.0:
+		return true
+	return b.state == b.State.RIDE and is_instance_valid(b.sled) and b.sled.riders.size() > 1
+
+
+## 減らしきれなかった仲間を、手が空いたら消す（1 秒ごと）
+func _keep_cpu_count(dt: float) -> void:
+	if _cpu_want < 0:
+		return
+	_cpu_keep_t -= dt
+	if _cpu_keep_t > 0.0:
+		return
+	_cpu_keep_t = 1.0
+	var n := get_children().filter(func(c): return c.get_script() == Bot and c.roam and not c.is_queued_for_deletion()).size()
+	if n > _cpu_want:
+		set_cpu_count(_cpu_want)
+
+
 ## 持ち主（あなた・仲間）に、頭・肩の小物とミニオン（companions.gd）を付ける。--bot-pals で仲間に付ける物を決める（確かめ用）
 func _add_pals(host: Node3D) -> void:
 	if args.has("no-pets"):
@@ -2026,6 +2105,7 @@ func _dress_speakers() -> void:
 
 
 func _physics_process(dt: float) -> void:
+	_keep_cpu_count(dt)
 	elapsed += dt
 	var s := sled.global_position
 	var top := Vector2(s.x, s.z).length()
@@ -2161,8 +2241,14 @@ func _ghost_from_settings(on: bool) -> void:
 		ghost.leave()
 
 
+var _cpu_ready := false
+
+
 func _apply_setting(key: String, v) -> void:
 	match key:
+		"cpus":
+			if _cpu_ready:   # 起動のときは、出した数のまま（--roam-bots などの確かめの道具の数を、保存した値で変えない）
+				set_cpu_count(int(v))
 		"vol_music":
 			_set_volume(["Music"], v)
 		"vol_sfx":
