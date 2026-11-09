@@ -1072,6 +1072,13 @@ func eye_point(sitting: bool) -> Vector3:
 	return e * _scale
 
 
+## 自分の白い息を、自分の一人称の画面に映すか。夜目の双眼鏡をのぞいている間だけ外す（player.gd の _peek_begin・peek_stop）。
+## 外しても、自分の体の層（右下の小窓）には残る。ほかの人の画面の息は、その人の画面の人形（remote_person.gd）が出すので変わらない
+func breath_in_view(on: bool) -> void:
+	for key in _streams:
+		(_streams[key] as CPUParticles3D).layers = (1 | layers) if on else layers
+
+
 ## 胸の所（世界の座標）。雪のボタンが体に飛び込む先（snow_buttons.gd）。一人称で映していなくても骨は動いている
 func chest_point() -> Vector3:
 	var i := _id("chest")
