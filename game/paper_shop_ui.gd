@@ -11,7 +11,7 @@ extends CanvasLayer
 ## 買う・つけるは craft.gd の出来事 lantern_buy・equip（提灯）と pal_buy・pal_wear（小物）。通信ではほかの人の画面でも、その人の物が替わる。
 ## 提灯の段の下に、色替えの段（2026-11-10 代表「なかったら紙細工師さんで色変え売って欲しい」）: いま提げているランタンを、キャラの色のパレット
 ##   （craft.gd の COLORS。山をめぐる仲間の服と同じ 12 色）の色で灯した札が 6 枚ずつ 2 段（布の見本帳の布 12 色と同じ並べ方）。札の左上に布の色。
-##   押すと染める（染め代 craft.gd の LANTERN_DYE_PRICE、lantern_dye）。札の下に値段、いまの色の札はチェックと赤い糸の縁。左下の丸い布は形のもとの色に戻す（ただ）。
+##   押すと染める（染め代 craft.gd の lantern_dye_price。黒だけ 1 螺鈿、lantern_dye）。札の下に値段、いまの色の札はチェックと赤い糸の縁。左下の丸い布は形のもとの色に戻す（ただ）。
 ##   提げていなければ札は薄く、押すと震える
 ## 前は番台の横のランタン掛け（lantern_ui.gd）と 2 階の売り台（pals_ui.gd の頭・肩の段）だったものを、ここにまとめた（2026-11-02）
 
@@ -121,14 +121,14 @@ func _owned(key: String) -> bool:
 func _price(key: String) -> int:
 	match TABS[tab]:
 		"lantern": return Lantern.price(key)
-		"lantern_dye": return Craft.LANTERN_DYE_PRICE
+		"lantern_dye": return Craft.lantern_dye_price(key)
 	return Pals.price(key)
 
 
 ## 色替えの段: いま提げているランタンを色 hex（"" はもとの色）に染める。提げていない・同じ色・足りないなら false
 func dye(hex: String) -> bool:
 	var look := _lamp_look()
-	var cost := 0 if hex == "" else Craft.LANTERN_DYE_PRICE
+	var cost := Craft.lantern_dye_price(hex)
 	if look == "" or hex == _worn() or craft.wallet(_who()) < cost:   # つなぐ側の send は、断られても true を返すので、先に見る
 		return false
 	_asked += 1

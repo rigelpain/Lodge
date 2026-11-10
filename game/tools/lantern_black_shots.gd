@@ -8,6 +8,7 @@ extends SceneTree
 ##   lodge_<濃さ>  夜、ロッジの中（紙細工屋さんのテントの前。暖炉やつり灯りの光の中）
 ##   day_<濃さ>    昼の雪の上
 ##   inside_<濃さ> 夜、黒い方の暗がりの球の中から（カメラが球の中にいるとき）
+##   shop_999 / shop_1000  紙細工屋さんの色替えの段。黒の札は 1 螺鈿（ボタンが 999 なら灰色で選べない、1000 なら選べる）
 
 const Doll := preload("res://doll.gd")
 const Lantern := preload("res://lantern.gd")
@@ -40,12 +41,12 @@ func _wait(t: float) -> void:
 	await create_timer(t).timeout
 
 
-func _shot(name: String) -> void:
+func _shot(name: String, ui := false) -> void:
 	if main.settings and main.settings.is_open:
 		main.settings.set_open(false)
-	for n in main.get_children():   # 札や小窓は隠す（灯りだけを見る）
+	for n in main.get_children():   # 札や小窓は隠す（灯りだけを見る）。ui なら店の画面だけ見せる
 		if n is CanvasLayer:
-			n.visible = false
+			n.visible = ui and n == main.paper_shop_ui
 	cam.make_current()
 	await process_frame
 	await process_frame
@@ -147,4 +148,15 @@ func _run() -> void:
 		Lantern.BLACK_ENERGY = e
 		await _wait(0.6)
 		await _shot("day_%s" % str(e))
+	# 紙細工屋さんの色替えの段（黒の札の値段）
+	var c: Node = main.craft
+	var who: int = main.player.id
+	await _hour(21.0)
+	_pair(s0, 4.0, 0.6, true)
+	c.send({"kind": "lamp", "who": who, "on": true})
+	main.paper_shop_ui.open("lantern_dye")
+	for w in [999, 1000]:
+		c.wallets[who] = w
+		await _wait(0.8)
+		await _shot("shop_%d" % w, true)
 	quit(0)

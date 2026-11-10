@@ -10,3 +10,4 @@
 - day.jpg: 昼の雪の上
 - inside.jpg: 夜、黒い方の暗がりの球の中から
 - 撮り方: game/tools/lantern_black_shots.gd
+- shop_999.jpg / shop_1000.jpg: 紙細工屋さんの色替えの段。黒の札（2 段目の右から 2 つ目）は 1 螺鈿。ボタンが 999 なら灰色で選べず、1000 なら選べる
