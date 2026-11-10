@@ -775,19 +775,19 @@ func button(what: String, at: Vector3, frame: int, tier := 0, other := false) ->
 
 ## 店ごとの 3 つの層: [払いの音, その数, レジ, 包む（"" は包まない）]。払いは、払った数（木のボタンの段に分けた枚数）だけ粒を落とす
 const SHOP_SOUNDS := {
-	"patch": ["pay_button", 6, "till_patch", "wrap_paper"],    # パッチワークのおじいさんの番台（型紙と布・滑りあとの柄）
+	"patch": ["pay_button", 6, "till_patch", "wrap_paper"],    # パッチワークのおじいさんの番台（型紙と布）
 	"snow": ["pay_snowball", 3, "till_snow", "wrap_bag"],      # 雪だるまの番台（ペレット。お代は雪玉）
 	"pal": ["pay_button", 6, "till_pal", "wrap_tissue"],       # 1 階のテントの紙細工屋さん（提灯と頭・肩の小物）
-	"mountain": ["pay_button", 6, "till_patch", "wrap_paper"], # 1 階の山師（山の道具とミニオン）
-	"book": ["pay_button", 6, "till_patch", ""],               # 布の見本帳でソリを染める（品物は渡さないので包まない）
+	"mountain": ["pay_button", 6, "till_patch", "wrap_paper"], # 1 階の山師（山の道具とミニオンと雪玉の柄）
+	"book": ["pay_button", 6, "till_patch", ""],               # 布の見本帳でソリを染める・滑りあとの柄を買う（品物は渡さないので包まない）
 	"dye": ["pay_button", 6, "till_pal", ""],                  # 人台の桶で服を染める
 	"scope": ["pay_button", 6, "till_patch", ""],              # テラスの双眼鏡台に木のボタンを入れる
 	"scope_ball": ["pay_snowball", 3, "till_snow", ""],        # 双眼鏡台に雪玉を入れる
 }
-## 店の所（ロッジの中の節の名前）。候補が 2 つ以上あれば、買った人にいちばん近いもの（滑りあとの柄は、ソリ屋でも見本帳でも買える）。
+## 店の所（ロッジの中の節の名前）。候補が 2 つ以上あれば、買った人にいちばん近いもの。
 ## 見つからなければ買った人の所で鳴らす
 const SHOP_NODES := {
-	"patch": ["Bandai_counter_patch", "SledBook"], "snow": ["Bandai_counter_indigo"], "pal": ["PaperLady"], "mountain": ["MountainMan"],
+	"patch": ["Bandai_counter_patch"], "snow": ["Bandai_counter_indigo"], "pal": ["PaperLady"], "mountain": ["MountainMan"],
 	"book": ["SledBook"], "dye": ["DyeVat"], "scope": [], "scope_ball": [],
 }
 const PAY_GAP := 0.075     # 払いの粒の間 (s)。sound/gen/shop.py の PAY_GAP と同じ
@@ -796,7 +796,7 @@ const WRAP_AFTER := 0.55   # レジから包むまで
 var _purses := {}          # 人の番号 → 前に見た財布の中身（払った数を、出来事の前後の差で知る）
 
 
-## 工房（craft.gd）の出来事から、払ったことを拾う。buy はおじいさんか山師、stitch_buy はおじいさんか見本帳（近いほう）、
+## 工房（craft.gd）の出来事から、払ったことを拾う。buy はおじいさんか山師、stitch_buy は見本帳、ball_stitch_buy は山師、
 ## pal_buy と lantern_buy は紙細工屋さん（ミニオンは山師）、sled_dye は見本帳、dye は人台の桶、scope_on は双眼鏡台、
 ## 名前に food か pellet を含む買う出来事は雪だるまの店。染め直しが ただ（元の色に戻す）・双眼鏡の払った時間の中は、払っていないので鳴らさない
 func _on_craft(ev: Dictionary) -> void:
@@ -815,8 +815,10 @@ func _on_craft(ev: Dictionary) -> void:
 			shop = "patch"
 			if ev.get("item") is Dictionary and preload("res://mountain_goods.gd").has(String(ev.item.get("kind", ""))):
 				shop = "mountain"   # 山師の棚の道具
-		"stitch_buy":
-			shop = "patch"
+		"stitch_buy":   # 滑りあとの柄は見本帳だけで売る（2026-11-10）
+			shop = "book"
+		"ball_stitch_buy":   # 雪玉の柄は山師の棚（ball_stitches.gd）
+			shop = "mountain"
 		"pal_buy":
 			shop = "mountain" if preload("res://pals.gd").slot_of(String(ev.get("key", ""))) == "pet" else "pal"   # ミニオンは山師、小物は紙細工屋さんから買う
 		"lantern_buy":

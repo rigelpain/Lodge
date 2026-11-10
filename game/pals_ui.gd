@@ -8,7 +8,9 @@ extends CanvasLayer
 ##   A/D（←/→）で札を選び、W/S（↑/↓）で段を替え、Enter か Space で押したのと同じ。閉じるのは右上の × の縫い目か、F か Esc
 ## 買う・付けるは craft.gd の出来事 pal_buy・pal_wear（通信ではほかの人の画面でも、その人の小物とミニオンが替わる）
 ## 出す段は tabs で選ぶ（2026-11-02 代表「ミニオンは山師が育てているのを買う感じにしてほしい」）: 2 階の売り台は頭・肩、
-## 山師（mountain_man.gd）は連れだけ。山師の画面では、段の札の上に lead_tab の札（山の道具の売り場へ戻る）を足し、板の色も替える
+## 山師（mountain_man.gd）は連れだけ。山師の画面では、段の札の上に lead_tab の札（山の道具の売り場へ戻る）を、下に tail_tabs の札
+## （雪玉の柄の棚へ。2026-11-10 代表「山師でミニオン欄開いたら雪玉ステッチタブが消えちゃう」）を足し、板の色も替える。
+## 札の並びは山師の売り場（mountain_ui.gd）と同じ: 道具・連れ・雪玉の柄
 
 const Pals := preload("res://pals.gd")
 const Icons := preload("res://hud_icons.gd")
@@ -26,6 +28,9 @@ var tabs: Array = TABS       # 出す段（main.gd が決める）
 var board_color := Color(0.36, 0.42, 0.33)   # 板のフェルトの色
 var lead_tab := ""           # 段の札の上に足す札の絵（"" なら出さない）。押すと lead_pressed
 signal lead_pressed
+var tail_tabs: Array = []    # 段の札の下に足す札 [{draw: func(ci, rect, a), press: func()}]。押すとこの画面を閉じて press を呼ぶ
+var _tail_rects: Array[Rect2] = []
+var _hover_tail := -1
 var tab := 0                 # いま開いている段（tabs の番号）
 var _lead_rect := Rect2()
 var _hover_lead := false
@@ -253,6 +258,14 @@ func _draw_on(ci: Control) -> void:
 		if on:
 			Icons.screen()
 			Icons.dashes(ci, Icons.rr(tr.position.x - 5 * u, tr.position.y - 5 * u, ts + 10 * u, ts + 10 * u, 15.0 * u), Icons.RED, 3.0 * u, 8.0 * u, 5.0 * u, 1.0, true)
+	_tail_rects.clear()
+	for k in tail_tabs.size():
+		var ts := 84.0 * u
+		var tr := Rect2(r.position + Vector2(24.0 * u, 70.0 * u + (tabs.size() + lead + k) * (ts + 16.0 * u)), Vector2(ts, ts))
+		_tail_rects.append(tr)
+		Icons.screen()
+		Icons.patch(ci, Icons.rr(tr.position.x, tr.position.y, ts, ts, 12.0 * u), Icons.PAPER.darkened(0.12), 1.0 if k == _hover_tail else 0.75, true, Icons.PAPER_EDGE)
+		(tail_tabs[k].draw as Callable).call(ci, tr.grow(-ts * 0.1), 0.6)
 	# 札
 	_cards.clear()
 	var worn: String = craft.pal_worn(_who(), tabs[tab])
@@ -322,6 +335,13 @@ func _hit(p: Vector2) -> int:
 	return -1
 
 
+func _hit_tail(p: Vector2) -> int:
+	for i in _tail_rects.size():
+		if _tail_rects[i].has_point(p):
+			return i
+	return -1
+
+
 func _hit_tab(p: Vector2) -> int:
 	for i in _tabs.size():
 		if _tabs[i].has_point(p):
@@ -352,6 +372,7 @@ func _input(e: InputEvent) -> void:
 		_hover_tab = _hit_tab(e.position)
 		_hover_close = _close_rect.has_point(e.position)
 		_hover_lead = lead_tab != "" and _lead_rect.has_point(e.position)
+		_hover_tail = _hit_tail(e.position)
 	elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
 		get_viewport().set_input_as_handled()
 		if _close_rect.has_point(e.position):
@@ -359,6 +380,10 @@ func _input(e: InputEvent) -> void:
 		elif lead_tab != "" and _lead_rect.has_point(e.position):
 			close()
 			lead_pressed.emit()
+		elif _hit_tail(e.position) >= 0:
+			var press: Callable = tail_tabs[_hit_tail(e.position)].press
+			close()
+			press.call()
 		elif _hit_tab(e.position) >= 0:
 			set_tab(_hit_tab(e.position))
 		else:

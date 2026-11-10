@@ -703,6 +703,7 @@ func _ready() -> void:
 		minion_ui.board_color = MountainUi.FELT
 		minion_ui.lead_tab = "mountain"   # 段の札の上の、山の道具の売り場へ戻る札
 		minion_ui.lead_pressed.connect(func(): mountain_ui.open())
+		minion_ui.tail_tabs = [{"draw": _ball_tab_draw, "press": _ball_tab_open}]   # 雪玉の柄の棚へ（山師の売り場の 3 枚目の札と同じ）
 		add_child(minion_ui)
 		if args.get("spawn", "") == "mountain" and mountain_man:   # --spawn=mountain: 山男の前から始める
 			var at := mountain_man.to_global(Vector3(0, 0.1, -1.9))
@@ -2433,3 +2434,14 @@ func _unhandled_input(e: InputEvent) -> void:
 			pip_mode = (pip_mode + 1) % 3
 			pip_mat.set_shader_parameter("mode", pip_mode)
 			_layout_pip()
+
+
+## 山師の連れの画面（minion_ui）の、雪玉の柄の札の絵（山師の売り場の 3 枚目の札と同じ。mountain_ui.gd）
+func _ball_tab_draw(ci: CanvasItem, rect: Rect2, a: float) -> void:
+	preload("res://ball_stitches.gd").draw_ball(ci, "kiku", mountain_ui.tab_grade(), rect, a)
+
+
+## その札を押した: 山師の売り場の雪玉の柄の棚を開く
+func _ball_tab_open() -> void:
+	mountain_ui.open()
+	mountain_ui.set_page(2)

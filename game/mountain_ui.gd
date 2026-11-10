@@ -93,6 +93,12 @@ func select(i: int) -> void:
 	_view.queue_redraw()
 
 
+## 雪玉の柄の札の絵の糸の段（はめている手袋。はめていなければ毛糸）。連れの画面（pals_ui.gd）の札も同じ絵
+func tab_grade() -> String:
+	var g: String = craft.glove_grade(_who()) if craft else ""
+	return g if g != "" else "gloves"
+
+
 ## 棚を替える（0 道具、2 雪玉の柄）
 func set_page(k: int) -> void:
 	page = k
