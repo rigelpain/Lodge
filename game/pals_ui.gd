@@ -123,6 +123,8 @@ func choose(i: int) -> bool:
 	var ks := keys()
 	if i < 0 or i >= ks.size() or craft == null:
 		return false
+	if not CraftIcons.pickable(card_state(i)):
+		return false   # ボタンが足りない・ロックの札は選べない（押しても何も起きない）
 	_sel = i
 	var key: String = ks[i]
 	var slot: String = tabs[tab]
@@ -280,15 +282,21 @@ func _draw_on(ci: Control) -> void:
 		_cards.append(Rect2(cr.position + Vector2(0, lift), cr.size))
 		var owned: bool = craft.pal_owned(_who(), key)
 		var price := Pals.price(key)
+		var st := card_state(i)
+		if st == "locked":   # まだ売っていない: 麻ひもの包み（どの店も同じ。craft_icons.gd）
+			CraftIcons.wrap_card(ci, cr, u)
+			continue
 		Icons.paper_tag(ci, cr, 16.0 * u, u)
 		var iw := minf(cw - pad * 2.0, (ch * 0.72) * asp)
 		var ih := iw / asp
 		if i < _shots.size():
 			var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture()
-			ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((cw - iw) / 2.0, 14.0 * u), Vector2(iw, ih)), false, Color(1, 1, 1, 1.0 if owned or price <= coins else 0.55))
-		if not owned:   # 値段（足りなければ薄く）
-			CraftIcons.price(ci, cr.position + Vector2(cw / 2.0, ch - 26.0 * u), price, 10.0 * u, 1.0 if price <= coins else 0.45)
-		if i == _sel or i == _hover:
+			ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((cw - iw) / 2.0, 14.0 * u), Vector2(iw, ih)), false)
+		if not owned:   # 値段
+			CraftIcons.price(ci, cr.position + Vector2(cw / 2.0, ch - 26.0 * u), price, 10.0 * u)
+		if st == "money":   # ボタンが足りない: グレー（選べない）
+			CraftIcons.shade_card(ci, CraftIcons.tag_pts(cr, 16.0 * u))
+		if i == _sel or i == _hover and CraftIcons.pickable(st):
 			var rim := Icons.rr(cr.position.x - 6.0 * u, cr.position.y - 6.0 * u, cr.size.x + 12.0 * u, cr.size.y + 12.0 * u, 10.0 * u)
 			Icons.screen()
 			Icons.dashes(ci, rim, Icons.RED, 3.0 * u, 9.0 * u, 5.0 * u, 1.0 if i == _sel else 0.4, true)
@@ -390,3 +398,12 @@ func _input(e: InputEvent) -> void:
 			var i := _hit(e.position)
 			if i >= 0:
 				choose(i)
+
+
+## i 番目の札のようす（craft_icons.gd の card_state。どの店も同じ見え方。2026-11-10 代表）
+func card_state(i: int) -> String:
+	var ks := keys()
+	if i < 0 or i >= ks.size():
+		return ""
+	var key: String = ks[i]
+	return CraftIcons.card_state(preload("res://shop_locks.gd").locked("pal:" + key), craft.pal_owned(_who(), key), Pals.price(key) <= craft.wallet(_who()))
