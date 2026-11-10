@@ -232,7 +232,7 @@ var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
 var mirror: Node3D            # 入口の横の大きな鏡（mirror.gd）
 var paper_lady: Node3D        # テントの紙細工屋さん（paper_lady.gd。婦人と大きなスタンド）
 var paper_shop_ui: CanvasLayer   # 提灯と頭・肩の小物を買って付け替える画面（paper_shop_ui.gd）
-var minion_ui: CanvasLayer    # 山師が育てているミニオンを買って連れ替える画面（pals_ui.gd の連れの段。山師の売り場の「連れ」の札から）
+var minion_ui: CanvasLayer    # 山師が育てているミニオンの絵と、買う・連れ替える出来事（pals_ui.gd の連れの段。山師の売り場のミニオンの棚が使う。画面そのものは開かない）
 var dye_vat: Node3D           # 人台の桶の染め液（dye_vat.gd）
 var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
 var sled_book: Node3D         # 布の見本帳（sled_book.gd）
@@ -694,8 +694,8 @@ func _ready() -> void:
 		mountain_ui.player = player
 		mountain_ui.shop = mountain_man
 		add_child(mountain_ui)
-		# 山師が育てているミニオンの画面: pals_ui.gd を連れの段だけで開く（2 階の売り台の画面とは別のもの。2 階の売り台が
-		# ほかの店に替わっても、ここは pals_ui.gd を直に読むので残る）
+		# 山師が育てているミニオン: pals_ui.gd を連れの段だけで持ち、山師の売り場（mountain_ui.gd）のミニオンの棚が、その絵（回る座った姿）と
+		# 買う・連れ替える出来事を使う（2026-11-10 代表「山師のミニオン購入だけUIの形変わるの嫌過ぎる」。この画面そのものは開かない）
 		minion_ui = preload("res://pals_ui.gd").new()
 		minion_ui.name = "MinionUi"
 		minion_ui.main = self
@@ -703,13 +703,6 @@ func _ready() -> void:
 		minion_ui.player = player
 		minion_ui.tabs = ["pet"]
 		minion_ui.board_color = MountainUi.FELT
-		minion_ui.lead_tab = "mountain"   # 段の札の上の、山の道具の売り場へ戻る札
-		minion_ui.lead_pressed.connect(func(): mountain_ui.open())
-		minion_ui.tail_tabs = [{"draw": _ball_tab_draw, "press": _ball_tab_open},   # 雪玉の柄・双眼鏡・手袋の棚へ（山師の売り場の 3〜5 枚目の札と同じ）
-			{"draw": func(ci: CanvasItem, rect: Rect2, a: float) -> void: preload("res://craft_icons.gd").item(ci, {"kind": "binoculars"}, rect.get_center(), rect.size.x * 0.9, a),
-				"press": func() -> void: _mountain_page(3)},
-			{"draw": func(ci: CanvasItem, rect: Rect2, a: float) -> void: preload("res://craft_icons.gd").item(ci, {"kind": "gloves_felt"}, rect.get_center(), rect.size.x * 0.9, a),
-				"press": func() -> void: _mountain_page(4)}]
 		add_child(minion_ui)
 		if args.get("spawn", "") == "mountain" and mountain_man:   # --spawn=mountain: 山男の前から始める
 			var at := mountain_man.to_global(Vector3(0, 0.1, -1.9))
@@ -2442,17 +2435,3 @@ func _unhandled_input(e: InputEvent) -> void:
 			_layout_pip()
 
 
-## 山師の連れの画面（minion_ui）の、雪玉の柄の札の絵（山師の売り場の 3 枚目の札と同じ。mountain_ui.gd）
-func _ball_tab_draw(ci: CanvasItem, rect: Rect2, a: float) -> void:
-	preload("res://ball_stitches.gd").draw_ball(ci, "kiku", mountain_ui.tab_grade(), rect, a)
-
-
-## その札を押した: 山師の売り場の雪玉の柄の棚を開く
-func _ball_tab_open() -> void:
-	_mountain_page(2)
-
-
-## 連れの画面の札から、山師の売り場の棚 pg（2 雪玉の柄、3 双眼鏡、4 手袋）を開く
-func _mountain_page(pg: int) -> void:
-	mountain_ui.open()
-	mountain_ui.set_page(pg)
