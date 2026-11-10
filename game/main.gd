@@ -457,6 +457,9 @@ func _ready() -> void:
 	stage = String(args.get("world", "plain" if from_cmdline else saved_world()))
 	if not stage in WORLDS:
 		stage = "plain"
+	# スタート画面を出すかは、下で天下森の決まり（no-lodge など）を足す前の引数で決める。足したあとだと、
+	# 引数なしでも天下森を最後に選んでいると引数ありに見えて、スタート画面が出なかった（2026-11-10）
+	var want_start := Start.wanted(args)
 	_snow_cache.clear()
 	_drift_memo.clear()
 	if tenka():
@@ -779,7 +782,7 @@ func _ready() -> void:
 				(c as Camera3D).far = 30000.0
 	# 引数なしで起動した: スタート画面（一人・ホスト・つなぐ）。スタート画面からつなぎに行ったときは、つながるまで出しておく
 	var waiting := Net.boot.has("join") and net.online and not net.joined()
-	if Start.wanted(args) or waiting:
+	if want_start or waiting:
 		start = Start.new()
 		start.main = self
 		start.waiting = waiting
