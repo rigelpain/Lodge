@@ -3,14 +3,15 @@ extends CanvasLayer
 ##   緑のフェルトの板（衣装掛けの画面と同じ）。左に段の札が縦に 3 枚: 提灯（帯のランタン）・頭（人の形の頭に小鳥）・肩（肩に小鳥）。
 ##   右に、その段の品物の紙の札が 5 枚ずつ並び（提灯は lantern.gd の LOOKS、小物は pals.gd）、札の中で品物がくるくる回る（12 コマ）。
 ##   提灯の札の中は夜の藍で、灯した提灯の光る紙は形ごとの揺らぎ方で明るさが変わる。
-##   持っていない品物の札の下には値段のボタン、持っている品物は値段なし。いま身につけている札には赤い糸の結び目（あなたの印）。
+##   札の見え方はどの店も同じ（craft_icons.gd の foot・over。2026-11-10 代表「一般的なゲームのやりかたにしてほしい」）: 持っていない品物は札の下に値段のボタン
+##   （足りなければ札がグレーで、選べない）、持っている品物は緑のチェック、いま身につけている札は赤い糸の太い縁、まだ売っていない品は南京錠。
 ##   札を押すと: 持っていれば身につける（つけている札をもう一度押すと外す）。持っていなければ買って、すぐ身につける。
 ##   ボタンが足りないと札が震える。板の下のまんなかに財布（持っているボタン）。
 ##   A/D（←/→）で札を選び、W/S（↑/↓）で段を替え、Enter か Space で押したのと同じ。閉じるのは右上の × の縫い目か、F か Esc
 ## 買う・つけるは craft.gd の出来事 lantern_buy・equip（提灯）と pal_buy・pal_wear（小物）。通信ではほかの人の画面でも、その人の物が替わる。
 ## 提灯の段の下に、色替えの段（2026-11-10 代表「なかったら紙細工師さんで色変え売って欲しい」）: いま提げているランタンを、キャラの色のパレット
 ##   （craft.gd の COLORS。山をめぐる仲間の服と同じ 12 色）の色で灯した札が 6 枚ずつ 2 段（布の見本帳の布 12 色と同じ並べ方）。札の左上に布の色。
-##   押すと染める（染め代 craft.gd の LANTERN_DYE_PRICE、lantern_dye）。いまの色の札には赤い糸の結び目。左下の丸い布は形のもとの色に戻す（ただ）。
+##   押すと染める（染め代 craft.gd の LANTERN_DYE_PRICE、lantern_dye）。札の下に値段、いまの色の札はチェックと赤い糸の縁。左下の丸い布は形のもとの色に戻す（ただ）。
 ##   提げていなければ札は薄く、押すと震える
 ## 前は番台の横のランタン掛け（lantern_ui.gd）と 2 階の売り台（pals_ui.gd の頭・肩の段）だったものを、ここにまとめた（2026-11-02）
 
@@ -378,47 +379,26 @@ func _draw_on(ci: Control) -> void:
 		var shake := sin(_shake * 40.0) * 8.0 * u * _shake if i == _shake_i else 0.0
 		var cr := Rect2(r.position + Vector2(left + (i % per) * (ccw + gap) + shake, 60.0 * u + (i / per) * (ch + gap) - lift), Vector2(ccw, ch))
 		_cards.append(Rect2(cr.position + Vector2(0, lift), cr.size))
-		var owned := _owned(key)
 		var price := _price(key)
 		var st := card_state(i)
-		if st == "locked":   # まだ売っていない: 麻ひもの包み（どの店も同じ。craft_icons.gd）
-			CraftIcons.wrap_card(ci, cr, u)
-			continue
-		var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture() if i < _shots.size() else null
-		if not dyeing and not owned:   # 提灯の形・小物（解放の品）のまだ買っていない札: 小包（上に値段、荷札に中身の絵）。足りなければグレー
-			CraftIcons.parcel(ci, cr, price, st == "money", CraftIcons.shot_hint(tex), u)
-			if i == _sel or i == _hover and CraftIcons.pickable(st):
-				Icons.screen()
-				Icons.dashes(ci, Icons.rr(cr.position.x - 6.0 * u, cr.position.y - 6.0 * u, cr.size.x + 12.0 * u, cr.size.y + 12.0 * u, 10.0 * u), Icons.RED, 3.0 * u, 9.0 * u, 5.0 * u, 1.0 if i == _sel else 0.4, true)
-			continue
-		if not dyeing and price > 0:   # 買ったあと: 札のうしろに開いた包み紙
-			CraftIcons.unwrapped(ci, cr, u)
+		# 札と品物の絵（いつも見せる）。下に値段かチェック、身につけていれば赤い糸の縁、ロックなら南京錠（どの店も同じ。craft_icons.gd の foot・over）。
+		# 色替えの段も同じ（いまの色が「身につけている」）。提げていなければ染められないので、札は薄く、値段も印も出さない
 		Icons.paper_tag(ci, cr, 14.0 * u, u)
-		var ih := minf(ch - pad * 2.0 - 30.0 * u, (ccw - pad * 2.0) / asp)
+		var ih := minf(ch - pad * 2.0 - 34.0 * u, (ccw - pad * 2.0) / asp)
 		var iw := ih * asp
-		if tex:
-			ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((ccw - iw) / 2.0, 12.0 * u), Vector2(iw, ih)), false, Color(1, 1, 1, 0.4 if no_lamp else 1.0))
+		if i < _shots.size():
+			ci.draw_texture_rect((_shots[i][0] as SubViewport).get_texture(), Rect2(cr.position + Vector2((ccw - iw) / 2.0, 10.0 * u), Vector2(iw, ih)), false, Color(1, 1, 1, 0.4 if no_lamp else 1.0))
 		if dyeing:   # 札の左上に、パレットの布の色（灯りは明るくそろえるので、元の色を見せる）
 			var sw := Icons.circ(cr.position + Vector2(20.0, 22.0) * u, 12.0 * u, 16)
 			Icons.screen()
 			Icons.patch(ci, sw, Color(key), 0.45 if no_lamp else 1.0, true, Color(key).darkened(0.4))
-		if not owned and not no_lamp:   # 値段（色替えの段）
-			CraftIcons.price(ci, cr.position + Vector2(ccw / 2.0, ch - 20.0 * u), price, 9.0 * u)
-		elif not dyeing:   # 持っている提灯の形・小物: 針の印
-			Icons.screen()
-			Icons.icon(ci, "needle", cr.position + Vector2(ccw / 2.0, ch - 20.0 * u), 28.0 * u, 1.0)
-		if st == "money" and not no_lamp:   # ボタンが足りない: グレー（選べない）
-			CraftIcons.shade_card(ci, CraftIcons.tag_pts(cr, 14.0 * u))
+		if not no_lamp:
+			CraftIcons.foot(ci, st, cr.position + Vector2(ccw / 2.0, ch - 22.0 * u), price, 8.0 * u, u)
+			CraftIcons.over(ci, st, cr, CraftIcons.tag_pts(cr, 14.0 * u), u)
 		if i == _sel or i == _hover and CraftIcons.pickable(st):
 			var rim := Icons.rr(cr.position.x - 6.0 * u, cr.position.y - 6.0 * u, cr.size.x + 12.0 * u, cr.size.y + 12.0 * u, 10.0 * u)
 			Icons.screen()
 			Icons.dashes(ci, rim, Icons.RED, 3.0 * u, 9.0 * u, 5.0 * u, 1.0 if i == _sel else 0.4, true)
-		if key == worn and not no_lamp:   # いま身につけている: 札の上の赤い糸の結び目（あなたの印）
-			var c := cr.position + Vector2(ccw / 2.0, -2.0 * u)
-			ci.draw_circle(c, 9.0 * u, Icons.RED)
-			ci.draw_arc(c, 9.0 * u, 0, TAU, 18, Icons.RED.darkened(0.4), 1.6 * u, true)
-			for s in [-1.0, 1.0]:
-				ci.draw_line(c + Vector2(s * 6.0, 4.0) * u, c + Vector2(s * 14.0, 20.0) * u, Icons.RED, 3.0 * u, true)
 	# 色替えの段の左下: 形のもとの色に戻す丸い布（ただ。布の見本帳の脱色と同じ）。もとの色なら赤い破線
 	_bleach_rect = Rect2()
 	if dyeing:
@@ -524,4 +504,4 @@ func card_state(i: int) -> String:
 		return ""
 	var key: String = ks[i]
 	var lock := ("lantern:" if TABS[tab] == "lantern" else "pal:") + key
-	return CraftIcons.card_state(preload("res://shop_locks.gd").locked(lock), _owned(key), _price(key) <= craft.wallet(_who()))
+	return CraftIcons.card_state(preload("res://shop_locks.gd").locked(lock), _owned(key), _price(key) <= craft.wallet(_who()), true, key == _worn())

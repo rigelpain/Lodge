@@ -2,7 +2,8 @@ extends CanvasLayer
 ## 頭・肩の小物とミニオンを買って付け替える画面（2 階の衣装掛けの横の売り台 pal_stall.gd の前で F）。文字は使わない。
 ##   緑のフェルトの板（衣装掛けの画面と同じ）。左に段の札が縦に 3 枚: 頭（人の形の頭に小鳥）・肩（肩に小鳥）・連れ（足もとに子狐）。
 ##   右に、その段の品物（pals.gd）の紙の札が 1 列に並び、札の中で品物がくるくる回る（12 コマ。ミニオンは座った姿）。
-##   持っていない品物の札の下には値段のボタン、持っている品物は値段なし。いま付けている札には赤い糸の結び目（あなたの印）。
+##   札の見え方はどの店も同じ（craft_icons.gd の foot・over。2026-11-10 代表「一般的なゲームのやりかたにしてほしい」）: 持っていない品物は札の下に値段のボタン
+##   （足りなければ札がグレーで、選べない）、持っている品物は緑のチェック、いま付けている札は赤い糸の太い縁、まだ売っていない品は南京錠。
 ##   札を押すと: 持っていれば付ける（付けている札をもう一度押すと外す）。持っていなければ買って、すぐ付ける。
 ##   ボタンが足りないと札が震える。板の下のまんなかに財布（持っているボタン）。
 ##   A/D（←/→）で札を選び、W/S（↑/↓）で段を替え、Enter か Space で押したのと同じ。閉じるのは右上の × の縫い目か、F か Esc
@@ -243,15 +244,20 @@ func _draw_on(ci: Control) -> void:
 	# 左: 段の札（頭・肩・連れ）。lead_tab があれば、その上に
 	_tabs.clear()
 	var lead := 1 if lead_tab != "" else 0
+	# 段の札の大きさ: 札が多ければ（山師の画面は 5 枚）板の高さに収まるように小さく
+	var count := lead + tabs.size() + tail_tabs.size()
+	var step := minf(100.0 * u, (bh - 40.0 * u) / maxf(count, 1))
+	var ts0 := minf(84.0 * u, step - 10.0 * u)
+	var ty0 := r.position.y + (70.0 * u if count * 100.0 * u <= bh - 90.0 * u else 20.0 * u)
 	if lead_tab != "":
-		var ts := 84.0 * u
-		_lead_rect = Rect2(r.position + Vector2(24.0 * u, 70.0 * u), Vector2(ts, ts))
+		var ts := ts0
+		_lead_rect = Rect2(Vector2(r.position.x + 24.0 * u, ty0), Vector2(ts, ts))
 		Icons.screen()
 		Icons.patch(ci, Icons.rr(_lead_rect.position.x, _lead_rect.position.y, ts, ts, 12.0 * u), Icons.PAPER.darkened(0.12), 1.0 if _hover_lead else 0.75, true, Icons.PAPER_EDGE)
 		Icons.icon(ci, lead_tab, _lead_rect.get_center(), ts * 0.8, 0.6)
 	for i in tabs.size():
-		var ts := 84.0 * u
-		var tr := Rect2(r.position + Vector2(24.0 * u, 70.0 * u + (i + lead) * (ts + 16.0 * u)), Vector2(ts, ts))
+		var ts := ts0
+		var tr := Rect2(Vector2(r.position.x + 24.0 * u, ty0 + (i + lead) * step), Vector2(ts, ts))
 		_tabs.append(tr)
 		var on := i == tab
 		Icons.screen()
@@ -262,15 +268,14 @@ func _draw_on(ci: Control) -> void:
 			Icons.dashes(ci, Icons.rr(tr.position.x - 5 * u, tr.position.y - 5 * u, ts + 10 * u, ts + 10 * u, 15.0 * u), Icons.RED, 3.0 * u, 8.0 * u, 5.0 * u, 1.0, true)
 	_tail_rects.clear()
 	for k in tail_tabs.size():
-		var ts := 84.0 * u
-		var tr := Rect2(r.position + Vector2(24.0 * u, 70.0 * u + (tabs.size() + lead + k) * (ts + 16.0 * u)), Vector2(ts, ts))
+		var ts := ts0
+		var tr := Rect2(Vector2(r.position.x + 24.0 * u, ty0 + (tabs.size() + lead + k) * step), Vector2(ts, ts))
 		_tail_rects.append(tr)
 		Icons.screen()
 		Icons.patch(ci, Icons.rr(tr.position.x, tr.position.y, ts, ts, 12.0 * u), Icons.PAPER.darkened(0.12), 1.0 if k == _hover_tail else 0.75, true, Icons.PAPER_EDGE)
 		(tail_tabs[k].draw as Callable).call(ci, tr.grow(-ts * 0.1), 0.6)
 	# 札
 	_cards.clear()
-	var worn: String = craft.pal_worn(_who(), tabs[tab])
 	var coins: int = craft.wallet(_who())
 	var pad := 8.0 * u
 	var asp := float(SHOT.x) / SHOT.y
@@ -280,35 +285,20 @@ func _draw_on(ci: Control) -> void:
 		var shake := sin(_shake * 40.0) * 8.0 * u * _shake if i == _shake_i else 0.0
 		var cr := Rect2(r.position + Vector2(left + i * (cw + gap) + shake, 70.0 * u - lift), Vector2(cw, ch))
 		_cards.append(Rect2(cr.position + Vector2(0, lift), cr.size))
-		var owned: bool = craft.pal_owned(_who(), key)
 		var price := Pals.price(key)
 		var st := card_state(i)
-		if st == "locked":   # まだ売っていない: 麻ひもの包み（どの店も同じ。craft_icons.gd）
-			CraftIcons.wrap_card(ci, cr, u)
-			continue
-		var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture() if i < _shots.size() else null
-		if not owned:   # まだ買っていない: 小包（上に値段、荷札に中身の絵）。足りなければグレー（選べない。craft_icons.gd）
-			CraftIcons.parcel(ci, cr, price, st == "money", CraftIcons.shot_hint(tex), u)
-		else:
-			if price > 0:   # 買ったあと: 札のうしろに開いた包み紙
-				CraftIcons.unwrapped(ci, cr, u)
-			Icons.paper_tag(ci, cr, 16.0 * u, u)
-			var iw := minf(cw - pad * 2.0, (ch * 0.72) * asp)
-			var ih := iw / asp
-			if tex:
-				ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((cw - iw) / 2.0, 14.0 * u), Vector2(iw, ih)), false)
-			Icons.screen()
-			Icons.icon(ci, "needle", cr.position + Vector2(cw / 2.0, ch - 26.0 * u), 30.0 * u, 1.0)   # 持っている: 針の印
+		# 札と品物の絵（いつも見せる）。下に値段かチェック、付けていれば赤い糸の縁、ロックなら南京錠（どの店も同じ。craft_icons.gd の foot・over）
+		Icons.paper_tag(ci, cr, 16.0 * u, u)
+		var iw := minf(cw - pad * 2.0, (ch * 0.68) * asp)
+		var ih := iw / asp
+		if i < _shots.size():
+			ci.draw_texture_rect((_shots[i][0] as SubViewport).get_texture(), Rect2(cr.position + Vector2((cw - iw) / 2.0, 12.0 * u), Vector2(iw, ih)), false)
+		CraftIcons.foot(ci, st, cr.position + Vector2(cw / 2.0, ch - 28.0 * u), price, 9.0 * u, u)
+		CraftIcons.over(ci, st, cr, CraftIcons.tag_pts(cr, 16.0 * u), u)
 		if i == _sel or i == _hover and CraftIcons.pickable(st):
 			var rim := Icons.rr(cr.position.x - 6.0 * u, cr.position.y - 6.0 * u, cr.size.x + 12.0 * u, cr.size.y + 12.0 * u, 10.0 * u)
 			Icons.screen()
 			Icons.dashes(ci, rim, Icons.RED, 3.0 * u, 9.0 * u, 5.0 * u, 1.0 if i == _sel else 0.4, true)
-		if key == worn:   # いま付けている: 札の上の赤い糸の結び目（あなたの印）
-			var c := cr.position + Vector2(cw / 2.0, -2.0 * u)
-			ci.draw_circle(c, 9.0 * u, Icons.RED)
-			ci.draw_arc(c, 9.0 * u, 0, TAU, 18, Icons.RED.darkened(0.4), 1.6 * u, true)
-			for s in [-1.0, 1.0]:
-				ci.draw_line(c + Vector2(s * 6.0, 4.0) * u, c + Vector2(s * 14.0, 20.0) * u, Icons.RED, 3.0 * u, true)
 	# 下のまんなか: 財布（持っているボタン）
 	Icons.screen()
 	var py := r.end.y - 52.0 * u
@@ -409,4 +399,5 @@ func card_state(i: int) -> String:
 	if i < 0 or i >= ks.size():
 		return ""
 	var key: String = ks[i]
-	return CraftIcons.card_state(preload("res://shop_locks.gd").locked("pal:" + key), craft.pal_owned(_who(), key), Pals.price(key) <= craft.wallet(_who()))
+	return CraftIcons.card_state(preload("res://shop_locks.gd").locked("pal:" + key), craft.pal_owned(_who(), key), Pals.price(key) <= craft.wallet(_who()), true,
+			craft.pal_worn(_who(), tabs[tab]) == key)

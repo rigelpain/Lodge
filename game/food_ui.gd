@@ -215,16 +215,15 @@ class View extends Control:
 			if sel or ui._hover == i and CraftIcons.pickable(st):
 				card.position.y -= (8.0 if sel else 4.0) * u
 			rects.append(card)
-			if st == "locked":   # まだ売っていない: 麻ひもの包み
-				CraftIcons.wrap_card(self, card, u)
-				continue
+			# 札と料理の絵。下に値段の雪玉、足りなければグレー、ロックなら南京錠（どの店も同じ。craft_icons.gd の over）
+			var pts := Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u)
 			Icons.screen()
-			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+			Icons.patch(self, pts, Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
 			var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
-			_pic(ui.tex(Food.pellet_icon(dish)), card.position + Vector2(cw / 2.0, ch * 0.4), cw * 1.45 * pop)
-			_balls(card.position + Vector2(cw / 2.0, ch * 0.84), price, 8.0 * u, 99)
-			if st == "money":   # 雪玉が足りない: グレー
-				CraftIcons.shade_card(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u))
+			_pic(ui.tex(Food.pellet_icon(dish)), card.position + Vector2(cw / 2.0, ch * 0.38), cw * 1.35 * pop)
+			if st != "locked":
+				_balls(card.position + Vector2(cw / 2.0, ch * 0.84), price, 8.0 * u, 99)
+			CraftIcons.over(self, st, card, pts, u)
 			if sel:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
@@ -269,8 +268,8 @@ class View extends Control:
 		Icons._s = bs / 64.0 * big
 		Icons.arrow(self, Vector2(-11, -2), Vector2(1, -2), Icons.CAP, 1.0, 2.2)
 		Icons.mitten(self, Vector2(15, 0), 0.4, Icons.CAP, 1.0, true, 0.9)
-		if full:   # 持ち物がいっぱい: 売り場の全体をグレーにして、巾着から物があふれる印（閉じる × だけは上に）
-			CraftIcons.bag_full(self, r, u)
+		if full:   # 持ち物がいっぱい: 板の下に、手持ちとかばんの枠を全部並べて、埋まっているのを見せる（札は札ごとに買えない見え方）
+			CraftIcons.slot_strip(self, Vector2(r.get_center().x, r.end.y + 14.0 * u), craft.bag(who), u)
 		# 右上: 閉じる（× の縫い目）
 		var xs := 46.0 * u
 		var xc := Vector2(r.end.x - 34.0 * u, r.position.y + 34.0 * u)

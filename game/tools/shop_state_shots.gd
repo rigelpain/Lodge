@@ -1,14 +1,13 @@
 extends SceneTree
-## 店の札の「買える・買えない」の見え方（craft_icons.gd の card_state。2026-11-10 代表）の絵と数字。
+## 店の札の見え方（craft_icons.gd の card_state・foot・over。2026-11-10 代表「一般的なゲームのやりかたにしてほしい」「Aかなー」）の絵と数字。
 ##   Godot --path game --resolution 1280x720 -s res://tools/shop_state_shots.gd -- --dir=/path/out --bots=0 --lodge-bots=0 --roam-bots=0 --no-sound --no-pip --no-buttons --no-save
 ## ロックは確かめのあいだだけ、各店の 1 品ずつに付ける（shop_locks.gd の extra。ゲームの中のロックの品は空のまま）。
-##   <店>_states.jpg  買える・ボタンが足りない（グレー）・持っている（針）・まだ売っていない（麻ひもの包み）が並ぶ画面
+##   <店>_states.jpg  買える（値段のボタン）・足りない（グレー）・持っている（緑のチェック）・身につけている（赤い糸の縁とチェック）・ロック（南京錠）が並ぶ画面
 ##   <店>_full.jpg    持ち物がいっぱい（画面全体がグレーで、巾着からあふれる印）
-## 解放の品（手袋・双眼鏡・雪玉の柄・滑りあとの柄・提灯の形・小物・ミニオン）は、まだ買っていなければ小包（色・グレー）、
-## 買ったあとは札のうしろに開いた包み紙（craft_icons.gd の parcel・unwrapped。2026-11-10 代表）
-## 数字: グレー・包みの札は選べない、いっぱいの店では買えない、ロックの品はホストが断る
+## 数字: 足りない・ロックの札は選べない、持っている・身につけている札は選べる、いっぱいの店では買えない、ロックの品はホストが断る
 
 const ShopLocks := preload("res://shop_locks.gd")
+const CraftIcons := preload("res://craft_icons.gd")
 const Food := preload("res://food.gd")
 const Pals := preload("res://pals.gd")
 const BS := preload("res://ball_stitches.gd")
@@ -77,21 +76,36 @@ func _run() -> void:
 	# ---- 山師の道具
 	var mu = main.mountain_ui
 	mu.open()
-	await _shot("yama_states.jpg")
 	var night := 4
-	_ok(mu.state(night) == "locked", "夜の双眼鏡（ロック）は麻ひもの包み: %s" % mu.state(night))
-	_ok(mu.state(6) == "money" and mu.state(5) == "owned" and mu.state(0) == "can", "フェルトの手袋はグレー・毛糸は持っている・焚き火は買える: %s %s %s" % [mu.state(6), mu.state(5), mu.state(0)])
+	_ok(mu.state(night) == "locked", "夜の双眼鏡（ロック）は南京錠: %s" % mu.state(night))
+	_ok(mu.state(6) == "money" and mu.state(5) == "worn" and mu.state(0) == "can", "フェルトの手袋は足りない・毛糸ははめている・焚き火は買える: %s %s %s" % [mu.state(6), mu.state(5), mu.state(0)])
+	c.gloves[who] = [{"grade": "gloves"}, {"grade": "gloves_leather"}]   # 革も持っているが、はめているのは毛糸
+	_ok(mu.state(7) == "owned" and CraftIcons.pickable("owned") and CraftIcons.pickable("worn"), "革の手袋は持っている（チェック）。持っている・身につけている札は選べる: %s" % mu.state(7))
+	await _shot("yama_states.jpg")
+	mu.set_page(4)   # 手袋の棚（2026-11-10 代表「山師は双眼鏡と手袋はそれぞれ別タブ作ったほうが良いかも」）
+	await _shot("yama_gloves_states.jpg")
+	_ok(mu._rects[6] != Rect2() and mu._rects[0] == Rect2(), "手袋の棚: 手袋だけが並ぶ（焚き火の札は押せない）")
+	mu.set_page(3)
+	await _shot("yama_scope_states.jpg")
+	_ok(mu._rects[2] != Rect2() and mu._rects[6] == Rect2(), "双眼鏡の棚: 双眼鏡だけが並ぶ")
+	mu.set_page(0)
+	await _shot("yama_tools_states.jpg")
+	_ok(mu._rects[0] != Rect2() and mu._rects[2] == Rect2() and mu._rects[6] == Rect2(), "道具の棚: 焚き火セットとペグだけ")
 	mu.select(6)
-	_ok(mu._sel != 6, "グレーの札は選べない")
+	_ok(mu._sel != 6, "足りない札は選べない")
 	mu.select(night)
-	_ok(mu._sel != night, "包みの札は選べない")
+	_ok(mu._sel != night, "ロック（南京錠）の札は選べない")
 	_ok(not c.send({"kind": "buy", "who": who, "item": {"kind": "binoculars_night"}}), "ロックの品はホストが断る")
+	c.gloves[who] = [{"grade": "gloves"}]
 	mu.close()
 	_fill_bag(true)
 	c.wallets[who] = 2000
 	mu.open()
 	await _shot("yama_full.jpg")
 	_ok(mu.state(0) == "full" and mu.state(6) == "can", "いっぱい: 焚き火は買えない（%s）、手袋は場所を使わないので買える（%s）" % [mu.state(0), mu.state(6)])
+	mu.set_page(4)
+	await _shot("yama_gloves_full.jpg")
+	_ok(not mu.bag_full(), "いっぱいでも、手袋の棚は持ち物の枠を出さない（場所を使わない）")
 	mu.set_page(2)
 	c.wallets[who] = 120
 	c.ball_owned[who] = ["back"]
@@ -103,7 +117,7 @@ func _run() -> void:
 	c.wallets[who] = 120
 	cu.open_shop()
 	await _shot("sori_states.jpg")
-	_ok(cu.shop_state(3) == "locked" and cu.shop_state(0) == "can", "ソリ屋: 大の型紙は包み・米袋の型紙は買える: %s %s" % [cu.shop_state(3), cu.shop_state(0)])
+	_ok(cu.shop_state(3) == "locked" and cu.shop_state(0) == "can", "ソリ屋: 大の型紙はロック・米袋の型紙は買える: %s %s" % [cu.shop_state(3), cu.shop_state(0)])
 	cu.close_shop()
 	await create_timer(0.3).timeout
 	_fill_bag(true)
@@ -117,23 +131,23 @@ func _run() -> void:
 	c.wallets[who] = 100
 	main.sled_book_ui.open()
 	await _shot("book_states.jpg")
-	_ok(main.sled_book_ui.stitch_state("garden") == "locked" and main.sled_book_ui.stitch_state("feather") == "money", "見本帳: 花の蔓は包み・フェザーはグレー")
+	_ok(main.sled_book_ui.stitch_state("garden") == "locked" and main.sled_book_ui.stitch_state("feather") == "money", "見本帳: 花の蔓はロック・フェザーは足りない")
 	main.sled_book_ui.pick_stitch("feather")
-	_ok(main.sled_book_ui._stitch != "feather", "見本帳: グレーの柄は選べない")
+	_ok(main.sled_book_ui._stitch != "feather", "見本帳: 足りない柄は選べない")
 	main.sled_book_ui.close()
 	await create_timer(0.3).timeout
 	# ---- 紙細工屋さん・山師の連れ
 	c.wallets[who] = 150
 	main.paper_shop_ui.open("head")
 	await _shot("paper_states.jpg")
-	main.paper_shop_ui.set_tab(0)   # 提灯の形（解放の品の小包と、開いた包み紙）
+	main.paper_shop_ui.set_tab(0)   # 提灯の形（値段・チェック・提げている形の赤い糸の縁）
 	await _shot("paper_lantern_states.jpg")
 	main.paper_shop_ui.close()
 	await create_timer(0.3).timeout
 	main.minion_ui.open("pet")
 	await _shot("pet_states.jpg")
 	var last: int = Pals.keys_of("pet").size() - 1
-	_ok(main.minion_ui.card_state(last) == "locked" and not main.minion_ui.choose(last), "連れ: ロックのミニオンは包みで、押しても買えない")
+	_ok(main.minion_ui.card_state(last) == "locked" and not main.minion_ui.choose(last), "連れ: ロックのミニオンは南京錠で、押しても買えない")
 	main.minion_ui.close()
 	await create_timer(0.3).timeout
 	# ---- 雪だるまの店
