@@ -6,11 +6,13 @@ extends Node3D
 ## 揺らぎは小さくゆっくり（±3% ほど、数秒の周期）。画面全体の明るさがちらつかないように、点け消しもふわっと変える。
 ## 影は落とさない: 腰の灯りは体の影で半分欠け、何人も持つと影の描画が重い。遠いランタンの灯りは消す（光る紙は見える）。
 ## 消す距離は、見ているカメラの寄り具合で延ばす（双眼鏡で寄ると、遠くの人のランタンの灯りも見える。2026-11-09 代表「ランタンの明かりは描写してほしい」）。
-## 見た目だけ。通信には乗せない（誰が点けたかは craft.gd の lamp の出来事、どの形かは equip・lantern_buy の出来事）。
+## 見た目だけ。通信には乗せない（誰が点けたかは craft.gd の lamp の出来事、どの形かは equip・lantern_buy の出来事、色は lantern_dye の出来事）。
 ##
 ## 形違い（2026-11-01 代表「ランタンのバリエーションも増やして売って欲しい」。絵 design/lantern-variety/01-sheet.jpg の L1〜L10）。
 ## 木の手提げと和紙の提灯ははじめから持つ。ほかの 8 つは、1 階のテントの紙細工屋さん（paper_lady.gd・paper_shop_ui.gd）で売る。
 ## 形ごとに、光の色（灯りと光る紙）と揺らぎ方（STYLE）が違う。値段は木のボタンの何個分。標準は素朴で丈夫、凝ったものほど高い
+## 色替え（2026-11-10）: 紙細工屋さんで、光の色をキャラの色のパレット（craft.gd の COLORS）の色に染められる（craft.gd の lantern_dye）。
+## 染めた色は、色合いと鮮やかさをそのまま、明るさだけ灯りの明るさにそろえる（暗い色を選んでも暗い灯りにならない。tint）。人形の lantern_color
 
 const Props := preload("res://props.gd")
 ## 形の名前 → {price 値段（0 ははじめから）, color 灯りの色, glow 光る紙の色, style 揺らぎ方, energy 灯りの強さの倍率}
@@ -46,6 +48,7 @@ var doll: Node3D
 var _anchor: Node3D            # 帯の所（腰の骨に付ける）
 var _body: Node3D              # 形（glb）
 var _look := ""
+var _hex := ""                 # 染めた色（"" は形のもとの色）
 var _papers: Array[MeshInstance3D] = []
 var _paper_on: Material
 var _light: OmniLight3D
@@ -70,6 +73,16 @@ static func price(look: String) -> int:
 	return int(LOOK[look].price) if LOOK.has(look) else -1
 
 
+## 形 look を色 hex（"rrggbb"。"" は形のもとの色）に染めた光の色。glow なら光る紙の色、でなければ灯りの色。
+## 色合い・鮮やかさは選んだ色、明るさは灯りの明るさ。光る紙は光って白に飛びやすいので、鮮やかさを少し足す
+static func tint(look: String, hex: String, glow := false) -> Color:
+	var L: Dictionary = LOOK.get(look, LOOK["box"])
+	if hex == "" or not hex.is_valid_html_color():
+		return L.glow if glow else L.color
+	var c := Color(hex)
+	return Color.from_hsv(c.h, minf(1.0, c.s * (1.25 if glow else 1.0)), 1.0)
+
+
 ## 揺らぎ: 灯りの強さの倍率（1 のまわり）。t は秒、seed は灯りごとのずらし
 static func flicker(style: String, t: float, seed: float) -> float:
 	match style:
@@ -89,32 +102,33 @@ static func flicker(style: String, t: float, seed: float) -> float:
 	return 1.0 + 0.02 * sin(t * 0.9 + seed) + 0.012 * sin(t * 2.1 + seed * 1.7)
 
 
-## 形 look の光る紙を、形の色に染めた点いた素材にする（読んだ glb の素材を写して使う。素材は形ごとに 1 つ）
+## 形 look の光る紙を、形の色（染めていれば色 hex）に染めた点いた素材にする（読んだ glb の素材を写して使う。素材は形と色ごとに 1 つ）
 static var _glow_mats := {}
 
-static func glow_material(look: String, src: Material) -> StandardMaterial3D:
-	if _glow_mats.has(look):
-		return _glow_mats[look]
+static func glow_material(look: String, src: Material, hex := "") -> StandardMaterial3D:
+	var key := look + ":" + hex
+	if _glow_mats.has(key):
+		return _glow_mats[key]
 	var m := (src.duplicate() if src else StandardMaterial3D.new()) as StandardMaterial3D
 	if m == null:
 		return null
-	var c: Color = LOOK.get(look, LOOK["box"]).glow
+	var c := tint(look, hex, true)
 	m.emission_enabled = true
 	m.emission = c
 	m.albedo_color = Color(1, 1, 1).lerp(c, 0.35)
-	_glow_mats[look] = m
+	_glow_mats[key] = m
 	return m
 
 
-## 形 look の体を作り、光る紙を形の色に染める（灯りは付けない）。光る紙の部品の配列を返す [体, 光る紙の配列]
-static func make_body(look: String) -> Array:
+## 形 look の体を作り、光る紙を形の色（染めていれば色 hex）に染める（灯りは付けない）。光る紙の部品の配列を返す [体, 光る紙の配列]
+static func make_body(look: String, hex := "") -> Array:
 	var body := Props.make(model(look))
 	var papers: Array[MeshInstance3D] = []
 	for mi in body.find_children("*", "MeshInstance3D", true, false):
 		var m := mi as MeshInstance3D
 		if String(m.name).ends_with("_paper"):   # 光る紙の組（prop_<形>_paper。和紙の提灯の形の名前にも paper が入るので、末尾で見る）
 			papers.append(m)
-			var g := glow_material(look, m.get_surface_override_material(0))
+			var g := glow_material(look, m.get_surface_override_material(0), hex)
 			if g:
 				m.set_surface_override_material(0, g)
 	var mark := body.find_child("light*", true, false) as Node3D
@@ -151,9 +165,10 @@ func setup(skel: Skeleton3D, hips_rest: Transform3D, kind: String, scale_k: floa
 	add_child(_light)
 
 
-## 形を替える（"" で外す）
-func _set_look(look: String) -> void:
+## 形を替える（"" で外す）。hex は染めた色
+func _set_look(look: String, hex := "") -> void:
 	_look = look
+	_hex = hex
 	if _body:
 		_body.queue_free()
 		_body = null
@@ -161,11 +176,11 @@ func _set_look(look: String) -> void:
 	visible = look != ""
 	if look == "":
 		return
-	var made := make_body(look)
+	var made := make_body(look, hex)
 	_body = made[0]
 	add_child(_body)
 	_style = String(LOOK.get(look, LOOK["box"]).style)
-	_light.light_color = LOOK.get(look, LOOK["box"]).color
+	_light.light_color = tint(look, hex)
 	var mark := _body.find_child("light*", true, false) as Node3D
 	if mark:
 		_core = (global_transform.affine_inverse() * mark.global_transform).origin
@@ -218,8 +233,9 @@ func step(speed: float, phase: float, accel: Vector2, riding: bool) -> void:
 ## 人形が毎物理フレーム呼ぶ: 帯を追い、灯りの強さを変える
 func follow(dt: float, yaw: float) -> void:
 	var want: String = doll.get("lantern")
-	if want != _look:
-		_set_look(want)
+	var hex: String = doll.get("lantern_color")
+	if want != _look or hex != _hex:
+		_set_look(want, hex)
 	var lit: bool = doll.get("lantern_lit") and _look != ""
 	_level = move_toward(_level, 1.0 if lit else 0.0, dt / FADE)
 	_t += dt

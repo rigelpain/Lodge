@@ -34,11 +34,17 @@ extends Node
 ##                             色に払うんじゃなくて染色代として払う」）。染めた色は人形ごとに残る（ほかの人形に着替えて戻っても同じ色）
 ##   outfit    {doll, colors}  保存してある染めた色を戻す（起動したとき。値はここでは取らない）
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
-##                             ランタンは index -1 で外す（外すと消える）
+##                             ランタンは index -1 で外す（外すと消える）。ランタンは index の代わりに look（形。"" は外す）でもよい:
+##                             番号は受けた画面で引く（保存から戻すとき。つなぐ側では lantern_own がまだホストで起きていないので、番号を先に引けない）。
+##                             持っていない形なら断る（はじめの標準のまま）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
 ##   lantern_buy {look}        1 階のテントの紙細工屋さん（paper_lady.gd）で、形違いのランタン（lantern.gd の LOOK）を買う。
 ##                             買ったらすぐ帯に提げる（ev に index が入る）。通信ではほかの人の画面でも、その人のランタンが替わる
 ##   lantern_own {look}        持っているランタンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
+##   lantern_dye {look, color} 紙細工屋さんで、持っているランタン look の灯りと光る紙を、キャラの色のパレット（COLORS。山をめぐる仲間の服と同じ）の
+##                             色 color（"rrggbb"）に染める。"" は形のもとの色に戻す（ただ）。染め代は LANTERN_DYE_PRICE。色はランタンごとに残る
+##                             （2026-11-10 代表「CPUのランタンの色変わってるけどプレイヤーもできる？なかったら紙細工師さんで色変え売って欲しい」）
+##   lantern_dye_own {look, color}  保存してある染めた色を戻す（起動したとき。値は取らない）
 ##   gloves_own {grade}        持っている雪玉ころがしの手袋を戻す（保存から。値は取らない）。手袋は山師の棚の buy（{kind: "gloves" | "gloves_felt" | "gloves_leather"}。gloves.gd）で買う。
 ##                             持ち物の場所は使わず、装備の枠に入ってすぐはまる（ev.slot は -1、ev.index に装備の番号）。equip の gear "gloves"（index -1 で外す）で替える
 ##   pal_buy   {key}           頭・肩の小物（1 階のテントの紙細工屋さん paper_lady.gd）かミニオン（1 階の山師）を買う（pals.gd）。買ったらすぐ身につける（ev に slot が入る）
@@ -105,6 +111,8 @@ const BallStitches := preload("res://ball_stitches.gd")
 ## 1 回に染める部位の数ごとの染め代（0〜4 部位）。部位が多いほど高く、まとめて染めると 1 部位ぶんずつは少し安い
 ## （2026-11-03 代表「部位数ごとに値段を上げてほしい」）
 const DYE_PRICES := [0, 15, 25, 33, 40]
+## ランタンの色替えの代: 光る紙は 1 部位ぶん（米袋・小のソリの染めと同じ）
+const LANTERN_DYE_PRICE := 15
 const PATTERNS := ["sack", "small", "mid", "large"]
 ## 大きすぎて、そのまま出すと動かしにくいソリ（ミシンが中にあった頃は運び出せなかった。ミシンは外の下屋へ移したが、届け方は変えていない）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
@@ -348,6 +356,20 @@ func lantern(who: int) -> Dictionary:
 	var list: Array = lanterns.get(who, [])
 	var i := int(lantern_sel.get(who, -1))
 	return list[i] if i >= 0 and i < list.size() else {}
+
+
+## ランタンの色替えに選べる色（COLORS を "rrggbb" に。並びも COLORS のまま）
+static func lantern_palette() -> Array:
+	var out := []
+	for c in COLORS:
+		out.append((c as Color).to_html(false))
+	return out
+
+
+## 持っているランタン look の染めた色（"rrggbb"。染めていなければ ""）
+func lantern_color(who: int, look: String) -> String:
+	var i := lantern_index(who, look)
+	return String(lanterns[who][i].get("color", "")) if i >= 0 else ""
 
 
 ## 持っているランタンの中の、形 look の番号（持っていなければ -1）
@@ -1046,7 +1068,12 @@ func _apply(ev: Dictionary) -> bool:
 			colors[who] = int(ev.color)
 		"equip":
 			var list := gear_list(who, String(ev.get("gear", "")))
-			var i := int(ev.index)
+			if ev.get("gear", "") == "lantern" and ev.has("look"):   # 形で提げる（保存から戻すとき）。持っていない形は断る
+				var lk := String(ev.look)
+				ev["index"] = -1 if lk == "" else lantern_index(who, lk)
+				if lk != "" and int(ev.index) < 0:
+					return false
+			var i := int(ev.get("index", -1))
 			if i >= list.size() or i < (-1 if ev.gear in ["lantern", "gloves"] else 0):
 				return false
 			match ev.gear:
@@ -1127,6 +1154,24 @@ func _apply(ev: Dictionary) -> bool:
 				return false
 			if lantern_index(who, look) < 0:
 				lanterns[who].append({"look": look})
+		"lantern_dye", "lantern_dye_own":
+			var look := String(ev.get("look", ""))
+			var hex := String(ev.get("color", "")).trim_prefix("#").to_lower()
+			var i := lantern_index(who, look)
+			if i < 0 or (hex != "" and not hex in lantern_palette()) or hex == lantern_color(who, look):
+				return false   # 持っていない・パレットにない色・変わらない
+			var cost := 0 if hex == "" or ev.kind == "lantern_dye_own" else LANTERN_DYE_PRICE
+			if wallets[who] < cost:
+				return false
+			wallets[who] -= cost
+			ev["price"] = cost
+			ev["color"] = hex
+			var it: Dictionary = lanterns[who][i].duplicate()
+			if hex == "":
+				it.erase("color")
+			else:
+				it["color"] = hex
+			lanterns[who][i] = it
 		"fire_lay":
 			var b: Array = bags[who]
 			var i := int(ev.get("slot", -1))

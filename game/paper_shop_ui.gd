@@ -8,6 +8,10 @@ extends CanvasLayer
 ##   ボタンが足りないと札が震える。板の下のまんなかに財布（持っているボタン）。
 ##   A/D（←/→）で札を選び、W/S（↑/↓）で段を替え、Enter か Space で押したのと同じ。閉じるのは右上の × の縫い目か、F か Esc
 ## 買う・つけるは craft.gd の出来事 lantern_buy・equip（提灯）と pal_buy・pal_wear（小物）。通信ではほかの人の画面でも、その人の物が替わる。
+## 提灯の段の下に、色替えの段（2026-11-10 代表「なかったら紙細工師さんで色変え売って欲しい」）: いま提げているランタンを、キャラの色のパレット
+##   （craft.gd の COLORS。山をめぐる仲間の服と同じ 12 色）の色で灯した札が 6 枚ずつ 2 段（布の見本帳の布 12 色と同じ並べ方）。札の左上に布の色。
+##   押すと染める（染め代 craft.gd の LANTERN_DYE_PRICE、lantern_dye）。いまの色の札には赤い糸の結び目。左下の丸い布は形のもとの色に戻す（ただ）。
+##   提げていなければ札は薄く、押すと震える
 ## 前は番台の横のランタン掛け（lantern_ui.gd）と 2 階の売り台（pals_ui.gd の頭・肩の段）だったものを、ここにまとめた（2026-11-02）
 
 const Lantern := preload("res://lantern.gd")
@@ -17,8 +21,10 @@ const CraftIcons := preload("res://craft_icons.gd")
 const Doll := preload("res://doll.gd")
 
 const SHOT := Vector2i(210, 240)   # 札の中の絵の大きさ (px)
-const TABS := ["lantern", "head", "shoulder"]
-const TAB_ICONS := ["lamp", "pal_head", "pal_shoulder"]
+const Craft := preload("res://craft.gd")
+const TABS := ["lantern", "lantern_dye", "head", "shoulder"]
+const TAB_ICONS := ["lamp", "dye", "pal_head", "pal_shoulder"]
+const DYE_PER_ROW := 6       # 色替えの段の札の数（1 段）。布の見本帳の布 12 色と同じ 6 × 2
 const PER_ROW := 5
 const ROWS := 2              # 板の大きさは、いちばん多い段（提灯の 10 枚）でそろえる
 
@@ -37,11 +43,14 @@ var _shots := []             # 札ごと [SubViewport, 回す節, 光る紙の�
 var _cards: Array[Rect2] = []
 var _tabs: Array[Rect2] = []
 var _close_rect := Rect2()
+var _bleach_rect := Rect2()  # 色替えの段の、もとの色に戻す丸い布
+var _hover_bleach := false
 var _pop := 0.0              # 身につけたときに札が跳ねる
 var _pop_key := ""
 var _shake := 0.0            # 足りないときに札が震える
 var _shake_i := -1
 var _frame := -1
+var _dye_look := ""          # 色替えの段の札に灯している形
 var _t := 0.0
 
 
@@ -70,8 +79,10 @@ func _ready() -> void:
 func _on_craft(ev: Dictionary) -> void:
 	if _asked <= 0 or int(ev.get("who", -1)) != _who() or player == null or not player.has_method("save_tag"):
 		return
-	if ev.kind == "lantern_buy" or (ev.kind == "equip" and ev.get("gear", "") == "lantern"):
+	if ev.kind in ["lantern_buy", "lantern_dye"] or (ev.kind == "equip" and ev.get("gear", "") == "lantern"):
 		_asked -= 1
+		if ev.kind == "lantern_dye" and TABS[tab] == "lantern_dye":   # 札の中のランタンは、もう染めた色（いまの色の印が移るだけ）
+			_view.queue_redraw()
 		player.save_tag()   # 次に起動しても同じ
 
 
@@ -80,22 +91,50 @@ func _who() -> int:
 
 
 func keys() -> Array:
-	return Lantern.LOOKS if TABS[tab] == "lantern" else Pals.keys_of(TABS[tab])
+	match TABS[tab]:
+		"lantern": return Lantern.LOOKS
+		"lantern_dye": return Craft.lantern_palette()
+	return Pals.keys_of(TABS[tab])
 
 
-## いま身につけている品物（"" はなし）
+## いま提げているランタンの形（"" は提げていない）
+func _lamp_look() -> String:
+	return String(craft.lantern(_who()).get("look", ""))
+
+
+## いま身につけている品物（"" はなし）。色替えの段では、いまのランタンの色（"" は形のもとの色）
 func _worn() -> String:
-	if TABS[tab] == "lantern":
-		return String(craft.lantern(_who()).get("look", ""))
+	match TABS[tab]:
+		"lantern": return _lamp_look()
+		"lantern_dye": return String(craft.lantern(_who()).get("color", ""))
 	return craft.pal_worn(_who(), TABS[tab])
 
 
 func _owned(key: String) -> bool:
-	return craft.lantern_index(_who(), key) >= 0 if TABS[tab] == "lantern" else craft.pal_owned(_who(), key)
+	match TABS[tab]:
+		"lantern": return craft.lantern_index(_who(), key) >= 0
+		"lantern_dye": return key == _worn()   # いまの色は払わない
+	return craft.pal_owned(_who(), key)
 
 
 func _price(key: String) -> int:
-	return Lantern.price(key) if TABS[tab] == "lantern" else Pals.price(key)
+	match TABS[tab]:
+		"lantern": return Lantern.price(key)
+		"lantern_dye": return Craft.LANTERN_DYE_PRICE
+	return Pals.price(key)
+
+
+## 色替えの段: いま提げているランタンを色 hex（"" はもとの色）に染める。提げていない・同じ色・足りないなら false
+func dye(hex: String) -> bool:
+	var look := _lamp_look()
+	var cost := 0 if hex == "" else Craft.LANTERN_DYE_PRICE
+	if look == "" or hex == _worn() or craft.wallet(_who()) < cost:   # つなぐ側の send は、断られても true を返すので、先に見る
+		return false
+	_asked += 1
+	var ok: bool = craft.send({"kind": "lantern_dye", "who": _who(), "look": look, "color": hex})
+	if not ok:
+		_asked = maxi(0, _asked - 1)
+	return ok
 
 
 func open(slot := "") -> void:
@@ -148,7 +187,9 @@ func choose(i: int) -> bool:
 	_sel = i
 	var key: String = ks[i]
 	var ok := false   # 買った音は audio.gd が出来事から一度だけ鳴らす
-	if TABS[tab] == "lantern":
+	if TABS[tab] == "lantern_dye":
+		ok = dye(key)
+	elif TABS[tab] == "lantern":
 		var have: int = craft.lantern_index(_who(), key)
 		_asked += 1   # 一人のときは send の中で出来事が起きるので、送る前に数える
 		if have >= 0:
@@ -177,8 +218,14 @@ func choose(i: int) -> bool:
 # ---------------------------------------------------------------- 札の中で回る品物
 
 func _make_shots() -> void:
-	var lantern: bool = TABS[tab] == "lantern"
-	for key in keys():
+	var lantern: bool = TABS[tab] in ["lantern", "lantern_dye"]
+	var tinting: bool = TABS[tab] == "lantern_dye"
+	_dye_look = _lamp_look()
+	for k in keys():
+		var key: String = _dye_look if tinting else k   # 色替えの段: どの札も、いま提げている形（提げていなければ標準）を札の色で灯す
+		var hex: String = k if tinting else ""
+		if tinting and key == "":
+			key = Lantern.LOOKS[0]
 		var vp := SubViewport.new()
 		vp.size = SHOT
 		vp.transparent_bg = not lantern
@@ -213,7 +260,7 @@ func _make_shots() -> void:
 		var mat: StandardMaterial3D = null
 		var inst: Node3D
 		if lantern:
-			var made := Lantern.make_body(key)
+			var made := Lantern.make_body(key, hex)
 			inst = made[0]
 			for m in made[1]:
 				if mat == null:
@@ -222,7 +269,7 @@ func _make_shots() -> void:
 				if mat:
 					(m as MeshInstance3D).set_surface_override_material(0, mat)
 			var glow := OmniLight3D.new()   # 中の灯り（形の色）
-			glow.light_color = Lantern.LOOK[key].color
+			glow.light_color = Lantern.tint(key, hex)
 			glow.light_energy = 0.9
 			glow.omni_range = 0.6
 			glow.position = Vector3(0, -0.15, 0)
@@ -267,6 +314,9 @@ func _free_shots() -> void:
 func _process(dt: float) -> void:
 	if not is_open:
 		return
+	if TABS[tab] == "lantern_dye" and _lamp_look() != _dye_look:   # 提げ替えた（ほかの画面や通信で）: 札を灯し直す
+		_free_shots()
+		_make_shots()
 	_t += dt
 	_pop = maxf(0.0, _pop - dt * 3.0)
 	_shake = maxf(0.0, _shake - dt * 2.5)
@@ -310,38 +360,58 @@ func _draw_on(ci: Control) -> void:
 		if on:
 			Icons.screen()
 			Icons.dashes(ci, Icons.rr(tr.position.x - 5 * u, tr.position.y - 5 * u, ts + 10 * u, ts + 10 * u, 15.0 * u), Icons.RED, 3.0 * u, 8.0 * u, 5.0 * u, 1.0, true)
-	# 札
+	# 札（色替えの段は、同じ幅に 6 枚ずつ）
 	_cards.clear()
 	var worn := _worn()
 	var coins: int = craft.wallet(_who())
 	var pad := 8.0 * u
 	var asp := float(SHOT.x) / SHOT.y
+	var dyeing: bool = TABS[tab] == "lantern_dye"
+	var per := DYE_PER_ROW if dyeing else PER_ROW
+	var ccw := (PER_ROW * cw - (per - PER_ROW) * gap) / per if dyeing else cw
+	var no_lamp := dyeing and _lamp_look() == ""   # 提げていなければ染められない（札は薄く）
 	for i in ks.size():
 		var key: String = ks[i]
 		var lift := sin(_pop * PI) * 18.0 * u if key == _pop_key else 0.0
 		var shake := sin(_shake * 40.0) * 8.0 * u * _shake if i == _shake_i else 0.0
-		var cr := Rect2(r.position + Vector2(left + (i % PER_ROW) * (cw + gap) + shake, 60.0 * u + (i / PER_ROW) * (ch + gap) - lift), Vector2(cw, ch))
+		var cr := Rect2(r.position + Vector2(left + (i % per) * (ccw + gap) + shake, 60.0 * u + (i / per) * (ch + gap) - lift), Vector2(ccw, ch))
 		_cards.append(Rect2(cr.position + Vector2(0, lift), cr.size))
 		var owned := _owned(key)
 		var price := _price(key)
 		Icons.paper_tag(ci, cr, 14.0 * u, u)
-		var ih := minf(ch - pad * 2.0 - 30.0 * u, (cw - pad * 2.0) / asp)
+		var ih := minf(ch - pad * 2.0 - 30.0 * u, (ccw - pad * 2.0) / asp)
 		var iw := ih * asp
 		if i < _shots.size():
 			var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture()
-			ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((cw - iw) / 2.0, 12.0 * u), Vector2(iw, ih)), false, Color(1, 1, 1, 1.0 if owned or price <= coins else 0.6))
-		if not owned:   # 値段（足りなければ薄く）
-			CraftIcons.price(ci, cr.position + Vector2(cw / 2.0, ch - 20.0 * u), price, 9.0 * u, 1.0 if price <= coins else 0.45)
+			ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((ccw - iw) / 2.0, 12.0 * u), Vector2(iw, ih)), false, Color(1, 1, 1, 0.4 if no_lamp else (1.0 if owned or price <= coins else 0.6)))
+		if dyeing:   # 札の左上に、パレットの布の色（灯りは明るくそろえるので、元の色を見せる）
+			var sw := Icons.circ(cr.position + Vector2(20.0, 22.0) * u, 12.0 * u, 16)
+			Icons.screen()
+			Icons.patch(ci, sw, Color(key), 0.45 if no_lamp else 1.0, true, Color(key).darkened(0.4))
+		if not owned and not no_lamp:   # 値段（足りなければ薄く）
+			CraftIcons.price(ci, cr.position + Vector2(ccw / 2.0, ch - 20.0 * u), price, 9.0 * u, 1.0 if price <= coins else 0.45)
 		if i == _sel or i == _hover:
 			var rim := Icons.rr(cr.position.x - 6.0 * u, cr.position.y - 6.0 * u, cr.size.x + 12.0 * u, cr.size.y + 12.0 * u, 10.0 * u)
 			Icons.screen()
 			Icons.dashes(ci, rim, Icons.RED, 3.0 * u, 9.0 * u, 5.0 * u, 1.0 if i == _sel else 0.4, true)
-		if key == worn:   # いま身につけている: 札の上の赤い糸の結び目（あなたの印）
-			var c := cr.position + Vector2(cw / 2.0, -2.0 * u)
+		if key == worn and not no_lamp:   # いま身につけている: 札の上の赤い糸の結び目（あなたの印）
+			var c := cr.position + Vector2(ccw / 2.0, -2.0 * u)
 			ci.draw_circle(c, 9.0 * u, Icons.RED)
 			ci.draw_arc(c, 9.0 * u, 0, TAU, 18, Icons.RED.darkened(0.4), 1.6 * u, true)
 			for s in [-1.0, 1.0]:
 				ci.draw_line(c + Vector2(s * 6.0, 4.0) * u, c + Vector2(s * 14.0, 20.0) * u, Icons.RED, 3.0 * u, true)
+	# 色替えの段の左下: 形のもとの色に戻す丸い布（ただ。布の見本帳の脱色と同じ）。もとの色なら赤い破線
+	_bleach_rect = Rect2()
+	if dyeing:
+		var bc := Vector2(r.position.x + left + 40.0 * u, r.end.y - 50.0 * u)
+		var br := 34.0 * u * (1.08 if _hover_bleach else 1.0)
+		_bleach_rect = Rect2(bc - Vector2(br, br), Vector2(br, br) * 2.0)
+		var base := Lantern.tint(_lamp_look() if not no_lamp else Lantern.LOOKS[0], "", true)
+		Icons.screen()
+		Icons.patch(ci, Icons.circ(bc, br, 24), base, 0.45 if no_lamp else 1.0, true, Icons.PAPER_EDGE)
+		if worn == "" and not no_lamp:
+			Icons.screen()
+			Icons.dashes(ci, Icons.circ(bc, br + 6.0 * u, 24), Icons.RED, 3.0 * u, 8.0 * u, 5.0 * u, 1.0, true)
 	# 下のまんなか: 財布（持っているボタン）
 	Icons.screen()
 	var py := r.end.y - 50.0 * u
@@ -406,6 +476,7 @@ func _input(e: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 	elif e is InputEventMouseMotion:
 		_hover = _hit(e.position)
+		_hover_bleach = _bleach_rect.has_point(e.position)
 		_hover_tab = _hit_tab(e.position)
 		_hover_close = _close_rect.has_point(e.position)
 	elif e is InputEventMouseButton and e.pressed and e.button_index == MOUSE_BUTTON_LEFT:
@@ -414,6 +485,13 @@ func _input(e: InputEvent) -> void:
 			close()
 		elif _hit_tab(e.position) >= 0:
 			set_tab(_hit_tab(e.position))
+		elif _bleach_rect.has_point(e.position):
+			if dye(""):
+				_pop = 1.0
+				_pop_key = ""
+			else:
+				_shake = 1.0
+				_shake_i = -1
 		else:
 			var i := _hit(e.position)
 			if i >= 0:

@@ -106,6 +106,7 @@ var belt_sack := false       # 帯に丸めた米袋を下げている（持ち�
 var belt_color := Color("B8402E")
 var lantern := ""            # 帯の左に提げたランタンの形（lantern.gd の LOOKS。"" は提げていない。持ち主が毎フレーム入れる）
 var lantern_lit := false     # ランタンが点いている（持ち主が毎フレーム入れる）
+var lantern_color := ""      # ランタンの染めた色（"rrggbb"。"" は形のもとの色。持ち主が毎フレーム入れる。craft.gd の lantern_dye）
 var _lantern: Node3D         # lantern.gd
 var _lantern_v := Vector3.ZERO   # 前のコマの速さ（世界）。ランタンが振られる向きに
 var _vel := Vector3.ZERO

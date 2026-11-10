@@ -230,19 +230,19 @@ static func rice_sack(ci: CanvasItem, c: Vector2, sc: float, body := KRAFT, band
 
 
 ## ランタンの絵（帯のランタン）。look は lantern.gd の LOOKS（box 木の手提げ / paper 提灯 / 売り物の 8 つ）。lit なら芯が光り、
-## まわりに形の色の光の輪。outline なら提げていない（破線の形）
-static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit := true, a := 1.0, outline := false) -> void:
+## まわりに形の色の光の輪。outline なら提げていない（破線の形）。hex は紙細工屋さんで染めた色（"" は形の色。lantern.gd の tint）
+static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit := true, a := 1.0, outline := false, hex := "") -> void:
 	var o := Icons._o + c * Icons._s
 	var k := sc * Icons._s
 	if outline:
 		Icons.dashes(ci, Icons.xf(Icons.rr(-13, -16, 26, 34, 4), 0.0, c, sc), Icons.PAPER_EDGE, 1.4, 3.0, 2.0, a, true)
 		return
-	var L: Dictionary = preload("res://lantern.gd").LOOK.get(look, preload("res://lantern.gd").LOOK["box"])
+	var Lt := preload("res://lantern.gd")
 	if lit:   # 光の輪（重ねた薄い円）
-		var lc: Color = L.color
+		var lc: Color = Lt.tint(look, hex)
 		for i in 4:
 			ci.draw_circle(o + Vector2(0, 2) * k, (30.0 - i * 6.0) * k, Color(lc.r, lc.g * 1.08, lc.b * 0.95, 0.16 * a))
-	var glow := (L.glow as Color).lerp(Color.WHITE, 0.35) if lit else Color(0.62, 0.60, 0.58)
+	var glow := Lt.tint(look, hex, true).lerp(Color.WHITE, 0.35) if lit else Color(0.62, 0.60, 0.58)
 	if look in ["spool", "knit", "hoop", "yarnball", "thimble", "hotaru", "pearl"]:
 		_lantern_ware(ci, c, sc, look, glow, lit, a)
 		return
@@ -270,6 +270,8 @@ static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit :=
 	var film := Color(1.0, 0.78, 0.42, 0.75) if lit else Color(0.36, 0.40, 0.50, 0.75)
 	if lit and raden:
 		film = Color(1.0, 0.62, 0.26, 0.8)
+	if lit and hex != "":   # 染めた灯り
+		film = Color(Lt.tint(look, hex, true), 0.75)
 	Icons.patch(ci, Icons.xf(Icons.rr(-11, -12, 22, 26, 1), 0.0, c, sc), film, a, false)   # フィルムの窓
 	Icons.patch(ci, Icons.xf(Icons.ell(Vector2(0, 3), 5, 7, 14), 0.0, c, sc), glow, a, false)   # 和紙で包んだ芯
 	Icons.dashes(ci, Icons.xf(Icons.rr(-9, -10, 18, 22, 1), 0.0, c, sc), gold if raden else Color(1, 1, 1, 0.9), 0.9, 2.2, 1.6, a, true)   # 白い糸の枠
