@@ -101,6 +101,7 @@ const FABRIC_PRICE := 10
 const Peg := preload("res://peg.gd")
 const Stitches := preload("res://stitches.gd")
 const BallStitches := preload("res://ball_stitches.gd")
+const ShopLocks := preload("res://shop_locks.gd")
 ## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
 ## 1 回に染める部位の数ごとの染め代（0〜4 部位）。部位が多いほど高く、まとめて染めると 1 部位ぶんずつは少し安い
 ## （2026-11-03 代表「部位数ごとに値段を上げてほしい」）
@@ -620,12 +621,13 @@ func _apply(ev: Dictionary) -> bool:
 	var who: int = ev.get("who", -1)
 	if not wallets.has(who) and ev.kind != "sewn":
 		return false
+	var lock_key := ShopLocks.key_of(ev)
+	if lock_key != "" and ShopLocks.locked(lock_key):
+		return false   # まだ売っていない品（麻ひもの包み。shop_locks.gd）
 	match ev.kind:
 		"buy":
 			var item: Dictionary = ev.item
 			var cost := price(item)
-			if MountainGoods.has(item.get("kind", "")) and not MountainGoods.sold(item.kind):
-				return false   # 山男の棚で、まだ売っていない品目
 			if Gloves.is_gloves(String(item.get("kind", ""))):   # 雪玉ころがしの手袋は装備: 持ち物の場所は使わず、すぐはめる。同じ段は 1 つ
 				var g := String(item.kind)
 				if wallets[who] < cost or gloves_index(who, g) >= 0:

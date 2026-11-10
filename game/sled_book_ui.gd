@@ -5,7 +5,8 @@ extends CanvasLayer
 ##     上の列: 替えるソリ（自分がオーナーのソリ。米袋・雪の上・畳んで持っている・立てかけ台）。乗っている・つかまれている・動いているソリは薄く、選べない
 ##     中: 選んだ色で回るソリと、色の輪・明るさの帯（dye_ui.gd と同じ color_wheel.gd。自由な色）
 ##     下: 布 12 色、元の色に戻す丸い布（ただ。戻す矢印）、染める札（桶の絵と、払うボタン）
-##   右の面: 縫い目 24 柄。選んだ色の糸で描く。持っている柄は針の印、買える柄はボタンの値段、買えない柄は薄く
+##   右の面: 縫い目 24 柄。選んだ色の糸で描く。持っている柄は針の印、買える柄はボタンの値段。買える・買えないの見え方はどの店も同じ
+##     （craft_icons.gd の card_state。2026-11-10 代表）: ボタンが足りない柄はグレーで選べない、まだ売っていない柄は麻ひもの包み
 ##   閉じるのは右上の × の縫い目か、F か Esc。Tab でソリを替え、←→ で色合い、↑↓ で明るさ、Q・E で縫い目、Backspace で元の色、Enter で染める
 ## 確かめは craft.gd の出来事 sled_dye・stitch_buy・sled_stitch（持ち主だけ・ホストが判定）
 
@@ -251,13 +252,23 @@ func _set_from_hsv() -> void:
 
 
 func pick_stitch(nm: String) -> void:
-	if Stitches.has(nm):
+	if Stitches.has(nm) and CraftIcons.pickable(stitch_state(nm)):   # ボタンが足りない・ロックの柄は選べない
 		_stitch = nm
+
+
+## 柄 nm の札のようす（craft_icons.gd の card_state。どの店も同じ見え方。2026-11-10 代表）
+func stitch_state(nm: String) -> String:
+	return CraftIcons.card_state(preload("res://shop_locks.gd").locked("stitch:" + nm), _stitch_owned(nm), Stitches.price(nm) <= _coins())
 
 
 func _step_stitch(d: int) -> void:
 	var names: Array = Stitches.standard() + Stitches.for_sale()
-	pick_stitch(names[posmod(names.find(_stitch) + d, names.size())])
+	var at := names.find(_stitch)
+	for k in names.size():   # 選べない柄は飛ばす
+		at = posmod(at + d, names.size())
+		if CraftIcons.pickable(stitch_state(names[at])):
+			pick_stitch(names[at])
+			return
 
 
 ## 決める: 買っていない柄を買い、柄を替え、色を染める（ホストが順に確かめる）
@@ -528,29 +539,32 @@ func _draw_apply(ci: Control, r: Rect2, k: float) -> void:
 func _draw_stitches(ci: Control, o: Vector2, k: float) -> void:
 	var names: Array = Stitches.standard() + Stitches.for_sale()
 	var col := picked_color()
-	var coins := _coins()
 	var cur := String(_target()[2]) if not _target().is_empty() else ""
 	for i in names.size():
 		var nm: String = names[i]
 		var r := Rect2(o + Vector2(778 + (i % 6) * 112.0, 54 + (i / 6) * 190.0) * k, Vector2(104, 178) * k)
 		var owned := _stitch_owned(nm)
 		var price: int = Stitches.price(nm)
-		var can := owned or price <= coins
-		var a := 1.0 if can else 0.35
-		if _hover == "stitch%d" % i:
+		var st := stitch_state(nm)
+		if _hover == "stitch%d" % i and CraftIcons.pickable(st):
 			r.position.y -= 3.0 * k
 		_rects["stitch%d" % i] = r
+		if st == "locked":   # まだ売っていない: 麻ひもの包み（どの店も同じ。craft_icons.gd）
+			CraftIcons.wrap_card(ci, r, k)
+			continue
 		Icons.screen()
-		Icons.patch(ci, Icons.rr(r.position.x, r.position.y, r.size.x, r.size.y, 9.0 * k), Icons.CAP, 1.0 if can else 0.55, true, Icons.PAPER_EDGE)
+		Icons.patch(ci, Icons.rr(r.position.x, r.position.y, r.size.x, r.size.y, 9.0 * k), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
 		var snow := Rect2(r.position + Vector2(5, 5) * k, Vector2(r.size.x - 10.0 * k, r.size.y - 50.0 * k))
-		ci.draw_rect(snow, Color(0.82, 0.86, 0.94, a))
-		Stitches.draw_swatch(ci, nm, snow, col, a)
+		ci.draw_rect(snow, Color(0.82, 0.86, 0.94))
+		Stitches.draw_swatch(ci, nm, snow, col)
 		var foot := r.position + Vector2(r.size.x / 2.0, r.size.y - 22.0 * k)
 		if owned:   # 持っている柄: 針の印
 			Icons.screen()
 			Icons.icon(ci, "needle", foot, 30.0 * k, 1.0)
-		else:   # 買える柄は値段がはっきり、買えない柄は薄い
-			CraftIcons.price(ci, foot, price, 7.5 * k, a)
+		else:
+			CraftIcons.price(ci, foot, price, 7.5 * k)
+		if st == "money":   # ボタンが足りない: グレー（選べない）
+			CraftIcons.shade_card(ci, Icons.rr(r.position.x, r.position.y, r.size.x, r.size.y, 9.0 * k))
 		if nm == cur:   # いまそのソリの柄: 藍の糸の縁
 			Icons.screen()
 			Icons.dashes(ci, Icons.rr(r.position.x + 2 * k, r.position.y + 2 * k, r.size.x - 4 * k, r.size.y - 4 * k, 8.0 * k), Icons.THREAD, 2.0 * k, 5.0 * k, 3.0 * k, 0.9, true)

@@ -631,3 +631,92 @@ static func _dryer_door(ci: CanvasItem, c: Vector2, a: float, tint: Color, spin:
 		Icons.doll(ci, c + Vector2(20, 22), tint, "stand", a, 0.62)
 		Icons.arrow(ci, c + Vector2(2, -2), c + Vector2(30, -8), Icons.THREAD, a, 2.4)
 
+
+
+# ---- 店の札の、買える・買えないの見え方（2026-11-10 代表「単純にグレーにして選択不可にするだけでいいんだけど」
+#      「LOCKしてるのを麻紐のつつみにして、でも荷物がパンパンなときは…画面全体をグレーにして荷物がパンパンですよって巾着からモノ溢れてるアイコンにする」）。
+#      どの店の画面も、札の中身を描いたあとでこれを呼ぶ（山師・ソリ屋・見本帳・紙細工屋さん・連れ・雪だるまの店）。
+#      札のようす（card_state）: "can" 買える・"money" お金（雪玉）が足りない（グレー、選べない）・"owned" もう持っている（今のまま、針の印）・
+#      "locked" まだ売っていない（麻ひもの包み、選べない。shop_locks.gd）・"full" 持ち物がいっぱい（札ごとではなく、画面全体をグレーにしてあふれる巾着）
+
+const SHADE := Color(0.46, 0.46, 0.49, 0.66)   # 買えない札にかぶせるグレー
+const HEMP := Color(0.78, 0.66, 0.46)          # 麻ひも
+const WRAP := Color(0.80, 0.68, 0.48)          # 包みのクラフト紙
+const BAG := Color(0.30, 0.48, 0.33)           # かばんの巾着（装備の画面のかばんと同じ緑のフェルト）
+
+
+## 札のようす。locked（ロック）・owned（もう持っている）・pay（払える）・room（持ち物に入る。場所を使わない品は true）の順に見る
+static func card_state(locked: bool, owned: bool, pay: bool, room := true) -> String:
+	if locked:
+		return "locked"
+	if owned:
+		return "owned"
+	if not room:
+		return "full"
+	return "can" if pay else "money"
+
+
+## 選べる札か（買える・もう持っている）
+static func pickable(state: String) -> bool:
+	return state == "can" or state == "owned"
+
+
+## お金が足りない札: 札の形 pts の上に、グレーをかぶせる（中の絵も値段もグレーに沈む）
+static func shade_card(ci: CanvasItem, pts: PackedVector2Array) -> void:
+	ci.draw_colored_polygon(pts, SHADE)
+
+
+## まだ売っていない札: 札をクラフト紙で包み、麻ひもで十字に縛って蝶結び（中は見えない）。u は画面の倍率
+static func wrap_card(ci: CanvasItem, card: Rect2, u := 1.0) -> void:
+	Icons.screen()
+	Icons.patch(ci, Icons.rr(card.position.x, card.position.y, card.size.x, card.size.y, 12.0 * u), WRAP, 1.0, true, WRAP.darkened(0.3))
+	var c := card.get_center() + Vector2(0, -card.size.y * 0.06)
+	for k in 3:   # 包みの折り目
+		var x := card.position.x + card.size.x * (0.22 + 0.28 * k)
+		Icons.thread(ci, PackedVector2Array([Vector2(x, card.position.y + 8.0 * u), Vector2(x + card.size.x * 0.08, card.end.y - 8.0 * u)]), WRAP.darkened(0.12), 1.4 * u, 0.6)
+	var hw := maxf(4.0 * u, card.size.x * 0.04)
+	Icons.thread(ci, PackedVector2Array([Vector2(card.position.x + 4.0 * u, c.y), Vector2(card.end.x - 4.0 * u, c.y)]), HEMP, hw, 1.0)
+	Icons.thread(ci, PackedVector2Array([Vector2(c.x, card.position.y + 4.0 * u), Vector2(c.x, card.end.y - 4.0 * u)]), HEMP, hw, 1.0)
+	var b := minf(card.size.x, card.size.y) * 0.1
+	for s in [-1.0, 1.0]:   # 蝶結び
+		Icons.patch(ci, Icons.ell(c + Vector2(s * b * 1.1, -b * 0.35), b, b * 0.6, 14), HEMP, 1.0, false)
+		Icons.thread(ci, PackedVector2Array([c, c + Vector2(s * b * 0.8, b * 1.6)]), HEMP.darkened(0.1), hw * 0.8, 1.0)
+	Icons.patch(ci, Icons.circ(c, b * 0.45, 10), HEMP.darkened(0.15), 1.0, false)
+
+
+## 持ち物がいっぱい: 売り場の板 board の全体をグレーにし、巾着から物があふれる印を大きく出す。
+## 印は、at を渡せばそこに大きさ size で（グレーの上に残す札と重ならない所）、渡さなければ板のまんなかに
+static func bag_full(ci: CanvasItem, board: Rect2, u := 1.0, at := Vector2.INF, size := 0.0) -> void:
+	Icons.screen()
+	ci.draw_colored_polygon(Icons.rr(board.position.x, board.position.y, board.size.x, board.size.y, 22.0 * u), SHADE)
+	var s := size / 1.24 if size > 0.0 else minf(board.size.x, board.size.y) * 0.42
+	var c := at if at != Vector2.INF else board.get_center()
+	Icons.patch(ci, Icons.circ(c, s * 0.62, 36), Icons.CAP, 0.96, true, Icons.PAPER_EDGE)
+	full_bag(ci, c + Vector2(0, s * 0.06), s * 0.9)
+
+
+## 巾着から物があふれる印（大きさ s。まんなかが c）: 口の閉まらない緑の巾着の口から、型紙・布・ペレットがこぼれ出る
+static func full_bag(ci: CanvasItem, c: Vector2, s: float) -> void:
+	Icons.screen()
+	# あふれた物（巾着のうしろと口の上）
+	item(ci, {"kind": "pattern", "sled": "mid"}, c + Vector2(-s * 0.26, -s * 0.34), s * 0.42)
+	item(ci, {"kind": "fabric", "fabric": "red"}, c + Vector2(s * 0.24, -s * 0.38), s * 0.4)
+	Icons.screen()
+	Icons.patch(ci, Icons.circ(c + Vector2(s * 0.02, -s * 0.5), s * 0.09, 12), Icons.PAPER, 1.0, true, Icons.PAPER_EDGE)   # 転がり出た雪玉
+	# 巾着: ふくらんで、口の紐がゆるみ、口が開いたまま
+	Icons.patch(ci, Icons.ell(c + Vector2(0, s * 0.1), s * 0.4, s * 0.34, 22), BAG, 1.0, true, BAG.darkened(0.35))
+	Icons.patch(ci, Icons.ell(c - Vector2(0, s * 0.18), s * 0.3, s * 0.08, 16), BAG.darkened(0.45), 1.0, false)
+	Icons.dashes(ci, PackedVector2Array([c + Vector2(-s * 0.32, -s * 0.12), c + Vector2(s * 0.32, -s * 0.12)]), Icons.CAP, 2.0, 5.0, 3.0, 0.9)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(s * 0.3, -s * 0.12), c + Vector2(s * 0.46, s * 0.05), c + Vector2(s * 0.42, s * 0.2)]), Icons.RED, 2.4, 1.0)   # ほどけた紐
+	# 下へこぼれた物
+	item(ci, {"kind": "fabric", "fabric": "navy"}, c + Vector2(-s * 0.4, s * 0.42), s * 0.3)
+
+
+## 角を切った紙の札（hud_icons.gd の paper_tag）の形。お金が足りない札のグレーをかぶせるのに使う
+static func tag_pts(rect: Rect2, cut: float) -> PackedVector2Array:
+	var x := rect.position.x
+	var y := rect.position.y
+	var w := rect.size.x
+	var h := rect.size.y
+	return PackedVector2Array([Vector2(x + cut, y), Vector2(x + w - cut, y), Vector2(x + w, y + cut), Vector2(x + w, y + h),
+		Vector2(x, y + h), Vector2(x, y + cut)])

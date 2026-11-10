@@ -2,8 +2,9 @@ extends CanvasLayer
 ## 山男の売り場（山男に F）。文字は使わない。おじいさんの売り台（craft_ui.gd）・雪だるまの店（food_ui.gd）と同じ作り:
 ## フェルトの板（山男の上着の藍）、クリーム色のカード、赤い丸の買うボタン、右上の × の縫い目。
 ##   左: 棚の品物のカード（mountain_goods.gd の SHELF の順。焚き火セット・ペグ・双眼鏡・雪玉ころがしの手袋）。カードの下に値段のボタン。
-##       手袋は装備なので持ち物がいっぱいでも買え、持っている段は値段の代わりに針の印（もう買えない）
-##       まだ売っていない品目は、薄い絵を麻ひもで十字に縛ったカード（選べない。値段も出さない）
+##       買える・買えないの見え方はどの店も同じ（craft_icons.gd の card_state。2026-11-10 代表）: ボタンが足りない札はグレーで選べない、
+##       持っている手袋は値段の代わりに針の印、まだ売っていない品（ロック。shop_locks.gd）は麻ひもで縛ったクラフト紙の包み（選べない）、
+##       持ち物がいっぱいなら棚の全体をグレーにして、巾着から物があふれる印。手袋は装備なので、いっぱいでもグレーの上に出て買える
 ##   右の上: 財布のボタン。品物を選ぶと、その値段を上に赤い糸（足りないとき）で
 ##   右の下: 買うボタン（ボタン → 矢印 → 手袋）。買えないときは震える
 ##   左の端: 段の札 3 枚。上が「道具」（この画面）、まんなかが「連れ」（山師が育てているミニオン。押すと、ミニオンの画面
@@ -18,6 +19,7 @@ const CraftIcons := preload("res://craft_icons.gd")
 const Goods := preload("res://mountain_goods.gd")
 const Gloves := preload("res://gloves.gd")
 const BallStitches := preload("res://ball_stitches.gd")
+const ShopLocks := preload("res://shop_locks.gd")
 
 const FELT := Color(0.22, 0.28, 0.48)   # 山男の上着の藍
 
@@ -86,11 +88,33 @@ func close() -> void:
 
 ## 確かめ用: 棚の i 番目を選ぶ（売っていない品目は選べない）
 func select(i: int) -> void:
-	if page == 2:
-		_sel = i if i >= 0 and i < _ball_goods.size() else -1
-	else:
-		_sel = i if i >= 0 and i < Goods.SHELF.size() and Goods.sold(Goods.SHELF[i].item.kind) else -1
+	if not CraftIcons.pickable(state(i)):
+		return   # お金が足りない・ロック・いっぱいの札は選べない（押しても何も起きない）
+	_sel = i
 	_view.queue_redraw()
+
+
+## 棚の i 番目の札のようす（craft_icons.gd の card_state）
+func state(i: int) -> String:
+	var who := _who()
+	var coins: int = craft.wallet(who)
+	if page == 2:
+		if i < 0 or i >= _ball_goods.size():
+			return ""
+		var nm: String = _ball_goods[i]
+		return CraftIcons.card_state(ShopLocks.locked("ball:" + nm), nm in craft.ball_owned.get(who, []), BallStitches.price(nm) <= coins)
+	if i < 0 or i >= Goods.SHELF.size():
+		return ""
+	var it: Dictionary = Goods.SHELF[i].item
+	var k := String(it.kind)
+	var glove := Gloves.is_gloves(k)
+	var room: bool = glove or craft.free_slot(who) >= 0 or k == "peg" and craft._peg_stack(who) >= 0   # 手袋は装備、ペグは持っている束に足せる
+	return CraftIcons.card_state(ShopLocks.locked(ShopLocks.item_key(it)), glove and craft.gloves_index(who, k) >= 0, Goods.price(k) <= coins, room)
+
+
+## 持ち物がいっぱいで、道具の棚のうち場所の要る品が買えない
+func bag_full() -> bool:
+	return page != 2 and craft.free_slot(_who()) < 0
 
 
 ## 雪玉の柄の札の絵の糸の段（はめている手袋。はめていなければ毛糸）。連れの画面（pals_ui.gd）の札も同じ絵
@@ -116,12 +140,7 @@ func sel_price() -> int:
 
 ## 選んでいる品物を、いま買えるか
 func sel_ready() -> bool:
-	if _sel < 0 or sel_price() > craft.wallet(_who()):
-		return false
-	if page == 2:
-		return not _ball_goods[_sel] in craft.ball_owned.get(_who(), [])
-	var k := String(Goods.SHELF[_sel].item.kind)
-	return craft.gloves_index(_who(), k) < 0 if Gloves.is_gloves(k) else craft.free_slot(_who()) >= 0
+	return _sel >= 0 and state(_sel) == "can"
 
 
 ## 「連れ」の札: この画面を閉じて、山師が育てているミニオンの画面（main.gd の minion_ui）を開く
@@ -204,10 +223,6 @@ class View extends Control:
 		if ui.is_open:
 			_draw_shop(Icons.ui_scale(size.y))
 
-	## 雪玉ころがしの手袋を、その段でもう持っているか
-	func _owned(kind: String) -> bool:
-		return Gloves.is_gloves(kind) and ui.craft.gloves_index(ui._who(), kind) >= 0
-
 	func _draw_shop(u: float) -> void:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
@@ -260,35 +275,39 @@ class View extends Control:
 		var cw := (area_w - left - 20.0 * u - gap * (per - 1)) / per
 		var rows := ceili(float(names.size()) / per)
 		var ch := (r.size.y - 70.0 * u) / rows - gap
-		var owned_list: Array = ui.craft.ball_owned.get(ui._who(), [])
 		var rects: Array = []
 		for i in names.size():
 			var nm: String = names[i]
 			var cost := BallStitches.price(nm)
-			var owned := nm in owned_list
-			var can := cost <= coins and not owned
+			var st: String = ui.state(i)
+			var owned := st == "owned"
 			var card := Rect2(r.position.x + left + (i % per) * (cw + gap), r.position.y + 44.0 * u + (i / per) * (ch + gap), cw, ch)
 			var sel: bool = ui._sel == i
-			if sel or ui._hover == i:
+			if sel or ui._hover == i and CraftIcons.pickable(st):
 				card.position.y -= (6.0 if sel else 3.0) * u
 			rects.append(card)
+			if st == "locked":   # まだ売っていない: 麻ひもの包み
+				CraftIcons.wrap_card(self, card, u)
+				continue
 			Icons.screen()
 			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
 			var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
 			var bs := minf(cw * 0.62, ch * 0.66) * pop
-			BallStitches.draw_ball(self, nm, _grade(), Rect2(card.position + Vector2(cw / 2.0 - bs / 2.0, ch * 0.38 - bs / 2.0), Vector2(bs, bs)), 1.0 if can or owned else 0.55)
+			BallStitches.draw_ball(self, nm, _grade(), Rect2(card.position + Vector2(cw / 2.0 - bs / 2.0, ch * 0.38 - bs / 2.0), Vector2(bs, bs)))
 			Icons.screen()
 			if owned:
 				Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.86), 26.0 * u, 1.0)
 			else:
-				CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.86), cost, 9.0 * u, 1.0 if can else 0.55)
+				CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.86), cost, 9.0 * u)
+			if st == "money":   # お金が足りない: グレー
+				CraftIcons.shade_card(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u))
 			if sel:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
 		ui._rects = rects
 
-	## 道具の棚
-	func _draw_tools(u: float, r: Rect2, left: float, area_w: float, coins: int, full: bool) -> void:
+	## 道具の棚。持ち物がいっぱいなら、棚をグレーにしてあふれる巾着を出し、場所の要らない品（手袋・束に足せるペグ）だけをその上に描く
+	func _draw_tools(u: float, r: Rect2, left: float, area_w: float, _coins: int, full: bool) -> void:
 		var h := r.size.y
 		var n: int = Goods.SHELF.size()
 		var per := mini(maxi(n, 2), 4)
@@ -296,38 +315,45 @@ class View extends Control:
 		var cw := (area_w - left - 20.0 * u - gap * (per - 1)) / per
 		var ch := minf(cw * 1.3, (h - 80.0 * u) / ceilf(float(n) / per) - gap)
 		var rects: Array = []
+		rects.resize(n)
+		var states: Array = []
 		for i in n:
-			var e: Dictionary = Goods.SHELF[i]
-			var on := Goods.sold(e.item.kind)
-			var cost: int = Goods.price(e.item.kind)
-			var owned := _owned(String(e.item.kind))
-			var can := on and cost <= coins and (not full or Gloves.is_gloves(String(e.item.kind))) and not owned
-			var card := Rect2(r.position.x + left + (i % per) * (cw + gap), r.position.y + 50.0 * u + (i / per) * (ch + gap), cw, ch)
-			var sel: bool = ui._sel == i
-			if on and (sel or ui._hover == i):
-				card.position.y -= (8.0 if sel else 4.0) * u
-			rects.append(card)
-			Icons.screen()
-			var a := 1.0 if can else (0.5 if on else 0.3)
-			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u), Icons.CAP, 1.0 if on else 0.6, on, Icons.PAPER_EDGE)
-			var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
-			CraftIcons.item(self, e.item, card.position + Vector2(cw / 2.0, ch * 0.4), minf(cw, ch * 0.7) * 0.8 * pop, a)
-			Icons.screen()
-			if owned:   # 持っている手袋: 値段の代わりに針の印
-				Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.85), 34.0 * u, 1.0)
-			elif on:
-				CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.85), cost, 13.0 * u, a)
-			else:   # まだ売っていない: 麻ひもで十字に縛った包み
-				var hemp := Color(0.78, 0.66, 0.46)
-				var c := card.get_center() + Vector2(0, -ch * 0.06)
-				Icons.thread(self, PackedVector2Array([Vector2(card.position.x + 6 * u, c.y), Vector2(card.end.x - 6 * u, c.y)]), hemp, 5.0 * u, 0.95)
-				Icons.thread(self, PackedVector2Array([Vector2(c.x, card.position.y + 6 * u), Vector2(c.x, card.end.y - 6 * u)]), hemp, 5.0 * u, 0.95)
-				for s in [-1.0, 1.0]:   # 蝶結び
-					Icons.patch(self, Icons.ell(c + Vector2(s * 13.0 * u, -4.0 * u), 12.0 * u, 7.0 * u, 14), hemp, 1.0, false)
-				Icons.patch(self, Icons.circ(c, 5.0 * u, 10), hemp.darkened(0.15), 1.0, false)
-			if sel:
+			states.append(ui.state(i))
+		var over: bool = full and ui.bag_full()
+		for pass_ in (2 if over else 1):
+			for i in n:
+				if over and (pass_ == 0) != (states[i] in ["full", "locked"]):
+					continue   # いっぱいのとき: 先に場所の要る品とロックの品、グレーをかぶせてから、場所の要らない品
+				var e: Dictionary = Goods.SHELF[i]
+				var st: String = states[i]
+				var cost: int = Goods.price(e.item.kind)
+				var card := Rect2(r.position.x + left + (i % per) * (cw + gap), r.position.y + 50.0 * u + (i / per) * (ch + gap), cw, ch)
+				var sel: bool = ui._sel == i
+				if sel or ui._hover == i and CraftIcons.pickable(st):
+					card.position.y -= (8.0 if sel else 4.0) * u
+				rects[i] = card
+				if st == "locked":   # まだ売っていない: 麻ひもの包み
+					CraftIcons.wrap_card(self, card, u)
+					continue
 				Icons.screen()
-				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 16.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
+				Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+				var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
+				CraftIcons.item(self, e.item, card.position + Vector2(cw / 2.0, ch * 0.4), minf(cw, ch * 0.7) * 0.8 * pop)
+				Icons.screen()
+				if st == "owned":   # 持っている手袋: 値段の代わりに針の印
+					Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.85), 34.0 * u, 1.0)
+				else:
+					CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.85), cost, 13.0 * u)
+				if st == "money":   # お金が足りない: グレー
+					CraftIcons.shade_card(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u))
+				if sel:
+					Icons.screen()
+					Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 16.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
+			if over and pass_ == 0:   # 持ち物がいっぱい: 棚の全体をグレーにして、巾着からあふれる印（札の下の空いた所。上に残す手袋と重ならない）
+				var shelf := Rect2(r.position.x + left - 10.0 * u, r.position.y + 30.0 * u, area_w - left + 10.0 * u, h - 50.0 * u)
+				var rows := ceilf(float(n) / per)
+				var below := shelf.end.y - (r.position.y + 50.0 * u + rows * (ch + gap))
+				CraftIcons.bag_full(self, shelf, u, Vector2(shelf.get_center().x, shelf.end.y - below * 0.5), below * 0.9 if below > 80.0 * u else 0.0)
 		ui._rects = rects
 
 	## 右: 財布・値段・買うボタン・閉じる

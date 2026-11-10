@@ -6,7 +6,9 @@ extends CanvasLayer
 ##     右に財布（木のボタンを数だけ積む。ボタンがなければ出さず、列はマスのすぐ右で終わる）。ホイールで手に持つ物を替える（player.gd）。
 ##     遊んでいるあいだはいつも出しておく（2026-11-01 代表「常時手持ちインベントリ表示」）
 ##   売り台（おじさんに F）: 上の段に型紙 4 枚、下の段に布 6 色。どれも絵と、値段のボタンの数。
-##     品物を押して選び、右の買うボタン（ボタン → 手袋）で買う。足りない品物は薄く、買えないときは買うボタンが震える。
+##     品物を押して選び、右の買うボタン（ボタン → 手袋）で買う。買えないときは買うボタンが震える。
+##     買える・買えないの見え方はどの店も同じ（craft_icons.gd の card_state。2026-11-10 代表）: ボタンが足りない品物はグレーで選べない、
+##     まだ売っていない品（shop_locks.gd）は麻ひもの包み、持ち物がいっぱいなら売り台の全体をグレーにして、巾着から物があふれる印。
 ##     閉じるのは右上の × の縫い目か、F か Esc
 ##     滑りあとの柄（stitches.gd）は売らない。柄を買うのは布の見本帳（sled_book_ui.gd）だけ（2026-11-10 代表「ソリ屋でステッチ買えるけど見本帖でも
 ##     ステッチ買える。混ざってない？見本帳だけでいいかも」。前は左上の札で、型紙と布・滑りあとの柄の棚を替えていた）
@@ -44,6 +46,7 @@ const Craft := preload("res://craft.gd")
 const Fabrics := preload("res://fabrics.gd")
 const Stitches := preload("res://stitches.gd")
 const BallStitches := preload("res://ball_stitches.gd")
+const ShopLocks := preload("res://shop_locks.gd")
 const Gloves := preload("res://gloves.gd")
 const Doll := preload("res://doll.gd")
 const PersonIcon := preload("res://person_icon.gd")
@@ -209,9 +212,22 @@ func sel_price() -> int:
 
 ## 売り台で選んでいる品物を、いま買えるか
 func sel_ready() -> bool:
-	if _sel < 0 or sel_price() > craft.wallet(_who()):
-		return false
-	return craft.free_slot(_who()) >= 0 or _goods[_sel].kind == "peg" and craft._peg_stack(_who()) >= 0
+	return _sel >= 0 and shop_state(_sel) == "can"
+
+
+## 売り台の i 番目の札のようす（craft_icons.gd の card_state。どの店も同じ見え方）
+func shop_state(i: int) -> String:
+	if i < 0 or i >= _goods.size():
+		return ""
+	var it: Dictionary = _goods[i]
+	var room: bool = craft.free_slot(_who()) >= 0 or it.kind == "peg" and craft._peg_stack(_who()) >= 0
+	return CraftIcons.card_state(ShopLocks.locked(ShopLocks.item_key(it)), false, Craft.price(it) <= craft.wallet(_who()), room)
+
+
+## 確かめ用: 売り台の i 番目を選ぶ（選べない札は選ばない）
+func select(i: int) -> void:
+	if CraftIcons.pickable(shop_state(i)):
+		_sel = i
 
 
 ## 柄を替えられるソリの並び [stitch_edit の値, 絵 {sled, fabric, folded?}, いまの柄の名前]: 持っている米袋・置いてある自分のソリ・畳んだ自分のソリ
@@ -738,7 +754,7 @@ func _input(e: InputEvent) -> void:
 		else:
 			var i := _hit(e.position)
 			if i >= 0:
-				_sel = i
+				select(i)   # お金が足りない・ロック・いっぱいの札は選べない
 
 
 func _machine_input(e: InputEvent) -> void:
@@ -773,11 +789,6 @@ func _hit(p: Vector2) -> int:
 		if (_rects[i] as Rect2).has_point(p):
 			return i
 	return -1
-
-
-## 確かめ用: 品物を選ぶ（tools/shop_shots.gd）
-func select(i: int) -> void:
-	_sel = i
 
 
 func _process(dt: float) -> void:
@@ -1225,18 +1236,22 @@ class View extends Control:
 			var cy := r.position.y + (40.0 if pattern else 320.0) * u
 			var card := Rect2(cx, cy, cw, ch)
 			var price := Craft.price(it)
-			var can: bool = price <= coins and (not full or it.kind == "peg" and craft._peg_stack(who) >= 0)   # ペグは持っている束に足せる
+			var st: String = ui.shop_state(i)
 			var sel: bool = ui._sel == i
-			var hov: bool = ui._hover == i
+			var hov: bool = ui._hover == i and CraftIcons.pickable(st)
 			if sel or hov:
 				card.position.y -= (8.0 if sel else 4.0) * u
 			rects.append(card)
+			if st == "locked":   # まだ売っていない: 麻ひもの包み
+				CraftIcons.wrap_card(self, card, u)
+				continue
 			Icons.screen()
-			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u), Icons.CAP, 1.0 if can else 0.55, true, Icons.PAPER_EDGE)
-			var a := 1.0 if can else 0.4
+			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
 			var isz := minf(cw, ch * 0.7) * 0.92
-			CraftIcons.item(self, it, card.position + Vector2(cw / 2.0, ch * 0.4), isz, a)
-			CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.84), price, 11.0 * u, a)
+			CraftIcons.item(self, it, card.position + Vector2(cw / 2.0, ch * 0.4), isz)
+			CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.84), price, 11.0 * u)
+			if st == "money":   # お金が足りない: グレー
+				CraftIcons.shade_card(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u))
 			if sel:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 16.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
@@ -1266,6 +1281,8 @@ class View extends Control:
 		CraftIcons.coin(self, Vector2(-12, -2), 9.0, 1.0)
 		Icons.arrow(self, Vector2(-1, -2), Vector2(9, -2), Icons.CAP, 1.0, 2.2)
 		Icons.mitten(self, Vector2(17, 0), 0.4, Icons.CAP, 1.0, true, 0.9)
+		if full:   # 持ち物がいっぱい: 売り台の全体をグレーにして、巾着から物があふれる印（閉じる × だけは上に）
+			CraftIcons.bag_full(self, r, u)
 		# 右上: 閉じる（× の縫い目）
 		var xs := 46.0 * u
 		var xc := Vector2(r.end.x - 34.0 * u, r.position.y + 34.0 * u)

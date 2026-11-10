@@ -10,6 +10,7 @@ extends CanvasLayer
 const Icons := preload("res://hud_icons.gd")
 const Craft := preload("res://craft.gd")
 const Food := preload("res://food.gd")
+const CraftIcons := preload("res://craft_icons.gd")
 
 const COLS := 8
 
@@ -87,6 +88,14 @@ func select(i: int) -> void:
 	_view.queue_redraw()
 
 
+## i 番目の札のようす（craft_icons.gd の card_state。どの店も同じ見え方。2026-11-10 代表）。払いは雪玉
+func card_state(i: int) -> String:
+	if i < 0 or i >= Food.ORDER.size():
+		return ""
+	var dish: String = Food.ORDER[i]
+	return CraftIcons.card_state(preload("res://shop_locks.gd").locked("food:" + dish), false, Food.price(dish) <= balls(), craft.free_slot(_who()) >= 0)
+
+
 ## 選んでいるペレットを買う
 func buy() -> bool:
 	if _sel < 0:
@@ -134,7 +143,7 @@ func _input(e: InputEvent) -> void:
 			buy()
 		else:
 			var i := _hit(e.position)
-			if i >= 0:
+			if i >= 0 and CraftIcons.pickable(card_state(i)):   # 雪玉が足りない・ロック・いっぱいの札は選べない
 				_sel = i
 
 
@@ -200,18 +209,22 @@ class View extends Control:
 		for i in Food.ORDER.size():
 			var dish: String = Food.ORDER[i]
 			var price := Food.price(dish)
-			var can := price <= have and not full
+			var st: String = ui.card_state(i)
 			var card := Rect2(r.position.x + 30.0 * u + (i % COLS) * (cw + gap), r.position.y + 34.0 * u + (i / COLS) * (ch + 22.0 * u), cw, ch)
 			var sel: bool = ui._sel == i
-			if sel or ui._hover == i:
+			if sel or ui._hover == i and CraftIcons.pickable(st):
 				card.position.y -= (8.0 if sel else 4.0) * u
 			rects.append(card)
+			if st == "locked":   # まだ売っていない: 麻ひもの包み
+				CraftIcons.wrap_card(self, card, u)
+				continue
 			Icons.screen()
-			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0 if can else 0.55, true, Icons.PAPER_EDGE)
-			var a := 1.0 if can else 0.45
+			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
 			var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
-			_pic(ui.tex(Food.pellet_icon(dish)), card.position + Vector2(cw / 2.0, ch * 0.4), cw * 1.45 * pop, a)
-			_balls(card.position + Vector2(cw / 2.0, ch * 0.84), price, 8.0 * u, 99, a)
+			_pic(ui.tex(Food.pellet_icon(dish)), card.position + Vector2(cw / 2.0, ch * 0.4), cw * 1.45 * pop)
+			_balls(card.position + Vector2(cw / 2.0, ch * 0.84), price, 8.0 * u, 99)
+			if st == "money":   # 雪玉が足りない: グレー
+				CraftIcons.shade_card(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u))
 			if sel:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
@@ -256,6 +269,8 @@ class View extends Control:
 		Icons._s = bs / 64.0 * big
 		Icons.arrow(self, Vector2(-11, -2), Vector2(1, -2), Icons.CAP, 1.0, 2.2)
 		Icons.mitten(self, Vector2(15, 0), 0.4, Icons.CAP, 1.0, true, 0.9)
+		if full:   # 持ち物がいっぱい: 売り場の全体をグレーにして、巾着から物があふれる印（閉じる × だけは上に）
+			CraftIcons.bag_full(self, r, u)
 		# 右上: 閉じる（× の縫い目）
 		var xs := 46.0 * u
 		var xc := Vector2(r.end.x - 34.0 * u, r.position.y + 34.0 * u)

@@ -454,6 +454,8 @@ func _ready() -> void:
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	var from_cmdline := not args.is_empty()
 	args.merge(Net.boot, true)   # スタート画面で選んだホスト・つなぐ（とワールド）
+	if args.has("lock"):   # 確かめ用: 店の品をロックする（--lock=mountain:peg,stitch:fly。shop_locks.gd）
+		preload("res://shop_locks.gd").extra = String(args.lock).split(",", false)
 	stage = String(args.get("world", "plain" if from_cmdline else saved_world()))
 	if not stage in WORLDS:
 		stage = "plain"
