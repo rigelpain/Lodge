@@ -1,6 +1,6 @@
 extends RefCounted
 ## 店の品物のロック（まだ売っていない品。2026-11-10 代表「まだ売っていないを作るのもいいですね。一部LOCKしておくのもいい。じゃあLOCKしてるのを麻紐のつつみにして」）。
-## LOCKED に品の名前（"店:品"）を書くと、その品はどの店でも麻ひもの包みの札になり（craft_icons.gd の wrap_card）、選べず、買えない（craft.gd でホストも断る）。
+## LOCKED に品の名前（"店:品"）を書くと、その品はどの店でも札がくすんで南京錠が付き（craft_icons.gd の over）、選べず、買えない（craft.gd でホストも断る）。
 ## どの品をロックするか、何で解けるかは代表が決める。まだ決めていないので空（design/shop-buy-look/README.md に案の一覧）。
 ## 山師の棚の on が false の品目（mountain_goods.gd）も、同じロックとして扱う。
 ##

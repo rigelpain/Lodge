@@ -705,7 +705,11 @@ func _ready() -> void:
 		minion_ui.board_color = MountainUi.FELT
 		minion_ui.lead_tab = "mountain"   # 段の札の上の、山の道具の売り場へ戻る札
 		minion_ui.lead_pressed.connect(func(): mountain_ui.open())
-		minion_ui.tail_tabs = [{"draw": _ball_tab_draw, "press": _ball_tab_open}]   # 雪玉の柄の棚へ（山師の売り場の 3 枚目の札と同じ）
+		minion_ui.tail_tabs = [{"draw": _ball_tab_draw, "press": _ball_tab_open},   # 雪玉の柄・双眼鏡・手袋の棚へ（山師の売り場の 3〜5 枚目の札と同じ）
+			{"draw": func(ci: CanvasItem, rect: Rect2, a: float) -> void: preload("res://craft_icons.gd").item(ci, {"kind": "binoculars"}, rect.get_center(), rect.size.x * 0.9, a),
+				"press": func() -> void: _mountain_page(3)},
+			{"draw": func(ci: CanvasItem, rect: Rect2, a: float) -> void: preload("res://craft_icons.gd").item(ci, {"kind": "gloves_felt"}, rect.get_center(), rect.size.x * 0.9, a),
+				"press": func() -> void: _mountain_page(4)}]
 		add_child(minion_ui)
 		if args.get("spawn", "") == "mountain" and mountain_man:   # --spawn=mountain: 山男の前から始める
 			var at := mountain_man.to_global(Vector3(0, 0.1, -1.9))
@@ -2445,5 +2449,10 @@ func _ball_tab_draw(ci: CanvasItem, rect: Rect2, a: float) -> void:
 
 ## その札を押した: 山師の売り場の雪玉の柄の棚を開く
 func _ball_tab_open() -> void:
+	_mountain_page(2)
+
+
+## 連れの画面の札から、山師の売り場の棚 pg（2 雪玉の柄、3 双眼鏡、4 手袋）を開く
+func _mountain_page(pg: int) -> void:
 	mountain_ui.open()
-	mountain_ui.set_page(2)
+	mountain_ui.set_page(pg)

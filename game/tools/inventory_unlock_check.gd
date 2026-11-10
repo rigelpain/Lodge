@@ -4,7 +4,7 @@ extends SceneTree
 ## 数字: 双眼鏡は持ち物の場所を使わない・同じ段は 2 度買えない・持ち物がいっぱいでも買える・首の枠で手に持ってのぞける・外せる・
 ##       保存から戻せる（scope_own・equip の grade）・前の版の持ち物の双眼鏡は移る・山師の札は「持っている」・装備の画面の段と名札の画面
 ## 絵: gear_few.png（少し持っている）、gear_many.png（米袋 14・ランタン 10。めくる札）、gear_tag.png（名札と柄の画面）、bar_neck.png（手持ちの列の首の枠）、
-##     yama_owned.png（山師の棚で、持っている双眼鏡が針の印）
+##     yama_owned.png（山師の棚で、持っている双眼鏡は緑のチェック、首から下げている双眼鏡は赤い糸の縁とチェック）
 
 const Craft := preload("res://craft.gd")
 
@@ -62,6 +62,9 @@ func _run() -> void:
 	p.set("_pitch", -0.05)
 	p.set_third(false)
 	c.wallets[who] = 5000
+	c.scopes[who] = []   # 遊ぶ人の保存に双眼鏡があっても、持っていないところから始める（保存は書かない）
+	c.scope_sel[who] = -1
+	c.hands[who] = -1
 	var used: int = c.count(who)
 	# ---- 買う
 	_ok(c.send({"kind": "buy", "who": who, "item": {"kind": "binoculars_far"}}), "遠見の双眼鏡を買える")
@@ -79,11 +82,14 @@ func _run() -> void:
 	await create_timer(0.3).timeout
 	var night := -1
 	var plain := -1
+	var far := -1
 	for i in preload("res://mountain_goods.gd").SHELF.size():
 		match String(preload("res://mountain_goods.gd").SHELF[i].item.kind):
 			"binoculars_night": night = i
 			"binoculars": plain = i
-	_ok(main.mountain_ui.state(night) == "owned", "山師の棚: 夜目は「持っている」（%s）" % main.mountain_ui.state(night))
+			"binoculars_far": far = i
+	_ok(main.mountain_ui.state(night) == "worn", "山師の棚: 首から下げている夜目は「身につけている」（赤い糸の縁とチェック。%s）" % main.mountain_ui.state(night))
+	_ok(main.mountain_ui.state(far) == "owned", "山師の棚: 遠見は「持っている」（チェック。%s）" % main.mountain_ui.state(far))
 	_ok(main.mountain_ui.state(plain) == "can", "山師の棚: いっぱいでも、ふつうの双眼鏡は買える（%s）" % main.mountain_ui.state(plain))
 	await _shot("yama_owned.png")
 	main.mountain_ui.close()
