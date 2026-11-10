@@ -1,15 +1,20 @@
 // 黒いランタン（lantern.gd の is_black）の、持ち主を中心にした暗がりの球。
-// 球の中を通る視線の長さに応じて、うしろに見えている物を墨の色へ寄せる（掛け算で暗くするので、色みはずれない）。
-// 濃さは球の芯ほど濃く（1 - (r/R)^2）、縁では 0。球の中にある物（人形・雪・木）は、その手前までの長さで暗くなる。
+// 暗さは絶対（代表「黒ランタンは相対的な暗さでなく絶対的な暗さにしてほしい」）: 球の芯では、うしろに見えている物の明るさを cap より上に
+// させない（焚き火のそばでも昼でも、同じ暗さ）。明るさ（いちばん明るい成分 L）は cap * L / (L + cap) に縮める（暗い所の差は少し残る。色合いはそのまま）。
+// 混ぜ具合は、球の中で見えている所（視線の、球に入ってから物に当たるまで）が芯にいちばん近づく所の、芯からの距離 r で決める:
+// r が inner * R より内なら 1（暗さそのもの）、縁 R へ向かってなめらかに 0。球の中のどこを見ても、芯の近くは同じ暗さ
 // カメラが球の中にいても効くよう、裏の面を描き、奥行きは深さの絵（DEPTH_TEXTURE）で自分で見る
 shader_type spatial;
 render_mode unshaded, blend_mix, depth_draw_never, depth_test_disabled, cull_front, shadows_disabled;
 
 uniform float radius = 3.0;           // 球の半径 (m)
-uniform float strength = 0.85;        // 芯を通る視線での濃さ（0〜1）
+uniform float strength = 1.0;         // 芯を通る視線での効き（0〜1。1 で芯は cap の暗さそのもの）
+uniform float cap = 0.035;            // 芯での明るさの上限（明るさ。夜の雪の数分の一）
 uniform float level = 1.0;            // 点け消し・揺らぎ（0〜1）
+uniform float inner = 0.55;           // この割合の半径までは、暗さそのもの
 uniform vec3 ink : source_color = vec3(0.02, 0.02, 0.05);   // 墨の色（少し藍）
 uniform sampler2D depth_tex : hint_depth_texture, filter_nearest;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear_mipmap;
 
 void fragment() {
 	vec3 d = normalize(VERTEX);
@@ -30,11 +35,12 @@ void fragment() {
 	if (t1 <= t0) {
 		discard;
 	}
-	// 濃さ (1 - |p|^2 / R^2) を視線に沿って足す。|p|^2 = c0 + 2 b t + t^2
-	float r2 = radius * radius;
-	float f1 = t1 - (c0 * t1 + b * t1 * t1 + t1 * t1 * t1 / 3.0) / r2;
-	float f0 = t0 - (c0 * t0 + b * t0 * t0 + t0 * t0 * t0 / 3.0) / r2;
-	float x = clamp((f1 - f0) / (radius * 4.0 / 3.0), 0.0, 1.0);   // 芯を通って向こうの縁までで 1
-	ALBEDO = ink;
-	ALPHA = strength * level * (1.0 - exp(-3.0 * x)) / (1.0 - exp(-3.0));
+	float tc = clamp(-b, t0, t1);         // 見えている所で、芯にいちばん近い所
+	float r = length(o + d * tc);
+	float w = 1.0 - smoothstep(inner * radius, radius, r);
+	vec3 bg = textureLod(screen_tex, SCREEN_UV, 0.0).rgb;
+	float lum = max(max(bg.r, max(bg.g, bg.b)), 1e-4);   // いちばん明るい成分（鮮やかな青や赤も、明るさの上限に入れる）
+	vec3 dark = bg * (cap / (lum + cap)) + ink * cap;   // 明るさを cap * L / (L + cap) に縮め、墨を少し
+	ALBEDO = dark;
+	ALPHA = strength * level * w;
 }

@@ -16,7 +16,8 @@ extends Node3D
 ## 黒（2026-11-10 代表「ランタンの染色ですが、黒いランタンは逆に周囲を暗くするようにしてほしいです。」）: パレットの中の、明るさが低く色みのほとんどない色
 ## （is_black。いまは墨の灰 COLORS[10] だけ）に染めたランタンは、点けるとランタンを中心に球の形で暗くする（代表「最も強くしてほしいし、
 ## 暗くする範囲は床でなく…球状に暗くしてほしい」「キャラ中心じゃなくてランタン中心だ」）:
-##   暗がりの球（lantern_dark.gdshader）: ランタンの芯を中心に半径 DARK_RADIUS。球を通して見える物を墨の色へ寄せる（掛け算なので色みはずれない）
+##   暗がりの球（lantern_dark.gdshader）: ランタンの芯を中心に半径 DARK_RADIUS。球を通して見える物の明るさを DARK_CAP より上にさせない
+##   （相対ではなく絶対の暗さ。代表「黒ランタンは相対的な暗さでなく絶対的な暗さにしてほしい」。色合いはそのまま）
 ##   引く灯り（light_negative）: 同じ芯から、球の少し外まで、まわりの物に当たる光を引く。濃さ BLACK_ENERGY
 ## 紙は光らず、点けると墨を含ませた和紙のように深い黒、消すと消し炭の灰
 
@@ -84,7 +85,8 @@ static func price(look: String) -> int:
 
 static var BLACK_ENERGY := 1.6           # 黒いランタンの、引く灯りの強さ（ふつうの ENERGY 2.2 に対して。濃さの案 0.6・1.0・1.6 のいちばん強いもの）
 static var DARK_RADIUS := 3.0            # 暗がりの球の半径 (m)
-static var DARK_STRENGTH := 0.85         # 暗がりの球の、芯を通る視線での濃さ（1 で真っ黒）
+static var DARK_STRENGTH := 1.0          # 暗がりの球の、芯を通る視線での効き（1 で芯は DARK_CAP の暗さそのもの）
+static var DARK_CAP := 0.035             # 暗がりの芯での明るさの上限（絶対の暗さ。焚き火のそばでも昼でも同じ）
 const DARK_SHADER := preload("res://lantern_dark.gdshader")
 const BLACK_SUB := Color(1.0, 0.96, 0.86)   # 引く光の色（札の中など、まわりの光が分からないとき）
 ## 引く光の色は、その場の光の色に寄せる（同じだけ引くと、少ない色から先に尽きて、夜は青、火のそばは赤の縁ができる）:
@@ -324,6 +326,7 @@ func follow(dt: float, yaw: float) -> void:
 		var dm := _dark.material_override as ShaderMaterial
 		dm.set_shader_parameter("radius", DARK_RADIUS)
 		dm.set_shader_parameter("strength", DARK_STRENGTH)
+		dm.set_shader_parameter("cap", DARK_CAP)
 		dm.set_shader_parameter("level", smoothstep(0.0, 1.0, _level) * clampf(flicker(_style, _t, _seed), 0.0, 1.2))
 
 
