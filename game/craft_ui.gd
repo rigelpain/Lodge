@@ -19,8 +19,9 @@ extends CanvasLayer
 ##     縫うボタンで、型紙と布をいっしょに使って 7 つの場面が始まる（片方だけ使われることはない）
 ##   装備の画面（I。2026-11-10 代表「インベントリのなかもUI整理したいね」「Bがいいレイアウトは」。design/inventory-unlock）:
 ##     左の紙は自分。上に名前（打って替える）とキャラの色（12 色から押して選ぶ）。HUD の札の人の形の色と、頭の上の名前になる
-##     （2026-10-31 代表「プレイヤー名はインベントリでじぶんできめれるように」）。その下に自分の名札の札（針の印）。押すと右が名札と柄の画面になり、
-##     もう一度押すか Esc で装備に戻る。人形に装備を下げて見せる絵はやめた（代表「装備画面の体に乗っけてるのがだいぶ意味わかんない」）。
+##     （2026-10-31 代表「プレイヤー名はインベントリでじぶんできめれるように」）。その下に 2 枚の札（2026-11-10 代表「インベントリでタグの柄設定用のタブと
+##     ステッチ選択のタブは分けてほしい」。design/tag-stitch-tabs）: 自分の名札の札（押すと右が名札の柄の画面）と、ステッチの札（針と糸に、いまの滑りあとの柄と
+##     大玉の柄。押すと右がステッチの画面）。開いている札をもう一度押すか Esc で装備に戻る。どちらも前に開いていたページで開く。人形に装備を下げて見せる絵はやめた（代表「装備画面の体に乗っけてるのがだいぶ意味わかんない」）。
 ##     右は装備の 4 段（craft.gd の GEARS）。左に段の印、右へ持っている札。選んでいる札は持ち上がり、赤い糸の印:
 ##       米袋（印は実物の米袋に刷ってある米マークのワッペン。craft_icons.gd の kome_patch。N で出す）・ランタン（押すと帯の左に提げ替え、
 ##       もう一度押すと外す。R で点ける・消す）・雪玉ころがしの手袋（gloves.gd）・手の双眼鏡（binoculars.gd。首から下げ、手持ちの列の素手の右に出る）。
@@ -28,11 +29,11 @@ extends CanvasLayer
 ##       札はふつう 78 × 86。段に入らなければ小さくし、それでも入らなければ段の右の端に「めくる」札と、段の下にページの点（代表「増えると収まんなくなりそう」）
 ##     右の下に、手持ち（上の段）とかばん（下の段, 緑のフェルトの巾着）。引きずって入れ替える（行き先に物があれば入れ替わる）。
 ##     押して離すと上に小窓: できあがった料理なら食べる（おにぎり）、どれでも捨てる（編みかご）。閉じるのは ×、I、Esc
-##     名札と柄の画面: 左に替えている名札を大きく、右に部品（形・紙の色・縁の糸・吊るす糸・判子）の見本の列。名札の下に、どの名札を替えるかの札の列:
+##     名札の柄の画面: 左に替えている名札を大きく、右に部品（形・紙の色・縁の糸・吊るす糸・判子）の見本の列。名札の下に、どの名札を替えるかの札の列:
 ##     いつもの柄（針の印。これから縫うソリに付く）・自分のソリ（回る姿）・畳んだソリ・名札入れの外した名札。
 ##     押した札の名札だけが替わる（名札はソリごと。いつもの柄と名前と色は保存して、次に起動しても同じ）。
-##     5 つ目のページの札は滑りあとの柄: 下の札でソリ（米袋・置いてある自分のソリ・畳んだ自分のソリ）を選び、右の棚で柄を押す。替えられるのは持ち主だけ。
-##     6 つ目の札は大玉の縫い目の柄（ball_stitches.gd。2026-11-09 代表「雪玉のステッチも売って欲しい」）: 右の棚のはじめが手袋の柄（はめている手袋の
+##     ステッチの画面は、ページの札 2 枚: 1 枚目は滑りあとの柄: 下の札でソリ（米袋・置いてある自分のソリ・畳んだ自分のソリ）を選び、右の棚で柄を押す。替えられるのは持ち主だけ。
+##     2 枚目は大玉の縫い目の柄（ball_stitches.gd。2026-11-09 代表「雪玉のステッチも売って欲しい」）: 右の棚のはじめが手袋の柄（はめている手袋の
 ##     段の標準）、続けて山師の棚で売る柄。押すと、これから置く自分の大玉と、もう置いてある自分の大玉の柄が替わる。左に大きく、その柄の玉。
 ##     縫い合わせの形と糸の色は、玉を固めた手袋の段のまま。買っていない柄は薄く、木のボタンの印（山師の棚で買う）
 ##   財布が増えたとき（craft.gd の earn。雪に縫い留められたボタンを取った・滑った）: ボタンが画面を飛んで財布へ入り、
@@ -74,8 +75,11 @@ var _scope_rects: Array = [] # 装備の画面の、持っている手の双眼�
 var _scope_hover := -1
 var _page_rects: Array = []  # 装備の画面の、段の「めくる」札 [Rect2, 段の種類]（札が段に入りきらないとき）
 var _row_page := {}          # 段の種類 → 見ているページ
-var tag_open := false        # 装備の画面で、右を名札と柄の画面にしている（自分の名札の札を押す）
-var _tag_card_rect := Rect2() # 装備の画面の左の、自分の名札の札
+var tag_open := false        # 装備の画面で、右を名札の柄かステッチの画面にしている（左の札を押す。どちらかは tag_page。stitch_open）
+var _tag_card_rect := Rect2() # 装備の画面の左の、自分の名札の札（押すと右が名札の柄の画面）
+var _stitch_card_rect := Rect2()   # その下の、ステッチの札（押すと右が滑りあとと雪玉の柄の画面。2026-11-10 代表「タグの柄設定用のタブとステッチ選択のタブは分けてほしい」）
+var _last_tag_page := 0      # 名札の柄で、前に開いていたページ
+var _last_stitch_page := -1  # ステッチで、前に開いていたページ（-1 はまだ開いていない: 滑りあと）
 var _opt_rects: Array = []   # 装備の画面の、名札の部品の見本 [Rect2, 部品, 番号]（部品 "_page" はページの札、"_dice" はおまかせ）
 var tag_page := 0            # 装備の画面で開いている、名札の部品のページ（sled_tags.gd の PAGES）
 var tag_edit := {}           # 装備の画面で替えている名札: {}（いつもの柄）か {id}（置いてある自分のソリ）・{slot}（畳んだソリ）・{loose}（名札入れ）
@@ -275,6 +279,33 @@ func stitch_target() -> Array:
 		if t[0] == stitch_edit:
 			return t
 	return list[0] if not list.is_empty() else [{}, {}, ""]
+
+
+## 右がステッチの画面か（名札の柄の画面と分けた。ページの番号が名札の部品のページより後ろ）
+func stitch_open() -> bool:
+	return tag_open and tag_page >= preload("res://sled_tags.gd").PAGES.size()
+
+
+## 左の名札の札（stitch が false）・ステッチの札（true）を押した: その画面を開く。開いている札をもう一度押すと装備に戻る。
+## それぞれ、前に開いていたページで開く
+func open_side(stitch: bool) -> void:
+	var n: int = preload("res://sled_tags.gd").PAGES.size()
+	if tag_open:
+		_remember_page()
+		if stitch_open() == stitch:
+			tag_open = false
+			_opt_hover = -1
+			return
+	tag_open = true
+	tag_page = (_last_stitch_page if _last_stitch_page >= n else n) if stitch else clampi(_last_tag_page, 0, n - 1)
+	_opt_hover = -1
+
+
+func _remember_page() -> void:
+	if tag_page >= preload("res://sled_tags.gd").PAGES.size():
+		_last_stitch_page = tag_page
+	else:
+		_last_tag_page = tag_page
 
 
 ## 名札の段の、大玉の縫い目の柄のページの番号（滑りあとの柄の次）
@@ -690,7 +721,8 @@ func _gear_input(e: InputEvent) -> void:
 	if e is InputEventMouseButton and e.pressed and name_edit.has_focus():
 		name_edit.release_focus()
 	if e is InputEventKey and e.pressed and not e.echo and e.physical_keycode == KEY_ESCAPE and tag_open:
-		tag_open = false   # 名札と柄の画面から、装備に戻る
+		_remember_page()
+		tag_open = false   # 名札の柄・ステッチの画面から、装備に戻る
 		get_viewport().set_input_as_handled()
 	elif e is InputEventKey and e.pressed and not e.echo and e.physical_keycode in [KEY_ESCAPE, KEY_I]:
 		close_gear()
@@ -714,7 +746,7 @@ func _gear_input(e: InputEvent) -> void:
 		for i in _scope_rects.size():
 			if (_scope_rects[i] as Rect2).has_point(e.position):
 				_scope_hover = i
-		_hover_btn = "close" if _close_rect.has_point(e.position) else ("tag" if _tag_card_rect.has_point(e.position) else "")
+		_hover_btn = "close" if _close_rect.has_point(e.position) else ("tag" if _tag_card_rect.has_point(e.position) else ("stitch" if _stitch_card_rect.has_point(e.position) else ""))
 		for pr in _page_rects:
 			if (pr[0] as Rect2).has_point(e.position):
 				_hover_btn = "page_" + String(pr[1])
@@ -728,8 +760,10 @@ func _gear_input(e: InputEvent) -> void:
 			close_gear()
 			return
 		if _tag_card_rect.has_point(e.position):
-			tag_open = not tag_open   # 名札と柄の画面 ⇄ 装備
-			_opt_hover = -1
+			open_side(false)   # 名札の柄の画面 ⇄ 装備
+			return
+		if _stitch_card_rect.has_point(e.position):
+			open_side(true)    # ステッチの画面 ⇄ 装備
 			return
 		for pr in _page_rects:
 			if (pr[0] as Rect2).has_point(e.position):
@@ -769,6 +803,7 @@ func _gear_input(e: InputEvent) -> void:
 				match o[1]:
 					"_page":
 						tag_page = o[2]
+						_remember_page()
 						_opt_hover = -1
 					"_dice":
 						shuffle_tag()
@@ -1606,6 +1641,28 @@ class View extends Control:
 				Icons.dashes(self, Icons.rr(card.position.x - 3 * u, card.position.y - 3 * u, cw + 6 * u, card.size.y + 6 * u, 11.0 * u), Icons.RED, 2.6 * u, 6.0 * u, 3.5 * u, 1.0, true)
 		ui._edit_rects = rects
 
+	## 左の、ステッチの札: 上に針と糸（赤い糸のランニングステッチの先に針）、下にいまの滑りあとの柄（雪の上）と、自分の大玉の柄
+	func _stitch_card(u: float, r: Rect2) -> void:
+		var craft: Node = ui.craft
+		Icons.screen()
+		Icons.patch(self, Icons.rr(r.position.x, r.position.y, r.size.x, r.size.y, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+		var ny := r.position.y + 34.0 * u
+		var thread := PackedVector2Array()
+		for k in 16:
+			var t := k / 15.0
+			thread.append(Vector2(lerpf(r.position.x + 18.0 * u, r.end.x - 70.0 * u, t), ny + sin(t * TAU * 1.5) * 6.0 * u))
+		Icons.dashes(self, thread, Icons.RED, 3.0 * u, 7.0 * u, 5.0 * u, 1.0)
+		Icons.icon(self, "needle", Vector2(r.end.x - 44.0 * u, ny), 52.0 * u, 1.0)
+		var tgt: Array = ui.stitch_target()
+		var sn := Rect2(r.position.x + 16.0 * u, r.position.y + 62.0 * u, r.size.x * 0.5 - 22.0 * u, r.size.y - 76.0 * u)
+		draw_rect(sn, Color(0.82, 0.86, 0.94))
+		Stitches.draw_swatch(self, tgt[2], sn, _target_color(tgt))
+		var g := _my_grade()
+		var bs := minf(r.size.x * 0.5 - 20.0 * u, r.size.y - 70.0 * u)
+		BallStitches.draw_ball(self, BallStitches.pattern_of(craft.ball_stitch_of(ui._who()), g), g,
+				Rect2(Vector2(r.position.x + r.size.x * 0.75 - bs / 2.0, r.position.y + 62.0 * u + (r.size.y - 76.0 * u - bs) / 2.0), Vector2(bs, bs)))
+		Icons.screen()
+
 	## 装備の画面
 	func _draw_gear_screen(u: float) -> void:
 		var craft: Node = ui.craft
@@ -1637,20 +1694,28 @@ class View extends Control:
 				Icons.dashes(self, Icons.circ(cc, cs * 0.52, 18), Icons.RED, 2.0 * u, 3.5 * u, 2.5 * u, 1.0, true)
 			crects.append([Rect2(cc - Vector2(cs, cs) / 2.0, Vector2(cs, cs)), i])
 		ui._color_rects = crects
-		# 左の中: 自分の名札の札。押すと右が名札と柄の画面になる（名札の部品・滑りあとの柄・大玉の柄）。もう一度押すと装備に戻る
+		# 左の中: 2 枚の札（2026-11-10 代表「タグの柄設定用のタブとステッチ選択のタブは分けてほしい」）。押すと右がその画面になり、もう一度押すと装備に戻る。
+		#   上: 自分の名札の札（名札の形・地・縁の糸・飾り）。下: ステッチの札（針と糸に、いまの滑りあとの柄と大玉の柄。滑りあとの柄・大玉の柄）
+		var stitching: bool = ui.stitch_open()
 		var tr := Rect2(lr.position.x + 20.0 * u, lr.position.y + 112.0 * u, lw - 40.0 * u, 150.0 * u)
 		ui._tag_card_rect = tr
-		if ui.tag_open or ui._hover_btn == "tag":
-			tr.position.y -= (8.0 if ui.tag_open else 4.0) * u
+		if ui.tag_open and not stitching or ui._hover_btn == "tag":
+			tr.position.y -= (8.0 if ui.tag_open and not stitching else 4.0) * u
 		Icons.screen()
 		Icons.patch(self, Icons.rr(tr.position.x, tr.position.y, tr.size.x, tr.size.y, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
 		Tags.draw_tag(self, tr.grow(-16.0 * u), craft.tag_designs.get(who, {}), 1.0, true)
-		Icons.screen()
-		Icons.icon(self, "needle", tr.end - Vector2(22.0, 22.0) * u, 34.0 * u, 1.0)
-		if ui.tag_open:
-			Icons.screen()
-			Icons.dashes(self, Icons.rr(tr.position.x - 4 * u, tr.position.y - 4 * u, tr.size.x + 8 * u, tr.size.y + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
-			Icons.chevron(self, Vector2(tr.end.x + 14.0 * u, tr.get_center().y), 18.0 * u, Icons.RED, 1.0, 0.0, 3.0 * u)
+		var sr := Rect2(lr.position.x + 20.0 * u, lr.position.y + 282.0 * u, lw - 40.0 * u, 150.0 * u)
+		ui._stitch_card_rect = sr
+		if stitching or ui._hover_btn == "stitch":
+			sr.position.y -= (8.0 if stitching else 4.0) * u
+		_stitch_card(u, sr)
+		for k in 2:   # 開いている札: 赤い糸の縁と、右への山形
+			var on: bool = stitching if k == 1 else ui.tag_open and not stitching
+			var cr: Rect2 = sr if k == 1 else tr
+			if on:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(cr.position.x - 4 * u, cr.position.y - 4 * u, cr.size.x + 8 * u, cr.size.y + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
+				Icons.chevron(self, Vector2(cr.end.x + 14.0 * u, cr.get_center().y), 18.0 * u, Icons.RED, 1.0, 0.0, 3.0 * u)
 		var x0 := lr.end.x + 30.0 * u
 		if ui.tag_open:
 			for k in ["_gear_rects", "_lamp_rects", "_glove_rects", "_scope_rects", "_page_rects", "_inv_rects"]:
@@ -1769,8 +1834,9 @@ class View extends Control:
 			"binoculars":
 				CraftIcons.item(self, {"kind": String(spec.get("kind", "binoculars"))}, c, s * 0.9, a)
 
-	## 名札と柄の画面（自分の名札の札を押したとき、装備の段の代わりに右に出る）: 替えている名札（左に大きく）と、部品の見本（押すと替わる）。
-	## 部品は 4 ページ（形と素材・模様・縁と糸・飾りと判子）と、滑りあとの柄・大玉の縫い目の柄。名札の下に、どの名札を替えるかの札の列
+	## 名札の柄の画面とステッチの画面（左の名札の札・ステッチの札を押したとき、装備の段の代わりに右に出る）。tag_page で分かれる:
+	## 名札の柄は 4 ページ（形と素材・模様・縁と糸・飾りと判子）。替えている名札（左に大きく）と、部品の見本（押すと替わる）、名札の下にどの名札を替えるかの札の列。
+	## ステッチは 2 ページ（滑りあとの柄・大玉の縫い目の柄）
 	func _draw_tag_editor(u: float, r: Rect2, x0: float) -> void:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
@@ -1806,7 +1872,7 @@ class View extends Control:
 		var page: int = clampi(ui.tag_page, 0, ui.ball_page())
 		var looks := [["shape", int(mine.get("shape", 0))], ["pattern", maxi(int(mine.get("pattern", 0)), 3) if int(mine.get("pattern", 0)) == 0 else int(mine.get("pattern", 0))],
 			["stitch", 3 if int(mine.get("stitch", 0)) == 1 else int(mine.get("stitch", 0))], ["motif", 2 if int(mine.get("motif", 0)) == 0 else int(mine.get("motif", 0))]]
-		for k in Tags.PAGES.size():
+		for k in ([] if stitch_page or ball_page else range(Tags.PAGES.size())):   # 名札の柄の画面: 名札の部品のページの札 4 枚
 			var tr := Rect2(ox + k * 54.0 * u, ty - (6.0 * u if k == page else 0.0), 48.0 * u, 38.0 * u)
 			Icons.screen()
 			Icons.patch(self, Icons.rr(tr.position.x, tr.position.y, tr.size.x, tr.size.y, 9.0 * u), Icons.CAP if k == page else Icons.PAPER_EDGE, 1.0 if k == page else 0.75, k == page, Icons.PAPER_EDGE)
@@ -1815,24 +1881,27 @@ class View extends Control:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(tr.position.x - 2.0 * u, tr.position.y - 2.0 * u, tr.size.x + 4.0 * u, tr.size.y + 4.0 * u, 10.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
 			opts.append([tr, "_page", k])
-		# 5 つ目の札: 滑りあとの柄
-		var str_r := Rect2(ox + Tags.PAGES.size() * 54.0 * u, ty - (6.0 * u if stitch_page else 0.0), 48.0 * u, 38.0 * u)
+		# ステッチの画面: ページの札 2 枚（滑りあとの柄・大玉の柄）。名札の柄の画面では出さない
+		var stitching: bool = stitch_page or ball_page
+		var str_r := Rect2(ox, ty - (6.0 * u if stitch_page else 0.0), 48.0 * u, 38.0 * u) if stitching else Rect2(-1000, -1000, 0, 0)
 		Icons.screen()
 		Icons.patch(self, Icons.rr(str_r.position.x, str_r.position.y, str_r.size.x, str_r.size.y, 9.0 * u), Icons.CAP if stitch_page else Icons.PAPER_EDGE, 1.0 if stitch_page else 0.75, stitch_page, Icons.PAPER_EDGE)
 		Stitches.draw_swatch(self, "cross", str_r.grow(-3.0 * u), Icons.RED, 1.0 if stitch_page else 0.6)
 		if stitch_page:
 			Icons.screen()
 			Icons.dashes(self, Icons.rr(str_r.position.x - 2.0 * u, str_r.position.y - 2.0 * u, str_r.size.x + 4.0 * u, str_r.size.y + 4.0 * u, 10.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
-		opts.append([str_r, "_page", Tags.PAGES.size()])
-		# 6 つ目の札: 大玉の縫い目の柄（菊かがりの玉）
-		var bal_r := Rect2(ox + ui.ball_page() * 54.0 * u, ty - (6.0 * u if ball_page else 0.0), 48.0 * u, 38.0 * u)
+		if stitching:
+			opts.append([str_r, "_page", Tags.PAGES.size()])
+		# 大玉の縫い目の柄（菊かがりの玉）
+		var bal_r := Rect2(ox + 54.0 * u, ty - (6.0 * u if ball_page else 0.0), 48.0 * u, 38.0 * u) if stitching else Rect2(-1000, -1000, 0, 0)
 		Icons.screen()
 		Icons.patch(self, Icons.rr(bal_r.position.x, bal_r.position.y, bal_r.size.x, bal_r.size.y, 9.0 * u), Icons.CAP if ball_page else Icons.PAPER_EDGE, 1.0 if ball_page else 0.75, ball_page, Icons.PAPER_EDGE)
 		BallStitches.draw_ball(self, "kiku", _my_grade(), bal_r.grow(-2.0 * u), 1.0 if ball_page else 0.6)
 		if ball_page:
 			Icons.screen()
 			Icons.dashes(self, Icons.rr(bal_r.position.x - 2.0 * u, bal_r.position.y - 2.0 * u, bal_r.size.x + 4.0 * u, bal_r.size.y + 4.0 * u, 10.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
-		opts.append([bal_r, "_page", ui.ball_page()])
+		if stitching:
+			opts.append([bal_r, "_page", ui.ball_page()])
 		# 部品の見本。まだ手に入れていない部品は薄く、木のボタンの印（あとで手に入る）
 		var per := maxi(1, int((r.end.x - 26.0 * u - ox) / (sw + 5.0 * u)))
 		var oy := ty + 50.0 * u
