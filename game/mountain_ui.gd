@@ -292,18 +292,18 @@ class View extends Control:
 			if st == "locked":   # まだ売っていない: 麻ひもの包み
 				CraftIcons.wrap_card(self, card, u)
 				continue
-			Icons.screen()
-			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
-			var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
-			var bs := minf(cw * 0.62, ch * 0.66) * pop
-			BallStitches.draw_ball(self, nm, _grade(), Rect2(card.position + Vector2(cw / 2.0 - bs / 2.0, ch * 0.38 - bs / 2.0), Vector2(bs, bs)))
-			Icons.screen()
-			if owned:
-				Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.86), 26.0 * u, 1.0)
+			if not owned:   # まだ買っていない柄: 小包（上に値段、荷札に柄の玉）。足りなければグレー
+				var g := _grade()
+				CraftIcons.parcel(self, card, cost, st == "money", func(ci: CanvasItem, tr: Rect2) -> void: BallStitches.draw_ball(ci, nm, g, tr), u)
 			else:
-				CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.86), cost, 9.0 * u)
-			if st == "money":   # お金が足りない: グレー
-				CraftIcons.shade_card(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u))
+				CraftIcons.unwrapped(self, card, u)   # 買ったあと: 札のうしろに開いた包み紙
+				Icons.screen()
+				Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+				var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
+				var bs := minf(cw * 0.62, ch * 0.66) * pop
+				BallStitches.draw_ball(self, nm, _grade(), Rect2(card.position + Vector2(cw / 2.0 - bs / 2.0, ch * 0.38 - bs / 2.0), Vector2(bs, bs)))
+				Icons.screen()
+				Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.86), 26.0 * u, 1.0)
 			if sel:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
@@ -338,17 +338,23 @@ class View extends Control:
 				if st == "locked":   # まだ売っていない: 麻ひもの包み
 					CraftIcons.wrap_card(self, card, u)
 					continue
-				Icons.screen()
-				Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
-				var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
-				CraftIcons.item(self, e.item, card.position + Vector2(cw / 2.0, ch * 0.4), minf(cw, ch * 0.7) * 0.8 * pop)
-				Icons.screen()
-				if st == "owned":   # 持っている手袋・双眼鏡: 値段の代わりに針の印
-					Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.85), 34.0 * u, 1.0)
+				var gift: bool = Gloves.is_gloves(String(e.item.kind)) or Binoculars.is_item(e.item)   # 解放の品（手袋・双眼鏡）
+				if gift and st in ["can", "money"]:   # まだ買っていない: 小包（上に値段、荷札に中身の絵）。足りなければグレー
+					CraftIcons.parcel(self, card, cost, st == "money", func(ci: CanvasItem, tr: Rect2) -> void: CraftIcons.item(ci, e.item, tr.get_center(), tr.size.x), u)
 				else:
-					CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.85), cost, 13.0 * u)
-				if st == "money":   # お金が足りない: グレー
-					CraftIcons.shade_card(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u))
+					if gift:   # 買ったあと: 札のうしろに開いた包み紙
+						CraftIcons.unwrapped(self, card, u)
+					Icons.screen()
+					Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+					var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
+					CraftIcons.item(self, e.item, card.position + Vector2(cw / 2.0, ch * 0.4), minf(cw, ch * 0.7) * 0.8 * pop)
+					Icons.screen()
+					if st == "owned":   # 持っている手袋・双眼鏡: 値段の代わりに針の印
+						Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.85), 34.0 * u, 1.0)
+					else:
+						CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.85), cost, 13.0 * u)
+					if st == "money":   # お金が足りない: グレー
+						CraftIcons.shade_card(self, Icons.rr(card.position.x, card.position.y, cw, ch, 14.0 * u))
 				if sel:
 					Icons.screen()
 					Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 16.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)

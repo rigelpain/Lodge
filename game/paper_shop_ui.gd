@@ -384,18 +384,29 @@ func _draw_on(ci: Control) -> void:
 		if st == "locked":   # まだ売っていない: 麻ひもの包み（どの店も同じ。craft_icons.gd）
 			CraftIcons.wrap_card(ci, cr, u)
 			continue
+		var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture() if i < _shots.size() else null
+		if not dyeing and not owned:   # 提灯の形・小物（解放の品）のまだ買っていない札: 小包（上に値段、荷札に中身の絵）。足りなければグレー
+			CraftIcons.parcel(ci, cr, price, st == "money", CraftIcons.shot_hint(tex), u)
+			if i == _sel or i == _hover and CraftIcons.pickable(st):
+				Icons.screen()
+				Icons.dashes(ci, Icons.rr(cr.position.x - 6.0 * u, cr.position.y - 6.0 * u, cr.size.x + 12.0 * u, cr.size.y + 12.0 * u, 10.0 * u), Icons.RED, 3.0 * u, 9.0 * u, 5.0 * u, 1.0 if i == _sel else 0.4, true)
+			continue
+		if not dyeing and price > 0:   # 買ったあと: 札のうしろに開いた包み紙
+			CraftIcons.unwrapped(ci, cr, u)
 		Icons.paper_tag(ci, cr, 14.0 * u, u)
 		var ih := minf(ch - pad * 2.0 - 30.0 * u, (ccw - pad * 2.0) / asp)
 		var iw := ih * asp
-		if i < _shots.size():
-			var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture()
+		if tex:
 			ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((ccw - iw) / 2.0, 12.0 * u), Vector2(iw, ih)), false, Color(1, 1, 1, 0.4 if no_lamp else 1.0))
 		if dyeing:   # 札の左上に、パレットの布の色（灯りは明るくそろえるので、元の色を見せる）
 			var sw := Icons.circ(cr.position + Vector2(20.0, 22.0) * u, 12.0 * u, 16)
 			Icons.screen()
 			Icons.patch(ci, sw, Color(key), 0.45 if no_lamp else 1.0, true, Color(key).darkened(0.4))
-		if not owned and not no_lamp:   # 値段
+		if not owned and not no_lamp:   # 値段（色替えの段）
 			CraftIcons.price(ci, cr.position + Vector2(ccw / 2.0, ch - 20.0 * u), price, 9.0 * u)
+		elif not dyeing:   # 持っている提灯の形・小物: 針の印
+			Icons.screen()
+			Icons.icon(ci, "needle", cr.position + Vector2(ccw / 2.0, ch - 20.0 * u), 28.0 * u, 1.0)
 		if st == "money" and not no_lamp:   # ボタンが足りない: グレー（選べない）
 			CraftIcons.shade_card(ci, CraftIcons.tag_pts(cr, 14.0 * u))
 		if i == _sel or i == _hover and CraftIcons.pickable(st):

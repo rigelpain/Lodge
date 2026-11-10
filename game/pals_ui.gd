@@ -286,16 +286,19 @@ func _draw_on(ci: Control) -> void:
 		if st == "locked":   # まだ売っていない: 麻ひもの包み（どの店も同じ。craft_icons.gd）
 			CraftIcons.wrap_card(ci, cr, u)
 			continue
-		Icons.paper_tag(ci, cr, 16.0 * u, u)
-		var iw := minf(cw - pad * 2.0, (ch * 0.72) * asp)
-		var ih := iw / asp
-		if i < _shots.size():
-			var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture()
-			ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((cw - iw) / 2.0, 14.0 * u), Vector2(iw, ih)), false)
-		if not owned:   # 値段
-			CraftIcons.price(ci, cr.position + Vector2(cw / 2.0, ch - 26.0 * u), price, 10.0 * u)
-		if st == "money":   # ボタンが足りない: グレー（選べない）
-			CraftIcons.shade_card(ci, CraftIcons.tag_pts(cr, 16.0 * u))
+		var tex: Texture2D = (_shots[i][0] as SubViewport).get_texture() if i < _shots.size() else null
+		if not owned:   # まだ買っていない: 小包（上に値段、荷札に中身の絵）。足りなければグレー（選べない。craft_icons.gd）
+			CraftIcons.parcel(ci, cr, price, st == "money", CraftIcons.shot_hint(tex), u)
+		else:
+			if price > 0:   # 買ったあと: 札のうしろに開いた包み紙
+				CraftIcons.unwrapped(ci, cr, u)
+			Icons.paper_tag(ci, cr, 16.0 * u, u)
+			var iw := minf(cw - pad * 2.0, (ch * 0.72) * asp)
+			var ih := iw / asp
+			if tex:
+				ci.draw_texture_rect(tex, Rect2(cr.position + Vector2((cw - iw) / 2.0, 14.0 * u), Vector2(iw, ih)), false)
+			Icons.screen()
+			Icons.icon(ci, "needle", cr.position + Vector2(cw / 2.0, ch - 26.0 * u), 30.0 * u, 1.0)   # 持っている: 針の印
 		if i == _sel or i == _hover and CraftIcons.pickable(st):
 			var rim := Icons.rr(cr.position.x - 6.0 * u, cr.position.y - 6.0 * u, cr.size.x + 12.0 * u, cr.size.y + 12.0 * u, 10.0 * u)
 			Icons.screen()
