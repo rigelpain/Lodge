@@ -823,6 +823,10 @@ func _on_craft(ev: Dictionary) -> void:
 			shop = "mountain" if preload("res://pals.gd").slot_of(String(ev.get("key", ""))) == "pet" else "pal"   # ミニオンは山師、小物は紙細工屋さんから買う
 		"lantern_buy":
 			shop = "pal"   # 提灯も紙細工屋さん
+		"lantern_dye":   # ランタンの色替えも紙細工屋さん（もとの色に戻すのはただなので鳴らさない）
+			paid = int(ev.get("price", 0))
+			if paid > 0:
+				shop = "pal"
 		"sled_dye", "dye":
 			paid = int(ev.get("price", 0))
 			if paid > 0:

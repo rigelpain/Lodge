@@ -62,6 +62,7 @@ var gear_open := false
 var _gear_rects: Array = []  # 装備の画面の、持っている米袋の札
 var _lamp_rects: Array = []  # 装備の画面の、持っているランタンの札
 var _lamp_hover := -1
+var _lamp_asked := 0         # 装備の画面から提げ替えて、まだ返ってきていないランタンの出来事の数（返ってきたら保存する。保存から戻すときは保存しない）
 var _glove_rects: Array = [] # 装備の画面の、持っている手袋の札（右上。gloves.gd）
 var _glove_hover := -1
 var _opt_rects: Array = []   # 装備の画面の、名札の部品の見本 [Rect2, 部品, 番号]（部品 "_page" はページの札、"_dice" はおまかせ）
@@ -305,8 +306,11 @@ func _on_craft(ev: Dictionary) -> void:
 				_coin_pop = 1.0
 			if player.has_method("save_tag"):
 				player.save_tag()
-		"equip":   # はめた手袋は、次に起動しても同じ（gloves.gd）
-			if ev.get("gear", "") == "gloves" and player.has_method("save_tag"):
+		"equip":   # はめた手袋と、この画面で提げ替えたランタンは、次に起動しても同じ（gloves.gd・lantern.gd）
+			var lamp_asked: bool = ev.get("gear", "") == "lantern" and _lamp_asked > 0
+			if lamp_asked:
+				_lamp_asked -= 1
+			if (ev.get("gear", "") == "gloves" or lamp_asked) and player.has_method("save_tag"):
 				player.save_tag()
 		"earn":
 			# 3D のボタンがぽんと跳ね上がったところ（少しあと、少し上）から飛び出す
@@ -696,7 +700,9 @@ func _gear_input(e: InputEvent) -> void:
 				return
 		for i in _lamp_rects.size():
 			if (_lamp_rects[i] as Rect2).has_point(e.position):
-				equip(-1 if i == craft.gear_index(_who(), "lantern") else i, "lantern")   # 提げているのを押すと外す
+				_lamp_asked += 1   # 一人のときは send の中で出来事が起きるので、送る前に数える
+				if not equip(-1 if i == craft.gear_index(_who(), "lantern") else i, "lantern"):   # 提げているのを押すと外す
+					_lamp_asked = maxi(0, _lamp_asked - 1)
 				return
 		for i in _glove_rects.size():
 			if (_glove_rects[i] as Rect2).has_point(e.position):
@@ -955,7 +961,7 @@ class View extends Control:
 						var dp := Vector2(ic.x - (list.size() - 1) * 4.5 * u + k * 9.0 * u, r.end.y - 7.0 * u)
 						draw_circle(dp, 2.8 * u, Color(Icons.RED if k == int(craft.sack_sel.get(who, 0)) else Icons.PAPER_EDGE, 1.0))
 				"lamp":
-					CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamp.get("look", "box"), craft.lamp_on(who), 1.0, lamp.is_empty())
+					CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamp.get("look", "box"), craft.lamp_on(who), 1.0, lamp.is_empty(), String(lamp.get("color", "")))
 			Icons.keycap(self, cards[i][0], r.position + Vector2(13.0 * u, 13.0 * u), 22.0 * u, 1.0)
 
 	## 雪玉の数: I・N・R の札の上の、藍のフェルトのリボン。結び玉から縫い針まで赤い糸で縫ってあり、持っている数だけ綿の雪玉が糸に通る。
@@ -1620,7 +1626,7 @@ class View extends Control:
 		if lamp_on >= 0 and lamp_on < lamps.size():
 			CraftIcons._at(Vector2(lr.position.x + lw * 0.28, lr.position.y + py + 84.0 * u), 64.0 * u * 1.3)
 			Icons.thread(self, PackedVector2Array([Vector2(0, -36), Vector2(0, -28)]), Icons.WOOD, 2.0, 1.0)
-			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[lamp_on].get("look", "box"), craft.lamp_on(who), 1.0)
+			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[lamp_on].get("look", "box"), craft.lamp_on(who), 1.0, false, String(lamps[lamp_on].get("color", "")))
 		# 左の下: 持っているランタン。押すと提げ替え、提げているのをもう一度押すと外す（R で点ける・消す）
 		var lrects: Array = []
 		# 札は 2 枚なら大きく、ランタン掛けで買い足して増えたら列を増やして小さくする（10 枚で 5 列 2 段）
@@ -1642,7 +1648,7 @@ class View extends Control:
 			Icons.screen()
 			Icons.patch(self, Icons.rr(card.position.x, card.position.y, lcw, lch, minf(12.0 * u, lcw * 0.12)), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
 			CraftIcons._at(card.get_center(), minf(lcw, lch * 0.8) * 0.95)
-			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[i].get("look", "box"), picked and craft.lamp_on(who), 1.0)
+			CraftIcons.lantern(self, Vector2.ZERO, 1.0, lamps[i].get("look", "box"), picked and craft.lamp_on(who), 1.0, false, String(lamps[i].get("color", "")))
 			if picked:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, lcw + 8 * u, lch + 8 * u, 14.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)

@@ -675,6 +675,7 @@ func _pose_doll() -> void:
 	doll.lean = Vector2(_lean_now.x, _lean_now.y - _lean_now.z) if state == State.RIDE else Vector2.ZERO
 	if craft:
 		doll.lantern = craft.lantern(id).get("look", "")
+		doll.lantern_color = craft.lantern(id).get("color", "")
 		doll.lantern_lit = craft.lamp_on(id)
 		var spec: Dictionary = craft.sack(id)   # 帯の丸めた米袋（player.gd と同じ）
 		doll.belt_sack = not spec.is_empty() and craft.sack_sled(id) == null

@@ -344,4 +344,5 @@ func _pose_doll() -> void:
 		if not spec.is_empty():
 			doll.belt_color = preload("res://fabrics.gd").color(spec.fabric) if spec.fabric != "" else preload("res://sled.gd").KINDS["sack"].color
 		doll.lantern = craft.lantern(id).get("look", "")
+		doll.lantern_color = craft.lantern(id).get("color", "")
 		doll.lantern_lit = craft.lamp_on(id)
