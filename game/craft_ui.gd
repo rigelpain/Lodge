@@ -8,8 +8,8 @@ extends CanvasLayer
 ##   売り台（おじさんに F）: 上の段に型紙 4 枚、下の段に布 6 色。どれも絵と、値段のボタンの数。
 ##     品物を押して選び、右の買うボタン（ボタン → 手袋）で買う。足りない品物は薄く、買えないときは買うボタンが震える。
 ##     閉じるのは右上の × の縫い目か、F か Esc
-##     左上の札で棚を替える: 型紙と布・滑りあとの柄（stitches.gd。2026-11-06 代表「滑り後のステッチをソリ屋で買ってインベントリでソリごとに設定できるようにして欲しい」）。
-##     柄は持ち物の場所を使わず、人ごとに一度買えばよい
+##     滑りあとの柄（stitches.gd）は売らない。柄を買うのは布の見本帳（sled_book_ui.gd）だけ（2026-11-10 代表「ソリ屋でステッチ買えるけど見本帖でも
+##     ステッチ買える。混ざってない？見本帳だけでいいかも」。前は左上の札で、型紙と布・滑りあとの柄の棚を替えていた）
 ##   ミシンの画面（ミシンの前で F か T）: 上に型紙の枠と布の枠、その右にできるソリ（広げた姿がくるくる回る）と縫うボタン。
 ##     下に自分の持ち物が 2 段（手持ち・かばん）で並び、押すと型紙は型紙の枠、布は布の枠に入る（枠を押すと外す）。開いたときは、手に持っている物か
 ##     最初の型紙・布が入っている。足りない枠は破線の空き枠で、おじさん（売り台の絵）を指す矢印が出る。
@@ -102,9 +102,6 @@ const FLY_T := 0.75          # 財布まで飛ぶ秒
 const FLY_FRAMES := 9        # 体から財布まで飛ぶコマ（12 fps。FLY_T と同じ長さ）
 var _bar_a := 0.0
 var _goods: Array = []       # 売る品物の並び
-var shop_page := 0           # 売り台の開いている棚。0: 型紙と布、1: 滑りあとの柄
-var _stitch_goods: Array = []   # 売っている滑りあとの柄の名前
-var _tab_rects: Array = []   # 棚の札の場所
 var stitch_edit := {}        # 装備の画面で柄を替えているソリ: {sack}（米袋）・{id}（置いてある自分のソリ）・{slot}（畳んだソリ）
 var _rects: Array = []       # 品物の札の場所（画面の px）
 var _buy_rect := Rect2()
@@ -117,7 +114,6 @@ func _ready() -> void:
 		_goods.append({"kind": "pattern", "sled": k})
 	for f in Fabrics.ORDER:
 		_goods.append({"kind": "fabric", "fabric": f})
-	_stitch_goods = Stitches.for_sale()
 	_view = View.new()
 	_view.ui = self
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -175,7 +171,6 @@ func open_shop() -> void:
 	if shop_open or machine_open or gear_open or player == null:
 		return
 	shop_open = true
-	shop_page = 0
 	_sel = -1
 	_open_panel()
 	var sk = main.get("shopkeeper")
@@ -199,11 +194,7 @@ func buy() -> bool:
 	if _sel < 0:
 		_shake = 1.0
 		return false
-	var ok: bool
-	if shop_page == 1:
-		ok = craft.send({"kind": "stitch_buy", "who": _who(), "stitch": _stitch_goods[_sel]})
-	else:
-		ok = craft.send({"kind": "buy", "who": _who(), "item": _goods[_sel].duplicate()})
+	var ok: bool = craft.send({"kind": "buy", "who": _who(), "item": _goods[_sel].duplicate()})
 	if not ok:
 		_shake = 1.0
 	return ok
@@ -213,15 +204,13 @@ func buy() -> bool:
 func sel_price() -> int:
 	if _sel < 0:
 		return 0
-	return Stitches.price(_stitch_goods[_sel]) if shop_page == 1 else Craft.price(_goods[_sel])
+	return Craft.price(_goods[_sel])
 
 
 ## 売り台で選んでいる品物を、いま買えるか
 func sel_ready() -> bool:
 	if _sel < 0 or sel_price() > craft.wallet(_who()):
 		return false
-	if shop_page == 1:
-		return not _stitch_goods[_sel] in craft.stitch_owned.get(_who(), [])
 	return craft.free_slot(_who()) >= 0 or _goods[_sel].kind == "peg" and craft._peg_stack(_who()) >= 0
 
 
@@ -288,11 +277,8 @@ func _on_craft(ev: Dictionary) -> void:
 	if ev.get("who", -1) != _who():
 		return
 	match ev.kind:
-		"stitch_buy":
+		"stitch_buy":   # 滑りあとの柄は見本帳で買う（おじいさんはうなずかない）
 			_coin_pop = 1.0
-			var sk = main.get("shopkeeper")
-			if sk:
-				sk.sold()
 			if player.has_method("save_tag"):
 				player.save_tag()
 		"sled_stitch":
@@ -750,12 +736,6 @@ func _input(e: InputEvent) -> void:
 		elif _buy_rect.has_point(e.position):
 			buy()
 		else:
-			for k in _tab_rects.size():
-				if (_tab_rects[k] as Rect2).has_point(e.position) and k != shop_page:
-					shop_page = k
-					_sel = -1
-					_hover = -1
-					return
 			var i := _hit(e.position)
 			if i >= 0:
 				_sel = i
@@ -1233,8 +1213,7 @@ class View extends Control:
 		Icons.dashes(self, Icons.rr(r.position.x + 10 * u, r.position.y + 10 * u, w - 20 * u, h - 20 * u, 16.0 * u), Icons.CAP, 2.0 * u, 8.0 * u, 5.0 * u, 0.8, true)
 		var rects: Array = []
 		var area_w := w * 0.74
-		_draw_shop_tabs(u, r)
-		for i in (ui._goods.size() if ui.shop_page == 0 else 0):
+		for i in ui._goods.size():
 			var it: Dictionary = ui._goods[i]
 			var pattern: bool = it.kind != "fabric"   # 上の段: 型紙と焚き火セット。下の段: 布
 			var top_n: int = ui._goods.size() - Fabrics.ORDER.size()
@@ -1261,8 +1240,6 @@ class View extends Control:
 			if sel:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(card.position.x - 4 * u, card.position.y - 4 * u, cw + 8 * u, ch + 8 * u, 16.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
-		if ui.shop_page == 1:
-			rects = _draw_stitch_shelf(u, r, area_w)
 		ui._rects = rects
 		# 右: 財布と買うボタン
 		var rx := r.position.x + area_w + 20.0 * u
@@ -1335,68 +1312,7 @@ class View extends Control:
 				Icons.chevron(self, Vector2(card.get_center().x, card.position.y - 14.0 * u), 18.0 * u, Icons.RED, 1.0, PI / 2, 3.0 * u)
 		ui._glove_rects = rects
 
-	## 売り台の棚の札（左の上の外）。型紙の絵と、ジグザグの絵
-	func _draw_shop_tabs(u: float, r: Rect2) -> void:
-		var tabs: Array = []
-		for k in 2:
-			var on: bool = ui.shop_page == k
-			var tw := 86.0 * u
-			var th := 50.0 * u
-			var tr := Rect2(r.position.x + 30.0 * u + k * (tw + 8.0 * u), r.position.y - th + (6.0 if on else 12.0) * u, tw, th)
-			tabs.append(tr)
-			Icons.screen()
-			Icons.patch(self, Icons.rr(tr.position.x, tr.position.y, tw, th, 10.0 * u), Icons.CAP if on else Icons.PAPER_EDGE, 1.0, on, Icons.PAPER_EDGE)
-			if k == 0:
-				CraftIcons.item(self, {"kind": "pattern", "sled": "mid"}, tr.get_center() - Vector2(0, 2) * u, th * 0.8, 1.0 if on else 0.6)
-			else:
-				Stitches.draw_swatch(self, "cross", Rect2(tr.get_center() - Vector2(th, th) * 0.45, Vector2(th, th) * 0.9), Icons.RED, 1.0 if on else 0.6)
-			if on:
-				Icons.screen()
-				Icons.dashes(self, Icons.rr(tr.position.x - 2.0 * u, tr.position.y - 2.0 * u, tw + 4.0 * u, th + 4.0 * u, 11.0 * u), Icons.RED, 2.4 * u, 5.0 * u, 3.0 * u, 1.0, true)
-		ui._tab_rects = tabs
-
-	## 滑りあとの柄の棚: 7 列。安い順。雪の色の札に、柄と値段。買った柄は値段の代わりに赤い糸の印
-	func _draw_stitch_shelf(u: float, r: Rect2, area_w: float) -> Array:
-		var craft: Node = ui.craft
-		var who: int = ui._who()
-		var coins: int = craft.wallet(who)
-		var rects: Array = []
-		var cols := 7
-		var gap := 10.0 * u
-		var cw := (area_w - 40.0 * u - gap * (cols - 1)) / cols
-		var ch := 158.0 * u
-		var names: Array = ui._stitch_goods
-		for i in names.size():
-			var nm: String = names[i]
-			var card := Rect2(r.position.x + 30.0 * u + (i % cols) * (cw + gap), r.position.y + 34.0 * u + (i / cols) * (ch + gap), cw, ch)
-			var sel: bool = ui._sel == i
-			var hov: bool = ui._hover == i
-			if sel or hov:
-				card.position.y -= (6.0 if sel else 3.0) * u
-			rects.append(card)
-			var owned: bool = nm in craft.stitch_owned.get(who, [])
-			var price: int = Stitches.price(nm)
-			var can: bool = owned or price <= coins
-			var a := 1.0 if can else 0.45
-			Icons.screen()
-			Icons.patch(self, Icons.rr(card.position.x, card.position.y, cw, ch, 12.0 * u), Icons.CAP, 1.0 if can else 0.6, true, Icons.PAPER_EDGE)
-			var snow := Rect2(card.position + Vector2(5.0, 5.0) * u, Vector2(cw - 10.0 * u, ch - 52.0 * u))
-			draw_rect(snow, Color(0.82, 0.86, 0.94, a))
-			Stitches.draw_swatch(self, nm, snow, Color("D2553A"), a)
-			if owned:
-				Icons.screen()
-				Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch - 24.0 * u), 26.0 * u, 1.0)
-			else:
-				CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch - 24.0 * u), price, 8.0 * u, a)
-			if sel:
-				Icons.screen()
-				Icons.dashes(self, Icons.rr(card.position.x - 3 * u, card.position.y - 3 * u, cw + 6 * u, ch + 6 * u, 13.0 * u), Icons.RED, 3.0 * u, 7.0 * u, 4.0 * u, 1.0, true)
-		var named: int = ui._hover if ui._hover >= 0 and ui._hover < names.size() else ui._sel
-		if named >= 0 and named < names.size():
-			_name_tag(Stitches.ja(names[named]), Vector2(r.position.x + area_w / 2.0, r.end.y - 26.0 * u), u, 1.0)
-		return rects
-
-	## 装備の画面の、滑りあとの柄の棚（名札の 5 つ目のページ）。持っていない柄は薄く、木のボタンの印（ソリ屋で買う）
+	## 装備の画面の、滑りあとの柄の棚（名札の 5 つ目のページ）。持っていない柄は薄く、木のボタンの印（布の見本帳で買う）
 	func _draw_stitch_page(u: float, x: float, y: float, right: float, opts: Array) -> void:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
