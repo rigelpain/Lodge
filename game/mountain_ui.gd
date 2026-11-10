@@ -3,8 +3,8 @@ extends CanvasLayer
 ## フェルトの板（山男の上着の藍）、クリーム色のカード、赤い丸の買うボタン、右上の × の縫い目。
 ##   左: 棚の品物のカード（mountain_goods.gd の SHELF の順。焚き火セット・ペグ・双眼鏡・雪玉ころがしの手袋）。カードの下に値段のボタン。
 ##       買える・買えないの見え方はどの店も同じ（craft_icons.gd の card_state。2026-11-10 代表）: ボタンが足りない札はグレーで選べない、
-##       持っている手袋は値段の代わりに針の印、まだ売っていない品（ロック。shop_locks.gd）は麻ひもで縛ったクラフト紙の包み（選べない）、
-##       持ち物がいっぱいなら棚の全体をグレーにして、巾着から物があふれる印。手袋は装備なので、いっぱいでもグレーの上に出て買える
+##       持っている手袋と双眼鏡は値段の代わりに針の印、まだ売っていない品（ロック。shop_locks.gd）は麻ひもで縛ったクラフト紙の包み（選べない）、
+##       持ち物がいっぱいなら棚の全体をグレーにして、巾着から物があふれる印。手袋と双眼鏡は装備なので、いっぱいでもグレーの上に出て買える
 ##   右の上: 財布のボタン。品物を選ぶと、その値段を上に赤い糸（足りないとき）で
 ##   右の下: 買うボタン（ボタン → 矢印 → 手袋）。買えないときは震える
 ##   左の端: 段の札 3 枚。上が「道具」（この画面）、まんなかが「連れ」（山師が育てているミニオン。押すと、ミニオンの画面
@@ -18,6 +18,7 @@ const Icons := preload("res://hud_icons.gd")
 const CraftIcons := preload("res://craft_icons.gd")
 const Goods := preload("res://mountain_goods.gd")
 const Gloves := preload("res://gloves.gd")
+const Binoculars := preload("res://binoculars.gd")
 const BallStitches := preload("res://ball_stitches.gd")
 const ShopLocks := preload("res://shop_locks.gd")
 
@@ -108,8 +109,10 @@ func state(i: int) -> String:
 	var it: Dictionary = Goods.SHELF[i].item
 	var k := String(it.kind)
 	var glove := Gloves.is_gloves(k)
-	var room: bool = glove or craft.free_slot(who) >= 0 or k == "peg" and craft._peg_stack(who) >= 0   # 手袋は装備、ペグは持っている束に足せる
-	return CraftIcons.card_state(ShopLocks.locked(ShopLocks.item_key(it)), glove and craft.gloves_index(who, k) >= 0, Goods.price(k) <= coins, room)
+	var scope := Binoculars.is_item(it)
+	var room: bool = glove or scope or craft.free_slot(who) >= 0 or k == "peg" and craft._peg_stack(who) >= 0   # 手袋と双眼鏡は装備、ペグは持っている束に足せる
+	var owned: bool = glove and craft.gloves_index(who, k) >= 0 or scope and craft.scope_index(who, k) >= 0   # 一度買えばずっと持っている
+	return CraftIcons.card_state(ShopLocks.locked(ShopLocks.item_key(it)), owned, Goods.price(k) <= coins, room)
 
 
 ## 持ち物がいっぱいで、道具の棚のうち場所の要る品が買えない
@@ -340,7 +343,7 @@ class View extends Control:
 				var pop := 1.0 + 0.15 * sin(ui._pop * PI) if sel else 1.0
 				CraftIcons.item(self, e.item, card.position + Vector2(cw / 2.0, ch * 0.4), minf(cw, ch * 0.7) * 0.8 * pop)
 				Icons.screen()
-				if st == "owned":   # 持っている手袋: 値段の代わりに針の印
+				if st == "owned":   # 持っている手袋・双眼鏡: 値段の代わりに針の印
 					Icons.icon(self, "needle", card.position + Vector2(cw / 2.0, ch * 0.85), 34.0 * u, 1.0)
 				else:
 					CraftIcons.price(self, card.position + Vector2(cw / 2.0, ch * 0.85), cost, 13.0 * u)

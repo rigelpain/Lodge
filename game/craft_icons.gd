@@ -722,3 +722,34 @@ static func tag_pts(rect: Rect2, cut: float) -> PackedVector2Array:
 	var h := rect.size.y
 	return PackedVector2Array([Vector2(x + cut, y), Vector2(x + w - cut, y), Vector2(x + w, y + cut), Vector2(x + w, y + h),
 		Vector2(x, y + h), Vector2(x, y + cut)])
+
+
+## 米マークのワッペン（装備の画面の米袋の段の印。2026-11-10 代表「米袋のアイコン微妙。実物についてる米マークワッペンにしてほしい」）。
+## 実物の米袋の布（props/sled_sack の刷り）にある、赤い輪の中の米の字形と、左右から上へ伸びる緑の稲穂を、生成りのフェルトの丸に縫い取る。c は真ん中、s は直径 (px)
+static func kome_patch(ci: CanvasItem, c: Vector2, s: float, a := 1.0) -> void:
+	Icons.screen()
+	var r := s * 0.5
+	Icons.patch(ci, Icons.circ(c, r, 28), Color(0.86, 0.76, 0.58), a, true, Color(0.62, 0.50, 0.34))
+	Icons.dashes(ci, Icons.circ(c, r * 0.86, 28), Color(0.55, 0.42, 0.28), maxf(1.0, s * 0.02), s * 0.05, s * 0.035, 0.9 * a, true)
+	var green := Color(0.36, 0.56, 0.30)
+	var red := Color(0.76, 0.22, 0.17)
+	var w := maxf(1.2, s * 0.045)
+	for side in [-1.0, 1.0]:   # 稲穂: 下から外へふくらんで上へ伸び、穂先が内へ垂れる
+		var arc := PackedVector2Array()
+		for k in 10:
+			var t := k / 9.0
+			arc.append(c + Vector2(side * (r * 0.62 + sin(t * PI) * r * 0.06), lerpf(r * 0.48, -r * 0.42, t)))
+		arc.append(c + Vector2(side * r * 0.40, -r * 0.62))
+		Icons.thread(ci, arc, green, w, a)
+		Icons.patch(ci, Icons.ell(c + Vector2(side * r * 0.46, -r * 0.6), r * 0.14, r * 0.06, 10), green, a, false)
+	var ring := PackedVector2Array()
+	for k in 25:
+		ring.append(c + Vector2.from_angle(TAU * k / 24.0) * r * 0.42)
+	Icons.thread(ci, ring, red, w, a)
+	var q := r * 0.3   # 米の字形: 縦と横、上の 2 つの点（中へ向く）、下の 2 本の払い（真ん中から外へ）
+	Icons.thread(ci, PackedVector2Array([c + Vector2(0, -q), c + Vector2(0, q)]), red, w * 1.1, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(-q, 0), c + Vector2(q, 0)]), red, w * 1.1, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(-q * 0.72, -q * 0.78), c + Vector2(-q * 0.36, -q * 0.34)]), red, w, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(q * 0.72, -q * 0.78), c + Vector2(q * 0.36, -q * 0.34)]), red, w, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(-q * 0.08, q * 0.1), c + Vector2(-q * 0.8, q * 0.82)]), red, w, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(q * 0.08, q * 0.1), c + Vector2(q * 0.8, q * 0.82)]), red, w, a)

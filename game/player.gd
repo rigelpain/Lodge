@@ -2647,6 +2647,8 @@ func _pan_hand(d: Vector2) -> void:
 ## ホイール: 素手 → 手持ち 1 → 2 → … と回す（空いたマスと、かばんの物は飛ばす）
 func cycle_hand(step: int) -> void:
 	var order := [-1]
+	if not craft.scope(id).is_empty():   # 首から下げた双眼鏡は、素手の次（craft.gd の NECK）
+		order.append(preload("res://craft.gd").NECK)
 	var b: Array = craft.bag(id)
 	for i in mini(preload("res://craft.gd").HAND_SLOTS, b.size()):
 		if not b[i].is_empty():
@@ -3329,6 +3331,10 @@ func _load_tag() -> bool:
 		for f in cf.get_value("gloves", "owned", []):
 			craft.send({"kind": "gloves_own", "who": id, "grade": String(f)})
 		craft.send({"kind": "equip", "who": id, "gear": "gloves", "index": int(cf.get_value("gloves", "wear", -1))})
+	if cf.has_section("binoculars"):   # 手の双眼鏡: 持っている段を戻してから、首から下げていた段を下げる（"" は下げていなかった）
+		for k in cf.get_value("binoculars", "owned", []):
+			craft.send({"kind": "scope_own", "who": id, "grade": String(k)})
+		craft.send({"kind": "equip", "who": id, "gear": "binoculars", "grade": String(cf.get_value("binoculars", "wear", ""))})
 	if cf.has_section("pals"):   # 頭・肩の小物とミニオン: 持っている物を戻してから付ける
 		for k in cf.get_value("pals", "owned", []):
 			craft.send({"kind": "pal_own", "who": id, "key": String(k)})
@@ -3438,6 +3444,11 @@ func save_tag() -> void:
 		gl.append(String(g.get("grade", "")))
 	cf.set_value("gloves", "owned", gl)
 	cf.set_value("gloves", "wear", craft.gear_index(id, "gloves"))
+	var sc: Array = []   # 手の双眼鏡（binoculars.gd）: 持っている段と、首から下げている段
+	for g in craft.scopes.get(id, []):
+		sc.append(String(g.get("kind", "")))
+	cf.set_value("binoculars", "owned", sc)
+	cf.set_value("binoculars", "wear", String(craft.scope(id).get("kind", "")))
 	cf.set_value("pals", "owned", craft.pals_owned.get(id, []))   # 頭・肩の小物とミニオン（pals.gd）
 	for slot in craft.pals_wear.get(id, {}):
 		cf.set_value("pals", slot, craft.pals_wear[id][slot])
