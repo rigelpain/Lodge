@@ -686,6 +686,71 @@ static func wrap_card(ci: CanvasItem, card: Rect2, u := 1.0) -> void:
 	Icons.patch(ci, Icons.circ(c, b * 0.45, 10), HEMP.darkened(0.15), 1.0, false)
 
 
+# ---- 解放の品（一度買えばずっと持つ品。持ち物の場所を使わない）の札（2026-11-10 代表「UNLOCK系のやつが小包になってなくない？
+#      小包の上に金額を乗せてほしい。お金が足りなくて変えないときはグレーの小包で、買えるときは色のある小包にするのは？」
+#      「いまのに中身のイラストのタグつけてあげてほしい」）。
+#      「茶色いふうにリボンかけてあるやつ。立体じゃなくていいよ」「全部茶色の封してあるやつにしてほしい」
+#      「ball_states.jpgの右下のやつに全部して。でもそれだと中身とUNLOCK料金わかんないから値段と中身見せてあげてほしい」）。
+#      まだ買っていない: ロックと同じ、クラフト紙に麻ひもを十字にかけた包み（parcel）。包みの上の縁に値段のボタンが乗り、
+#      麻ひもの結び目から中身の絵の荷札が下がる。お金が足りなければ、同じ包みがグレーに沈む（選べない）。
+#      買ったあと: 札のうしろに開いたクラフト紙がのぞき（unwrapped）、札は今の「もう持っている」（針の印）。
+#      まだ売っていない品（ロック）は、値段も荷札もない包みだけ（wrap_card）。
+#      解放の品: 山師の手袋・双眼鏡・雪玉の柄・ミニオン、紙細工屋さんの提灯の形・頭と肩の小物、見本帳の滑りあとの柄
+
+const PARCEL_GRAY := Color(0.50, 0.50, 0.53, 0.6)   # お金が足りない小包にかぶせるグレー
+
+
+## 解放の品の、まだ買っていない札: 平たい茶色の小包。cost は値段（包みの上の縁にボタンが乗る）、gray ならお金が足りない（グレー、選べない）。
+## hint は荷札の中に中身の絵を描く Callable（引数は (ci, 荷札の絵の Rect2)。空なら荷札なし）。u は画面の倍率
+static func parcel(ci: CanvasItem, card: Rect2, cost: int, gray: bool, hint := Callable(), u := 1.0) -> void:
+	var r := minf(card.size.x * 0.075, card.size.y * 0.07)   # 値段のボタンの大きさ（低い札では小さく）
+	var rows := ceili((preload("res://craft.gd").pieces(cost) as Array).size() / 3.0)
+	var top := (rows * r * 2.1 - r * 0.9) if rows > 0 else 0.0   # ボタンの下の段が包みの縁にかかるだけあける
+	var p := Rect2(card.position + Vector2(0, top), card.size - Vector2(0, top))
+	wrap_card(ci, p, u)   # ロックと同じクラフト紙に麻ひもの包み
+	Icons.screen()
+	var body := Icons.rr(p.position.x, p.position.y, p.size.x, p.size.y, 12.0 * u)
+	var c := p.get_center() + Vector2(0, -p.size.y * 0.06)   # 麻ひもの結び目（wrap_card と同じ所）
+	var b := minf(p.size.x, p.size.y) * 0.1
+	var pts := PackedVector2Array()
+	if hint.is_valid():   # 荷札: 結び目から下がる、角を切った生成りの紙に中身の絵
+		var ts := minf(p.size.x * 0.56, p.size.y * 0.5)
+		var tg := Rect2(Vector2(minf(c.x + p.size.x * 0.04, p.end.x - ts - 4.0 * u), minf(c.y + b * 0.9, p.end.y - ts - 4.0 * u)), Vector2(ts, ts))
+		Icons.thread(ci, PackedVector2Array([c, tg.position + Vector2(ts * 0.14, ts * 0.14)]), HEMP.darkened(0.1), 2.0 * u, 1.0)
+		var cut := ts * 0.22
+		pts = PackedVector2Array([Vector2(tg.position.x + cut, tg.position.y), Vector2(tg.end.x, tg.position.y), tg.end,
+			Vector2(tg.position.x, tg.end.y), Vector2(tg.position.x, tg.position.y + cut)])
+		Icons.patch(ci, pts, Icons.PAPER, 1.0, true, Icons.THREAD)
+		ci.draw_circle(tg.position + Vector2(cut * 0.55, cut * 0.55), maxf(2.0, 3.2 * u), Icons.PAPER_EDGE)
+		hint.call(ci, tg.grow(-ts * 0.1))
+		Icons.screen()
+	if gray:   # 小包と荷札をまとめてグレーに沈める
+		ci.draw_colored_polygon(body, PARCEL_GRAY)
+		if not pts.is_empty():
+			ci.draw_colored_polygon(pts, PARCEL_GRAY)
+	# 値段: 包みの上の縁に乗るボタン
+	if rows > 0:
+		price(ci, Vector2(c.x, p.position.y - (rows - 1) * r * 1.05), cost, r, 0.55 if gray else 1.0, Color(0.66, 0.66, 0.68) if gray else COIN)
+	Icons.screen()
+
+
+## 解放の品の、買ったあとの札: 札の下に、開いて広げたクラフト紙が少し斜めに敷いてあり（札のまわりに紙の縁がのぞく）、ほどいた麻ひもが下に垂れる。札を描く前に呼ぶ
+static func unwrapped(ci: CanvasItem, card: Rect2, u := 1.0) -> void:
+	Icons.screen()
+	var c := card.get_center()
+	var tilt := deg_to_rad(4.0) * (1.0 if int(card.position.x / (17.0 * u)) % 2 == 0 else -1.0)   # 札ごとに向きを変える
+	var half := card.size * 0.5 + Vector2(7.0, 7.0) * u
+	var pts := PackedVector2Array()
+	for k in [Vector2(-1, -1), Vector2(1, -1), Vector2(1, 1), Vector2(-1, 1)]:
+		pts.append(c + (half * k).rotated(tilt))
+	Icons.patch(ci, pts, WRAP, 1.0, false)
+	var curl := PackedVector2Array()   # ほどいた麻ひも（下の縁から）
+	for k in 12:
+		var t := k / 11.0
+		curl.append(c + Vector2(card.size.x * (0.05 + t * 0.32), half.y + 2.0 * u + t * 6.0 * u + sin(t * TAU) * 3.0 * u))
+	Icons.thread(ci, curl, HEMP, 3.2 * u, 1.0)
+
+
 ## 持ち物がいっぱい: 売り場の板 board の全体をグレーにし、巾着から物があふれる印を大きく出す。
 ## 印は、at を渡せばそこに大きさ size で（グレーの上に残す札と重ならない所）、渡さなければ板のまんなかに
 static func bag_full(ci: CanvasItem, board: Rect2, u := 1.0, at := Vector2.INF, size := 0.0) -> void:
@@ -753,3 +818,13 @@ static func kome_patch(ci: CanvasItem, c: Vector2, s: float, a := 1.0) -> void:
 	Icons.thread(ci, PackedVector2Array([c + Vector2(q * 0.72, -q * 0.78), c + Vector2(q * 0.36, -q * 0.34)]), red, w, a)
 	Icons.thread(ci, PackedVector2Array([c + Vector2(-q * 0.08, q * 0.1), c + Vector2(-q * 0.8, q * 0.82)]), red, w, a)
 	Icons.thread(ci, PackedVector2Array([c + Vector2(q * 0.08, q * 0.1), c + Vector2(q * 0.8, q * 0.82)]), red, w, a)
+
+
+## 小包の荷札に、店の札の 3D の絵（SubViewport の絵）をそのまま小さく写す Callable（紙細工屋さん・連れ）。tex が null なら荷札なし
+static func shot_hint(tex: Texture2D) -> Callable:
+	if tex == null:
+		return Callable()
+	return func(ci: CanvasItem, r: Rect2) -> void:
+		var asp := float(tex.get_width()) / maxf(1.0, tex.get_height())
+		var s := Vector2(r.size.x, r.size.x / asp) if asp >= r.size.x / r.size.y else Vector2(r.size.y * asp, r.size.y)
+		ci.draw_texture_rect(tex, Rect2(r.get_center() - s / 2.0, s), false)

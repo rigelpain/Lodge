@@ -552,19 +552,20 @@ func _draw_stitches(ci: Control, o: Vector2, k: float) -> void:
 		if st == "locked":   # まだ売っていない: 麻ひもの包み（どの店も同じ。craft_icons.gd）
 			CraftIcons.wrap_card(ci, r, k)
 			continue
-		Icons.screen()
-		Icons.patch(ci, Icons.rr(r.position.x, r.position.y, r.size.x, r.size.y, 9.0 * k), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
-		var snow := Rect2(r.position + Vector2(5, 5) * k, Vector2(r.size.x - 10.0 * k, r.size.y - 50.0 * k))
-		ci.draw_rect(snow, Color(0.82, 0.86, 0.94))
-		Stitches.draw_swatch(ci, nm, snow, col)
-		var foot := r.position + Vector2(r.size.x / 2.0, r.size.y - 22.0 * k)
-		if owned:   # 持っている柄: 針の印
-			Icons.screen()
-			Icons.icon(ci, "needle", foot, 30.0 * k, 1.0)
+		if not owned:   # まだ買っていない柄: 小包（上に値段、荷札に選んだ色の糸の柄）。足りなければグレー（craft_icons.gd）
+			CraftIcons.parcel(ci, r, price, st == "money", func(c2: CanvasItem, tr: Rect2) -> void:
+				c2.draw_rect(tr, Color(0.82, 0.86, 0.94))
+				Stitches.draw_swatch(c2, nm, tr, col), k)
 		else:
-			CraftIcons.price(ci, foot, price, 7.5 * k)
-		if st == "money":   # ボタンが足りない: グレー（選べない）
-			CraftIcons.shade_card(ci, Icons.rr(r.position.x, r.position.y, r.size.x, r.size.y, 9.0 * k))
+			if price > 0:   # 買ったあと: 札のうしろに開いた包み紙
+				CraftIcons.unwrapped(ci, r, k)
+			Icons.screen()
+			Icons.patch(ci, Icons.rr(r.position.x, r.position.y, r.size.x, r.size.y, 9.0 * k), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+			var snow := Rect2(r.position + Vector2(5, 5) * k, Vector2(r.size.x - 10.0 * k, r.size.y - 50.0 * k))
+			ci.draw_rect(snow, Color(0.82, 0.86, 0.94))
+			Stitches.draw_swatch(ci, nm, snow, col)
+			Icons.screen()   # 持っている柄: 針の印
+			Icons.icon(ci, "needle", r.position + Vector2(r.size.x / 2.0, r.size.y - 22.0 * k), 30.0 * k, 1.0)
 		if nm == cur:   # いまそのソリの柄: 藍の糸の縁
 			Icons.screen()
 			Icons.dashes(ci, Icons.rr(r.position.x + 2 * k, r.position.y + 2 * k, r.size.x - 4 * k, r.size.y - 4 * k, 8.0 * k), Icons.THREAD, 2.0 * k, 5.0 * k, 3.0 * k, 0.9, true)

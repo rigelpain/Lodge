@@ -4,6 +4,8 @@ extends SceneTree
 ## ロックは確かめのあいだだけ、各店の 1 品ずつに付ける（shop_locks.gd の extra。ゲームの中のロックの品は空のまま）。
 ##   <店>_states.jpg  買える・ボタンが足りない（グレー）・持っている（針）・まだ売っていない（麻ひもの包み）が並ぶ画面
 ##   <店>_full.jpg    持ち物がいっぱい（画面全体がグレーで、巾着からあふれる印）
+## 解放の品（手袋・双眼鏡・雪玉の柄・滑りあとの柄・提灯の形・小物・ミニオン）は、まだ買っていなければ小包（色・グレー）、
+## 買ったあとは札のうしろに開いた包み紙（craft_icons.gd の parcel・unwrapped。2026-11-10 代表）
 ## 数字: グレー・包みの札は選べない、いっぱいの店では買えない、ロックの品はホストが断る
 
 const ShopLocks := preload("res://shop_locks.gd")
@@ -124,6 +126,8 @@ func _run() -> void:
 	c.wallets[who] = 150
 	main.paper_shop_ui.open("head")
 	await _shot("paper_states.jpg")
+	main.paper_shop_ui.set_tab(0)   # 提灯の形（解放の品の小包と、開いた包み紙）
+	await _shot("paper_lantern_states.jpg")
 	main.paper_shop_ui.close()
 	await create_timer(0.3).timeout
 	main.minion_ui.open("pet")
