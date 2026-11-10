@@ -239,10 +239,12 @@ static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit :=
 		return
 	var Lt := preload("res://lantern.gd")
 	if lit:   # 光の輪（重ねた薄い円）
-		var lc: Color = Lt.tint(look, hex)
+		var lc: Color = Color(0.10, 0.10, 0.14) if Lt.is_black(hex) else Lt.tint(look, hex)   # 黒は墨の輪（まわりが暗い）
 		for i in 4:
 			ci.draw_circle(o + Vector2(0, 2) * k, (30.0 - i * 6.0) * k, Color(lc.r, lc.g * 1.08, lc.b * 0.95, 0.16 * a))
 	var glow := Lt.tint(look, hex, true).lerp(Color.WHITE, 0.35) if lit else Color(0.62, 0.60, 0.58)
+	if Lt.is_black(hex):   # 黒い紙: 点くと墨の黒、消すと消し炭の灰
+		glow = Lt.INK if lit else Lt.INK_OFF
 	if look in ["spool", "knit", "hoop", "yarnball", "thimble", "hotaru", "pearl"]:
 		_lantern_ware(ci, c, sc, look, glow, lit, a)
 		return

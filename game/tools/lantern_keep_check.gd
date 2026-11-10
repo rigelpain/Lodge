@@ -234,6 +234,10 @@ func _host_run() -> void:
 	c.wallets[p.id] = 100
 	c.send({"kind": "equip", "who": p.id, "gear": "lantern", "look": "box"})
 	c.send({"kind": "lantern_dye", "who": p.id, "look": "box", "color": Craft.lantern_palette()[2]})
+	await _wait(4.0)
+	# 黒に染めて点けると、つなぐ側の画面でもまわりを暗くする（lantern.gd の is_black）
+	c.send({"kind": "lantern_dye", "who": p.id, "look": "box", "color": Craft.lantern_palette()[10]})
+	c.send({"kind": "lamp", "who": p.id, "on": true})
 	await _wait(6.0)
 
 
@@ -247,4 +251,7 @@ func _join_run() -> void:
 	var rp: Node = main.net.remotes.get(hid)
 	var d = rp.get("doll") if rp else null
 	_ok(await _until(func(): return d and d.lantern_color == Craft.lantern_palette()[2], 5.0), "ホストの人の人形の帯にも")
+	var lt = d.get("_lantern") if d else null
+	_ok(await _until(func(): return lt and (lt.get("_light") as OmniLight3D).light_negative and (lt.get("_dark") as Node3D).visible, 15.0),
+		"ホストの人が黒に染めて点けると、つなぐ側の画面でもまわりを暗くする（引く灯りと暗がりの球）")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(String(args.get("tag-file", ""))))

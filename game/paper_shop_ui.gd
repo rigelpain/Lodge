@@ -273,6 +273,7 @@ func _make_shots() -> void:
 					(m as MeshInstance3D).set_surface_override_material(0, mat)
 			var glow := OmniLight3D.new()   # 中の灯り（形の色）
 			glow.light_color = Lantern.tint(key, hex)
+			glow.light_negative = Lantern.is_black(hex)   # 黒は札の中も暗くする
 			glow.light_energy = 0.9
 			glow.omni_range = 0.6
 			glow.position = Vector3(0, -0.15, 0)
