@@ -469,6 +469,18 @@ func carry(sled: RigidBody3D, i: int, side: int) -> void:
 	_carried[sled] = [i, side]
 
 
+## 吊っているソリを、いまの所で放す（乗っている人が途中で飛び降りた。ソリはそのまま落ちる）
+func drop(sled: RigidBody3D) -> void:
+	if sled == null or not _carried.has(sled):
+		return
+	var c: Array = _carried[sled]
+	_carried.erase(sled)
+	sled.freeze = false
+	sled.parked = false
+	sled.linear_velocity = chair_dir(c[0]) * SPEED
+	sled.angular_velocity = Vector3.ZERO
+
+
 func _carry_step() -> void:
 	for sled in _carried.keys():
 		if not is_instance_valid(sled):
