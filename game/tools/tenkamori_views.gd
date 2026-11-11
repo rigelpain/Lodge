@@ -83,7 +83,7 @@ func _run() -> void:
 	# 上から見た全体
 	await _look("air", Vector3(500, 700, -500), Vector3(-200, 50, 350), 50.0)
 	# ヒュッテ（PV と同じ向きから）: 正面の斜め・入口・玄関ホール・食堂
-	var hu: Node3D = main.get_node_or_null("Tenkamori/Hutte")
+	var hu: Node3D = main.get_node_or_null("Site/Hutte")
 	if hu:
 		await _look("hutte_far", hu.to_global(Vector3(-14, 9, 40)), hu.to_global(Vector3(3, 3.5, 0)), 55.0)   # ゲレンデの上から（計画書の外観の写真の向き）
 		await _look("hutte_near", hu.to_global(Vector3(1.5, 1.6, 19)), hu.to_global(Vector3(0, 4.8, 8)), 70.0)   # ゲレンデの側の入口

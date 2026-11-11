@@ -1,4 +1,5 @@
 extends Node3D
+## 本物の地形のワールド（天下森・旭ヶ丘。どの場所かは site。use() で選ぶ）。
 ## 天下森のワールド（2026-11-09）。横手市増田町の天下森スキー場を、本物の標高で起こした別の世界。
 ## 2026-11-09 代表「今まで作ってたのをプレーンなデフォルトワールドとして、別のワールドって感じで作ってほしい」
 ## 同日「ノスタルジーを感じさせる目的でつくるので、ゲレンデから見える景色、つまりコースの逆側の山の作りがかなり重要」
@@ -15,20 +16,59 @@ const Props := preload("res://props.gd")
 const TreeHits := preload("res://tree_hits.gd")
 const Look := preload("res://look.gd")
 
-const NEAR_X0 := -650.0
-const NEAR_Z0 := -150.0
+## どの場所か（2026-11-11: 倶知安町の旭ヶ丘スキー場を足し、このスクリプトを本物の地形のワールドの共通にした）。
+## main.gd が stage を決めたら use() で選ぶ。焼いた表は res://<場所>/ にあり、格子の取り方は場所ごと（SITES）
+const SITES := {
+	"tenkamori": {"near": [-650.0, -150.0, 2.0, 513], "mid": [-3200.0, -4800.0, 16.0, 501], "far": [-19200.0, -19200.0, 96.0, 401],
+		"cedar": 0.85, "fog": 0.00018},
+	# 旭ヶ丘: 原点はペアリフトの乗り場。南南東 10 km の羊蹄山が景色の主役なので、谷の向かい（mid）を南東へ広く（24 m おき 16 km）とる。
+	# 林は杉の植林でなく、葉の落ちた広葉樹が多い（北海道の低い山）。霧は羊蹄山が霞みすぎないよう薄く
+	"asahigaoka": {"near": [-600.0, -650.0, 2.0, 513], "mid": [-4400.0, -2400.0, 24.0, 676], "far": [-19200.0, -19200.0, 96.0, 401],
+		"cedar": 0.45, "fog": 0.00004, "treeline": [700.0, 1150.0], "woods_above": [110.0, 200.0], "bare": Color(0.46, 0.45, 0.50)},   # 森林限界は標高 900〜1350 m（高さは標高 − 193 m）
+}
+static var site := "tenkamori"
+static var NEAR_X0 := -650.0
+static var NEAR_Z0 := -150.0
 const STEP := 2.0
 const N := 513
-const NEAR_X1 := NEAR_X0 + (N - 1) * STEP   # 374
-const NEAR_Z1 := NEAR_Z0 + (N - 1) * STEP   # 874
-const MID_X0 := -3200.0
-const MID_Z0 := -4800.0
-const MID_STEP := 16.0
-const MID_N := 501
-const FAR_X0 := -19200.0
-const FAR_Z0 := -19200.0
-const FAR_STEP := 96.0
-const FAR_N := 401
+static var NEAR_X1 := NEAR_X0 + (N - 1) * STEP
+static var NEAR_Z1 := NEAR_Z0 + (N - 1) * STEP
+static var MID_X0 := -3200.0
+static var MID_Z0 := -4800.0
+static var MID_STEP := 16.0
+static var MID_N := 501
+static var FAR_X0 := -19200.0
+static var FAR_Z0 := -19200.0
+static var FAR_STEP := 96.0
+static var FAR_N := 401
+
+
+## 場所を選ぶ（表を読み直す）。近くの格子は 2 m おき 513 点四方でそろえる（当たり判定と見た目の区画の作りが同じなので）
+static func use(name: String) -> void:
+	if name == site and not _near.is_empty():
+		return
+	site = name
+	var g: Dictionary = SITES[name]
+	NEAR_X0 = g.near[0]
+	NEAR_Z0 = g.near[1]
+	NEAR_X1 = NEAR_X0 + (N - 1) * STEP
+	NEAR_Z1 = NEAR_Z0 + (N - 1) * STEP
+	MID_X0 = g.mid[0]
+	MID_Z0 = g.mid[1]
+	MID_STEP = g.mid[2]
+	MID_N = g.mid[3]
+	FAR_X0 = g.far[0]
+	FAR_Z0 = g.far[1]
+	FAR_STEP = g.far[2]
+	FAR_N = g.far[3]
+	_near = PackedFloat32Array()
+	_map = {}
+
+
+## 焼いた表のありか
+static func res(file: String) -> String:
+	return "res://%s/%s" % [site, file]
+
 
 const SEAM_SINK := 40.0     # 細かい地面の下に隠れる粗い地面を、これだけ下げる (m)。16 m おきの粗い地面は、狭い沢で細かい地面より高く出る
 const EDGE_FADE := 24.0     # 近くの地面の縁から、粗い地面へ溶かす幅（見た目の吹きだまりを消す）
@@ -42,13 +82,13 @@ var hits: TreeHits
 
 static func near() -> PackedFloat32Array:
 	if _near.is_empty():
-		_near = FileAccess.get_file_as_bytes("res://tenkamori/near.bin").to_float32_array()
+		_near = FileAccess.get_file_as_bytes(res("near.bin")).to_float32_array()
 	return _near
 
 
 static func map() -> Dictionary:
 	if _map.is_empty():
-		_map = JSON.parse_string(FileAccess.get_file_as_string("res://tenkamori/map.json"))
+		_map = JSON.parse_string(FileAccess.get_file_as_string(res("map.json")))
 	return _map
 
 
@@ -84,12 +124,18 @@ static func drift_k(x: float, z: float) -> float:
 
 
 static func start_pos() -> Vector3:
+	if site != "tenkamori":   # ほかの場所: 焼いたときに決めた始める所（map.json の start）
+		var st: Array = map().get("start", [0.0, 0.0])
+		return Vector3(st[0], 0.0, st[1])
 	var f: Vector2 = preload("res://hutte.gd").front_spot()
 	return Vector3(f.x, 0.0, f.y)
 
 
-## 始めたときに向く所（ヒュッテの入口の妻）
+## 始めたときに向く所（天下森: ヒュッテの入口の妻。ほかの場所: map.json の look）
 static func start_look() -> Vector3:
+	if site != "tenkamori":
+		var lk: Array = map().get("look", [0.0, 0.0])
+		return Vector3(lk[0], lift(lk[0], lk[1]) + 3.0, lk[1])
 	var H := preload("res://hutte.gd")
 	var f: Vector2 = H.to_world(0.0, -H.VEST_V)
 	return Vector3(f.x, lift(f.x, f.y) + 3.0, f.y)
@@ -100,8 +146,8 @@ func _ready() -> void:
 	var snow := Look.snow()
 	snow.next_pass = _woods_material(true)   # 林の所は、離れて見ると向かいの山と同じ林の色（足もとは雪の白）
 	_make_near(snow)
-	_make_coarse("Mid", _bin("res://tenkamori/mid.bin"), MID_X0, MID_Z0, MID_STEP, MID_N, 25, Rect2(NEAR_X0, NEAR_Z0, NEAR_X1 - NEAR_X0, NEAR_Z1 - NEAR_Z0), far_snow)
-	_make_coarse("Far", _bin("res://tenkamori/far.bin"), FAR_X0, FAR_Z0, FAR_STEP, FAR_N, 50,
+	_make_coarse("Mid", _bin(res("mid.bin")), MID_X0, MID_Z0, MID_STEP, MID_N, 25, Rect2(NEAR_X0, NEAR_Z0, NEAR_X1 - NEAR_X0, NEAR_Z1 - NEAR_Z0), far_snow)
+	_make_coarse("Far", _bin(res("far.bin")), FAR_X0, FAR_Z0, FAR_STEP, FAR_N, 50,
 			Rect2(MID_X0, MID_Z0, (MID_N - 1) * MID_STEP, (MID_N - 1) * MID_STEP), far_snow)
 	hits = TreeHits.new()
 	add_child(hits)
@@ -109,6 +155,16 @@ func _ready() -> void:
 	var lift := preload("res://tenkamori_lift.gd").new()
 	lift.name = "Lift"
 	add_child(lift)
+	if site == "asahigaoka":   # 旭ヶ丘: ゲレンデの小物（asahi_slope.gd）と休憩所「雪ん子館」（asahi_lodge.gd）
+		for part in ["Slope", "Lodge"]:
+			var path := "res://asahi_%s.gd" % part.to_lower()
+			if ResourceLoader.exists(path):
+				var n: Node3D = load(path).new()
+				n.name = part
+				n.set("world", world)
+				add_child(n)
+	if site != "tenkamori":
+		return
 	preload("res://hutte.gd").place(self)
 	var slope := preload("res://tenkamori_slope.gd").new()   # ゲレンデの作り込み（ネット・柱のマット・照明・小屋）
 	slope.name = "Slope"
@@ -133,8 +189,14 @@ static func _patch(x: float, z: float) -> float:
 static func _woods(x: float, z: float, slope: float, h: float) -> Color:
 	var deg := rad_to_deg(atan(slope))
 	var woods := smoothstep(4.0, 11.0, deg)
+	var hi: Array = SITES[site].get("woods_above", [])
+	if not hi.is_empty():   # 平野（町と畑）より高い所は、なだらかでも林（羊蹄山の裾）
+		woods = maxf(woods, smoothstep(float(hi[0]), float(hi[1]), h))
+	var tl: Array = SITES[site].get("treeline", [])
+	if not tl.is_empty():   # 森林限界（羊蹄山）: ここから上は木が無く、雪の白だけ
+		woods *= 1.0 - smoothstep(float(tl[0]), float(tl[1]), h)
 	var dense := smoothstep(0.32, 0.68, _patch(x, z)) * (1.0 - 0.5 * smoothstep(250.0, 700.0, h))
-	var cedar := dense * 0.85 * woods
+	var cedar := dense * float(SITES[site].cedar) * woods
 	return Color(cedar, woods * (1.0 - cedar), 0.0)
 
 
@@ -145,6 +207,7 @@ uniform vec3 snow : source_color = vec3(0.97, 0.975, 0.99);
 uniform vec3 bare : source_color = vec3(0.70, 0.69, 0.71);
 uniform vec3 cedar : source_color = vec3(0.20, 0.27, 0.29);
 uniform sampler2D grain : filter_linear_mipmap, repeat_enable;
+uniform float bare_k = 1.0;       // 雑木の濃さ（旭ヶ丘: 遠い羊蹄山の裾でも林の帯が見えるよう強める）
 uniform float scale = 0.0028;     // 画像の 1 枚が 360 m（粒はおよそ 8 m の木立）
 varying vec3 wpos;
 varying vec4 col;
@@ -157,7 +220,7 @@ void fragment() {
 	float n2 = texture(grain, wpos.xz * scale * 0.37 + vec2(0.31, 0.77)).r;
 	float c = col.r;
 	float ced = smoothstep(1.0 - c - 0.12, 1.0 - c + 0.12, n);      // 濃い所ほど、粒の多くが杉
-	float br = col.g * smoothstep(0.25, 0.75, n2) * (0.45 + 0.55 * n);
+	float br = clamp(col.g * smoothstep(0.25, 0.75, n2) * (0.45 + 0.55 * n) * bare_k, 0.0, 1.0);
 	vec3 a = mix(snow, bare, br);
 	ALBEDO = mix(a, cedar, ced);
 	ROUGHNESS = 1.0;
@@ -227,6 +290,9 @@ static func _woods_material(over := false) -> ShaderMaterial:
 	tex.generate_mipmaps = true
 	tex.noise = fn
 	m.set_shader_parameter("grain", tex)
+	if SITES[site].has("bare") and not over:   # 遠くの雑木の色（旭ヶ丘: 羊蹄山の裾の葉の落ちた林が、10 km 先でも帯に見えるよう濃いめ）
+		m.set_shader_parameter("bare", SITES[site].bare)
+		m.set_shader_parameter("bare_k", 2.4)
 	return m
 
 
@@ -236,10 +302,10 @@ static func _woods_material(over := false) -> ShaderMaterial:
 func _make_near(snow: Material) -> void:
 	var h := near()
 	world._add_height_body(h, N, Vector3(NEAR_X0 + (N - 1) * STEP * 0.5, 0, NEAR_Z0 + (N - 1) * STEP * 0.5), STEP)
-	var clear := FileAccess.get_file_as_bytes("res://tenkamori/clear.bin")
-	var road := FileAccess.get_file_as_bytes("res://tenkamori/road.bin")   # 道と駐車場の濃さ（bake_terrain.py）
-	var piste := FileAccess.get_file_as_bytes("res://tenkamori/piste.bin")   # ゲレンデの雪面の濃さ（圧雪の筋を描く所）
-	var forest := FileAccess.get_file_as_bytes("res://tenkamori/forest.bin")   # 空中写真の林（4 m おき）
+	var clear := FileAccess.get_file_as_bytes(res("clear.bin"))
+	var road := FileAccess.get_file_as_bytes(res("road.bin"))   # 道と駐車場の濃さ（bake_terrain.py）
+	var piste := FileAccess.get_file_as_bytes(res("piste.bin"))   # ゲレンデの雪面の濃さ（圧雪の筋を描く所）
+	var forest := FileAccess.get_file_as_bytes(res("forest.bin"))   # 空中写真の林（4 m おき）
 	var vs := PackedFloat32Array()
 	vs.resize(N * N)
 	for j in N:
@@ -278,7 +344,7 @@ func _make_near(snow: Material) -> void:
 					var cv := clear[clampi(int((z - NEAR_Z0) / 4.0), 0, 255) * 256 + clampi(int((x - NEAR_X0) / 4.0), 0, 255)]
 					var wk := 1.0 if cv > 0 else 0.0   # ゲレンデ・道・リフトの下は林でない
 					var fo := forest[clampi(int((z - NEAR_Z0) / 4.0), 0, 255) * 256 + clampi(int((x - NEAR_X0) / 4.0), 0, 255)] / 255.0   # 空中写真の林
-					var wc := Color(fo * 0.9, (1.0 - fo) * 0.25 * smoothstep(4.0, 11.0, rad_to_deg(atan(slope))), 0.0)
+					var wc := Color(fo * float(SITES[site].cedar) * 1.06, (1.0 - fo) * 0.25 * smoothstep(4.0, 11.0, rad_to_deg(atan(slope))), 0.0)
 					var rd := road[c] / 255.0
 					cols[v] = Color(wc.r * wk * (1.0 - rd), wc.g * wk * (1.0 - rd), rd, piste[c] / 255.0)
 			add_child(_mesh("Near%d" % k, verts, norms, cols, ids, snow))
@@ -384,13 +450,17 @@ func _trees() -> void:
 	# 見た目は全部 MultiMesh（何千本でも軽い）。開けた所（ゲレンデ・林間コース・道）から 12 m までの木には幹の当たりを付ける（滑って突っ込める）
 	const TREES := ["res://props/tree_tall.glb", "res://props/tree_zigzag.glb"]
 	const GAP := 4.5
-	var clear := FileAccess.get_file_as_bytes("res://tenkamori/clear.bin")   # 4 m おき 256 点四方（bake_terrain.py）
-	var forest := FileAccess.get_file_as_bytes("res://tenkamori/forest.bin")
+	var clear := FileAccess.get_file_as_bytes(res("clear.bin"))   # 4 m おき 256 点四方（bake_terrain.py）
+	var forest := FileAccess.get_file_as_bytes(res("forest.bin"))
 	var cell := func(x: float, z: float) -> int:
 		return clampi(int((z - NEAR_Z0) / 4.0), 0, 255) * 256 + clampi(int((x - NEAR_X0) / 4.0), 0, 255)
 	var open := func(x: float, z: float) -> bool:
 		var c: int = cell.call(x, z)
 		return clear[c] == 0 or forest[c] < 80
+	var conifer := float(SITES[site].cedar) / 0.85   # 林のうち針葉樹の割合（旭ヶ丘は葉の落ちた広葉樹が多く、その分は地面の林の灰で見せる）
+	var bare := site == "asahigaoka"   # 旭ヶ丘: 葉の落ちた木（BARE）を主に、針葉樹は少しだけ
+	if bare:
+		conifer = 1.0
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 31
 	var bulk := {}
@@ -399,6 +469,11 @@ func _trees() -> void:
 		var proto := Props.make(path)   # 幹の太さと木の高さを一度だけ測る（tree_hits.gd）
 		TreeHits._sizes[path] = TreeHits._measure(proto)
 		proto.free()
+	if bare:
+		for path in BARE:
+			bulk[path] = []
+			TreeHits._sizes[path] = Vector2(BARE[path][1], BARE[path][0])   # 幹は木の組（*_wood）でないので、太さと高さは台本の値
+	var gap := 3.7 if bare else GAP   # 葉の落ちた木は細いので、林に見えるよう少し詰める
 	var x := NEAR_X0 + 6.0
 	while x < NEAR_X1 - 6.0:
 		var z := NEAR_Z0 + 6.0
@@ -410,24 +485,40 @@ func _trees() -> void:
 			var yaw := rng.randf() * TAU
 			var path: String = TREES[rng.randi() % TREES.size()]
 			var c: int = cell.call(px, pz)
-			z += GAP
-			if clear[c] == 0 or keep * 255.0 > forest[c] or bulk[path].size() >= 40000:
+			z += gap
+			if clear[c] == 0 or keep * 255.0 > forest[c] * conifer or bulk[path].size() >= 40000:
 				continue
 			var y := lift(px, pz)
-			bulk[path].append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * hgt / 6.0), Vector3(px, y - 0.3, pz)))
 			var edge := false
 			for o in [Vector2(12, 0), Vector2(-12, 0), Vector2(0, 12), Vector2(0, -12), Vector2(8, 8), Vector2(-8, 8), Vector2(8, -8), Vector2(-8, -8)]:
 				if open.call(px + o.x, pz + o.y):
 					edge = true
 					break
+			var model_h := 6.0
+			if bare:
+				# どの木か: 開けた所の縁はシラカバが多い（コースの縁の白い幹の壁）。大きな斑の濃い所はカラマツの林、ほかは雑木。針葉樹は 7%
+				var u := fposmod(sin(px * 12.9898 + pz * 78.233) * 43758.5453, 1.0)
+				var u2 := fposmod(sin(px * 39.3468 + pz * 11.135) * 24634.6345, 1.0)
+				if u > 0.97:
+					pass   # フェルトの針葉樹のまま
+				elif edge and u < 0.55:
+					path = BARE_KABA
+				elif _patch(px * 2.0, pz * 2.0) > 0.52:
+					path = BARE_KARA
+				else:
+					path = BARE_ZOKI
+				if BARE.has(path):
+					model_h = BARE[path][0]
+					hgt = lerpf(BARE[path][2], BARE[path][3], u2)
+			bulk[path].append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * hgt / model_h), Vector3(px, y - 0.3, pz)))
 			if edge:   # 幹の当たりだけ（見た目は MultiMesh）
 				var stand := Node3D.new()
 				stand.scene_file_path = path
 				stand.position = Vector3(px, y - 0.3, pz)
-				stand.scale = Vector3.ONE * hgt / 6.0
+				stand.scale = Vector3.ONE * hgt / model_h
 				hits.add_tree(stand)
 				stand.free()
-		x += GAP
+		x += gap
 	for path in bulk:
 		_bulk_trees(path, bulk[path])
 
@@ -451,6 +542,18 @@ static func _cedar(tree: Node3D) -> Node3D:
 			mi.set_surface_override_material(s, _cedar_mats[m])
 	return tree
 
+
+## 葉の落ちた木（2026-11-11 代表「①②③ で入れて」。props/build_bare_tree.py。絵 design/asahigaoka/trees/01-bare-tree-ideas.jpg）:
+## 雑木（毛糸を巻いた枝）・シラカバ（白いフェルトの幹に黒い糸の縫い目）・カラマツ（フェルトの幹に毛糸の枝を段々に）。
+## 値は [形の高さ, 幹の半径, 立てる高さの下限, 上限] (m)
+const BARE_ZOKI := "res://props/tree_bare_zoki.glb"
+const BARE_KABA := "res://props/tree_bare_kaba.glb"
+const BARE_KARA := "res://props/tree_bare_kara.glb"
+const BARE := {
+	BARE_ZOKI: [8.0, 0.40, 7.0, 11.0],
+	BARE_KABA: [9.5, 0.40, 9.0, 13.5],
+	BARE_KARA: [11.0, 0.40, 11.0, 17.0],
+}
 
 const WOODS_FAR := 330.0   # 林の木（MultiMesh）を描く遠さ (m)。区画のまんなかまでの距離。その先の林は地面の林の色で見える
 const WOODS_CELL := 64.0   # 林を分ける区画の大きさ (m)

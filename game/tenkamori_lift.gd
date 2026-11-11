@@ -31,6 +31,15 @@ const DARK := Color(0.17, 0.17, 0.18)     # 機械小屋・滑車・椅子の骨
 const SEAT := Color(0.24, 0.30, 0.44)     # 椅子の座布団（藍）
 const HUT := Color(0.33, 0.24, 0.17)      # 木の小屋
 
+## 場所ごとの形と色（2026-11-11 旭ヶ丘: 動画のコマから。赤茶の鉄骨の乗り場と柱・灰の腕木、椅子は灰のパイプに黒い座面で前の手すりなし、
+## 乗り場の上に機械小屋は無く、板張りの運転室はゲレンデの側（上りの索の側）にある）
+const STYLES := {
+	"tenkamori": {"frame": GREEN, "tower": STEEL, "chair": DARK, "seat": SEAT, "hut": HUT, "machine": true, "hut_side": -1.0, "bar": true},
+	"asahigaoka": {"frame": Color(0.27, 0.15, 0.12), "tower": Color(0.26, 0.14, 0.11), "chair": Color(0.60, 0.62, 0.64), "seat": Color(0.10, 0.10, 0.11),
+		"hut": Color(0.20, 0.13, 0.09), "machine": false, "hut_side": 1.0, "bar": false},
+}
+var style: Dictionary = STYLES["tenkamori"]
+
 var _loop := PackedVector3Array()   # 索の輪（2 m おき）。上りの索を乗り場から降り場へ、回って下りの索を戻る
 var _len := 0.0
 var _cum := PackedFloat32Array()
@@ -45,6 +54,7 @@ func _ready() -> void:
 	var lifts: Array = Tenka.map().get("lifts", [])
 	if lifts.is_empty():
 		return
+	style = STYLES.get(Tenka.site, STYLES["tenkamori"])
 	var line: Array = lifts[0]["line"]
 	var pads: Dictionary = Tenka.map().get("pads", {})
 	var pts: Array[Vector2] = []
@@ -171,7 +181,7 @@ static func _basis(d: Vector2) -> Basis:
 func _tower(meshes: Dictionary, body: StaticBody3D, g: Vector3, d: Vector2, side: Vector2) -> void:
 	var st := _st(meshes, STEEL)
 	var top := g + Vector3(0, HEAD + 0.4, 0)
-	cyl(st, g + Vector3(0, -1.0, 0), top, 0.28)
+	cyl(_st(meshes, style.tower), g + Vector3(0, -1.0, 0), top, 0.28)
 	var b := _basis(d)
 	box(st, top + Vector3(0, 0.15, 0), Vector3(0.35, 0.35, GAUGE * 2.0 + 1.2), b)
 	var dk := _st(meshes, DARK)
@@ -192,7 +202,7 @@ func _tower(meshes: Dictionary, body: StaticBody3D, g: Vector3, d: Vector2, side
 ## 乗り場・降り場: 薄緑の骨組みに横倒しの大きな滑車、上に床と手すりと黒い機械小屋。乗り場には木の小屋
 func _station(meshes: Dictionary, body: StaticBody3D, f: Vector3, d: Vector2, side: Vector2, bottom: bool) -> void:
 	var b := _basis(d)
-	var gr := _st(meshes, GREEN)
+	var gr := _st(meshes, style.frame)
 	var dk := _st(meshes, DARK)
 	var back := -1.0 if bottom else 1.0   # 滑車の骨組みは、索の来る向きと逆へ張り出す
 	var c := f + Vector3(0, WHEEL_Y, 0)
@@ -223,21 +233,37 @@ func _station(meshes: Dictionary, body: StaticBody3D, f: Vector3, d: Vector2, si
 			box(_st(meshes, STEEL), deck + b.z * (s * 3.4) + Vector3(0, 1.15, 0), Vector3(7.4, 0.07, 0.07), b)
 			for k in 7:
 				box(_st(meshes, STEEL), deck + b.z * (s * 3.4) + b.x * (-3.6 + 1.2 * k) + Vector3(0, 0.6, 0), Vector3(0.06, 1.15, 0.06), b)
-		box(dk, deck + b.x * (back * 1.4) + Vector3(0, 1.7, 0), Vector3(3.6, 3.0, 4.6), b)
-		box(gr, deck + b.x * (back * 1.4) + Vector3(0, 3.3, 0), Vector3(3.9, 0.15, 4.9), b)
-		box(_st(meshes, STEEL), deck + b.x * (back * 1.4 - 1.81) + Vector3(0, 2.0, 0), Vector3(0.04, 1.4, 3.8), b)   # 窓の帯
+		if style.machine:
+			box(dk, deck + b.x * (back * 1.4) + Vector3(0, 1.7, 0), Vector3(3.6, 3.0, 4.6), b)
+			box(gr, deck + b.x * (back * 1.4) + Vector3(0, 3.3, 0), Vector3(3.9, 0.15, 4.9), b)
+			box(_st(meshes, STEEL), deck + b.x * (back * 1.4 - 1.81) + Vector3(0, 2.0, 0), Vector3(0.04, 1.4, 3.8), b)   # 窓の帯
 		# 木の小屋（係の人の小屋）。乗り場の脇、索の外
-		var hut := f + b.z * (-(GAUGE + 4.2)) + b.x * 1.5
-		box(_st(meshes, HUT), hut + Vector3(0, 1.2, 0), Vector3(2.4, 2.4, 2.2), b)
+		var hs: float = style.hut_side
+		var hut := f + b.z * (hs * (GAUGE + 4.2)) + b.x * 1.5
+		box(_st(meshes, style.hut), hut + Vector3(0, 1.2, 0), Vector3(2.4, 2.4, 2.2), b)
 		box(_st(meshes, DARK), hut + Vector3(0, 2.5, 0), Vector3(2.9, 0.25, 2.7), b)
+		if not style.machine:   # 旭ヶ丘の運転室: 索の側と斜面の上の側に横長の窓、屋根に雪
+			box(_st(meshes, Color(0.72, 0.84, 0.90)), hut + b.z * (-hs * 1.11) + Vector3(0, 1.5, 0), Vector3(1.7, 0.7, 0.04), b)
+			box(_st(meshes, Color(0.72, 0.84, 0.90)), hut + b.x * 1.21 + Vector3(0, 1.5, 0), Vector3(0.04, 0.7, 1.5), b)
+			box(_st(meshes, Color(0.97, 0.98, 1.0)), hut + Vector3(0, 2.8, 0), Vector3(2.7, 0.35, 2.5), b)
 		var cs := CollisionShape3D.new()
 		var sh := BoxShape3D.new()
 		sh.size = Vector3(2.4, 2.4, 2.2)
 		cs.shape = sh
 		cs.transform = Transform3D(b, hut + Vector3(0, 1.2, 0))
 		body.add_child(cs)
-	else:
+	elif style.machine:
 		box(dk, deck + Vector3(0, 0.9, 0), Vector3(2.0, 1.6, 2.4), b)
+	else:   # 旭ヶ丘の降り場: 脇に小さな木の小屋
+		var hut2 := f + b.z * (float(style.hut_side) * (GAUGE + 3.6)) - b.x * 2.0
+		box(_st(meshes, style.hut), hut2 + Vector3(0, 1.1, 0), Vector3(2.0, 2.2, 1.8), b)
+		box(_st(meshes, Color(0.97, 0.98, 1.0)), hut2 + Vector3(0, 2.4, 0), Vector3(2.4, 0.4, 2.2), b)
+		var cs2 := CollisionShape3D.new()
+		var sh2 := BoxShape3D.new()
+		sh2.size = Vector3(2.0, 2.2, 1.8)
+		cs2.shape = sh2
+		cs2.transform = Transform3D(b, hut2 + Vector3(0, 1.1, 0))
+		body.add_child(cs2)
 
 
 ## 支えの点を、横へ off ずらして、あいだをたるませながら 2 m おきの点にする
@@ -289,13 +315,14 @@ func _make_chairs() -> void:
 	for s in [-1.0, 1.0]:
 		cyl(frame, Vector3(0, -DROP + 0.5, s * 0.65), Vector3(0.0, -DROP - 0.05, s * 0.65), 0.035, 6)
 		cyl(frame, Vector3(0.0, -DROP - 0.05, s * 0.65), Vector3(0.45, -DROP - 0.05, s * 0.65), 0.035, 6)
-	cyl(frame, Vector3(0.75, -DROP + 0.35, -0.65), Vector3(0.75, -DROP + 0.35, 0.65), 0.03, 6)   # 前の手すり
+	if style.bar:
+		cyl(frame, Vector3(0.75, -DROP + 0.35, -0.65), Vector3(0.75, -DROP + 0.35, 0.65), 0.03, 6)   # 前の手すり
 	box(pad, Vector3(0.22, -DROP, 0), Vector3(0.5, 0.08, 1.3))                     # 座面
 	box(pad, Vector3(-0.04, -DROP + 0.3, 0), Vector3(0.07, 0.5, 1.3), Basis(Vector3.BACK, -0.15))   # 背もたれ
 	var mesh := frame.commit()
 	pad.commit(mesh)
-	mesh.surface_set_material(0, _felt(DARK, 2.0))
-	mesh.surface_set_material(1, _felt(SEAT, 1.4))
+	mesh.surface_set_material(0, _felt(style.chair, 2.0))
+	mesh.surface_set_material(1, _felt(style.seat, 1.4))
 	var mm := MultiMesh.new()
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = mesh
