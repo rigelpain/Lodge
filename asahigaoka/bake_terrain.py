@@ -207,6 +207,11 @@ def forest_mask():
     return blur(f, 1.0)
 
 
+# 初級コースの広い斜面の囲い（遊びの座標。空中写真の草地と、冬の写真の見え方から）
+BEGINNER = [[-180, 50], [-150, 38], [-100, 20], [-80, -8], [-56, -24], [-24, -14], [0, 8], [28, 22], [42, 45], [38, 80], [10, 102],
+            [-40, 100], [-90, 90], [-140, 78], [-178, 68]]
+
+
 def clear_mask(m):
     s = 4.0
     xs = NEAR["x0"] + np.arange(256) * s + s / 2
@@ -376,10 +381,16 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     m = polys()
     add_play_points(m)
+    m["beginner"] = BEGINNER
     json.dump(m, open(os.path.join(OUT, "map.json"), "w"), ensure_ascii=False, indent=1)
     cm = clear_mask(m)
     cm.tofile(os.path.join(OUT, "clear.bin"))
     fm = forest_mask()
+    # 初級コースの広い斜面（乗り場の南西。その南の一角がそりコース）: 夏の写真では濃い緑の草地で、林と読み違えていた
+    # （2026-11-11 代表「ソリコースなくない？…ロッジから見える V 字の坂が特徴的なのに」。主コースと、この斜面が、林の島をはさんで V 字に見える）
+    s4 = 4.0
+    FX, FZ = np.meshgrid(NEAR["x0"] + np.arange(256) * s4 + s4 / 2, NEAR["z0"] + np.arange(256) * s4 + s4 / 2)
+    fm = np.where(inside_plain(BEGINNER + [BEGINNER[0]], FX, FZ), 0.0, fm)
     (np.clip(fm, 0, 1) * 255).astype(np.uint8).tofile(os.path.join(OUT, "forest.bin"))
     print("forest", (fm > 0.5).mean())
     print("clear", (cm > 0).mean())

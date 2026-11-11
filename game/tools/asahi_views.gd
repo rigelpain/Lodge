@@ -97,6 +97,13 @@ func _run() -> void:
 	await _look("top_annupuri", _eye(top.x + side.x * 14.0 - up.x * 60.0, top.z + side.z * 14.0 - up.z * 60.0, 12.0), Vector3(-7900, 900, 5500), 40.0)
 	# 羊蹄山を寄せて（形の確かめ）
 	await _look("yotei_zoom", _eye(top.x + side.x * 14.0 - up.x * 60.0, top.z + side.z * 14.0 - up.z * 60.0, 3.0), yotei + Vector3(0, -500, 0), 18.0)
+	# V 字の坂: ロッジの前から西を見る（右が主コース、左が初級コースとそりコース、あいだに林の島）
+	await _look("v_lodge", _eye(96.0, 28.0, 2.4), _eye(-110.0, -15.0, 22.0), 80.0)
+	await _look("v_plaza", _eye(62.0, 36.0, 1.7), _eye(-120.0, -20.0, 25.0), 85.0)
+	# 初級コースを下から見上げる（intro-35）と、そりコースの入口
+	await _look("beginner_up", _eye(40.0, 44.0, 1.7), _eye(-130.0, 52.0, 30.0), 70.0)
+	await _look("sled_course", _eye(40.0, 74.0, 1.7), _eye(-60.0, 80.0, 12.0), 65.0)
+	await _look("v_above", Vector3(150.0, _y(60.0, 30.0) + 110.0, 90.0), _eye(-90.0, 0.0, 10.0), 55.0)
 	# 木: リフトの中ほどから南西の林の島を、近くと寄りで
 	var tp := bot.lerp(top, 0.45) - side * 4.0
 	await _look("trees_edge", _eye(tp.x + side.x * 14.0, tp.z + side.z * 14.0, 1.7), _eye(tp.x - side.x * 30.0, tp.z - side.z * 30.0, 6.0), 65.0)
