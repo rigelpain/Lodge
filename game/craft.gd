@@ -42,7 +42,7 @@ extends Node
 ##                             買ったらすぐ帯に提げる（ev に index が入る）。通信ではほかの人の画面でも、その人のランタンが替わる
 ##   lantern_own {look}        持っているランタンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
 ##   lantern_dye {look, color} 紙細工屋さんで、持っているランタン look の灯りと光る紙を、キャラの色のパレット（COLORS。山をめぐる仲間の服と同じ）の
-##                             色 color（"rrggbb"）に染める。"" は形のもとの色に戻す（ただ）。染め代は LANTERN_DYE_PRICE。色はランタンごとに残る
+##                             色 color（"rrggbb"）に染める。"" は形のもとの色に戻す（ただ）。染め代は lantern_dye_price（黒だけ 1 螺鈿）。色はランタンごとに残る
 ##                             （2026-11-10 代表「CPUのランタンの色変わってるけどプレイヤーもできる？なかったら紙細工師さんで色変え売って欲しい」）
 ##   lantern_dye_own {look, color}  保存してある染めた色を戻す（起動したとき。値は取らない）
 ##   gloves_own {grade}        持っている雪玉ころがしの手袋を戻す（保存から。値は取らない）。手袋は山師の棚の buy（{kind: "gloves" | "gloves_felt" | "gloves_leather"}。gloves.gd）で買う。
@@ -119,6 +119,15 @@ const ShopLocks := preload("res://shop_locks.gd")
 const DYE_PRICES := [0, 15, 25, 33, 40]
 ## ランタンの色替えの代: 光る紙は 1 部位ぶん（米袋・小のソリの染めと同じ）
 const LANTERN_DYE_PRICE := 15
+## 黒（lantern.gd の is_black。まわりを暗くする）だけは特別な色: 1 螺鈿（MONEY の 1000。2026-11-10 代表「ランタンの黒染色は特別に1螺鈿にしてほしい値段」）
+const LANTERN_DYE_BLACK_PRICE := 1000
+
+
+## ランタンを色 hex（"rrggbb"）に染める代。"" はもとの色に戻す（ただ）
+static func lantern_dye_price(hex: String) -> int:
+	if hex == "":
+		return 0
+	return LANTERN_DYE_BLACK_PRICE if Lantern.is_black(hex) else LANTERN_DYE_PRICE
 const PATTERNS := ["sack", "small", "mid", "large"]
 ## 大きすぎて、そのまま出すと動かしにくいソリ（ミシンが中にあった頃は運び出せなかった。ミシンは外の下屋へ移したが、届け方は変えていない）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
@@ -1246,7 +1255,7 @@ func _apply(ev: Dictionary) -> bool:
 			var i := lantern_index(who, look)
 			if i < 0 or (hex != "" and not hex in lantern_palette()) or hex == lantern_color(who, look):
 				return false   # 持っていない・パレットにない色・変わらない
-			var cost := 0 if hex == "" or ev.kind == "lantern_dye_own" else LANTERN_DYE_PRICE
+			var cost := 0 if ev.kind == "lantern_dye_own" else lantern_dye_price(hex)
 			if wallets[who] < cost:
 				return false
 			wallets[who] -= cost

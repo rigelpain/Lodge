@@ -179,6 +179,19 @@ func _save_run() -> void:
 	_ok(c.send({"kind": "lantern_dye", "who": who, "look": "hotaru", "color": ""}) and c.wallet(who) == w1, "もとの色に戻すのはただ")
 	c.wallets[who] = 3
 	_ok(not c.send({"kind": "lantern_dye", "who": who, "look": "hotaru", "color": TEAL}), "足りなければ断る")
+	# 黒は特別な色: 1 螺鈿（1000）。足りなければ札は灰色で選べず、断る。もとの色に戻すのはただ
+	var BLACK: String = Craft.lantern_palette()[10]
+	_ok(Craft.lantern_dye_price(BLACK) == 1000 and Craft.pieces(1000) == ["raden"], "黒の染め代は 1 螺鈿（%s）" % str(Craft.pieces(Craft.lantern_dye_price(BLACK))))
+	_ok(Craft.lantern_dye_price(Craft.lantern_palette()[0]) == Craft.LANTERN_DYE_PRICE, "ほかの色は今のまま（%d）" % Craft.lantern_dye_price(Craft.lantern_palette()[0]))
+	c.wallets[who] = 999
+	ui.open("lantern_dye")
+	_ok(ui.card_state(10) == "money", "螺鈿に届かなければ、黒の札は足りない（灰色。%s）" % ui.card_state(10))
+	_ok(not ui.choose(10) and c.lantern(who).get("color", "") == "", "螺鈿に届かなければ、黒には染められない")
+	c.wallets[who] = 1000
+	_ok(ui.card_state(10) == "can", "1 螺鈿あれば、黒の札を選べる（%s）" % ui.card_state(10))
+	_ok(ui.choose(10) and c.lantern(who).get("color", "") == BLACK and c.wallet(who) == 0, "黒に染めて、1 螺鈿を払った（残り %d）" % c.wallet(who))
+	_ok(ui.dye("") and c.wallet(who) == 0, "黒からもとの色に戻すのはただ")
+	ui.close()
 	# 保存の道でもう一度提げ直して、終わりの保存を和紙の提灯（青緑）にする
 	cu._lamp_asked += 1
 	cu.equip(c.lantern_index(who, "paper"), "lantern")
@@ -234,6 +247,10 @@ func _host_run() -> void:
 	c.wallets[p.id] = 100
 	c.send({"kind": "equip", "who": p.id, "gear": "lantern", "look": "box"})
 	c.send({"kind": "lantern_dye", "who": p.id, "look": "box", "color": Craft.lantern_palette()[2]})
+	await _wait(4.0)
+	# 黒に染めて点けると、つなぐ側の画面でもまわりを暗くする（lantern.gd の is_black）
+	c.send({"kind": "lantern_dye", "who": p.id, "look": "box", "color": Craft.lantern_palette()[10]})
+	c.send({"kind": "lamp", "who": p.id, "on": true})
 	await _wait(6.0)
 
 
@@ -247,4 +264,7 @@ func _join_run() -> void:
 	var rp: Node = main.net.remotes.get(hid)
 	var d = rp.get("doll") if rp else null
 	_ok(await _until(func(): return d and d.lantern_color == Craft.lantern_palette()[2], 5.0), "ホストの人の人形の帯にも")
+	var lt = d.get("_lantern") if d else null
+	_ok(await _until(func(): return lt and (lt.get("_light") as OmniLight3D).light_negative and (lt.get("_dark") as Node3D).visible, 15.0),
+		"ホストの人が黒に染めて点けると、つなぐ側の画面でもまわりを暗くする（引く灯りと暗がりの球）")
 	DirAccess.remove_absolute(ProjectSettings.globalize_path(String(args.get("tag-file", ""))))

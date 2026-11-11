@@ -13,6 +13,13 @@ extends Node3D
 ## 形ごとに、光の色（灯りと光る紙）と揺らぎ方（STYLE）が違う。値段は木のボタンの何個分。標準は素朴で丈夫、凝ったものほど高い
 ## 色替え（2026-11-10）: 紙細工屋さんで、光の色をキャラの色のパレット（craft.gd の COLORS）の色に染められる（craft.gd の lantern_dye）。
 ## 染めた色は、色合いと鮮やかさをそのまま、明るさだけ灯りの明るさにそろえる（暗い色を選んでも暗い灯りにならない。tint）。人形の lantern_color
+## 黒（2026-11-10 代表「ランタンの染色ですが、黒いランタンは逆に周囲を暗くするようにしてほしいです。」）: パレットの中の、明るさが低く色みのほとんどない色
+## （is_black。いまは墨の灰 COLORS[10] だけ）に染めたランタンは、点けるとランタンを中心に球の形で暗くする（代表「最も強くしてほしいし、
+## 暗くする範囲は床でなく…球状に暗くしてほしい」「キャラ中心じゃなくてランタン中心だ」）:
+##   暗がりの球（lantern_dark.gdshader）: ランタンの芯を中心に半径 DARK_RADIUS。球を通して見える物の明るさを DARK_CAP より上にさせない
+##   （相対ではなく絶対の暗さ。代表「黒ランタンは相対的な暗さでなく絶対的な暗さにしてほしい」。色合いはそのまま）
+##   引く灯り（light_negative）: 同じ芯から、球の少し外まで、まわりの物に当たる光を引く。濃さ BLACK_ENERGY
+## 紙は光らず、点けると墨を含ませた和紙のように深い黒、消すと消し炭の灰
 
 const Props := preload("res://props.gd")
 ## 形の名前 → {price 値段（0 ははじめから）, color 灯りの色, glow 光る紙の色, style 揺らぎ方, energy 灯りの強さの倍率}
@@ -62,6 +69,9 @@ var _lit_paper := true
 var _paper_off: Material
 var _style := "calm"
 var _fade_k := 1.0             # いま灯りを消す距離に掛けている、カメラの寄り具合（_fit_fade）
+var _sub_t := 0.0              # 黒: 引く光の色を見直すまでの秒
+var _sub_want := BLACK_SUB     # 黒: 寄せていく引く光の色
+var _dark: MeshInstance3D      # 黒: 暗がりの球
 
 
 ## 形の glb（光る紙は形の色に染める）。ランタン掛けと売り台の札でも使う
@@ -73,12 +83,36 @@ static func price(look: String) -> int:
 	return int(LOOK[look].price) if LOOK.has(look) else -1
 
 
+static var BLACK_ENERGY := 1.6           # 黒いランタンの、引く灯りの強さ（ふつうの ENERGY 2.2 に対して。濃さの案 0.6・1.0・1.6 のいちばん強いもの）
+static var DARK_RADIUS := 3.0            # 暗がりの球の半径 (m)
+static var DARK_STRENGTH := 1.0          # 暗がりの球の、芯を通る視線での効き（1 で芯は DARK_CAP の暗さそのもの）
+static var DARK_CAP := 0.035             # 暗がりの芯での明るさの上限（絶対の暗さ。焚き火のそばでも昼でも同じ）
+const DARK_SHADER := preload("res://lantern_dark.gdshader")
+const BLACK_SUB := Color(1.0, 0.96, 0.86)   # 引く光の色（札の中など、まわりの光が分からないとき）
+## 引く光の色は、その場の光の色に寄せる（同じだけ引くと、少ない色から先に尽きて、夜は青、火のそばは赤の縁ができる）:
+## 外は日・月の光の色（daycycle.gd の _sun）、焚き火に近ければ火の色、ロッジの中は灯りの色（COLOR）。BLACK_TINT_T 秒ごとに見直す
+const BLACK_TINT_T := 0.4
+const FIRE_TINT := Color(1.0, 0.55, 0.28)
+const FIRE_NEAR := 7.0                     # 焚き火からこの距離 (m) の内で、火の色に寄せる
+const INK := Color(0.06, 0.06, 0.08)       # 点いた黒い紙（墨を含ませた和紙）
+const INK_OFF := Color(0.22, 0.22, 0.25)   # 消えた黒い紙（消し炭の和紙）
+
+## 色 hex が「黒」か: 明るさが低く（0.4 未満）、色みがほとんどない（0.25 未満）。パレットでは墨の灰（craft.gd の COLORS[10]）だけ
+static func is_black(hex: String) -> bool:
+	if hex == "" or not hex.is_valid_html_color():
+		return false
+	var c := Color(hex)
+	return c.v < 0.4 and c.s < 0.25
+
+
 ## 形 look を色 hex（"rrggbb"。"" は形のもとの色）に染めた光の色。glow なら光る紙の色、でなければ灯りの色。
 ## 色合い・鮮やかさは選んだ色、明るさは灯りの明るさ。光る紙は光って白に飛びやすいので、鮮やかさを少し足す
 static func tint(look: String, hex: String, glow := false) -> Color:
 	var L: Dictionary = LOOK.get(look, LOOK["box"])
 	if hex == "" or not hex.is_valid_html_color():
 		return L.glow if glow else L.color
+	if is_black(hex):   # 黒: 紙は墨の色、灯りは引く光の色（light_negative で使う）
+		return INK if glow else BLACK_SUB
 	var c := Color(hex)
 	return Color.from_hsv(c.h, minf(1.0, c.s * (1.25 if glow else 1.0)), 1.0)
 
@@ -113,9 +147,15 @@ static func glow_material(look: String, src: Material, hex := "") -> StandardMat
 	if m == null:
 		return null
 	var c := tint(look, hex, true)
-	m.emission_enabled = true
-	m.emission = c
-	m.albedo_color = Color(1, 1, 1).lerp(c, 0.35)
+	if is_black(hex):   # 黒い紙は光らない。墨を含ませた和紙（紙のすじは残す）
+		m.emission_enabled = false
+		m.albedo_color = c
+		m.roughness = 1.0
+		m.metallic_specular = 0.1
+	else:
+		m.emission_enabled = true
+		m.emission = c
+		m.albedo_color = Color(1, 1, 1).lerp(c, 0.35)
 	_glow_mats[key] = m
 	return m
 
@@ -163,6 +203,18 @@ func setup(skel: Skeleton3D, hips_rest: Transform3D, kind: String, scale_k: floa
 	_light.distance_fade_length = FAR_LEN
 	_light.visible = false
 	add_child(_light)
+	_dark = MeshInstance3D.new()   # 黒の暗がりの球（黒に染めたときだけ見せる）
+	_dark.top_level = true
+	var sm := SphereMesh.new()
+	sm.radial_segments = 24
+	sm.rings = 12
+	_dark.mesh = sm
+	var dm := ShaderMaterial.new()
+	dm.shader = DARK_SHADER
+	_dark.material_override = dm
+	_dark.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_dark.visible = false
+	add_child(_dark)
 
 
 ## 形を替える（"" で外す）。hex は染めた色
@@ -181,6 +233,11 @@ func _set_look(look: String, hex := "") -> void:
 	add_child(_body)
 	_style = String(LOOK.get(look, LOOK["box"]).style)
 	_light.light_color = tint(look, hex)
+	_light.light_negative = is_black(hex)   # 黒はまわりの光を引く
+	_sub_t = 0.0
+	_dark.layers = doll.layers | ((1 << 2) if doll.layers == 1 << 1 else 0)
+	_light.light_specular = 0.0 if _light.light_negative else 0.2
+	_light.omni_range = DARK_RADIUS + 1.0 if _light.light_negative else RANGE   # 黒は暗がりの球の少し外まで（床に広く落とさない）
 	var mark := _body.find_child("light*", true, false) as Node3D
 	if mark:
 		_core = (global_transform.affine_inverse() * mark.global_transform).origin
@@ -208,7 +265,7 @@ func _show_paper(on: bool) -> void:
 		var m := _paper_on.duplicate() as StandardMaterial3D
 		if m:
 			m.emission_enabled = false
-			m.albedo_color = m.albedo_color.darkened(0.12)
+			m.albedo_color = INK_OFF if _light.light_negative else m.albedo_color.darkened(0.12)   # 黒は消すと消し炭の灰（点くと深くなる）
 		_paper_off = m if m else _paper_on
 	for p in _papers:
 		p.set_surface_override_material(0, _paper_on if on else _paper_off)
@@ -241,6 +298,7 @@ func follow(dt: float, yaw: float) -> void:
 	_t += dt
 	if _look == "":
 		_light.visible = false
+		_dark.visible = false
 		return
 	var turn := Basis(Vector3.UP, _t * 0.5 + _seed) if _style == "spin" else Basis()   # 糸玉は提げ紐のまわりにゆっくり回る
 	global_transform = Transform3D(Basis(Vector3.UP, yaw) * Basis.from_euler(Vector3(_swing.x, 0.0, _swing.y)) * turn * Basis.from_scale(scale), _anchor.global_position)
@@ -252,9 +310,44 @@ func follow(dt: float, yaw: float) -> void:
 		var flick := flicker(_style, _t, _seed)
 		if _paper_on is StandardMaterial3D and _style in ["breath", "candle", "firefly", "shimmer"]:
 			(_paper_on as StandardMaterial3D).emission_energy_multiplier = 1.6 * flick
-		_light.light_energy = ENERGY * float(LOOK.get(_look, LOOK["box"]).energy) * flick * smoothstep(0.0, 1.0, _level)
+		if _light.light_negative:
+			_sub_t -= dt
+			if _sub_t <= 0.0:
+				_sub_t = BLACK_TINT_T
+				_sub_want = _sub_color(_light.global_position)
+			_light.light_color = _light.light_color.lerp(_sub_want, 1.0 - exp(-dt * 4.0))
+		_light.light_energy = (BLACK_ENERGY if _light.light_negative else ENERGY) * float(LOOK.get(_look, LOOK["box"]).energy) * flick * smoothstep(0.0, 1.0, _level)
 		var core := global_transform * _core
 		_light.global_position = core if _light.global_position == Vector3.ZERO else _light.global_position.lerp(core, 1.0 - exp(-dt * 12.0))
+	_dark.visible = _light.light_negative and _light.visible
+	if _dark.visible:
+		_dark.global_position = _light.global_position   # ランタンの芯（灯りと同じく、揺れのコマで跳ばないよう、なめらかに追う所）
+		_dark.scale = Vector3.ONE * DARK_RADIUS * 1.02 / 0.5   # SphereMesh は半径 0.5
+		var dm := _dark.material_override as ShaderMaterial
+		dm.set_shader_parameter("radius", DARK_RADIUS)
+		dm.set_shader_parameter("strength", DARK_STRENGTH)
+		dm.set_shader_parameter("cap", DARK_CAP)
+		dm.set_shader_parameter("level", smoothstep(0.0, 1.0, _level) * clampf(flicker(_style, _t, _seed), 0.0, 1.2))
+
+
+## 黒: 所 at の光の色（いちばん明るい成分を 1 にそろえる）。外は日・月、焚き火に近ければ火、ロッジの中は灯り
+func _sub_color(at: Vector3) -> Color:
+	var tree := get_tree()
+	var c := BLACK_SUB
+	var dc := tree.root.get_node_or_null("DayCycle")
+	var sun = dc.get("_sun") if dc else null
+	if sun is DirectionalLight3D and (sun as DirectionalLight3D).light_energy > 0.01:
+		c = (sun as DirectionalLight3D).light_color.lerp(Color(0.62, 0.72, 1.0), 0.25)   # 日・月の光に、空の青を少し
+	if not preload("res://campfire.gd").outside(tree, at):
+		c = COLOR
+	else:
+		var near := FIRE_NEAR
+		for f in tree.get_nodes_in_group("fires"):
+			if is_instance_valid(f) and f.has_method("lit") and f.lit():
+				near = minf(near, (f as Node3D).global_position.distance_to(at))
+		c = c.lerp(FIRE_TINT, 1.0 - smoothstep(1.5, FIRE_NEAR, near))
+	var m := maxf(c.r, maxf(c.g, c.b))
+	return Color(c.r / m, c.g / m, c.b / m) if m > 0.0 else BLACK_SUB
 
 
 ## 灯りを消す距離を、見ているカメラの寄り具合に合わせる。寄り具合は doll.gd の view_lod と同じ（画角 75° を 1 として、狭いほど遠くまで）。
