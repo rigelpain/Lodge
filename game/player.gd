@@ -41,7 +41,7 @@ const Binoculars := preload("res://binoculars.gd")
 ## ロッジの席（椅子・丸椅子・暖炉のまわりのソファ・揺り椅子・ビーズクッション・こたつの座布団。seats.gd）: 空いた席のそばで、席の方を向いて F で座る。
 ## 椅子の後ろへ歩み寄って向きを変え、腰を下ろす（12 コマ）。目線は座った人形の目の高さへ。もう一度 F か、移動キーで立つ。
 ## 座っているあいだも、身ぶり・声・手に持った物は使える。
-## 天下森のペアリフト（tenkamori_lift.gd）: 乗り場の乗る所で F。次の椅子を待って座り、降り場でひとりでに降りる（座っているのと同じ Mode.SIT。seat_i は -1、
+## 天下森のペアリフト（tenkamori_lift.gd）: 乗り場の乗る所で F。次の椅子を待って座り、降り場でひとりでに降りる。乗っているあいだにもう一度 F で、宙でも飛び降りる（座っているのと同じ Mode.SIT。seat_i は -1、
 ## lift_chair が乗っている椅子）。そばに自分のソリがあれば、椅子の下に吊って一緒に上がる（2026-11-09 代表「リフトに乗れるようにしてほしい」）。
 ## 厨房の乾燥機（cook_station.gd）: 手にペレットを持たずに前で F で中へとび込み、胴の中で丸まって回って乾く（Mode.DRUM）。
 ## 乾ききったら、ひとりでに戸からとび出す。もう一度 F でも出る。一人称は胴の真ん中から丸い戸の窓ごしに外を見る。
@@ -486,7 +486,8 @@ func _unhandled_input(e: InputEvent) -> void:
 					return
 				if mode == Mode.SIT:
 					if lift_chair >= 0:
-						return   # リフトの上では降りない（降り場でひとりでに降りる）
+						lift_jump()   # リフトから途中で飛び降りる（宙でも。2026-11-09 代表「Fで途中下車できるようにしてほしい。宙に浮いてても」）
+						return
 					stand_up()
 					return
 				if mode == Mode.DRUM:
@@ -704,6 +705,29 @@ func lift_try() -> bool:
 	velocity = Vector3.ZERO
 	crouching = false
 	return true
+
+
+## リフトから飛び降りる（F）。待っているあいだならやめるだけ。乗っていれば座面から椅子の進む向きの勢いのまま落ちる（落ちるのは歩くときの重力）。
+## 椅子の下に吊った自分のソリも、そこで放す
+func lift_jump() -> void:
+	if lift_chair < 0:
+		return
+	var waiting := _lift_wait
+	var dir: Vector3 = lift.chair_dir(lift_chair)
+	if not waiting:
+		global_position = lift.seat_point(lift_chair, lift_side) + Vector3.UP * 0.1
+		velocity = dir * lift.SPEED
+	if sled and is_instance_valid(sled):
+		var net = get_parent().get("net")
+		if net and net.online and not net.is_host():
+			net.up("lift", {"sled": String(get_parent().get_path_to(sled)), "drop": true})
+		else:
+			lift.drop(sled)
+	lift_chair = -1
+	_lift_wait = false
+	mode = Mode.WALK
+	_sit_stage = 0
+	_col.disabled = false
 
 
 ## リフト: 乗る所で椅子を待つ → 座って上がる → 降り場で降りる

@@ -62,6 +62,18 @@ func _run() -> void:
 					p.global_position.distance_to(lift.seat_point(p.lift_chair, p.lift_side)), p.global_position.y - main.height(p.global_position.x, p.global_position.z),
 					str(sled.freeze)])
 			next += 60.0
+		if args.has("jump") and t > 40.0:   # 途中で F（飛び降りる）
+			var h0: float = p.global_position.y - main.height(p.global_position.x, p.global_position.z)
+			p.lift_jump()
+			print("飛び降りた: %.0f 秒・地面から %.1f m" % [t, h0])
+			for i in 300:
+				await physics_frame
+			print("5 秒後: 人は地面から %.2f m（%s）・ソリは地面から %.2f m・止めてある %s・人から %.1f m" % [
+					p.global_position.y - main.height(p.global_position.x, p.global_position.z), "立っている" if p.is_on_floor() else "宙",
+					sled.global_position.y - main.height(sled.global_position.x, sled.global_position.z), str(sled.freeze), sled.global_position.distance_to(p.global_position)])
+			await _shot("jump_land")
+			quit()
+			return
 		if not shot_mid and t > 40.0:
 			shot_mid = true
 			p.set_third(false)

@@ -451,7 +451,10 @@ func _up(pid: int, what: String, ev: Dictionary, at: int) -> void:
 			var lf := main.get_node_or_null("Tenkamori/Lift")
 			var sl := sled_at(NodePath(String(ev.get("sled", ""))))
 			if lf and sl:
-				lf.carry(sl, int(ev.chair), int(ev.side))
+				if ev.get("drop", false):
+					lf.drop(sl)
+				else:
+					lf.carry(sl, int(ev.chair), int(ev.side))
 
 
 ## ホスト: 確かめた出来事を、つなぐ側の全員へ
