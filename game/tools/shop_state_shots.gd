@@ -144,11 +144,21 @@ func _run() -> void:
 	await _shot("paper_lantern_states.jpg")
 	main.paper_shop_ui.close()
 	await create_timer(0.3).timeout
-	main.minion_ui.open("pet")
+	# 山師のミニオンの棚（2026-11-10 代表「山師のミニオン購入だけUIの形変わるの嫌過ぎる」）: ほかの棚と同じ形で、山師の画面の中
+	var mu2 = main.mountain_ui
+	mu2.open()
+	mu2.set_page(1)
 	await _shot("pet_states.jpg")
 	var last: int = Pals.keys_of("pet").size() - 1
-	_ok(main.minion_ui.card_state(last) == "locked" and not main.minion_ui.choose(last), "連れ: ロックのミニオンは南京錠で、押しても買えない")
-	main.minion_ui.close()
+	_ok(mu2.state(last) == "locked", "ミニオン: ロックのミニオンは南京錠（%s）" % mu2.state(last))
+	mu2.select(last)
+	_ok(mu2._sel != last, "ミニオン: ロックの札は選べない")
+	_ok(not main.minion_ui.is_open and mu2._rects.size() == Pals.keys_of("pet").size(), "ミニオン: 別の画面は開かず、山師の画面の札で並ぶ")
+	var ys: Array = []
+	for pg in [0, 1, 3, 4, 2]:
+		ys.append((mu2._tab_rects[pg] as Rect2).position.y)
+	_ok(ys[0] < ys[1] and ys[1] < ys[2] and ys[2] < ys[3] and ys[3] < ys[4], "段の札は上から 消耗品・ミニオン・双眼鏡・手袋・雪玉の柄（%s）" % [ys])
+	mu2.close()
 	await create_timer(0.3).timeout
 	# ---- 雪だるまの店
 	main.emotes.balls[who] = 2
