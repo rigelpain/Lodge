@@ -230,19 +230,21 @@ static func rice_sack(ci: CanvasItem, c: Vector2, sc: float, body := KRAFT, band
 
 
 ## ランタンの絵（帯のランタン）。look は lantern.gd の LOOKS（box 木の手提げ / paper 提灯 / 売り物の 8 つ）。lit なら芯が光り、
-## まわりに形の色の光の輪。outline なら提げていない（破線の形）
-static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit := true, a := 1.0, outline := false) -> void:
+## まわりに形の色の光の輪。outline なら提げていない（破線の形）。hex は紙細工屋さんで染めた色（"" は形の色。lantern.gd の tint）
+static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit := true, a := 1.0, outline := false, hex := "") -> void:
 	var o := Icons._o + c * Icons._s
 	var k := sc * Icons._s
 	if outline:
 		Icons.dashes(ci, Icons.xf(Icons.rr(-13, -16, 26, 34, 4), 0.0, c, sc), Icons.PAPER_EDGE, 1.4, 3.0, 2.0, a, true)
 		return
-	var L: Dictionary = preload("res://lantern.gd").LOOK.get(look, preload("res://lantern.gd").LOOK["box"])
+	var Lt := preload("res://lantern.gd")
 	if lit:   # 光の輪（重ねた薄い円）
-		var lc: Color = L.color
+		var lc: Color = Color(0.10, 0.10, 0.14) if Lt.is_black(hex) else Lt.tint(look, hex)   # 黒は墨の輪（まわりが暗い）
 		for i in 4:
 			ci.draw_circle(o + Vector2(0, 2) * k, (30.0 - i * 6.0) * k, Color(lc.r, lc.g * 1.08, lc.b * 0.95, 0.16 * a))
-	var glow := (L.glow as Color).lerp(Color.WHITE, 0.35) if lit else Color(0.62, 0.60, 0.58)
+	var glow := Lt.tint(look, hex, true).lerp(Color.WHITE, 0.35) if lit else Color(0.62, 0.60, 0.58)
+	if Lt.is_black(hex):   # 黒い紙: 点くと墨の黒、消すと消し炭の灰
+		glow = Lt.INK if lit else Lt.INK_OFF
 	if look in ["spool", "knit", "hoop", "yarnball", "thimble", "hotaru", "pearl"]:
 		_lantern_ware(ci, c, sc, look, glow, lit, a)
 		return
@@ -270,6 +272,8 @@ static func lantern(ci: CanvasItem, c: Vector2, sc: float, look := "box", lit :=
 	var film := Color(1.0, 0.78, 0.42, 0.75) if lit else Color(0.36, 0.40, 0.50, 0.75)
 	if lit and raden:
 		film = Color(1.0, 0.62, 0.26, 0.8)
+	if lit and hex != "":   # 染めた灯り
+		film = Color(Lt.tint(look, hex, true), 0.75)
 	Icons.patch(ci, Icons.xf(Icons.rr(-11, -12, 22, 26, 1), 0.0, c, sc), film, a, false)   # フィルムの窓
 	Icons.patch(ci, Icons.xf(Icons.ell(Vector2(0, 3), 5, 7, 14), 0.0, c, sc), glow, a, false)   # 和紙で包んだ芯
 	Icons.dashes(ci, Icons.xf(Icons.rr(-9, -10, 18, 22, 1), 0.0, c, sc), gold if raden else Color(1, 1, 1, 0.9), 0.9, 2.2, 1.6, a, true)   # 白い糸の枠
@@ -630,4 +634,192 @@ static func _dryer_door(ci: CanvasItem, c: Vector2, a: float, tint: Color, spin:
 	else:
 		Icons.doll(ci, c + Vector2(20, 22), tint, "stand", a, 0.62)
 		Icons.arrow(ci, c + Vector2(2, -2), c + Vector2(30, -8), Icons.THREAD, a, 2.4)
+
+
+
+# ---- 店の札の見え方（2026-11-10 代表「いやーーなんかアンロックUIが直感的に理解しづらいな。一般的なゲームのやりかたにしてほしい」「Aかなー」。
+#      design/unlock-card-look）。よくあるゲームの店と同じ決まりを、手芸・紙で:
+#      品物の絵はいつも見せる（ロックのほかは隠さない）。値段は絵の下にボタン。持っている品は値段の代わりに緑のチェック。
+#      （紙の値札は「いや、やっぱその値札みたいなのやめよう。お金が足りなくて変えないものはグレーにするだけでいいよ」でやめた）
+#      どの店の画面も、札と品物の絵を描いたあとで foot（札の下の値段かチェック）と over（グレー・縁・南京錠）を呼ぶ
+#      （山師・ソリ屋・見本帳・紙細工屋さん・連れ・雪だるまの店・持ち物の画面）。
+#      札のようす（card_state）:
+#        "can"    買える: 絵の下に値段のボタン
+#        "money"  お金（雪玉）が足りない: 札ごとグレーにかぶせる（絵と値段は透けて見える）。選べない（押すと震える）
+#        "owned"  持っている: 値段の代わりに緑のフェルトの丸に白い糸のチェック
+#        "worn"   身につけている: チェックに加えて、札のまわりに赤い糸の太い縁（二重の縫い目）
+#        "locked" まだ解放できない（shop_locks.gd）: 札がくすみ、品物は薄い影、まんなかに真鍮の南京錠。値段なし。選べない
+#        "full"   持ち物がいっぱいで、場所を使う品が入らない: 札が薄くくすみ、右上に埋まった枠の小さな印（赤い糸の縁）。選べない。
+#                 店の板の下に、手持ちとかばんの枠を全部並べて、どれも埋まっているのを見せる（slot_strip。2026-11-10 代表
+#                 「インベントリパンパンのときはそのイラストじゃなくて…インベントリスロットを表示したほうが良いんじゃないでしょうか」）。
+#                 場所を使わない解放の品は、いっぱいでもふつうに買える
+
+const BAG := Color(0.30, 0.48, 0.33)           # かばんの巾着（装備の画面のかばんと同じ緑のフェルト）
+const CHECK := Color(0.30, 0.55, 0.34)         # 持っている印の緑のフェルト
+const BRASS_LOCK := Color(0.80, 0.62, 0.26)    # 南京錠の真鍮
+const LOCK_VEIL := Color(0.62, 0.60, 0.58, 0.78)   # ロックの札をくすませる紙の色
+const FULL_VEIL := Color(0.62, 0.60, 0.58, 0.5)    # 持ち物がいっぱいで買えない札（絵と値段は見える）
+const SHADE := Color(0.46, 0.46, 0.49, 0.66)      # お金が足りない札にかぶせるグレー
+
+
+## 札のようす。locked（ロック）・owned（持っている）・pay（払える）・room（持ち物に入る。場所を使わない品は true）・worn（身につけている）の順に見る
+static func card_state(locked: bool, owned: bool, pay: bool, room := true, worn := false) -> String:
+	if locked:
+		return "locked"
+	if owned:
+		return "worn" if worn else "owned"
+	if not room:
+		return "full"
+	return "can" if pay else "money"
+
+
+## 選べる札か（買える・持っている・身につけている）
+static func pickable(state: String) -> bool:
+	return state in ["can", "owned", "worn"]
+
+
+## 札の下（at がまんなか）: 買える・足りない・いっぱいなら値段のボタン（cost。r はボタンの大きさ）、持っている・身につけているならチェック。ロックは何もなし
+static func foot(ci: CanvasItem, state: String, at: Vector2, cost: int, r: float, _u := 1.0) -> void:
+	match state:
+		"can", "money", "full":
+			price(ci, at, cost, r)
+		"owned", "worn":
+			check_mark(ci, at, r * 3.2)
+
+
+## 札の上にかぶせる印: 足りないならグレー、身につけているなら赤い糸の縁、ロックなら札 pts をくすませて南京錠、いっぱいならくすみと埋まった枠の印。
+## rect は札の枠。札の形と絵と値段を描いたあとで呼ぶ
+static func over(ci: CanvasItem, state: String, rect: Rect2, pts: PackedVector2Array, u := 1.0) -> void:
+	match state:
+		"money":
+			Icons.screen()
+			ci.draw_colored_polygon(pts, SHADE)
+		"worn":
+			worn_frame(ci, rect, u)
+		"locked":
+			Icons.screen()
+			ci.draw_colored_polygon(pts, LOCK_VEIL)
+			padlock(ci, rect.get_center() + Vector2(0, -rect.size.y * 0.04), minf(rect.size.x * 0.42, rect.size.y * 0.34))
+		"full":
+			Icons.screen()
+			ci.draw_colored_polygon(pts, FULL_VEIL)
+			full_slot(ci, rect.position + Vector2(rect.size.x - 6.0 * u, 6.0 * u), minf(30.0 * u, rect.size.x * 0.28))
+
+
+## 持っている印: 緑のフェルトの丸（直径 s）に、白い糸のチェック
+static func check_mark(ci: CanvasItem, c: Vector2, s: float) -> void:
+	Icons.screen()
+	Icons.patch(ci, Icons.circ(c, s * 0.5, 22), CHECK, 1.0, true, CHECK.darkened(0.4))
+	Icons.thread(ci, PackedVector2Array([c + Vector2(-s * 0.24, 0), c + Vector2(-s * 0.06, s * 0.18), c + Vector2(s * 0.26, -s * 0.2)]), Icons.CAP, maxf(2.0, s * 0.1), 1.0)
+
+
+## 身につけている縁: 札 rect のまわりに赤い糸の太い縁（二重の縫い目）
+static func worn_frame(ci: CanvasItem, rect: Rect2, u := 1.0) -> void:
+	Icons.screen()
+	for k in 2:
+		var g := (4.0 + k * 4.5) * u
+		Icons.dashes(ci, Icons.rr(rect.position.x - g, rect.position.y - g, rect.size.x + g * 2.0, rect.size.y + g * 2.0, 12.0 * u + g), Icons.RED, 3.0 * u, 8.0 * u, 3.0 * u, 1.0, true)
+
+
+## 南京錠（大きさ s）: 鈍い鉄の掛け金と、真鍮のフェルトの錠の体、鍵穴
+static func padlock(ci: CanvasItem, c: Vector2, s: float) -> void:
+	Icons.screen()
+	var arc := PackedVector2Array()
+	for k in 15:
+		var a := PI + PI * k / 14.0
+		arc.append(c + Vector2(0, -s * 0.12) + Vector2(cos(a) * s * 0.26, sin(a) * s * 0.34))
+	Icons.thread(ci, arc, Color(0.55, 0.56, 0.60), s * 0.09, 1.0)
+	var body := Rect2(c + Vector2(-s * 0.4, -s * 0.14), Vector2(s * 0.8, s * 0.62))
+	Icons.patch(ci, Icons.rr(body.position.x, body.position.y, body.size.x, body.size.y, s * 0.1), BRASS_LOCK, 1.0, true, BRASS_LOCK.darkened(0.45))
+	var kc := body.get_center() + Vector2(0, -s * 0.05)
+	var dark := Color(0.22, 0.16, 0.10)
+	ci.draw_circle(kc, s * 0.08, dark)
+	ci.draw_colored_polygon(PackedVector2Array([kc + Vector2(-s * 0.04, 0), kc + Vector2(s * 0.04, 0), kc + Vector2(s * 0.06, s * 0.17), kc + Vector2(-s * 0.06, s * 0.17)]), dark)
+
+
+## 埋まった枠の小さな印（大きさ s。まんなかが c）: 品物の入った生成りの枠に、赤い糸の縁。持ち物がいっぱいで買えない札の右上に
+static func full_slot(ci: CanvasItem, c: Vector2, s: float) -> void:
+	Icons.screen()
+	Icons.patch(ci, Icons.rr(c.x - s / 2.0, c.y - s / 2.0, s, s, s * 0.18), Icons.CAP, 1.0, true, Icons.PAPER_EDGE)
+	item(ci, {"kind": "fabric", "fabric": "red"}, c, s * 0.8)
+	Icons.screen()
+	Icons.dashes(ci, Icons.rr(c.x - s / 2.0 - 2.0, c.y - s / 2.0 - 2.0, s + 4.0, s + 4.0, s * 0.22), Icons.RED, maxf(1.8, s * 0.07), s * 0.16, s * 0.1, 1.0, true)
+
+
+## 持ち物の枠の列（店の板の下に出す。持ち物がいっぱいのとき）: 手持ち 6 枠（手の印）と、かばん 6 枠（緑のフェルトの巾着の帯）を、
+## 遊んでいるときの下の手持ちの列と同じ生成りの枠で 1 列に並べ、入っている品物を描く。まわりに赤い糸の縁（埋まっている）。
+## top_center は列の上の縁のまんなか。返すのは列の枠
+static func slot_strip(ci: CanvasItem, top_center: Vector2, bag: Array, u := 1.0) -> Rect2:
+	var n := preload("res://craft.gd").HAND_SLOTS
+	var cell := 46.0 * u
+	var gap := 5.0 * u
+	var mark := 34.0 * u
+	var group := mark + n * cell + (n - 1) * gap
+	var mid := 26.0 * u
+	var pad := 10.0 * u
+	var w := group * 2.0 + mid + pad * 2.0
+	var h := cell + pad * 2.0
+	var r := Rect2(top_center - Vector2(w / 2.0, 0), Vector2(w, h))
+	Icons.screen()
+	Icons.patch(ci, Icons.rr(r.position.x, r.position.y, w, h, 14.0 * u), Icons.PAPER, 0.97, true, Icons.PAPER_EDGE)
+	for k in 2:
+		var gx := r.position.x + pad + k * (group + mid)
+		var y := r.position.y + pad
+		Icons.screen()
+		if k == 1:   # かばん: 緑のフェルトの帯
+			Icons.patch(ci, Icons.rr(gx + mark - 6.0 * u, y - 5.0 * u, n * cell + (n - 1) * gap + 12.0 * u, cell + 10.0 * u, 10.0 * u), BAG, 0.95, true, Icons.CAP)
+		Icons.icon(ci, "hand" if k == 0 else "gear", Vector2(gx + mark * 0.4, y + cell / 2.0), mark * 0.95, 1.0)
+		for i in n:
+			var slot := k * n + i
+			var cr := Rect2(gx + mark + i * (cell + gap), y, cell, cell)
+			Icons.screen()
+			if slot >= bag.size() or (bag[slot] as Dictionary).is_empty():
+				Icons.dashes(ci, Icons.rr(cr.position.x + 2.0 * u, cr.position.y + 2.0 * u, cell - 4.0 * u, cell - 4.0 * u, 8.0 * u), Icons.CAP, 2.0 * u, 5.0 * u, 4.0 * u, 0.7, true)
+				continue
+			Icons.patch(ci, Icons.rr(cr.position.x, cr.position.y, cell, cell, 9.0 * u), Icons.CAP, 0.97, true, Icons.PAPER_EDGE)
+			item(ci, bag[slot], cr.get_center(), cell * 0.8)
+	Icons.screen()
+	Icons.dashes(ci, Icons.rr(r.position.x - 4.0 * u, r.position.y - 4.0 * u, w + 8.0 * u, h + 8.0 * u, 17.0 * u), Icons.RED, 3.0 * u, 8.0 * u, 4.0 * u, 1.0, true)
+	return r
+
+
+## 角を切った紙の札（hud_icons.gd の paper_tag）の形。お金が足りない札のグレーをかぶせるのに使う
+static func tag_pts(rect: Rect2, cut: float) -> PackedVector2Array:
+	var x := rect.position.x
+	var y := rect.position.y
+	var w := rect.size.x
+	var h := rect.size.y
+	return PackedVector2Array([Vector2(x + cut, y), Vector2(x + w - cut, y), Vector2(x + w, y + cut), Vector2(x + w, y + h),
+		Vector2(x, y + h), Vector2(x, y + cut)])
+
+
+## 米マークのワッペン（装備の画面の米袋の段の印。2026-11-10 代表「米袋のアイコン微妙。実物についてる米マークワッペンにしてほしい」）。
+## 実物の米袋の布（props/sled_sack の刷り）にある、赤い輪の中の米の字形と、左右から上へ伸びる緑の稲穂を、生成りのフェルトの丸に縫い取る。c は真ん中、s は直径 (px)
+static func kome_patch(ci: CanvasItem, c: Vector2, s: float, a := 1.0) -> void:
+	Icons.screen()
+	var r := s * 0.5
+	Icons.patch(ci, Icons.circ(c, r, 28), Color(0.86, 0.76, 0.58), a, true, Color(0.62, 0.50, 0.34))
+	Icons.dashes(ci, Icons.circ(c, r * 0.86, 28), Color(0.55, 0.42, 0.28), maxf(1.0, s * 0.02), s * 0.05, s * 0.035, 0.9 * a, true)
+	var green := Color(0.36, 0.56, 0.30)
+	var red := Color(0.76, 0.22, 0.17)
+	var w := maxf(1.2, s * 0.045)
+	for side in [-1.0, 1.0]:   # 稲穂: 下から外へふくらんで上へ伸び、穂先が内へ垂れる
+		var arc := PackedVector2Array()
+		for k in 10:
+			var t := k / 9.0
+			arc.append(c + Vector2(side * (r * 0.62 + sin(t * PI) * r * 0.06), lerpf(r * 0.48, -r * 0.42, t)))
+		arc.append(c + Vector2(side * r * 0.40, -r * 0.62))
+		Icons.thread(ci, arc, green, w, a)
+		Icons.patch(ci, Icons.ell(c + Vector2(side * r * 0.46, -r * 0.6), r * 0.14, r * 0.06, 10), green, a, false)
+	var ring := PackedVector2Array()
+	for k in 25:
+		ring.append(c + Vector2.from_angle(TAU * k / 24.0) * r * 0.42)
+	Icons.thread(ci, ring, red, w, a)
+	var q := r * 0.3   # 米の字形: 縦と横、上の 2 つの点（中へ向く）、下の 2 本の払い（真ん中から外へ）
+	Icons.thread(ci, PackedVector2Array([c + Vector2(0, -q), c + Vector2(0, q)]), red, w * 1.1, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(-q, 0), c + Vector2(q, 0)]), red, w * 1.1, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(-q * 0.72, -q * 0.78), c + Vector2(-q * 0.36, -q * 0.34)]), red, w, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(q * 0.72, -q * 0.78), c + Vector2(q * 0.36, -q * 0.34)]), red, w, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(-q * 0.08, q * 0.1), c + Vector2(-q * 0.8, q * 0.82)]), red, w, a)
+	Icons.thread(ci, PackedVector2Array([c + Vector2(q * 0.08, q * 0.1), c + Vector2(q * 0.8, q * 0.82)]), red, w, a)
 

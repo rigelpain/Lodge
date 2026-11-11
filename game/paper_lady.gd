@@ -135,12 +135,14 @@ func _ready() -> void:
 		craft.happened.connect(_on_craft)
 
 
-## だれかがここの品物を買った: 売る動き。付け替えただけなら、うなずく（通信ではほかの人の画面でも、同じ出来事で）
+## だれかがここの品物を買った: 売る動き。ランタンの色替え（lantern_dye）も、染めたランタンを渡す売る動き。
+## 付け替えただけ・もとの色に戻しただけ（ただ）なら、うなずく（通信ではほかの人の画面でも、同じ出来事で）
 func _on_craft(ev: Dictionary) -> void:
 	var k := String(ev.get("kind", ""))
-	if k == "pal_buy" or k == "lantern_buy":
-		_start_sale(String(ev.get("look", ev.get("key", ""))), k == "lantern_buy", int(ev.get("who", -1)))
-	elif (k == "pal_wear" or (k == "equip" and ev.get("gear", "") == "lantern")) and _act != "sale":
+	var dyed := k == "lantern_dye" and int(ev.get("price", 0)) > 0
+	if k == "pal_buy" or k == "lantern_buy" or dyed:
+		_start_sale(String(ev.get("look", ev.get("key", ""))), k != "pal_buy", int(ev.get("who", -1)), String(ev.get("color", "")))
+	elif (k == "pal_wear" or k == "lantern_dye" or (k == "equip" and ev.get("gear", "") == "lantern")) and _act != "sale":
 		_start("nod")
 
 
@@ -483,14 +485,14 @@ func _sounds() -> void:
 
 # ---------------------------------------------------------------- 売る
 
-func _start_sale(key: String, lantern: bool, who: int) -> void:
+func _start_sale(key: String, lantern: bool, who: int, hex := "") -> void:
 	if _sale_item:
 		_sale_item.queue_free()
 		_sale_item = null
 	if _hand_l and key != "":
 		var item: Node3D
 		if lantern and Lantern.LOOK.has(key):
-			item = Lantern.make_body(key)[0]
+			item = Lantern.make_body(key, hex)[0]
 			item.scale = Vector3.ONE * 0.55
 		elif Pals.PERCH.has(key) or Pals.PET.has(key):
 			item = Pals.scene(key).instantiate()

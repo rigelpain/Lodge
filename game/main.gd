@@ -233,7 +233,7 @@ var wardrobe_ui: CanvasLayer  # 人形を選び直す画面（wardrobe_ui.gd）
 var mirror: Node3D            # 入口の横の大きな鏡（mirror.gd）
 var paper_lady: Node3D        # テントの紙細工屋さん（paper_lady.gd。婦人と大きなスタンド）
 var paper_shop_ui: CanvasLayer   # 提灯と頭・肩の小物を買って付け替える画面（paper_shop_ui.gd）
-var minion_ui: CanvasLayer    # 山師が育てているミニオンを買って連れ替える画面（pals_ui.gd の連れの段。山師の売り場の「連れ」の札から）
+var minion_ui: CanvasLayer    # 山師が育てているミニオンの絵と、買う・連れ替える出来事（pals_ui.gd の連れの段。山師の売り場のミニオンの棚が使う。画面そのものは開かない）
 var dye_vat: Node3D           # 人台の桶の染め液（dye_vat.gd）
 var dye_ui: CanvasLayer       # 服を染める画面（dye_ui.gd）
 var sled_book: Node3D         # 布の見本帳（sled_book.gd）
@@ -455,6 +455,8 @@ func _ready() -> void:
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
 	var from_cmdline := not args.is_empty()
 	args.merge(Net.boot, true)   # スタート画面で選んだホスト・つなぐ（とワールド）
+	if args.has("lock"):   # 確かめ用: 店の品をロックする（--lock=mountain:peg,stitch:fly。shop_locks.gd）
+		preload("res://shop_locks.gd").extra = String(args.lock).split(",", false)
 	stage = String(args.get("world", "plain" if from_cmdline else saved_world()))
 	if not stage in WORLDS:
 		stage = "plain"
@@ -694,8 +696,8 @@ func _ready() -> void:
 		mountain_ui.player = player
 		mountain_ui.shop = mountain_man
 		add_child(mountain_ui)
-		# 山師が育てているミニオンの画面: pals_ui.gd を連れの段だけで開く（2 階の売り台の画面とは別のもの。2 階の売り台が
-		# ほかの店に替わっても、ここは pals_ui.gd を直に読むので残る）
+		# 山師が育てているミニオン: pals_ui.gd を連れの段だけで持ち、山師の売り場（mountain_ui.gd）のミニオンの棚が、その絵（回る座った姿）と
+		# 買う・連れ替える出来事を使う（2026-11-10 代表「山師のミニオン購入だけUIの形変わるの嫌過ぎる」。この画面そのものは開かない）
 		minion_ui = preload("res://pals_ui.gd").new()
 		minion_ui.name = "MinionUi"
 		minion_ui.main = self
@@ -703,8 +705,6 @@ func _ready() -> void:
 		minion_ui.player = player
 		minion_ui.tabs = ["pet"]
 		minion_ui.board_color = MountainUi.FELT
-		minion_ui.lead_tab = "mountain"   # 段の札の上の、山の道具の売り場へ戻る札
-		minion_ui.lead_pressed.connect(func(): mountain_ui.open())
 		add_child(minion_ui)
 		if args.get("spawn", "") == "mountain" and mountain_man:   # --spawn=mountain: 山男の前から始める
 			var at := mountain_man.to_global(Vector3(0, 0.1, -1.9))
@@ -2435,3 +2435,5 @@ func _unhandled_input(e: InputEvent) -> void:
 			pip_mode = (pip_mode + 1) % 3
 			pip_mat.set_shader_parameter("mode", pip_mode)
 			_layout_pip()
+
+

@@ -75,21 +75,23 @@ func _run() -> void:
 func _solo() -> void:
 	var me: int = p.id
 	craft.wallets[me] = 1000
-	# 売り台: 棚を替えて、柄を選んで買う
-	ui.open_shop()
-	ui.shop_page = 1
-	await _shot("01_shop_shelf")
-	var fly: int = ui._stitch_goods.find("fly")
+	# 布の見本帳: 柄を選んで、決める（買って米袋に付く。2026-11-10 からソリ屋の売り台では売らない）
+	var book = main.sled_book_ui
+	book.open()
+	await _shot("01_book_shelf")
 	var coins: int = craft.wallet(me)
-	ui.select(fly)
-	await _shot("02_shop_selected")
-	_ok(ui.buy(), "フライを買えた")
+	book.pick_stitch("fly")
+	await _shot("02_book_selected")
+	_ok(book.apply(), "見本帳でフライを買えた")
 	_ok(craft.wallet(me) == coins - Stitches.price("fly"), "財布から値段のぶん減った")
 	_ok(craft.free_slot(me) >= 0 and craft.count(me) == 0, "持ち物の場所は使わない")
-	_ok(not ui.buy(), "同じ柄は二度買えない")
-	ui.select(ui._stitch_goods.find("cross"))
-	ui.buy()
-	await _shot("03_shop_bought")
+	_ok(not craft.send({"kind": "stitch_buy", "who": me, "stitch": "fly"}), "同じ柄は二度買えない")
+	book.pick_stitch("cross")
+	book.apply()
+	await _shot("03_book_bought")
+	book.close()
+	ui.open_shop()
+	_ok(ui.get("_stitch_goods") == null and ui.get("shop_page") == null, "ソリ屋の売り台には柄の棚がない")
 	ui.close_shop()
 	craft.wallets[me] = 0
 	_ok(not craft.send({"kind": "stitch_buy", "who": me, "stitch": "garden"}), "ボタンが足りないと買えない")

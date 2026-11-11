@@ -1260,6 +1260,7 @@ func _pose_doll() -> void:
 			doll.belt_color = preload("res://fabrics.gd").color(spec.fabric) if spec.fabric != "" else preload("res://sled.gd").KINDS["sack"].color
 		# 帯の左のランタン
 		doll.lantern = craft.lantern(id).get("look", "")
+		doll.lantern_color = craft.lantern(id).get("color", "")
 		doll.lantern_lit = craft.lamp_on(id)
 	fling.pose()
 	rolled.pose()
@@ -2646,6 +2647,8 @@ func _pan_hand(d: Vector2) -> void:
 ## ホイール: 素手 → 手持ち 1 → 2 → … と回す（空いたマスと、かばんの物は飛ばす）
 func cycle_hand(step: int) -> void:
 	var order := [-1]
+	if not craft.scope(id).is_empty():   # 首から下げた双眼鏡は、素手の次（craft.gd の NECK）
+		order.append(preload("res://craft.gd").NECK)
 	var b: Array = craft.bag(id)
 	for i in mini(preload("res://craft.gd").HAND_SLOTS, b.size()):
 		if not b[i].is_empty():
@@ -3276,11 +3279,17 @@ func summon_sack() -> bool:
 
 const TAG_FILE := "user://my_tag.cfg"
 
+
+## 保存の帳面。確かめの道具は --tag-file=user://… で別の帳面を使う（遊ぶ人の保存を読まない・書き換えない）
+func _tag_file() -> String:
+	var a = get_parent().get("args")
+	return String(a.get("tag-file", TAG_FILE)) if a is Dictionary and String(a.get("tag-file", "")) != "" else TAG_FILE
+
 ## 保存してある自分の名札を読む（なければ、人の番号から決めたはじめの名札のまま）。保存した人形を送ったら true。
 ## 手に入れた部品を先に戻してから、名札を付ける（前の版の保存にない部品は、はじめの名札のまま）
 func _load_tag() -> bool:
 	var cf := ConfigFile.new()
-	if cf.load(TAG_FILE) != OK:
+	if cf.load(_tag_file()) != OK:
 		return false
 	var Tags := preload("res://sled_tags.gd")
 	if cf.has_section("owned"):
@@ -3307,16 +3316,25 @@ func _load_tag() -> bool:
 			craft.send({"kind": "sled_stitch", "who": id, "sack": 0, "stitch": String(cf.get_value("stitch", "sack", ""))})
 		if String(cf.get_value("stitch", "sack_color", "")) != "":   # 見本帳で染めた標準の米袋の色（値はここでは取らない）
 			craft.send({"kind": "sled_dye_own", "who": id, "sack": 0, "color": String(cf.get_value("stitch", "sack_color", ""))})
-	if cf.has_section("lantern"):   # ランタン: 持っている形を戻してから、提げていた形を提げる（"" は外していた）
+	if cf.has_section("lantern"):   # ランタン: 持っている形と染めた色を戻してから、提げていた形を提げる（"" は外していた）
 		for k in cf.get_value("lantern", "owned", []):
 			craft.send({"kind": "lantern_own", "who": id, "look": String(k)})
+		var tints = cf.get_value("lantern", "colors", {})   # 形 → 染めた色（紙細工屋さんの色替え）
+		if tints is Dictionary:
+			for k in tints:
+				craft.send({"kind": "lantern_dye_own", "who": id, "look": String(k), "color": String(tints[k])})
 		if cf.has_section_key("lantern", "wear"):
-			var look := String(cf.get_value("lantern", "wear"))
-			craft.send({"kind": "equip", "who": id, "gear": "lantern", "index": craft.lantern_index(id, look) if look != "" else -1})
+			# 形で送り、受けた画面で番号を引く（つなぐ側では lantern_own がまだホストで起きていないので、ここでは番号を引けない）。
+			# 持っていない形・なくなった形なら断られ、はじめの標準のランタンのまま
+			craft.send({"kind": "equip", "who": id, "gear": "lantern", "look": String(cf.get_value("lantern", "wear"))})
 	if cf.has_section("gloves"):   # 雪玉ころがしの手袋: 持っている段を戻してから、はめていたものをはめる
 		for f in cf.get_value("gloves", "owned", []):
 			craft.send({"kind": "gloves_own", "who": id, "grade": String(f)})
 		craft.send({"kind": "equip", "who": id, "gear": "gloves", "index": int(cf.get_value("gloves", "wear", -1))})
+	if cf.has_section("binoculars"):   # 手の双眼鏡: 持っている段を戻してから、首から下げていた段を下げる（"" は下げていなかった）
+		for k in cf.get_value("binoculars", "owned", []):
+			craft.send({"kind": "scope_own", "who": id, "grade": String(k)})
+		craft.send({"kind": "equip", "who": id, "gear": "binoculars", "grade": String(cf.get_value("binoculars", "wear", ""))})
 	if cf.has_section("pals"):   # 頭・肩の小物とミニオン: 持っている物を戻してから付ける
 		for k in cf.get_value("pals", "owned", []):
 			craft.send({"kind": "pal_own", "who": id, "key": String(k)})
@@ -3416,12 +3434,22 @@ func save_tag() -> void:
 		looks.append(String(l.get("look", "")))
 	cf.set_value("lantern", "owned", looks)
 	cf.set_value("lantern", "wear", String(craft.lantern(id).get("look", "")))
+	var tints := {}   # 紙細工屋さんで染めた色（形 → "rrggbb"）
+	for l in craft.lanterns.get(id, []):
+		if String(l.get("color", "")) != "":
+			tints[String(l.get("look", ""))] = String(l.color)
+	cf.set_value("lantern", "colors", tints)
 	var gl: Array = []   # 雪玉ころがしの手袋（gloves.gd）: 持っている段と、はめている番号
 	for g in craft.gloves.get(id, []):
 		gl.append(String(g.get("grade", "")))
 	cf.set_value("gloves", "owned", gl)
 	cf.set_value("gloves", "wear", craft.gear_index(id, "gloves"))
+	var sc: Array = []   # 手の双眼鏡（binoculars.gd）: 持っている段と、首から下げている段
+	for g in craft.scopes.get(id, []):
+		sc.append(String(g.get("kind", "")))
+	cf.set_value("binoculars", "owned", sc)
+	cf.set_value("binoculars", "wear", String(craft.scope(id).get("kind", "")))
 	cf.set_value("pals", "owned", craft.pals_owned.get(id, []))   # 頭・肩の小物とミニオン（pals.gd）
 	for slot in craft.pals_wear.get(id, {}):
 		cf.set_value("pals", slot, craft.pals_wear[id][slot])
-	cf.save(TAG_FILE)
+	cf.save(_tag_file())

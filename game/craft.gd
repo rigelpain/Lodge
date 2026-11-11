@@ -34,13 +34,24 @@ extends Node
 ##                             色に払うんじゃなくて染色代として払う」）。染めた色は人形ごとに残る（ほかの人形に着替えて戻っても同じ色）
 ##   outfit    {doll, colors}  保存してある染めた色を戻す（起動したとき。値はここでは取らない）
 ##   equip     {gear, index}   装備の画面（craft_ui.gd）で、その種類（gear）の持っている物から装備する物を替える。
-##                             ランタンは index -1 で外す（外すと消える）
+##                             ランタンは index -1 で外す（外すと消える）。ランタンは index の代わりに look（形。"" は外す）でもよい:
+##                             番号は受けた画面で引く（保存から戻すとき。つなぐ側では lantern_own がまだホストで起きていないので、番号を先に引けない）。
+##                             持っていない形なら断る（はじめの標準のまま）
 ##   lamp      {on}            帯のランタンを点ける・消す（R キー。2026-10-29 代表）。提げていなければ断る
 ##   lantern_buy {look}        1 階のテントの紙細工屋さん（paper_lady.gd）で、形違いのランタン（lantern.gd の LOOK）を買う。
 ##                             買ったらすぐ帯に提げる（ev に index が入る）。通信ではほかの人の画面でも、その人のランタンが替わる
 ##   lantern_own {look}        持っているランタンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
+##   lantern_dye {look, color} 紙細工屋さんで、持っているランタン look の灯りと光る紙を、キャラの色のパレット（COLORS。山をめぐる仲間の服と同じ）の
+##                             色 color（"rrggbb"）に染める。"" は形のもとの色に戻す（ただ）。染め代は lantern_dye_price（黒だけ 1 螺鈿）。色はランタンごとに残る
+##                             （2026-11-10 代表「CPUのランタンの色変わってるけどプレイヤーもできる？なかったら紙細工師さんで色変え売って欲しい」）
+##   lantern_dye_own {look, color}  保存してある染めた色を戻す（起動したとき。値は取らない）
 ##   gloves_own {grade}        持っている雪玉ころがしの手袋を戻す（保存から。値は取らない）。手袋は山師の棚の buy（{kind: "gloves" | "gloves_felt" | "gloves_leather"}。gloves.gd）で買う。
 ##                             持ち物の場所は使わず、装備の枠に入ってすぐはまる（ev.slot は -1、ev.index に装備の番号）。equip の gear "gloves"（index -1 で外す）で替える
+##   scope_own {grade}         持っている手の双眼鏡を戻す（保存から。値は取らない）。双眼鏡は山師の棚の buy（{kind: "binoculars" | "binoculars_far" | "binoculars_night"}。binoculars.gd）で買う。
+##                             手袋と同じく一度買えばずっと持っていて、持ち物の場所は使わない（2026-11-10 代表「手袋も双眼鏡もUNLOCK形式にしましょう。インベントリ圧迫するのだるいし」）。
+##                             選んでいる段は首から下げ、手持ちの列の素手の右に丸い枠で出る（hand の slot NECK で手に持ち、左クリックでのぞく）。
+##                             買うとその段を選んで手に持つ（ev.slot は -1、ev.index に番号）。equip の gear "binoculars"（index -1 で外す）で替える。
+##                             equip は index の代わりに grade（段の kind。"" は外す）でもよい（保存から戻すとき。ランタンの look と同じわけ）
 ##   pal_buy   {key}           頭・肩の小物（1 階のテントの紙細工屋さん paper_lady.gd）かミニオン（1 階の山師）を買う（pals.gd）。買ったらすぐ身につける（ev に slot が入る）
 ##   pal_own   {key}           持っている小物・ミニオンを戻す（保存から。値は取らない。tag_unlock と同じ扱い）
 ##   pal_wear  {slot, key}     頭（head）・肩（shoulder）・連れ（pet）に、持っている物を付ける。key が "" なら外す。
@@ -101,10 +112,22 @@ const FABRIC_PRICE := 10
 const Peg := preload("res://peg.gd")
 const Stitches := preload("res://stitches.gd")
 const BallStitches := preload("res://ball_stitches.gd")
+const ShopLocks := preload("res://shop_locks.gd")
 ## 染め代（木の何個分）。何色でも、布 1 枚でも 2 枚でも、1 回染めるごとに
 ## 1 回に染める部位の数ごとの染め代（0〜4 部位）。部位が多いほど高く、まとめて染めると 1 部位ぶんずつは少し安い
 ## （2026-11-03 代表「部位数ごとに値段を上げてほしい」）
 const DYE_PRICES := [0, 15, 25, 33, 40]
+## ランタンの色替えの代: 光る紙は 1 部位ぶん（米袋・小のソリの染めと同じ）
+const LANTERN_DYE_PRICE := 15
+## 黒（lantern.gd の is_black。まわりを暗くする）だけは特別な色: 1 螺鈿（MONEY の 1000。2026-11-10 代表「ランタンの黒染色は特別に1螺鈿にしてほしい値段」）
+const LANTERN_DYE_BLACK_PRICE := 1000
+
+
+## ランタンを色 hex（"rrggbb"）に染める代。"" はもとの色に戻す（ただ）
+static func lantern_dye_price(hex: String) -> int:
+	if hex == "":
+		return 0
+	return LANTERN_DYE_BLACK_PRICE if Lantern.is_black(hex) else LANTERN_DYE_PRICE
 const PATTERNS := ["sack", "small", "mid", "large"]
 ## 大きすぎて、そのまま出すと動かしにくいソリ（ミシンが中にあった頃は運び出せなかった。ミシンは外の下屋へ移したが、届け方は変えていない）。
 ## 縫うと、ロッジの前（main.gd の delivery_spot）に、空から包みが落ちて折り紙のように開いて出てくる
@@ -127,7 +150,9 @@ var scope_paid := {}           # "人の番号:台の番号" → 双眼鏡台の
 var _next_sled := 1
 var fires := {}                # 焚き火の番号 → 組んだ焚き火（campfire.gd）
 var _next_fire := 1
-const GEARS := ["sack", "lantern", "gloves"]   # 装備の種類（装備の画面の並び）
+const GEARS := ["sack", "lantern", "gloves", "binoculars"]   # 装備の種類（装備の画面の並び）
+const NECK := -2               # hands の値: 首から下げた双眼鏡を手に持っている（持ち物の場所ではない。scope）
+const Binoculars := preload("res://binoculars.gd")
 ## 雪玉ころがしの手袋（gloves.gd。2026-11-08 代表「性能差付けて山師に売らせよう」）。山師の棚で 3 段（毛糸・フェルト・革）を売る。
 ## はめていると、しゃがんで F を押し続けて大玉の種を置け、大玉を押せる（player.gd。big_ball.gd）。段で押す力・育つ速さ・玉の丈夫さが違う
 const Gloves := preload("res://gloves.gd")
@@ -150,6 +175,8 @@ var lantern_sel := {}          # 人の番号 → 提げているランタンの
 var lamps := {}                # 人の番号 → ランタンが点いているか
 var gloves := {}               # 人の番号 → 持っている手袋の配列 [{grade}]（gloves.gd の段。買うまで空）
 var gloves_sel := {}           # 人の番号 → はめている手袋の番号（-1 は外している）
+var scopes := {}               # 人の番号 → 持っている手の双眼鏡の配列 [{kind}]（binoculars.gd の段。買うまで空）
+var scope_sel := {}            # 人の番号 → 首から下げている双眼鏡の番号（-1 は下げていない）
 var pals_owned := {}           # 人の番号 → 持っている頭・肩の小物とミニオンの名前の配列（pals.gd）
 var pals_wear := {}            # 人の番号 → {head, shoulder, pet} 身につけている物の名前（"" は付けていない）
 ## キャラの色（装備の画面で選ぶ。はじめは人の番号の順に、赤・藍・からし…）。フェルトの色で、名札の窓の生成りの上で見分けられる濃さ
@@ -185,6 +212,8 @@ func join(who: int) -> void:
 	lamps[who] = false
 	gloves[who] = []
 	gloves_sel[who] = -1
+	scopes[who] = []
+	scope_sel[who] = -1
 	pals_owned[who] = Pals.START.duplicate()
 	pals_wear[who] = Pals.START_WEAR.duplicate()
 
@@ -218,6 +247,7 @@ func gear_list(who: int, gear: String) -> Array:
 		"sack": return sacks.get(who, [])
 		"lantern": return lanterns.get(who, [])
 		"gloves": return gloves.get(who, [])
+		"binoculars": return scopes.get(who, [])
 	return []
 
 
@@ -226,6 +256,7 @@ func gear_index(who: int, gear: String) -> int:
 		"sack": return int(sack_sel.get(who, 0))
 		"lantern": return int(lantern_sel.get(who, -1))
 		"gloves": return int(gloves_sel.get(who, -1))
+		"binoculars": return int(scope_sel.get(who, -1))
 	return -1
 
 
@@ -240,6 +271,40 @@ func glove_grade(who: int) -> String:
 	if not gloves_on(who):
 		return ""
 	return String(gloves[who][int(gloves_sel[who])].get("grade", "gloves"))
+
+
+## 首から下げている双眼鏡（{kind}。下げていなければ {}）
+func scope(who: int) -> Dictionary:
+	var i := int(scope_sel.get(who, -1))
+	var list: Array = scopes.get(who, [])
+	return list[i] if i >= 0 and i < list.size() else {}
+
+
+## 持っている双眼鏡の中の、段 kind の番号（持っていなければ -1）
+func scope_index(who: int, kind: String) -> int:
+	var list: Array = scopes.get(who, [])
+	for i in list.size():
+		if String(list[i].get("kind", "")) == kind:
+			return i
+	return -1
+
+
+## 持ち物の場所に入っている双眼鏡を、持っている双眼鏡へ移す（前の版の持ち物。場所は空ける）。移した数
+func lift_scopes(who: int) -> int:
+	var b: Array = bags.get(who, [])
+	var n := 0
+	for i in b.size():
+		if b[i] is Dictionary and Binoculars.is_item(b[i]):
+			var k := String(b[i].kind)
+			if scope_index(who, k) < 0:
+				scopes[who].append({"kind": k})
+				if int(scope_sel.get(who, -1)) < 0:
+					scope_sel[who] = scopes[who].size() - 1
+			if hands.get(who, -1) == i:
+				hands[who] = NECK if scope_index(who, k) == int(scope_sel[who]) else -1
+			b[i] = {}
+			n += 1
+	return n
 
 
 ## 持っている手袋の中の、段 grade の番号（持っていなければ -1）
@@ -350,6 +415,20 @@ func lantern(who: int) -> Dictionary:
 	return list[i] if i >= 0 and i < list.size() else {}
 
 
+## ランタンの色替えに選べる色（COLORS を "rrggbb" に。並びも COLORS のまま）
+static func lantern_palette() -> Array:
+	var out := []
+	for c in COLORS:
+		out.append((c as Color).to_html(false))
+	return out
+
+
+## 持っているランタン look の染めた色（"rrggbb"。染めていなければ ""）
+func lantern_color(who: int, look: String) -> String:
+	var i := lantern_index(who, look)
+	return String(lanterns[who][i].get("color", "")) if i >= 0 else ""
+
+
 ## 持っているランタンの中の、形 look の番号（持っていなければ -1）
 func lantern_index(who: int, look: String) -> int:
 	var list: Array = lanterns.get(who, [])
@@ -388,6 +467,8 @@ func count(who: int) -> int:
 
 ## 手持ち（画面の下の列）に何か入っているか
 func has_hand_items(who: int) -> bool:
+	if not scope(who).is_empty():   # 首から下げた双眼鏡も、手持ちの列に出る
+		return true
 	var b := bag(who)
 	for i in mini(HAND_SLOTS, b.size()):
 		if not b[i].is_empty():
@@ -431,6 +512,8 @@ func wallet(who: int) -> int:
 ## 手に持っている物（素手なら {}）
 func held(who: int) -> Dictionary:
 	var i: int = hands.get(who, -1)
+	if i == NECK:
+		return scope(who)
 	var b := bag(who)
 	return b[i] if i >= 0 and i < b.size() else {}
 
@@ -547,7 +630,7 @@ func snapshot() -> Dictionary:
 			pegs.append({"sled": sled_path(s), "at": s.peg.global_position, "color": s.peg.color})
 	return {"pegs": pegs, "wallets": wallets, "bags": bags, "hands": hands, "tag_designs": tag_designs, "tag_owned": tag_owned, "stitch_owned": stitch_owned, "ball_owned": ball_owned, "ball_stitch": ball_stitch, "sacks": sacks,
 		"loose_tags": loose_tags, "names": names, "colors": colors, "dolls": dolls, "sack_sel": sack_sel, "lanterns": lanterns,
-		"lantern_sel": lantern_sel, "lamps": lamps, "gloves": gloves, "gloves_sel": gloves_sel, "next_sled": _next_sled, "sleds": placed, "sack_out": out,
+		"lantern_sel": lantern_sel, "lamps": lamps, "gloves": gloves, "gloves_sel": gloves_sel, "scopes": scopes, "scope_sel": scope_sel, "next_sled": _next_sled, "sleds": placed, "sack_out": out,
 		"fires": lit, "next_fire": _next_fire, "scope_who": world.binocular_stands.map(func(st): return int(st.who)) if world else [], "scope_paid": _scope_paid_left()}
 
 
@@ -571,9 +654,14 @@ func load_snapshot(d: Dictionary) -> void:
 		for i in mini(scoped.size(), world.binocular_stands.size()):
 			world.binocular_stands[i].who = int(scoped[i])
 	for key in ["wallets", "bags", "hands", "tag_designs", "tag_owned", "stitch_owned", "ball_owned", "ball_stitch", "sacks", "loose_tags", "names", "colors", "dolls",
-			"sack_sel", "lanterns", "lantern_sel", "lamps", "gloves", "gloves_sel"]:
+			"sack_sel", "lanterns", "lantern_sel", "lamps", "gloves", "gloves_sel", "scopes", "scope_sel"]:
 		var mine: Dictionary = get(key)
 		mine.merge(d.get(key, {}), true)
+	for who in bags:   # 前の版のホストの持ち物に入っていた双眼鏡は、持っている双眼鏡へ
+		if not scopes.has(who):
+			scopes[who] = []
+			scope_sel[who] = -1
+		lift_scopes(who)
 	if is_inside_tree():   # 届く前に置かれた大玉も、置いた人の柄で縫い直す（ball_stitches.gd）
 		for b in get_tree().get_nodes_in_group("big_balls"):
 			b.refresh_stitch()
@@ -620,12 +708,13 @@ func _apply(ev: Dictionary) -> bool:
 	var who: int = ev.get("who", -1)
 	if not wallets.has(who) and ev.kind != "sewn":
 		return false
+	var lock_key := ShopLocks.key_of(ev)
+	if lock_key != "" and ShopLocks.locked(lock_key):
+		return false   # まだ売っていない品（麻ひもの包み。shop_locks.gd）
 	match ev.kind:
 		"buy":
 			var item: Dictionary = ev.item
 			var cost := price(item)
-			if MountainGoods.has(item.get("kind", "")) and not MountainGoods.sold(item.kind):
-				return false   # 山男の棚で、まだ売っていない品目
 			if Gloves.is_gloves(String(item.get("kind", ""))):   # 雪玉ころがしの手袋は装備: 持ち物の場所は使わず、すぐはめる。同じ段は 1 つ
 				var g := String(item.kind)
 				if wallets[who] < cost or gloves_index(who, g) >= 0:
@@ -635,6 +724,16 @@ func _apply(ev: Dictionary) -> bool:
 				gloves_sel[who] = gloves[who].size() - 1
 				ev["slot"] = -1
 				ev["index"] = gloves_sel[who]
+			elif Binoculars.is_item(item):   # 手の双眼鏡も装備: 持ち物の場所は使わず、首から下げて手に持つ。同じ段は 1 つ
+				var k := String(item.kind)
+				if wallets[who] < cost or scope_index(who, k) >= 0:
+					return false
+				wallets[who] -= cost
+				scopes[who].append({"kind": k})
+				scope_sel[who] = scopes[who].size() - 1
+				hands[who] = NECK
+				ev["slot"] = -1
+				ev["index"] = scope_sel[who]
 			else:
 				var stack := _peg_stack(who) if Peg.is_item(item) else -1
 				if wallets[who] < cost or free_slot(who) < 0 and stack < 0:
@@ -649,9 +748,12 @@ func _apply(ev: Dictionary) -> bool:
 					ev["slot"] = _put(who, item.duplicate())   # 買った物を手に持つ（手持ちがいっぱいなら、かばんへ）
 		"hand":
 			var i := int(ev.slot)
-			if i >= HAND_SLOTS or (i >= 0 and (i >= bags[who].size() or bags[who][i].is_empty())):
+			if i == NECK:   # 首から下げた双眼鏡
+				if scope(who).is_empty():
+					return false
+			elif i >= HAND_SLOTS or (i >= 0 and (i >= bags[who].size() or bags[who][i].is_empty())):
 				return false   # 手に持てるのは手持ちの物だけ
-			hands[who] = maxi(i, -1)
+			hands[who] = i if i == NECK else maxi(i, -1)
 		"move":
 			# 持ち物を別の場所へ（装備の画面で引きずって。行き先に物があれば入れ替える）。手に持っていた物は、手持ちにある限り持ったまま
 			var b: Array = bags[who]
@@ -1046,12 +1148,26 @@ func _apply(ev: Dictionary) -> bool:
 			colors[who] = int(ev.color)
 		"equip":
 			var list := gear_list(who, String(ev.get("gear", "")))
-			var i := int(ev.index)
-			if i >= list.size() or i < (-1 if ev.gear in ["lantern", "gloves"] else 0):
+			if ev.get("gear", "") == "lantern" and ev.has("look"):   # 形で提げる（保存から戻すとき）。持っていない形は断る
+				var lk := String(ev.look)
+				ev["index"] = -1 if lk == "" else lantern_index(who, lk)
+				if lk != "" and int(ev.index) < 0:
+					return false
+			if ev.get("gear", "") == "binoculars" and ev.has("grade"):   # 段で下げる（保存から戻すとき）
+				var gk := String(ev.grade)
+				ev["index"] = -1 if gk == "" else scope_index(who, gk)
+				if gk != "" and int(ev.index) < 0:
+					return false
+			var i := int(ev.get("index", -1))
+			if i >= list.size() or i < (-1 if ev.gear in ["lantern", "gloves", "binoculars"] else 0):
 				return false
 			match ev.gear:
 				"sack": sack_sel[who] = i
 				"gloves": gloves_sel[who] = i
+				"binoculars":
+					scope_sel[who] = i
+					if i < 0 and hands.get(who, -1) == NECK:
+						hands[who] = -1   # 外したら素手に
 				"lantern":
 					lantern_sel[who] = i
 					if i < 0:
@@ -1121,12 +1237,36 @@ func _apply(ev: Dictionary) -> bool:
 				return false
 			if gloves_index(who, g) < 0:
 				gloves[who].append({"grade": g})
+		"scope_own":
+			var k := String(ev.get("grade", ""))
+			if not Binoculars.is_item({"kind": k}):
+				return false
+			if scope_index(who, k) < 0:
+				scopes[who].append({"kind": k})
 		"lantern_own":
 			var look := String(ev.get("look", ""))
 			if Lantern.price(look) < 0:
 				return false
 			if lantern_index(who, look) < 0:
 				lanterns[who].append({"look": look})
+		"lantern_dye", "lantern_dye_own":
+			var look := String(ev.get("look", ""))
+			var hex := String(ev.get("color", "")).trim_prefix("#").to_lower()
+			var i := lantern_index(who, look)
+			if i < 0 or (hex != "" and not hex in lantern_palette()) or hex == lantern_color(who, look):
+				return false   # 持っていない・パレットにない色・変わらない
+			var cost := 0 if ev.kind == "lantern_dye_own" else lantern_dye_price(hex)
+			if wallets[who] < cost:
+				return false
+			wallets[who] -= cost
+			ev["price"] = cost
+			ev["color"] = hex
+			var it: Dictionary = lanterns[who][i].duplicate()
+			if hex == "":
+				it.erase("color")
+			else:
+				it["color"] = hex
+			lanterns[who][i] = it
 		"fire_lay":
 			var b: Array = bags[who]
 			var i := int(ev.get("slot", -1))
