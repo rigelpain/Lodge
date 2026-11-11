@@ -529,7 +529,7 @@ func _walk_hints(dt: float, sled: RigidBody3D, p: CharacterBody3D) -> void:
 	if si >= 0 and not p.rooted():
 		_hint("sit", ["F"], "sit", p.seats.seat(si).pos + Vector3.UP * 0.85)
 	# 天下森のリフト: 乗る所のそばで、F と座る絵を乗る所の上に
-	var lf = main.get_node_or_null("Tenkamori/Lift")
+	var lf = main.get_node_or_null("Site/Lift")
 	if lf and p.mode == p.Mode.WALK and not p.rooted() and lf.board_dist(p.global_position) <= lf.BOARD_REACH:
 		_hint("sit", ["F"], "sit", lf.board_point(0).lerp(lf.board_point(1), 0.5) + Vector3.UP * 1.2)
 	# ソリの立てかけ台: F で自分のソリを戻す（山から呼ぶ）・持ち出す。ペグで留めてあって呼べないときは、F なしで「いまは呼べない」の絵

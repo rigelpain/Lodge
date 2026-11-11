@@ -8,7 +8,7 @@ func _initialize() -> void:
 	root.add_child(main)
 	for i in 3:
 		await physics_frame
-	var hu: Node3D = main.get_node("Tenkamori/Hutte")
+	var hu: Node3D = main.get_node("Site/Hutte")
 	var space: PhysicsDirectSpaceState3D = main.get_world_3d().direct_space_state
 	var cap := CapsuleShape3D.new()
 	cap.radius = 0.3

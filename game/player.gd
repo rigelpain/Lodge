@@ -678,7 +678,7 @@ func _sit_step(dt: float) -> void:
 ## 天下森のリフトの乗る所なら乗る（F）。乗ったら true
 func lift_try() -> bool:
 	if lift == null:
-		lift = get_parent().get_node_or_null("Tenkamori/Lift")
+		lift = get_parent().get_node_or_null("Site/Lift")
 	if lift == null or mode != Mode.WALK or rooted() or dueling() or lift.board_dist(global_position) > lift.BOARD_REACH:
 		return false
 	var ch: int = lift.next_chair()

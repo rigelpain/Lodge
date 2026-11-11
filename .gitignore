@@ -7,3 +7,15 @@ __pycache__/
 
 # キャラの絵は JPG を入れ、PNG の元絵は手元に置く
 person/ideas/characters/**/*.png
+
+# 旭ヶ丘の地形の焼き込み: 国土地理院のタイルと空中写真は入れない（OSM の JSON は入れる）
+asahigaoka/tiles/
+asahigaoka/photo/*.jpg
+# 旭ヶ丘の手本と並べた絵: 第三者の動画のコマ・写真を含むので、公開リポジトリには入れない（手元だけ。描き直しは asahigaoka/draw_*.py）
+design/asahigaoka/slope/01-slope-map.png
+design/asahigaoka/slope/02-compare.jpg
+design/asahigaoka/lodge/01-plans.png
+design/asahigaoka/lodge/02-compare.jpg
+design/asahigaoka/trees/00-reference.jpg
+design/asahigaoka/trees/01-bare-tree-ideas.jpg
+design/asahigaoka/trees/02-compare.jpg

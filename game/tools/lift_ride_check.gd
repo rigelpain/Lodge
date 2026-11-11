@@ -33,7 +33,7 @@ func _run() -> void:
 	if main.start:
 		main.start._solo()
 	var p: CharacterBody3D = main.player
-	var lift = main.get_node("Tenkamori/Lift")
+	var lift = main.get_node("Site/Lift")
 	var b: Vector3 = lift.board_point(0)
 	p.global_position = b + Vector3(0, 0.3, 0) - lift.chair_dir(lift.next_chair()) * 0.5
 	var sled: RigidBody3D = main.sled

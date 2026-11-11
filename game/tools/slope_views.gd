@@ -88,7 +88,7 @@ func _run() -> void:
 	# 2: リフトの中ほどの座面の高さから、谷の向かい（乗り場の向き）
 	var r: Array = _along(lift, 0.45)
 	var lp: Vector2 = r[0]
-	var lift_node = main.get_node("Tenkamori/Lift")
+	var lift_node = main.get_node("Site/Lift")
 	var seat_y: float = main.height(lp.x, lp.y) + 6.5
 	await _shot("m2_lift", Vector3(lp.x, seat_y, lp.y), Vector3(lp.x - r[1].x * 300.0, seat_y - 30.0, lp.y - r[1].y * 300.0), 80.0)
 	for f in [[4, 0.12], [5, 0.35], [6, 0.6], [7, 0.85]]:

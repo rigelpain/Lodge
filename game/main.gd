@@ -179,15 +179,16 @@ var duel_hud: CanvasLayer   # 対決の画面（duel_hud.gd）
 var duel_focus := false     # 自分が雪合戦で戦っているあいだ（set_duel_focus）
 var hud: CanvasLayer        # 画面の表示（hud.gd）。文字を使わず、アイコンと形で伝える
 var args := {}
-## いまのワールド（2026-11-09）: "plain" 今までの世界（ロッジと丘と大きな山と大山）/ "tenkamori" 天下森（tenkamori.gd）。
+## いまのワールド（2026-11-09）: "plain" 今までの世界（ロッジと丘と大きな山と大山）/ "tenkamori" 天下森 / "asahigaoka" 倶知安の旭ヶ丘（2026-11-11。どちらも tenkamori.gd）。
 ## スタート画面で選ぶ（start.gd）。--world=tenkamori でも。地面の高さ（ground・height）が静的な関数なので、ここも静的
 static var stage := "plain"
-const WORLDS := ["plain", "tenkamori"]
+const WORLDS := ["plain", "tenkamori", "asahigaoka"]
 const WORLD_CFG := "user://world.cfg"   # 前に選んだワールド
 
 
+## 本物の地形のワールド（天下森・旭ヶ丘。tenkamori.gd が場所ごとの表を読む）。ロッジ・仲間・雪のボタンのない、遠くの山まで描くワールド
 static func tenka() -> bool:
-	return stage == "tenkamori"
+	return stage != "plain"
 
 
 ## 起動の引数がなければ、前に選んだワールド。確かめの道具（引数あり）は --world がなければ今までの世界
@@ -465,6 +466,7 @@ func _ready() -> void:
 	_snow_cache.clear()
 	_drift_memo.clear()
 	if tenka():
+		Tenka.use(stage)
 		# 天下森には、まだロッジ（夏虫沢ヒュッテ）と、山をめぐる仲間と、雪のボタンがない
 		args["no-lodge"] = "1"
 		args["no-buttons"] = "1"
@@ -655,7 +657,7 @@ func _ready() -> void:
 	if args.has("join"):
 		settings.lock("cpus", "ホストが決める")
 	elif tenka():
-		settings.lock("cpus", "天下森にはまだいない")
+		settings.lock("cpus", "このワールドにはまだいない")
 	if get_tree().current_scene == self:
 		use_game_pacing()
 	if args.has("settings"):   # 確かめ用: 設定画面を開いた状態で始める
@@ -1318,7 +1320,7 @@ func _make_world() -> void:
 	env.fog_light_color = Color(0.74, 0.82, 0.95)
 	env.fog_density = 0.0016   # 南の大きな山（300〜500 m 先）が霞みすぎないよう
 	if tenka():   # 天下森: 谷の向かいの山（1〜5 km 先）が見えることがいちばん大事。遠くの山なみ（〜20 km）はほどよく霞む
-		env.fog_density = 0.00018
+		env.fog_density = float(Tenka.SITES[stage].fog)
 		env.fog_aerial_perspective = 0.6
 	env.fog_aerial_perspective = 0.4
 	env.fog_sun_scatter = 0.08
@@ -1912,7 +1914,7 @@ func _shelter_snow(lodge: Node3D) -> void:
 func _make_ground() -> void:
 	if tenka():
 		var tk := Tenka.new()
-		tk.name = "Tenkamori"
+		tk.name = "Site"
 		tk.world = self
 		add_child(tk)
 		return

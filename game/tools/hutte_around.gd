@@ -39,7 +39,7 @@ func _run() -> void:
 	cam.make_current()
 	for i in 30:
 		await process_frame
-	var hu: Node3D = main.get_node("Tenkamori/Hutte")
+	var hu: Node3D = main.get_node("Site/Hutte")
 	var c := Vector3(5, 4, 0)
 	for k in 8:
 		var a := TAU * k / 8.0
