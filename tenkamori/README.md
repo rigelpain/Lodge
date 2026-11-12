@@ -61,3 +61,8 @@ way(around:2500,39.16162,140.61820)["landuse"="winter_sports"];);out geom;      
 [out:json];(way(around:600,39.1623,140.6208)["building"];way(around:600,39.1623,140.6208)["highway"];
 way(around:600,39.1623,140.6208)["amenity"="parking"];);out geom;                  → bld.json
 ```
+
+## 雪面のこぶとうねり（2026-11-12）
+
+代表「天下森もロッジも起伏増やしたいね」: 焼いた地面（near.bin）に、旭ヶ丘と同じこぶとうねり（波長 40・16・8 m）を足す（`tenkamori/add_snow_relief.py`）。焼き直しに要る OSM の JSON が手元に残っていないので、焼き直さずに足した。足す前の地面は `tenkamori/near_base.bin`（何度走らせても足すのは 1 回分）。林・道・駐車場・ヒュッテとリフトの乗り場と降り場の足もとには足さない。ヒュッテの通り抜け（つかえた点 0）とリフトに乗れることを確かめた。絵は `design/asahigaoka/08-relief-plain-tenkamori.jpg`
+

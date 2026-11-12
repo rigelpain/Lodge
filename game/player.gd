@@ -121,10 +121,12 @@ var fov_kick_enabled := true # 設定: 押すときに画角が少し広がる
 # 乗って滑っているあいだ、速さに合わせて視野角（base_fov）に足す。止まっていれば足さない。
 # 滑るときの風（ride_wind.gd）と同じ速さで広がりはじめ、毛糸が流れきる速さ（SPEED_FULL）までに大半が広がる。
 # 中・大のソリでまっすぐ下ると 8〜10 m/s。残りは米袋の連打（16 m/s 近く）のような速さのためにとっておく
-const RIDE_FOV_MAX := 14.0                  # 足す視野角の上限 (°)
-const RIDE_FOV_SPEED := Vector3(2.0, 9.0, 16.0)  # 広がりはじめる速さ、大半（RIDE_FOV_MAIN）が広がる速さ、上限に届く速さ (m/s)
-const RIDE_FOV_MAIN := 0.7
-const FOV_CAP := 120.0                      # 足したあとの視野角の上限 (°)。広く設定している人でも魚眼にしない
+## 2026-11-12 代表「速さに応じてカメラの視野角広げてほしい」「もっと」: 上限を 14° → 34°、上限に届く速さを 16 → 30 m/s（時速 108 km）にし、
+## 速いほど広がり続けるように（旭ヶ丘のソリは時速 70〜100 km 出る）。丘の速さ（〜16 m/s）でも前より広い
+const RIDE_FOV_MAX := 34.0                  # 足す視野角の上限 (°)
+const RIDE_FOV_SPEED := Vector3(2.0, 12.0, 30.0)  # 広がりはじめる速さ、大半（RIDE_FOV_MAIN）が広がる速さ、上限に届く速さ (m/s)
+const RIDE_FOV_MAIN := 0.5
+const FOV_CAP := 125.0                      # 足したあとの視野角の上限 (°)。広く設定している人でも魚眼にしない
 const RIDE_FOV_RISE := 1.6                  # 追いつく速さ（1/秒）。速くなるときはゆっくり広がり、
 const RIDE_FOV_FALL := 2.4                  # 遅くなるときは少し早めに戻る（止まったあと広いままにしない）
 const RIDE_CAM_PUSH := 0.5                  # 三人称: 上限のとき、カメラを後ろへ引く距離 (m)
@@ -201,6 +203,7 @@ const RATTLE_BUMP := 2.2                    # 隆起で跳ねた直後の倍率
 var _rattle_y := 0.0         # いまカメラに入れている上下 (m)
 var _rattle_bump := 0.0      # 跳ねた直後の強まり（0〜1。すぐ消える）
 var _rattle_seen := 0        # 前に見た、ソリの跳ねた回数
+var ride_shake_enabled := true   # 設定「滑るときの画面の揺れ」。切ると 0.3 倍（「視点の揺れ（押す・引くとき）」とは別。前はそちらに連れて弱まっていた）
 var _fall_v := 0.0           # 宙にいるあいだの下向きの速さ（着いたときの手応えの強さ）
 var _drag_k := 0.0           # 引きずられている度合い（0→1 になめらかに）。視点が前へ傾き、低く揺れる
 var craft: Node              # 工房の配り役（main.gd の Craft）。財布と持ち物
@@ -1646,7 +1649,7 @@ func _rattle(dt: float) -> Vector3:
 	if sled.bump_n != _rattle_seen:
 		_rattle_seen = sled.bump_n
 		_rattle_bump = 1.0
-	var k: float = Sled.rattle * smoothstep(RATTLE_SPEED.x, RATTLE_SPEED.y, sled.linear_velocity.length()) * (1.0 if bob_enabled else 0.3)
+	var k: float = Sled.rattle * smoothstep(RATTLE_SPEED.x, RATTLE_SPEED.y, sled.linear_velocity.length()) * (1.0 if ride_shake_enabled else 0.3)
 	k *= 1.0 + (RATTLE_BUMP - 1.0) * _rattle_bump
 	if k <= 0.001:
 		return Vector3.ZERO

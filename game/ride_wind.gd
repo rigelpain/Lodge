@@ -308,7 +308,11 @@ func _process(dt: float) -> void:
 	# 筒を、あなたの目から進む向きへ伸ばす。粒は筒の中に生まれ、あなたが追い越すと後ろで消える
 	var dir := v / speed if speed > 0.5 else -sled.global_basis.z
 	var rel := speed * (1.0 + DRIFT)
-	var lead := clampf(rel * 0.9, 3.0, 16.0)
+	# 速いと風が消えた（2026-11-12 代表「早すぎると風のエフェクトが出なくなる」）: 粒の数と寿命は決まっているので、時速 70 km を超えると
+	# 筒（前 16 m まで）を 0.5 秒ほどで追い越し、生まれる数も 1 m あたりで薄くなっていた。SPEED_FULL より速いときは、粒の時間を
+	# 速さの割合だけ早回しにし（1 m あたりの数と、追い越すまでの見え方を保つ）、筒も前へ長く伸ばす
+	var fast := maxf(1.0, speed / SPEED_FULL)
+	var lead := clampf(rel * 0.9, 3.0, 16.0 * fast)
 	var eye: Vector3 = player.cam.global_position
 	var back := -dir
 	var side := (Vector3.UP if absf(dir.y) < 0.95 else Vector3.FORWARD).cross(back).normalized()
@@ -316,10 +320,11 @@ func _process(dt: float) -> void:
 	var stretch := 0.7 + 1.8 * level
 	for p in _flows:
 		p.global_transform = at
+		p.speed_scale = fast
 		var pm: ParticleProcessMaterial = p.process_material
 		pm.emission_ring_height = lead
-		pm.initial_velocity_min = speed * DRIFT * 0.7
-		pm.initial_velocity_max = speed * DRIFT * 1.3
+		pm.initial_velocity_min = speed * DRIFT * 0.7 / fast   # 早回しの分を割り戻す（世界の中で流れる速さは同じ）
+		pm.initial_velocity_max = speed * DRIFT * 1.3 / fast
 		var m: ShaderMaterial = p.material_override
 		m.set_shader_parameter("flow", back)
 		m.set_shader_parameter("stretch", stretch if p != _grains else 1.0 + 1.5 * level)
