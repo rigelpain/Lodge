@@ -97,6 +97,53 @@ func _run() -> void:
 	await _look("top_annupuri", _eye(top.x + side.x * 14.0 - up.x * 60.0, top.z + side.z * 14.0 - up.z * 60.0, 12.0), Vector3(-7900, 900, 5500), 40.0)
 	# 羊蹄山を寄せて（形の確かめ）
 	await _look("yotei_zoom", _eye(top.x + side.x * 14.0 - up.x * 60.0, top.z + side.z * 14.0 - up.z * 60.0, 3.0), yotei + Vector3(0, -500, 0), 18.0)
+	# 真上から（上が北。空中写真と重ねて比べる用。asahigaoka/draw_top_compare.py）: 平行投影で縦 350 m。
+	# 窓は --resolution 1200x700 で（x -400〜200・z -245〜105、1 m = 2 px）。画面より背の高い窓は OS が縮めて、縮尺がずれる
+	if not args.has("only") or "ortho" in args["only"].split(","):
+		var woods := main.get_node("Site").find_children("Woods_*", "MultiMeshInstance3D", true, false)
+		for w in woods:   # 林の木は遠いと描かないので、撮るあいだだけ全部描く
+			(w as MultiMeshInstance3D).visibility_range_end = 0.0
+		# 目印: 絵の縮尺と位置を絵から読めるよう、決まった 3 点に赤紫の玉（draw_top_compare.py が絵から探して合わせる。
+		# 平行投影の絵は、窓の大きさや描く倍率の設定で、計算より 1.2 倍ほど大きく写ることがあった）
+		var marks: Array[MeshInstance3D] = []
+		for mp in [Vector2(-350, -200), Vector2(150, -200), Vector2(-350, 60)]:
+			var ball := MeshInstance3D.new()
+			var sm := SphereMesh.new()
+			sm.radius = 4.0
+			sm.height = 8.0
+			ball.mesh = sm
+			var bm := StandardMaterial3D.new()
+			bm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			bm.albedo_color = Color(1, 0, 1)
+			bm.disable_fog = true
+			ball.material_override = bm
+			ball.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+			ball.position = Vector3(mp.x, _y(mp.x, mp.y) + 60.0, mp.y)
+			main.add_child(ball)
+			marks.append(ball)
+		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		cam.keep_aspect = Camera3D.KEEP_HEIGHT
+		cam.size = 380.0   # 写る縦は 350 m ほど（計算より 1.08 倍ほど大きく写るので、その分を足す。合わせは目印の玉で）
+		cam.far = 3000.0
+		cam.position = Vector3(-100.0, 900.0, -70.0)
+		cam.rotation = Vector3(-PI / 2.0, 0.0, 0.0)
+		for i in 20:
+			await process_frame
+		root.get_texture().get_image().save_png(String(args.get("dir", "/tmp/asahi_views")).path_join("ortho.png"))
+		print("保存: ortho.png  乗り場は %s に写る（1200x700 の窓なら (800, 490)）  窓 %s" % [cam.unproject_position(Vector3(0, _y(0, 0), 0)), root.get_visible_rect().size])
+		cam.projection = Camera3D.PROJECTION_PERSPECTIVE
+		cam.far = 30000.0
+		for b in marks:
+			b.queue_free()
+		for w in woods:
+			(w as MultiMeshInstance3D).visibility_range_end = 330.0
+	# V 字の坂: ロッジの前から西を見る（右が主コース、左が初級コースとそりコース、あいだに林の島）
+	await _look("v_lodge", _eye(96.0, 28.0, 2.4), _eye(-110.0, -15.0, 22.0), 80.0)
+	await _look("v_plaza", _eye(62.0, 36.0, 1.7), _eye(-120.0, -20.0, 25.0), 85.0)
+	# 初級コースを下から見上げる（intro-35）と、そりコースの入口
+	await _look("beginner_up", _eye(40.0, 44.0, 1.7), _eye(-130.0, 52.0, 30.0), 70.0)
+	await _look("sled_course", _eye(40.0, 74.0, 1.7), _eye(-60.0, 80.0, 12.0), 65.0)
+	await _look("v_above", Vector3(190.0, _y(60.0, 30.0) + 230.0, 150.0), _eye(-130.0, -70.0, 10.0), 50.0)
 	# 木: リフトの中ほどから南西の林の島を、近くと寄りで
 	var tp := bot.lerp(top, 0.45) - side * 4.0
 	await _look("trees_edge", _eye(tp.x + side.x * 14.0, tp.z + side.z * 14.0, 1.7), _eye(tp.x - side.x * 30.0, tp.z - side.z * 30.0, 6.0), 65.0)

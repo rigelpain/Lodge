@@ -22,12 +22,13 @@ python3.11 -I asahigaoka/bake_terrain.py asahigaoka/tiles asahigaoka/osm
 - 近く（1024 m 四方、2 m おき）: 航空レーザの 1 m の標高（dem1a）。5 m の標高（dem5a）はゲレンデの斜面が欠けていて、10 m では段々になった
 - 景色の主役は南南東 10.4 km の羊蹄山。谷の向かい（mid）を 24 m おき 16 km 四方で南東へ広くとる。霧は天下森より薄く（10 km 先が霞みすぎない）
 - 林の塗り: 平野（町と畑）より高い所は、なだらかでも林（羊蹄山の裾）。森林限界（標高 900〜1350 m）から上は雪だけ。杉の植林でなく葉の落ちた広葉樹が多いので、針葉樹の割合を下げ、雑木の灰を濃くした
-- 広いゲレンデはリフトの線の北東の側。南西の側は林の島で、OSM の downhill の線はその向こうを回る細いコース（空中写真のとおり木を立てる）
+- 主コースはリフトの線の北東の側。南西の側は林の島（リフトに沿った細長いしずく形。とがった先が乗り場の南西）。初級コースは、降り場から林の島の西の切り開き（幅 26〜44 m）を下り、麓へ下りる道に出る。その道の南の、北向きの斜面がそりコース。主コース（南東向き）とこの斜面が、林の島の先をはさんで V 字の谷になるのが、ロッジから見たこのスキー場の形（2026-11-11 代表「ソリコースなくない？…ロッジから見える V 字の坂が特徴的なのに」）
+- 林と草地の見分け（2026-11-12 代表「鳥瞰画像と向きと広がりかた違くない？」）: 空中写真は夏の物で、切り開きと南の斜面は草地。点ごとの明るさだけでは草地も半分ほど林に読み、木で埋まっていた。いったん手で引いた囲いで木を払ったが、形が写真と違った。いまは 5 m でならした明るさと黄み（赤 − 青）で見分ける（`bake_terrain.py` の `forest_mask`）。確かめは、ゲームを真上から撮った絵と空中写真を並べる（`game/tools/asahi_views.gd` の ortho を `--resolution 1200x700` で撮り、`draw_top_compare.py` が目印の玉で縮尺を合わせる。絵は `design/asahigaoka/04-top-compare.jpg`）
 - 始める所: 休憩所（雪ん子館と思われる建物）の西の辺の外。建物はまだ無く、足もとだけならしてある
 
 ## 見取り図と図面（2026-11-11。代表に見せて、よければこれで組む）
 
-手本の動画のコマ・写真を並べた絵（下の `slope/01-slope-map.png`・`slope/02-compare.jpg`・`lodge/01-plans.png`・`lodge/02-compare.jpg`・`trees/00-reference.jpg`・`trees/01-bare-tree-ideas.jpg`・`trees/02-compare.jpg`）は、第三者の動画のコマを含むので、公開リポジトリには入れていない（`.gitignore`。手元の作業場所にだけある）。
+手本の動画のコマ・写真を並べた絵（下の `slope/01-slope-map.png`・`slope/02-compare.jpg`・`lodge/01-plans.png`・`lodge/02-compare.jpg`・`trees/00-reference.jpg`・`trees/01-bare-tree-ideas.jpg`・`trees/02-compare.jpg`・`slope/03-v-compare.jpg`）は、第三者の動画のコマを含むので、公開リポジトリには入れていない（`.gitignore`。手元の作業場所にだけある）。
 
 - ゲレンデの見取り図: `design/asahigaoka/slope/01-slope-map.png`（`draw_slope_map.py`）。乗り場・柱・降り場・ジャンプ台の櫓・ネット・照明・2 本のコース・そりの広場・休憩所・駐車場・林
 - 休憩所「雪ん子館」の図面: `design/asahigaoka/lodge/01-plans.png`（寸法は `lodge_dims.py`、描くのは `draw_lodge_plans.py`）。棟の場所・駐車場の側の壁・中の柱は推しはかり
@@ -37,7 +38,7 @@ python3.11 -I asahigaoka/bake_terrain.py asahigaoka/tiles asahigaoka/osm
 ## 作り込み（2026-11-11 代表「これで作って」）
 
 - リフト（`game/tenkamori_lift.gd` の `STYLES`）: 旭ヶ丘は赤茶の鉄骨の乗り場と柱・灰の腕木、椅子は灰のパイプに黒い座面で前の手すりなし。乗り場の上の機械小屋は無く、板張りの運転室はゲレンデの側。降り場の脇に小さな木の小屋。天下森は今までのまま
-- ゲレンデの小物（`game/asahi_slope.gd`）: リフト沿いと降り場のオレンジのネット、ナイターの照明の柱 15 本、ジャンプ台の櫓と助走路、小さな台、審判の櫓 2 つ、そりの広場の仕切り、乗り場の札、石の看板。櫓と台のまわりは木を払う（`bake_terrain.py` の clear_mask）
+- ゲレンデの小物（`game/asahi_slope.gd`）: リフト沿いと降り場のオレンジのネット、ナイターの照明の柱 15 本、ジャンプ台の櫓と助走路、小さな台、審判の櫓 2 つ、そりコースの仕切り（オレンジのネットとピンクの旗のポール）と入口のそりの絵の札、乗り場の札、石の看板。櫓と台のまわりは木を払う（`bake_terrain.py` の clear_mask）
 - 休憩所「雪ん子館」（`game/asahi_lodge.gd`。寸法は `lodge_dims.py` の写し）: 大きな屋根と厚い雪、軒先の鉄の柱と木の梁、西の正面（灰のパネル・縦張りの木・背の高いガラス・白い庇の入口）、西と南のデッキ、南の壁いっぱいの窓、東の入口、中は一部屋（黒い鉄の柱・カウンター・長机）。入口の戸は開いたまま
   - 人が両方の入口から入れることは `game/tools/asahi_lodge_walk_check.gd` で確かめた（つかえた点 0）
 - 手本と並べた絵: `design/asahigaoka/lodge/02-compare.jpg`、`design/asahigaoka/slope/02-compare.jpg`。撮るのは `game/tools/asahi_lodge_views.gd` と `asahi_views.gd`

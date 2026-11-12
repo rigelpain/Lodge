@@ -46,6 +46,9 @@ func _ready() -> void:
 	for p in m.get("pistes", []):
 		if p["kind"] == "downhill" and down_line.is_empty():
 			down_line = p["line"]
+	if m.has("course2"):   # 初級コース: 空中写真の切り開きをなぞった線（bake_terrain.py の COURSE2）と、その下の広い斜面のまんなか
+		down_line = (m["course2"] as Array).duplicate()
+		down_line.append_array([[-120.0, 48.0], [-60.0, 42.0], [0.0, 30.0]])   # 麓へ下りる道の線（南の斜面 = そりコースの下の縁）
 	_nets()
 	_lights(down_line)
 	_jump_tower()
@@ -69,6 +72,7 @@ func _mat(key: String) -> Material:
 		"iron": m = Look.felt(IRON, 1.4)
 		"pole": m = Look.felt(POLE, 1.4)
 		"stone": m = Look.felt(Color(0.30, 0.31, 0.33), 1.6)
+		"sledred": m = Look.felt(Color(0.80, 0.16, 0.12), 1.6)
 		"pink": m = Look.felt(PINK, 1.2)
 		"snow": m = Look.snow()
 		"plate": m = Look.paper(Color(0.95, 0.95, 0.92))
@@ -276,15 +280,15 @@ func _lights(down_line: Array) -> void:
 	var L := _length(down_line)
 	var s := 45.0
 	var n := 0
-	while s < L and n < 5:
+	while s < L and n < 6:
 		var r := _along(down_line, s)
 		var p: Vector2 = r[0]
 		var tan: Vector2 = r[1]
 		var nrm := Vector2(-tan.y, tan.x)
 		if nrm.dot(p - cen) < 0.0:
 			nrm = -nrm
-		_lamp_pole(p + nrm * 8.0, -nrm, tan)
-		s += 90.0
+		_lamp_pole(p + nrm * 20.0, -nrm, tan)   # 切り開きの幅（26〜44 m）の縁
+		s += 80.0
 		n += 1
 
 
@@ -426,22 +430,37 @@ func _judge_tower(o: Vector2) -> void:
 
 # ---- ⑩ 仕切り ------------------------------------------------------------------------------
 
+## そりコース（2026-11-11 代表「ソリコースなくない？…ロッジから見える V 字の坂が特徴的なのに」）: 乗り場の南西、麓へ下りる道の南の、
+## 北向きの斜面（写真 blog-6207 の奥に南の建物の屋根が写る）。主コース（南東向き）とこの斜面が、林の島のとがった先をはさんで V 字の谷になる。
+## 初級コースの出口とのあいだを、オレンジのネットとピンクの旗のポールで仕切る（動画のコマ intro-35）。下の入口に、そりの絵の札（字は使わない）
 func _divider() -> void:
-	var pts := [Vector2(18, -28), Vector2(60, -22), Vector2(88, -8)]
-	var posts: Array[Vector3] = []
+	var pts := [Vector2(22, 58), Vector2(-10, 60), Vector2(-42, 63), Vector2(-72, 67)]
+	for k in pts.size() - 1:
+		_net(pts[k], pts[k + 1], ORANGE)
+	_net(pts[pts.size() - 1], Vector2(-74, 92), ORANGE)   # 上の端を閉じる
+	# ピンクの旗のポール: ネットに沿って 9 m おき
 	for k in pts.size() - 1:
 		var a: Vector2 = pts[k]
 		var b: Vector2 = pts[k + 1]
-		var n := maxi(1, int(round(a.distance_to(b) / 4.0)))
-		for i in n + (1 if k == pts.size() - 2 else 0):
-			var p := a.lerp(b, float(i) / n)
-			posts.append(Vector3(p.x, _gy(Vector3(p.x, 0, p.y), 0.1) - 0.2, p.y))
-	for p in posts:
-		_cyl("pole", p, p + Vector3.UP * 2.0, 0.05, 6)
-	for i in posts.size() - 1:
-		var a := posts[i] + Vector3.UP * 1.4
-		var b := posts[i + 1] + Vector3.UP * 1.4
-		_plank("pink", a, b, 0.2, 0.04)
+		var n := maxi(1, int(round(a.distance_to(b) / 9.0)))
+		for i in n:
+			var q := a.lerp(b, float(i) / n) + Vector2(0, -0.6)
+			var g := _gy(Vector3(q.x, 0, q.y), 0.1)
+			var base := Vector3(q.x, g - 0.3, q.y)
+			_cyl("pole", base, base + Vector3.UP * 2.7, 0.035, 6)
+			_box("pink", base + Vector3(0.28, 2.45, 0), Vector3(0.5, 0.3, 0.03))
+	# 入口の札: 2 本の木の杭に白い板、赤いそりの絵（座面と滑り木）
+	var o := Vector2(26, 66)
+	var gy := _gy(Vector3(o.x, 0, o.y), 0.5)
+	for dz in [-0.45, 0.45]:
+		_cyl("iron", Vector3(o.x, gy - 0.4, o.y + dz), Vector3(o.x, gy + 1.9, o.y + dz), 0.05, 6)
+	_box("plate", Vector3(o.x + 0.07, gy + 1.5, o.y), Vector3(0.05, 0.7, 1.1))
+	_box("sledred", Vector3(o.x + 0.11, gy + 1.56, o.y), Vector3(0.03, 0.14, 0.62))
+	_box("sledred", Vector3(o.x + 0.11, gy + 1.36, o.y), Vector3(0.03, 0.05, 0.78))
+	for dz in [-0.2, 0.2]:
+		_box("sledred", Vector3(o.x + 0.11, gy + 1.44, o.y + dz), Vector3(0.03, 0.14, 0.05))
+	_box("sledred", Vector3(o.x + 0.11, gy + 1.42, o.y + 0.42), Vector3(0.03, 0.16, 0.05), Basis(Vector3.RIGHT, 0.6))
+	_col_box(Vector3(o.x, gy + 0.9, o.y), Vector3(0.15, 2.0, 1.1))
 
 
 # ---- ① 札・⑪ 石の看板 -------------------------------------------------------------------
