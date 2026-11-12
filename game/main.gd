@@ -468,6 +468,8 @@ func _ready() -> void:
 	# ソリの滑りの速さはワールドごと（旭ヶ丘は速い。sled.gd の glide・pull）。ほかのワールドは今までどおり
 	Sled.glide = float(Tenka.SITES.get(stage, {}).get("glide", 1.0))
 	Sled.pull = float(Tenka.SITES.get(stage, {}).get("pull", 0.0))
+	Sled.bumps = float(Tenka.SITES.get(stage, {}).get("bumps", 0.0))     # 雪面の小さな隆起で跳ねる
+	Sled.rattle = float(Tenka.SITES.get(stage, {}).get("rattle", 0.0))   # 乗っている人の画面のガクガク
 	if tenka():
 		Tenka.use(stage)
 		# 天下森には、まだロッジ（夏虫沢ヒュッテ）と、山をめぐる仲間と、雪のボタンがない

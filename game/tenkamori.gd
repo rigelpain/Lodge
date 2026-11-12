@@ -24,7 +24,7 @@ const SITES := {
 	# 旭ヶ丘: 原点はペアリフトの乗り場。南南東 10 km の羊蹄山が景色の主役なので、谷の向かい（mid）を南東へ広く（24 m おき 16 km）とる。
 	# 林は杉の植林でなく、葉の落ちた広葉樹が多い（北海道の低い山）。霧は羊蹄山が霞みすぎないよう薄く
 	"asahigaoka": {"near": [-600.0, -650.0, 2.0, 513], "mid": [-4400.0, -2400.0, 24.0, 676], "far": [-19200.0, -19200.0, 96.0, 401],
-		"cedar": 0.45, "fog": 0.00004, "glide": 0.25, "pull": 0.4,   # ソリが速い（sled.gd の glide・pull。そりコースで時速 72 km、主コースで 91 km）
+		"cedar": 0.45, "fog": 0.00004, "glide": 0.25, "pull": 0.4, "bumps": 1.0, "rattle": 1.0,   # ソリが速い（sled.gd の glide・pull。そりコースで時速 72 km、主コースで 91 km）
 		"treeline": [700.0, 1150.0], "woods_above": [110.0, 200.0], "bare": Color(0.46, 0.45, 0.50)},   # 森林限界は標高 900〜1350 m（高さは標高 − 193 m）
 }
 static var site := "tenkamori"
@@ -150,9 +150,11 @@ func _ready() -> void:
 	_make_coarse("Mid", _bin(res("mid.bin")), MID_X0, MID_Z0, MID_STEP, MID_N, 25, Rect2(NEAR_X0, NEAR_Z0, NEAR_X1 - NEAR_X0, NEAR_Z1 - NEAR_Z0), far_snow)
 	_make_coarse("Far", _bin(res("far.bin")), FAR_X0, FAR_Z0, FAR_STEP, FAR_N, 50,
 			Rect2(MID_X0, MID_Z0, (MID_N - 1) * MID_STEP, (MID_N - 1) * MID_STEP), far_snow)
-	hits = TreeHits.new()
+	hits = TreeHits.new()   # 林の外（区画に入らない木）用の 1 つ。林の木は区画ごとの体（_hit_cells）
 	add_child(hits)
 	_trees()
+	for cell in _hit_cells:   # 形を全部足してから世界に入れる（入ったあとに 1 つずつ足すと、そのたびに組み直しになる）
+		add_child(_hit_cells[cell])
 	var lift := preload("res://tenkamori_lift.gd").new()
 	lift.name = "Lift"
 	add_child(lift)
@@ -512,12 +514,12 @@ func _trees() -> void:
 					model_h = BARE[path][0]
 					hgt = lerpf(BARE[path][2], BARE[path][3], u2)
 			bulk[path].append(Transform3D(Basis(Vector3.UP, yaw).scaled(Vector3.ONE * hgt / model_h), Vector3(px, y - 0.3, pz)))
-			if edge:   # 幹の当たりだけ（見た目は MultiMesh）
+			if edge or ALL_TRUNKS:   # 幹の当たりだけ（見た目は MultiMesh）。区画ごとの体へ
 				var stand := Node3D.new()
 				stand.scene_file_path = path
 				stand.position = Vector3(px, y - 0.3, pz)
 				stand.scale = Vector3.ONE * hgt / model_h
-				hits.add_tree(stand)
+				_hits_for(px, pz).add_tree(stand)
 				stand.free()
 		x += gap
 	for path in bulk:
@@ -555,6 +557,23 @@ const BARE := {
 	BARE_KABA: [9.5, 0.40, 9.0, 13.5],
 	BARE_KARA: [11.0, 0.40, 11.0, 17.0],
 }
+
+## 林の木ぜんぶに幹の当たりを付ける（2026-11-12 代表「木にソリで当たったときの衝突判定がないかも」）。前は、開けた所から 12 m までの
+## 木にだけ付けていて、縁の 3 列ほどをすり抜けると、その奥は 85 m 進んでも当たらなかった（tools/asahi_tree_hit_check.gd）。
+## 幹は旭ヶ丘で 4 万本ほど。1 つの体に全部入れると物理が止まった（1 コマ目から進まない）ので、HIT_CELL (m) 四方の区画ごとに体を分ける
+## （区画あたり 100〜200 本。物理は近くの区画の体だけを見る）
+const ALL_TRUNKS := true
+const HIT_CELL := 64.0
+var _hit_cells := {}   # 区画 → TreeHits（まだ世界に入れていない）
+
+
+func _hits_for(x: float, z: float) -> TreeHits:
+	var key := Vector2i(floori(x / HIT_CELL), floori(z / HIT_CELL))
+	if not _hit_cells.has(key):
+		var h := TreeHits.new()
+		h.name = "TreeHits_%d_%d" % [key.x, key.y]
+		_hit_cells[key] = h
+	return _hit_cells[key]
 
 const WOODS_FAR := 330.0   # 林の木（MultiMesh）を描く遠さ (m)。区画のまんなかまでの距離。その先の林は地面の林の色で見える
 const WOODS_CELL := 64.0   # 林を分ける区画の大きさ (m)
