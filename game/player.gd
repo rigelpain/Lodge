@@ -1004,6 +1004,7 @@ func _key(k: Key) -> float:
 
 
 func _physics_process(dt: float) -> void:
+	_keep_step(dt)
 	_eat_step()
 	_t += dt
 	pushing = false
@@ -3382,6 +3383,8 @@ func _tag_file() -> String:
 func _load_tag() -> bool:
 	var cf := ConfigFile.new()
 	if cf.load(_tag_file()) != OK:
+		if keep_allowed():   # はじめての起動: 戻す物は無いが、ここから財布と持ち物を自動で保存する印
+			craft.send({"kind": "restore", "who": id, "n": -1, "bag": null})
 		return false
 	var Tags := preload("res://sled_tags.gd")
 	if cf.has_section("owned"):
@@ -3436,6 +3439,8 @@ func _load_tag() -> bool:
 	if cf.has_section("outfit"):
 		for k in cf.get_section_keys("outfit"):
 			craft.send({"kind": "outfit", "who": id, "doll": k, "colors": cf.get_value("outfit", k, [])})
+	if keep_allowed():   # 財布のボタンと持ち物（無ければ印だけ送って、ここから自動で保存する）
+		craft.send({"kind": "restore", "who": id, "n": int(cf.get_value("keep", "buttons", -1)), "bag": cf.get_value("keep", "bag", null)})
 	var a = get_parent().get("args")
 	if cf.has_section_key("profile", "doll") and not (a is Dictionary and a.has("doll")):   # --doll を付けたときは、そちらが勝つ
 		craft.send({"kind": "doll", "who": id, "doll": String(cf.get_value("profile", "doll"))})
@@ -3544,4 +3549,50 @@ func save_tag() -> void:
 	cf.set_value("pals", "owned", craft.pals_owned.get(id, []))   # 頭・肩の小物とミニオン（pals.gd）
 	for slot in craft.pals_wear.get(id, {}):
 		cf.set_value("pals", slot, craft.pals_wear[id][slot])
+	if keep_allowed() and craft.restored.has(id):   # 財布のボタンと持ち物（戻したあとだけ。戻す前に書くと、保存した物を消してしまう）
+		cf.set_value("keep", "buttons", craft.wallet(id))
+		cf.set_value("keep", "bag", craft.bags.get(id, []))
+	elif keep_allowed():
+		var old := ConfigFile.new()   # まだ戻していない: 前の保存の財布と持ち物はそのまま残す
+		if old.load(_tag_file()) == OK and old.has_section("keep"):
+			cf.set_value("keep", "buttons", old.get_value("keep", "buttons", -1))
+			cf.set_value("keep", "bag", old.get_value("keep", "bag", []))
 	cf.save(_tag_file())
+	_keep_sig = _keep_now()
+
+
+# ---------------------------------------------------------------- 財布のボタンと持ち物の保存（2026-11-12）
+# 代表「ゲームを落としても自分の所持品やお金、装備などの情報を保持して再開ってできますか？」→「残すようにして」。
+# 装備・着せ替え・名札は前から保存していた。財布のボタンと持ち物（かばんの中身）も同じ帳面の [keep] に書く。
+# 変わったら KEEP_EVERY 秒ごとにまとめて書き、窓を閉じるときにも書く。ほかの人の世界へつないだときも、自分の保存を持っていく。
+# 確かめの道具（-s で動かすもの）は、--tag-file で別の帳面を渡したときだけ（遊ぶ人の保存を読まない・書き換えない）
+const KEEP_EVERY := 3.0
+var _keep_sig := ""
+var _keep_t := 0.0
+
+
+func keep_allowed() -> bool:
+	var a = get_parent().get("args")
+	if a is Dictionary and a.has("no-save"):
+		return false
+	if a is Dictionary and String(a.get("tag-file", "")) != "":
+		return true
+	return get_tree().get_script() == null   # ふつうの起動（確かめの道具は SceneTree の台本で動く）
+
+
+func _keep_now() -> String:
+	return str([craft.wallet(id), craft.bags.get(id, [])]) if craft else ""
+
+
+func _keep_step(dt: float) -> void:
+	_keep_t += dt
+	if _keep_t < KEEP_EVERY or craft == null or not craft.restored.has(id) or not keep_allowed():
+		return
+	_keep_t = 0.0
+	if _keep_now() != _keep_sig:
+		save_tag()
+
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST and craft and craft.restored.has(id) and keep_allowed():
+		save_tag()
