@@ -465,6 +465,9 @@ func _ready() -> void:
 	var want_start := Start.wanted(args)
 	_snow_cache.clear()
 	_drift_memo.clear()
+	# ソリの滑りの速さはワールドごと（旭ヶ丘は速い。sled.gd の glide・pull）。ほかのワールドは今までどおり
+	Sled.glide = float(Tenka.SITES.get(stage, {}).get("glide", 1.0))
+	Sled.pull = float(Tenka.SITES.get(stage, {}).get("pull", 0.0))
 	if tenka():
 		Tenka.use(stage)
 		# 天下森には、まだロッジ（夏虫沢ヒュッテ）と、山をめぐる仲間と、雪のボタンがない

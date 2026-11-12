@@ -100,6 +100,13 @@ const CRASH_SPIN_DAMP := 0.2   # 宙で回る勢いの弱まり（ふだんの a
 const CRASH_LAND_DAMP := 2.5   # 着いたあと、回る勢いの弱まり
 const CRASH_MAX := 40.0        # 打ち上がってからこの長さで、ふつうのソリに戻る (s)
 const CRASH_REST := 1.0        # これだけ止まっていると、ふつうのソリに戻る (s)
+## ワールドごとの滑りの速さ（main.gd がワールドを決めたときに入れる。tenkamori.gd の SITES の glide・pull）。乗って滑っているあいだだけ効く。
+## 2026-11-12 代表「このコース（旭ヶ丘）はソリの加速と最大速度を上げたい。希望者はここで死にかけるくらい早いソリ滑りをしていた」
+##   glide  雪の抵抗（drag・push・沈み）に掛ける割合。小さいほど最高速度が速い（最高速度はおよそ 1/√glide 倍）
+##   pull   坂を下る向きに足す、重力の割合。大きいほど加速がよい（凍った斜面のすべりのよさ）
+## どちらも掛け算と足し算が 1 つずつ増えるだけで、描く物も当たりの計算も増えない
+static var glide := 1.0
+static var pull := 0.0
 var crashed := false           # 打ち上がってから止まるまで。乗れない。滑り木は効かず、どの向きでも坂に沿って滑る
 var _crash_t := 0.0
 var _crash_still := 0.0
@@ -1184,9 +1191,11 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 		elif vs < UNPLANE_SPEED:
 			_planed = false
 		var sink: float = 0.0 if _planed else K.sink * load_mass() * 9.8 * absf(n.y) * (1.0 - smoothstep(0.0, K.plane, vs))
-		var resist: float = (K.drag * vs + K.push * vs * vs) * ease + sink
+		var resist: float = ((K.drag * vs + K.push * vs * vs) * ease + sink) * glide
 		apply_central_force(-v_t / vs * minf(resist * share, vs * mass / dt))
 		_uphill_brake(dt, v_t)
+	if pull > 0.0 and n.y < 0.9995:   # 坂を下る向き（重力の、雪面に沿った分）に足す
+		apply_central_force((Vector3.DOWN - n * Vector3.DOWN.dot(n)) * 9.8 * pull * mass)
 	for x in [-RUNNER_X, RUNNER_X]:
 		var r := global_basis * Vector3(x, 0, 0)
 		var v_point := linear_velocity + angular_velocity.cross(r)
