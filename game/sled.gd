@@ -116,8 +116,8 @@ static var bumps := 0.0
 static var rattle := 0.0
 const HALF_H_ON_SNOW := 0.9    # ソリのまんなかが雪面からこれより上なら、宙にいる (m)
 const BUMP_CELL := 4.0
-const BUMP_CHANCE := 0.24
-const BUMP_MIN := 5.0          # これより遅いと跳ねない (m/s)
+const BUMP_CHANCE := 0.4      # 升に隆起がある割合（2026-11-12 代表「少しの隆起でももう少し跳ねて良い」で 0.24 → 0.4）
+const BUMP_MIN := 3.5          # これより遅いと跳ねない (m/s)
 const BUMP_UP := 0.1           # 跳ねる速さ = 滑る速さ × これ × (0.5〜1.5)。時速 72 km で 1〜3 m/s（高さ 5〜45 cm、宙に 0.2〜0.6 秒）
 const BUMP_PITCH := 0.5        # つんのめる回る速さ (rad/s) の上限
 var _bump_cell := Vector2i(1 << 30, 0)
