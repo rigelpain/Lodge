@@ -265,7 +265,67 @@ static func bowl(x: float, z: float) -> float:
 static func ground(x: float, z: float) -> float:
 	if tenka():
 		return Tenka.lift(x, z)
-	return hill(x, z) + bowl(x, z) + Mountain.lift(x, z) + Grand.lift(x, z)
+	return hill(x, z) + bowl(x, z) + Mountain.lift(x, z) + Grand.lift(x, z) + relief(x, z)
+
+
+## 雪面のこぶとうねり（2026-11-12 代表「天下森もロッジも起伏増やしたいね」）。旭ヶ丘・天下森と同じ 3 つの大きさ（40・16・8 m）を 0.7 倍で、
+## 丘と南の大きな山（x ±128・z -128〜640）に足す。ロッジの足もと・ロッジから丘への道・山の背の道・ジャンプ台のまわり・地面の縁では 0。
+## 波を毎回たすと重いので、起動のときに 2 m おきの表を一度だけ作り、あとは表から読む（向きと位相は決まった種なので、どの画面でも同じ）
+const RELIEF := [[40.0, 0.55, 3], [16.0, 0.20, 4], [8.0, 0.18, 5]]   # [波長 m, 高さ m, 数]。asahigaoka/bake_terrain.py の RELIEF と同じ
+const RELIEF_K := 0.7
+const RELIEF_X0 := -128.0
+const RELIEF_Z0 := -128.0
+const RELIEF_STEP := 2.0
+const RELIEF_NX := 129
+const RELIEF_NZ := 385
+static var _relief := PackedFloat32Array()
+
+
+static func relief(x: float, z: float) -> float:
+	if _relief.is_empty():
+		_build_relief()
+	var fx := (x - RELIEF_X0) / RELIEF_STEP
+	var fz := (z - RELIEF_Z0) / RELIEF_STEP
+	if fx < 0.0 or fz < 0.0 or fx >= RELIEF_NX - 1 or fz >= RELIEF_NZ - 1:
+		return 0.0
+	var i := int(fx)
+	var j := int(fz)
+	var tx := fx - i
+	var tz := fz - j
+	var a := j * RELIEF_NX + i
+	return lerpf(lerpf(_relief[a], _relief[a + 1], tx), lerpf(_relief[a + RELIEF_NX], _relief[a + RELIEF_NX + 1], tx), tz)
+
+
+static func _build_relief() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var waves := []   # [kx, kz, 位相, 高さ]
+	for r in RELIEF:
+		for n in int(r[2]):
+			var ang := rng.randf() * PI
+			var k := TAU / (float(r[0]) * rng.randf_range(0.8, 1.25))
+			waves.append([k * cos(ang), k * sin(ang), rng.randf() * TAU, float(r[1]) / sqrt(float(r[2])) * RELIEF_K])
+	_relief.resize(RELIEF_NX * RELIEF_NZ)
+	for j in RELIEF_NZ:
+		var z := RELIEF_Z0 + j * RELIEF_STEP
+		for i in RELIEF_NX:
+			var x := RELIEF_X0 + i * RELIEF_STEP
+			var w := lodge_weight(x, z) * (1.0 - path_weight(x, z, 1.5)) * (1.0 - Mountain.path_weight(x, z))
+			w *= smoothstep(4.0, 16.0, minf(minf(x + 128.0, 128.0 - x), minf(z + 128.0, 640.0 - z)))   # 地面の縁
+			for kk in Mountain.KICKERS:   # ジャンプ台の踏み切りのまわり 12 m は平らなまま（台の形が埋もれない）
+				w *= smoothstep(7.0, 14.0, Vector2(x - float(kk[0]), z - float(kk[1])).length())
+			# 急な所（もとの地面が 12° より急）には足さない。丘の急な所に足すと、押して登れる坂の上限（PUSH_FORCE）を越えて、
+			# 仲間が押しても途中で登れなくなった（tools/ride_check.gd --case=climb）
+			var gx := hill(x + 1.0, z) + bowl(x + 1.0, z) + Mountain.lift(x + 1.0, z) - hill(x - 1.0, z) - bowl(x - 1.0, z) - Mountain.lift(x - 1.0, z)
+			var gz := hill(x, z + 1.0) + bowl(x, z + 1.0) + Mountain.lift(x, z + 1.0) - hill(x, z - 1.0) - bowl(x, z - 1.0) - Mountain.lift(x, z - 1.0)
+			w *= 1.0 - smoothstep(tan(deg_to_rad(6.0)), tan(deg_to_rad(12.0)), Vector2(gx, gz).length() * 0.5)
+			var rq := Geometry2D.get_closest_point_to_segment(Vector2(x, z), Vector2(Mountain.RAIL_X, Mountain.RAIL_Z.x), Vector2(Mountain.RAIL_X, Mountain.RAIL_Z.y))
+			w *= smoothstep(5.0, 10.0, rq.distance_to(Vector2(x, z)))   # 手すりのまわりも平らなまま
+			var h := 0.0
+			if w > 0.001:
+				for wv in waves:
+					h += float(wv[3]) * cos(float(wv[0]) * x + float(wv[1]) * z + float(wv[2]))
+			_relief[j * RELIEF_NX + i] = h * w
 
 
 ## 地面の端までの距離 (m)。地面は x ±128・z -128〜640 の長方形（丘と大きな山）と、東の大山の長方形。どちらにも入っていなければ負（一方の縁までの深さの大きいほう）
