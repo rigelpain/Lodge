@@ -28,6 +28,19 @@ func _run() -> void:
 	for i in 120:
 		await physics_frame
 	print("乗る: ", ok, " mode ", p.mode, " RIDE ", p.Mode.RIDE)
+	# 速いときの風と視野角: --dir=<フォルダ> で、一人称で 12・18・24 m/s を超えたときに撮る（ride_wind.gd・player.gd の ride_fov）
+	if main.args.has("dir"):
+		p.set_third(false)
+		for want in [12.0, 18.0, 24.0]:
+			var w := 0.0
+			while sled.linear_velocity.length() < want and w < 40.0:
+				await process_frame
+				w += 1.0 / 60.0
+			for i in 3:
+				await process_frame
+			var f: String = String(main.args["dir"]).path_join("wind_%d.png" % int(want))
+			root.get_texture().get_image().save_png(f)
+			print("撮った: %s  速さ %.1f m/s  視野角 %.0f°  風の強さ %.2f" % [f.get_file(), sled.linear_velocity.length(), p.cam.fov, main.ride_wind.level if main.get("ride_wind") else -1.0])
 	for third in [false, true]:
 		p.set_third(third)
 		var big_rot := 0.0

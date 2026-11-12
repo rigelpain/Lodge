@@ -27,6 +27,7 @@ const VERSION := 3   # 既定値を変えたら上げる。古い保存は、そ
 const ITEMS := [
 	["quality", "画質（軽さ）", "choice", 2, QUALITY_NAMES],   # 重いときにすぐ選べるよう、いちばん上
 	["bob", "視点の揺れ（押す・引くとき）", "bool", true, null],
+	["ride_shake", "滑るときの画面の揺れ", "bool", true, null],   # 2026-11-12: 押す・引くときの揺れとは別に（旭ヶ丘の速いソリのガクガク。player.gd の _rattle）
 	["fov_kick", "押すときに画角が少し広がる", "bool", true, null],
 	["ride_fov", "滑るときに画角が広がる", "bool", true, null],
 	["ride_fov_amt", "滑るときの画角の広がり", "float", 1.0, [0.0, 1.0, 0.05]],

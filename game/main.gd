@@ -2384,6 +2384,8 @@ func _apply_setting(key: String, v) -> void:
 			if ride_wind: ride_wind.calm = not v   # 揺れを切った人には、風も控えめに
 		"wind":
 			if ride_wind: ride_wind.strength = v
+		"ride_shake":
+			if player: player.ride_shake_enabled = v
 		"fov_kick":
 			if player: player.fov_kick_enabled = v
 		"ride_fov":
