@@ -201,15 +201,19 @@ def forest_mask():
             W.paste(Image.open(p).convert("RGB"), ((tx - tx0) * 256, (ty - ty0) * 256))
     W = W.crop((int(x0 - tx0 * 256), int(y0 - ty0 * 256), int(x1 - tx0 * 256), int(y1 - ty0 * 256))).resize((n * 4, n * 4))
     a = np.asarray(W).astype(float)
-    bright = a.mean(axis=2)
-    f = ((bright < 92) & (a[..., 1] >= a[..., 0] - 2)).astype(float)
+    # 林と草地の見分け（2026-11-12 直し）: 点ごとの明るさ（< 92）では、夏の草地（初級コースの切り開き・南の斜面）も半分ほど林に読み、
+    # 開けた所が写真と違う形になった（代表「鳥瞰画像と向きと広がりかた違くない？」）。5 m でならした明るさと黄み（赤 − 青）で見分ける:
+    # 林は暗く（70〜80）青緑（赤 − 青 0〜12）、草地は明るく（89〜110）黄緑（赤 − 青 22〜38）、土はもっと明るい
+    bright = blur(a.mean(axis=2), 5.0)
+    warm = blur(a[..., 0] - a[..., 2], 5.0)
+    f = np.clip(0.5 + ((86.0 - bright) / 10.0 + (17.0 - warm) / 10.0) / 2.0, 0.0, 1.0)
+    f = (f > 0.5).astype(float)   # 林か、そうでないか（林の中は木をむらなく立てる）
     f = f.reshape(n, 4, n, 4).mean(axis=(1, 3))
-    return blur(f, 1.0)
+    return blur(f, 0.6)
 
 
-# 初級コースの広い斜面の囲い（遊びの座標。空中写真の草地と、冬の写真の見え方から）
-BEGINNER = [[-180, 50], [-150, 38], [-100, 20], [-80, -8], [-56, -24], [-24, -14], [0, 8], [28, 22], [42, 45], [38, 80], [10, 102],
-            [-40, 100], [-90, 90], [-140, 78], [-178, 68]]
+# 初級コースの中心の線: 降り場 → 林の島の西の切り開き → 南の斜面の上の端（空中写真の明るい帯をなぞった。照明の柱を並べる線）
+COURSE2 = [[-262, -205], [-276, -175], [-275, -149], [-267, -119], [-245, -59], [-212, 1], [-189, 37], [-176, 56]]
 
 
 def clear_mask(m):
@@ -381,16 +385,11 @@ def main():
     os.makedirs(OUT, exist_ok=True)
     m = polys()
     add_play_points(m)
-    m["beginner"] = BEGINNER
+    m["course2"] = COURSE2
     json.dump(m, open(os.path.join(OUT, "map.json"), "w"), ensure_ascii=False, indent=1)
     cm = clear_mask(m)
     cm.tofile(os.path.join(OUT, "clear.bin"))
     fm = forest_mask()
-    # 初級コースの広い斜面（乗り場の南西。その南の一角がそりコース）: 夏の写真では濃い緑の草地で、林と読み違えていた
-    # （2026-11-11 代表「ソリコースなくない？…ロッジから見える V 字の坂が特徴的なのに」。主コースと、この斜面が、林の島をはさんで V 字に見える）
-    s4 = 4.0
-    FX, FZ = np.meshgrid(NEAR["x0"] + np.arange(256) * s4 + s4 / 2, NEAR["z0"] + np.arange(256) * s4 + s4 / 2)
-    fm = np.where(inside_plain(BEGINNER + [BEGINNER[0]], FX, FZ), 0.0, fm)
     (np.clip(fm, 0, 1) * 255).astype(np.uint8).tofile(os.path.join(OUT, "forest.bin"))
     print("forest", (fm > 0.5).mean())
     print("clear", (cm > 0).mean())

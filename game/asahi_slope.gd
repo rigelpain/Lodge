@@ -46,6 +46,9 @@ func _ready() -> void:
 	for p in m.get("pistes", []):
 		if p["kind"] == "downhill" and down_line.is_empty():
 			down_line = p["line"]
+	if m.has("course2"):   # 初級コース: 空中写真の切り開きをなぞった線（bake_terrain.py の COURSE2）と、その下の広い斜面のまんなか
+		down_line = (m["course2"] as Array).duplicate()
+		down_line.append_array([[-120.0, 48.0], [-60.0, 42.0], [0.0, 30.0]])   # 麓へ下りる道の線（南の斜面 = そりコースの下の縁）
 	_nets()
 	_lights(down_line)
 	_jump_tower()
@@ -277,15 +280,15 @@ func _lights(down_line: Array) -> void:
 	var L := _length(down_line)
 	var s := 45.0
 	var n := 0
-	while s < L and n < 5:
+	while s < L and n < 6:
 		var r := _along(down_line, s)
 		var p: Vector2 = r[0]
 		var tan: Vector2 = r[1]
 		var nrm := Vector2(-tan.y, tan.x)
 		if nrm.dot(p - cen) < 0.0:
 			nrm = -nrm
-		_lamp_pole(p + nrm * 8.0, -nrm, tan)
-		s += 90.0
+		_lamp_pole(p + nrm * 20.0, -nrm, tan)   # 切り開きの幅（26〜44 m）の縁
+		s += 80.0
 		n += 1
 
 
@@ -427,9 +430,9 @@ func _judge_tower(o: Vector2) -> void:
 
 # ---- ⑩ 仕切り ------------------------------------------------------------------------------
 
-## そりコース（2026-11-11 代表「ソリコースなくない？…ロッジから見える V 字の坂が特徴的なのに」）: 乗り場の南西の、広い初級コースの
-## 南の一角。スキーの斜面とのあいだを、斜面を上る向きのオレンジのネットと、ピンクの旗のポールで仕切る（動画のコマ intro-35、
-## 写真 hsakudo-011-4・blog-6207）。下の入口に、そりの絵の札（字は使わない）
+## そりコース（2026-11-11 代表「ソリコースなくない？…ロッジから見える V 字の坂が特徴的なのに」）: 乗り場の南西、麓へ下りる道の南の、
+## 北向きの斜面（写真 blog-6207 の奥に南の建物の屋根が写る）。主コース（南東向き）とこの斜面が、林の島のとがった先をはさんで V 字の谷になる。
+## 初級コースの出口とのあいだを、オレンジのネットとピンクの旗のポールで仕切る（動画のコマ intro-35）。下の入口に、そりの絵の札（字は使わない）
 func _divider() -> void:
 	var pts := [Vector2(22, 58), Vector2(-10, 60), Vector2(-42, 63), Vector2(-72, 67)]
 	for k in pts.size() - 1:
