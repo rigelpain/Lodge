@@ -107,6 +107,21 @@ const CRASH_REST := 1.0        # これだけ止まっていると、ふつう�
 ## どちらも掛け算と足し算が 1 つずつ増えるだけで、描く物も当たりの計算も増えない
 static var glide := 1.0
 static var pull := 0.0
+## ワールドごとの揺れ（2026-11-12 代表「ソリってもっと揺れるよね？それが怖かった記憶がある。画面のガクガクもそうだし、ちょっとした隆起で跳ねる」）
+##   bumps   雪面の小さな隆起で跳ねる強さ（0 で無し）。乗って BUMP_MIN より速く滑っているとき、雪面を BUMP_CELL (m) の升に分け、
+##           升ごとに決まった割合（BUMP_CHANCE）で隆起がある。隆起に乗り上げると、速さに比べた勢いで雪面から跳ね、前後に少しつんのめる。
+##           隆起の所は場所で決まるので、同じ所を通れば同じ所で跳ねる。升をまたぐときに数を 1 つ作るだけで、当たりの形も描く物も増えない
+##   rattle  乗っている人の画面のガクガクの強さ（player.gd が読む。0 で無し）
+static var bumps := 0.0
+static var rattle := 0.0
+const HALF_H_ON_SNOW := 0.9    # ソリのまんなかが雪面からこれより上なら、宙にいる (m)
+const BUMP_CELL := 4.0
+const BUMP_CHANCE := 0.24
+const BUMP_MIN := 5.0          # これより遅いと跳ねない (m/s)
+const BUMP_UP := 0.1           # 跳ねる速さ = 滑る速さ × これ × (0.5〜1.5)。時速 72 km で 1〜3 m/s（高さ 5〜45 cm、宙に 0.2〜0.6 秒）
+const BUMP_PITCH := 0.5        # つんのめる回る速さ (rad/s) の上限
+var _bump_cell := Vector2i(1 << 30, 0)
+var bump_n := 0                # 跳ねた回数（確かめ用・画面のガクガクのきっかけ）
 var crashed := false           # 打ち上がってから止まるまで。乗れない。滑り木は効かず、どの向きでも坂に沿って滑る
 var _crash_t := 0.0
 var _crash_still := 0.0
@@ -1196,6 +1211,8 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 		_uphill_brake(dt, v_t)
 	if pull > 0.0 and n.y < 0.9995:   # 坂を下る向き（重力の、雪面に沿った分）に足す
 		apply_central_force((Vector3.DOWN - n * Vector3.DOWN.dot(n)) * 9.8 * pull * mass)
+	if bumps > 0.0 and vs > BUMP_MIN:
+		_bump(n, vs)
 	for x in [-RUNNER_X, RUNNER_X]:
 		var r := global_basis * Vector3(x, 0, 0)
 		var v_point := linear_velocity + angular_velocity.cross(r)
@@ -1204,6 +1221,25 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 		if _steer * signf(x) > 0.0:
 			c += LEAN_DIG * K.turn * absf(_steer)
 		apply_force(-fwd * v_long * c * share, r)
+
+
+## 雪面の小さな隆起で跳ねる（bumps）。升をまたいだコマだけ見る
+func _bump(n: Vector3, vs: float) -> void:
+	var p := global_position
+	var cell := Vector2i(floori(p.x / BUMP_CELL), floori(p.z / BUMP_CELL))
+	if cell == _bump_cell:
+		return
+	_bump_cell = cell
+	var h := fposmod(sin(cell.x * 127.1 + cell.y * 311.7) * 43758.5453, 1.0)
+	if h > BUMP_CHANCE:
+		return
+	var w := get_parent()
+	if w == null or not w.has_method("height") or p.y - w.height(p.x, p.z) > HALF_H_ON_SNOW:
+		return   # 宙にいるあいだは跳ねない
+	var k := (0.5 + h / BUMP_CHANCE) * bumps
+	apply_central_impulse(n * mass * vs * BUMP_UP * k)
+	angular_velocity += global_basis.x * (fposmod(h * 7.0, 1.0) - 0.35) * BUMP_PITCH * k   # 前へつんのめる・後ろへのけぞる（回りの弱まりですぐ収まる）
+	bump_n += 1
 
 
 ## 上り斜面の減速。地形の傾きと進む向きから、登っている分だけ重力を足す（UPHILL_K）。宙にいるあいだは効かない

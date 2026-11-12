@@ -13,19 +13,24 @@ func _initialize() -> void:
 	for a in OS.get_cmdline_user_args():
 		var kv := a.trim_prefix("--").split("=", true, 1)
 		args[kv[0]] = kv[1] if kv.size() > 1 else "1"
+	var t0 := Time.get_ticks_msec()
 	main = load("res://main.tscn").instantiate()
 	root.add_child(main)
+	print("世界を作るのにかかった時間: %d ms" % (Time.get_ticks_msec() - t0))
 	_run.call_deferred()
 
 
 func _run() -> void:
 	for i in 30:
 		await physics_frame
+	print("30 コマ待った")
 	if args.has("glide"):
 		Sled.glide = float(args["glide"])
 	if args.has("pull"):
 		Sled.pull = float(args["pull"])
-	print("ソリ %s  glide %.2f  pull %.2f" % [main.sled.kind, Sled.glide, Sled.pull])
+	if args.has("bumps"):
+		Sled.bumps = float(args["bumps"])
+	print("ソリ %s  glide %.2f  pull %.2f  bumps %.2f  rattle %.2f" % [main.sled.kind, Sled.glide, Sled.pull, Sled.bumps, Sled.rattle])
 	# そりコース: 南の斜面の上（-120, 70）から、麓（0, 35）の向きへ。主コース: 降り場の下（リフトの線の北東 30 m）から乗り場の向きへ
 	if args.has("things"):   # 確かめ用: そりコースのあたりの当たり（柱・ネット・札）の所を出す
 		for cs in main.get_node("Site/Slope/SlopeColliders").get_children():
@@ -65,6 +70,10 @@ func get_off() -> void:
 	var t20 := -1.0
 	var still := 0.0
 	var y0 := sled.global_position.y
+	var b0: int = sled.bump_n
+	var air := 0.0      # 雪面から離れていた時間 (s)
+	var high := 0.0     # ソリの底が雪面からいちばん離れた高さ (m)
+	var flips := 0.0    # いちばん傾いた角度 (°)
 	while w < 90.0:
 		await physics_frame
 		w += 1.0 / 60.0
@@ -73,12 +82,18 @@ func get_off() -> void:
 		if t5 < 0.0 and v >= 5.0: t5 = w
 		if t10 < 0.0 and v >= 10.0: t10 = w
 		if t20 < 0.0 and v >= 20.0: t20 = w
+		var gap: float = sled.global_position.y - main.height(sled.global_position.x, sled.global_position.z) - 0.45
+		if gap > 0.08:
+			air += 1.0 / 60.0
+		high = maxf(high, gap)
+		flips = maxf(flips, rad_to_deg(acos(clampf(sled.global_basis.y.y, -1.0, 1.0))))
 		still = still + 1.0 / 60.0 if v < 0.3 else 0.0
 		if still > 2.0 or sled.crashed:
 			break
 	var p := sled.global_position
 	print("%s: いちばん速いとき %.1f m/s（時速 %.0f km）  5 m/s まで %s 秒・10 m/s まで %s 秒・20 m/s まで %s 秒  %.0f 秒で (%.0f, %.0f) に%s  下った高さ %.0f m" % [
 			name, top, top * 3.6, _s(t5), _s(t10), _s(t20), w, p.x, p.z, "打ち上がった" if sled.crashed else "止まった", y0 - p.y])
+	print("    跳ねた %d 回・宙にいた %.1f 秒・いちばん浮いた %.2f m・いちばん傾いた %.0f°" % [sled.bump_n - b0, air, high, flips])
 	if d.is_inside_tree():
 		sled.dismount(d)
 	d.queue_free()

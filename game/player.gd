@@ -190,6 +190,17 @@ var _cam_em := Vector3.ZERO  # 身ぶりで視点に足す（x 上下の向き�
 var _land_t := 1.0           # 着いてからの時間 (s)。LAND_DIP_T までのあいだ一人称の目が沈む
 var _land_amp := 0.0         # そのときの沈む深さ (m)
 var _dip_shown := 0.0        # いまカメラに入れている着地の沈み (m)
+## 乗って速く滑っているときの画面のガクガク（一人称。2026-11-12 代表「画面のガクガクもそうだし」）。強さはワールドごと（sled.gd の rattle）。
+## 人形と同じコマ（Doll.frame_index）で刻むので、なめらかに揺れず、がくがくと飛ぶ。速いほど大きく、隆起で跳ねた直後は一段大きい。
+## 設定の「視点の揺れ」を切ると弱く（0.3 倍）。目の高さと向きに数を足すだけで、描く物は増えない
+const RATTLE_SPEED := Vector2(4.0, 20.0)   # この速さ (m/s) から揺れはじめ、ここで全部
+const RATTLE_Y := 0.03                      # 目の上下 (m)
+const RATTLE_PITCH := 0.022                 # うなずき (rad)
+const RATTLE_ROLL := 0.035                  # 左右の傾き (rad)
+const RATTLE_BUMP := 2.2                    # 隆起で跳ねた直後の倍率
+var _rattle_y := 0.0         # いまカメラに入れている上下 (m)
+var _rattle_bump := 0.0      # 跳ねた直後の強まり（0〜1。すぐ消える）
+var _rattle_seen := 0        # 前に見た、ソリの跳ねた回数
 var _fall_v := 0.0           # 宙にいるあいだの下向きの速さ（着いたときの手応えの強さ）
 var _drag_k := 0.0           # 引きずられている度合い（0→1 になめらかに）。視点が前へ傾き、低く揺れる
 var craft: Node              # 工房の配り役（main.gd の Craft）。財布と持ち物
@@ -1543,11 +1554,13 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			eye = to_local(_peek_stand.eye_world())   # 台をのぞく: 目は頭の軸の所
 		eye.y += _cam_em.z * ek   # しゃがむ・身ぶりで目が下がる幅も、人形の背丈に合わせる
 		# 着地の沈みは目の高さの追いかけ（lerp）の外で足す（なまらず、すとんと沈んですっと戻る）
-		cam.position.y += _dip_shown
+		cam.position.y += _dip_shown - _rattle_y
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
 		_dip_shown = _land_dip(dt)
-		cam.position.y -= _dip_shown
-		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5 + fv.y, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0 + fv.x)
+		var rt := _rattle(dt)   # 上下・うなずき・左右の傾き
+		_rattle_y = rt.x
+		cam.position.y += _rattle_y - _dip_shown
+		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5 + fv.y + rt.y, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0 + fv.x + rt.z)
 		return
 	# 三人称: 頭の少し上を中心に、後ろからカメラの距離と高さで見る。マウスの上下で回り込む。
 	# 頭からカメラへ玉を滑らせて、壁・天井・地面・ソリに当たる手前で止める（埋まらない）。
@@ -1591,6 +1604,25 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 
 ## 乗って滑っている速さから、視野角に足す分を決める。速さは雪のでこぼこで細かく揺れるので、ならしてから使う。
 ## 一人称も三人称も同じだけ足す（三人称はそのうえでカメラを少し後ろへ引く）
+## 画面のガクガク: (目の上下 m, うなずき rad, 左右の傾き rad)。乗って滑っていなければ 0
+func _rattle(dt: float) -> Vector3:
+	var Sled := preload("res://sled.gd")
+	_rattle_bump = maxf(0.0, _rattle_bump - dt * 3.0)
+	if mode != Mode.RIDE or Sled.rattle <= 0.0 or sled == null:
+		return Vector3.ZERO
+	if sled.bump_n != _rattle_seen:
+		_rattle_seen = sled.bump_n
+		_rattle_bump = 1.0
+	var k: float = Sled.rattle * smoothstep(RATTLE_SPEED.x, RATTLE_SPEED.y, sled.linear_velocity.length()) * (1.0 if bob_enabled else 0.3)
+	k *= 1.0 + (RATTLE_BUMP - 1.0) * _rattle_bump
+	if k <= 0.001:
+		return Vector3.ZERO
+	var f := float(Doll.frame_index())
+	return Vector3((fposmod(sin(f * 12.9898) * 43758.5453, 1.0) - 0.5) * 2.0 * RATTLE_Y,
+			(fposmod(sin(f * 78.233) * 24634.6345, 1.0) - 0.5) * 2.0 * RATTLE_PITCH,
+			(fposmod(sin(f * 39.3468) * 15731.743, 1.0) - 0.5) * 2.0 * RATTLE_ROLL) * k
+
+
 func _update_ride_fov(dt: float) -> void:
 	var want := 0.0
 	if mode == Mode.RIDE:
