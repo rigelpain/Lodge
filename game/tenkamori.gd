@@ -159,6 +159,10 @@ func _ready() -> void:
 	var lift := preload("res://tenkamori_lift.gd").new()
 	lift.name = "Lift"
 	add_child(lift)
+	var board := preload("res://site_map_board.gd").new()   # スキー場の大きな地図の掲示板（trail_map.png）
+	board.name = "MapBoard"
+	board.main = world
+	add_child(board)
 	if site == "asahigaoka":   # 旭ヶ丘: ゲレンデの小物（asahi_slope.gd）と休憩所「雪ん子館」（asahi_lodge.gd）
 		for part in ["Slope", "Lodge"]:
 			var path := "res://asahi_%s.gd" % part.to_lower()

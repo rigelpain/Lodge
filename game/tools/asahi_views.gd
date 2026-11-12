@@ -137,6 +137,28 @@ func _run() -> void:
 			b.queue_free()
 		for w in woods:
 			(w as MultiMeshInstance3D).visibility_range_end = 330.0
+	# 地図の掲示板（site_map_board.gd）: 前に立って見上げる・少し離れて
+	var mb: Node3D = main.get_node("Site/MapBoard")
+	var mf: Vector3 = mb.global_basis.z
+	await _look("map_board", mb.global_position + mf * 7.0 + Vector3(0, 1.7, 0), mb.global_position + Vector3(0, 4.0, 0), 70.0)
+	await _look("map_board_far", mb.global_position + mf * 18.0 + mb.global_basis.x * 6.0 + Vector3(0, 2.0, 0), mb.global_position + Vector3(0, 3.0, 0) - mf * 40.0, 70.0)
+	# 頂上のネット（asahi_slope.gd の _nets）: 降り場の脇から下る向き・降り場を見上げる・真上から近く
+	await _look("top_nets_down", _eye(-258.0, -200.0, 1.7), _eye(-180.0, -150.0, -6.0), 70.0)
+	await _look("top_nets_up", _eye(-215.0, -170.0, 1.7), _eye(-255.0, -210.0, 2.0), 70.0)
+	await _look("top_nets_side", _eye(-200.0, -230.0, 1.7), _eye(-250.0, -200.0, 0.0), 70.0)
+	if not args.has("only") or "top_nets_map" in args["only"].split(","):
+		cam.projection = Camera3D.PROJECTION_ORTHOGONAL
+		cam.keep_aspect = Camera3D.KEEP_HEIGHT
+		cam.size = 90.0
+		cam.far = 3000.0
+		cam.position = Vector3(-240.0, 900.0, -205.0)
+		cam.rotation = Vector3(-PI / 2.0, 0.0, 0.0)
+		for i in 20:
+			await process_frame
+		root.get_texture().get_image().save_png(String(args.get("dir", "/tmp/asahi_views")).path_join("top_nets_map.png"))
+		print("保存: top_nets_map.png")
+		cam.projection = Camera3D.PROJECTION_PERSPECTIVE
+		cam.far = 30000.0
 	# 雪面の起伏（asahigaoka/bake_terrain.py の snow_relief）: 雪面すれすれから、陽の当たる向きと横から。--time=15.5 など陽の低い時刻で撮ると影で見える
 	await _look("relief_main", _eye(-150.0, -95.0, 1.2), _eye(-60.0, -40.0, -2.0), 55.0)
 	await _look("relief_across", _eye(-90.0, -150.0, 1.2), _eye(-200.0, -80.0, -4.0), 55.0)
