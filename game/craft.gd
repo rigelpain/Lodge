@@ -164,6 +164,7 @@ var ball_owned := {}           # 人の番号 → 買った大玉の縫い目の
 var ball_stitch := {}          # 人の番号 → 自分の大玉に縫う柄（ball_stitches.gd。"" は固めた手袋の段の標準）
 var sacks := {}                # 人の番号 → 持っている米袋の配列 [{fabric}]（0 番は標準。米袋に名札は付けない）
 var loose_tags := {}           # 人の番号 → 帯の名札入れの、外した名札の柄の配列（付け直せる）
+var restored := {}             # 人の番号 → 保存した財布と持ち物を戻した（出来事 "restore"。一人に一度だけ）
 var names := {}                # 人の番号 → 名前（装備の画面で決める。HUD の札で頭の上に出す）
 var colors := {}               # 人の番号 → キャラの色（COLORS の番号）
 var dolls := {}                # 人の番号 → 人形（doll.gd の KINDS。衣装掛けで替える）
@@ -1315,6 +1316,22 @@ func _apply(ev: Dictionary) -> bool:
 			if int(ev.get("n", 0)) <= 0 or wallets[who] < int(ev.n):
 				return false
 			wallets[who] -= int(ev.n)
+		"restore":   # 保存した財布のボタンと持ち物を戻す（2026-11-12 代表「ゲームを落としても所持品やお金、装備などの情報を保持して再開」。
+			# player.gd の _load_tag が起動のときに一度だけ送る。ほかの人の世界へつないだときも、自分の保存を持っていく。n が負なら財布はそのまま）
+			if restored.has(who) and not replay:
+				return false
+			restored[who] = true
+			var n := int(ev.get("n", -1))
+			if n >= 0:
+				wallets[who] = mini(n, PURSE_MAX)
+			var b = ev.get("bag", null)
+			if b is Array:
+				var nb := empty_bag()
+				for i in mini((b as Array).size(), SLOTS):
+					if b[i] is Dictionary and (b[i] as Dictionary).has("kind"):
+						nb[i] = (b[i] as Dictionary).duplicate(true)
+				bags[who] = nb
+				hands[who] = -1
 		"purse":   # ホストが財布のボタンの数を決める（設定の「ホストの操作」。host_panel.gd）
 			var n := int(ev.get("n", -1))
 			if n < 0 or n > PURSE_MAX:
