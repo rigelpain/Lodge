@@ -216,6 +216,34 @@ def forest_mask():
 COURSE2 = [[-262, -205], [-276, -175], [-275, -149], [-267, -119], [-245, -59], [-212, 1], [-189, 37], [-176, 56]]
 
 
+# 雪面のこぶとうねり（2026-11-12）。滑る人が削り、風が吹きためた、ならしきれない起伏。当たりの地面（near.bin）に焼くので、
+# ソリは物理のまま揺れて跳ねる（sled.gd の突き上げとは別に、本当の形がある）。格子は 2 m おきなので、波長 6 m より細かいものは入れない
+RELIEF = [   # (波長 m, 高さ m（山から谷の半分）, 数)
+    (40.0, 0.55, 3),   # ゆったりしたうねり
+    (16.0, 0.20, 4),   # 吹きだまりの段（0.3 だと時速 90 km で踏み切りになって長く飛んだ）
+    (8.0, 0.18, 5),    # こぶ
+]
+
+
+def snow_relief(X, Z, forest4):
+    """開けた雪面だけに足す起伏（m）。向きと位相は決まった乱数で、焼き直しても同じ形"""
+    rnd = np.random.default_rng(7)
+    R = np.zeros(X.shape)
+    for lam, amp, n in RELIEF:
+        part = np.zeros(X.shape)
+        for _ in range(n):
+            a = rnd.uniform(0, np.pi)
+            k = 2 * np.pi / (lam * rnd.uniform(0.8, 1.25))
+            part += np.cos(k * (X * np.cos(a) + Z * np.sin(a)) + rnd.uniform(0, 2 * np.pi))
+        R += amp * part / np.sqrt(n)
+    # 林の中は木が立つので足さない。林の濃さ（4 m おき）を 2 m おきへ広げ、縁はなめらかに
+    f = np.repeat(np.repeat(forest4, 2, axis=0), 2, axis=1)[:X.shape[0], :X.shape[1]]
+    f = np.pad(f, ((0, X.shape[0] - f.shape[0]), (0, X.shape[1] - f.shape[1])), mode="edge")
+    open_ = blur(np.clip(1.0 - f * 1.4, 0.0, 1.0), 3.0)
+    print("雪面の起伏: 高さの幅 %.2f m（開けた所の 1〜99%%）" % (np.percentile(R[open_ > 0.9], 99) - np.percentile(R[open_ > 0.9], 1)))
+    return R * open_
+
+
 def clear_mask(m):
     s = 4.0
     xs = NEAR["x0"] + np.arange(256) * s + s / 2
@@ -400,11 +428,10 @@ def main():
     H = fill(sample("dem1a_png", 17, la, lo), sample("dem5a_png", 15, la, lo), sample("dem_png", 14, la, lo)) - BASE
     print("near 欠け", np.isnan(H).mean())
     H = np.nan_to_num(H, nan=np.nanmin(H))
-    soft = blur(H, 1.0)
-    softer = blur(H, 2.5)
-    area = inside_plain(m["area"], X, Z).astype(float)
-    w = blur(area, 6.0)
-    H = soft * (1 - w) + softer * w
+    # 2026-11-12 代表「ゲレンデがきれいになだらかすぎるんだろうなー」: ゲレンデの中も σ 2 m だけ（前は σ 5 m で、本物の起伏まで消していた）。
+    # そのうえで、開けた雪面（林でない所）に、雪のこぶとうねり（snow_relief）を足す
+    H = blur(H, 1.0)
+    H = H + snow_relief(X, Z, fm)
     piste = inside_plain(m["area"], X, Z).astype(float)
     H, road = roads_and_parking(m, X, Z, H)
     (np.clip(piste * (1 - road), 0, 1) * 255).astype(np.uint8).tofile(os.path.join(OUT, "piste.bin"))
