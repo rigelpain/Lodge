@@ -115,11 +115,16 @@ static var pull := 0.0
 static var bumps := 0.0
 static var rattle := 0.0
 const HALF_H_ON_SNOW := 0.9    # ソリのまんなかが雪面からこれより上なら、宙にいる (m)
-const BUMP_CELL := 4.0
-const BUMP_CHANCE := 0.24
-const BUMP_MIN := 5.0          # これより遅いと跳ねない (m/s)
-const BUMP_UP := 0.1           # 跳ねる速さ = 滑る速さ × これ × (0.5〜1.5)。時速 72 km で 1〜3 m/s（高さ 5〜45 cm、宙に 0.2〜0.6 秒）
-const BUMP_PITCH := 0.5        # つんのめる回る速さ (rad/s) の上限
+## 跳ねは「ジャンプ」でなく、ごつんと突き上げられる小刻みな衝撃（2026-11-12 代表「はねるのがジャンプみたいになってる」）:
+## 高さは数 cm で、すぐ雪面に戻る。そのかわり細かい間隔で何度も来て、前後・左右にがくっと揺さぶる
+const BUMP_CELL := 2.5
+const BUMP_CHANCE := 0.45     # 升に隆起がある割合（2026-11-12 代表「少しの隆起でももう少し跳ねて良い」）
+const BUMP_MIN := 3.5          # これより遅いと跳ねない (m/s)
+const BUMP_UP := 0.05          # 突き上げる速さ = 滑る速さ × これ（BUMP_UP_MAX まで）× (0.5〜1.5) × bumps
+const BUMP_UP_MAX := 0.8       # 突き上げる速さの上限 (m/s。高さ 3 cm ほど、宙に 0.16 秒ほど)
+const BUMP_PITCH := 1.1        # つんのめる・のけぞる回る速さ (rad/s) の上限
+const BUMP_ROLL := 0.6         # 左右にがくっと傾く回る速さ (rad/s) の上限
+const BUMP_SNAP := 0.8         # 乗って速く滑っていて雪面から少し浮いたとき、下へ足す重力の割合（ふわっと飛ばず、すぐ雪面に戻る）
 var _bump_cell := Vector2i(1 << 30, 0)
 var bump_n := 0                # 跳ねた回数（確かめ用・画面のガクガクのきっかけ）
 var crashed := false           # 打ち上がってから止まるまで。乗れない。滑り木は効かず、どの向きでも坂に沿って滑る
@@ -1213,6 +1218,9 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 		apply_central_force((Vector3.DOWN - n * Vector3.DOWN.dot(n)) * 9.8 * pull * mass)
 	if bumps > 0.0 and vs > BUMP_MIN:
 		_bump(n, vs)
+		var w := get_parent()   # 少し浮いたら、すぐ雪面へ戻す（隆起や地形の段で、ふわっと長く飛ばない）
+		if w and w.has_method("height") and global_position.y - w.height(global_position.x, global_position.z) > 0.6:
+			apply_central_force(Vector3.DOWN * 9.8 * BUMP_SNAP * mass)
 	for x in [-RUNNER_X, RUNNER_X]:
 		var r := global_basis * Vector3(x, 0, 0)
 		var v_point := linear_velocity + angular_velocity.cross(r)
@@ -1237,8 +1245,9 @@ func _bump(n: Vector3, vs: float) -> void:
 	if w == null or not w.has_method("height") or p.y - w.height(p.x, p.z) > HALF_H_ON_SNOW:
 		return   # 宙にいるあいだは跳ねない
 	var k := (0.5 + h / BUMP_CHANCE) * bumps
-	apply_central_impulse(n * mass * vs * BUMP_UP * k)
-	angular_velocity += global_basis.x * (fposmod(h * 7.0, 1.0) - 0.35) * BUMP_PITCH * k   # 前へつんのめる・後ろへのけぞる（回りの弱まりですぐ収まる）
+	apply_central_impulse(n * mass * minf(vs * BUMP_UP, BUMP_UP_MAX) * k)
+	angular_velocity += global_basis.x * (fposmod(h * 7.0, 1.0) - 0.4) * BUMP_PITCH * k   # 前へつんのめる・後ろへのけぞる（回りの弱まりですぐ収まる）
+	angular_velocity += global_basis.z * (fposmod(h * 13.0, 1.0) - 0.5) * 2.0 * BUMP_ROLL * k   # 左右にがくっと傾く
 	bump_n += 1
 
 

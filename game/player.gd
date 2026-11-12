@@ -193,7 +193,7 @@ var _dip_shown := 0.0        # いまカメラに入れている着地の沈み 
 ## 乗って速く滑っているときの画面のガクガク（一人称。2026-11-12 代表「画面のガクガクもそうだし」）。強さはワールドごと（sled.gd の rattle）。
 ## 人形と同じコマ（Doll.frame_index）で刻むので、なめらかに揺れず、がくがくと飛ぶ。速いほど大きく、隆起で跳ねた直後は一段大きい。
 ## 設定の「視点の揺れ」を切ると弱く（0.3 倍）。目の高さと向きに数を足すだけで、描く物は増えない
-const RATTLE_SPEED := Vector2(4.0, 20.0)   # この速さ (m/s) から揺れはじめ、ここで全部
+const RATTLE_SPEED := Vector2(2.5, 14.0)   # この速さ (m/s) から揺れはじめ、ここで全部（2026-11-12 代表「もっと視界ガクガク揺れていい」で、遅いうちから）
 const RATTLE_Y := 0.03                      # 目の上下 (m)
 const RATTLE_PITCH := 0.022                 # うなずき (rad)
 const RATTLE_ROLL := 0.035                  # 左右の傾き (rad)
@@ -1593,6 +1593,8 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	var free := _cam_clear(pivot_w, ray)
 	_cam_free = free if free < _cam_free else move_toward(_cam_free, free, dt * 4.0)
 	var at := pivot_w + ray.normalized() * minf(_cam_free, ray.length())
+	var rt := _rattle(dt)   # 三人称も、カメラごとガクガク揺れる（一人称と同じ数）
+	at += Vector3.UP * rt.x * 1.5
 	cam.global_position = at if cam.global_position.distance_to(at) > 2.0 or free < _cam_free + 0.01 \
 		else cam.global_position.lerp(at, min(1.0, dt * 10.0))
 	# 地面や当たりで動かした所から、もう一度頭へ向け直す（ずらした分は除いて向ける。ずらしは縮めた割合だけ残す）
@@ -1600,6 +1602,8 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	var aim_from := cam.global_position + look.y * shift * k
 	if aim_from.distance_to(pivot_w) > 0.05:
 		cam.global_basis = Basis.looking_at(pivot_w - aim_from, Vector3.UP)
+	if rt != Vector3.ZERO:
+		cam.global_basis = cam.global_basis * Basis.from_euler(Vector3(rt.y, 0.0, rt.z))
 
 
 ## 乗って滑っている速さから、視野角に足す分を決める。速さは雪のでこぼこで細かく揺れるので、ならしてから使う。
