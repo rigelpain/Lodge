@@ -46,9 +46,8 @@ func _ready() -> void:
 	for p in m.get("pistes", []):
 		if p["kind"] == "downhill" and down_line.is_empty():
 			down_line = p["line"]
-	if m.has("course2"):   # 初級コース: 空中写真の切り開きをなぞった線（bake_terrain.py の COURSE2）と、その下の広い斜面のまんなか
+	if m.has("course2"):   # 初級コース: 空中写真の切り開きをなぞった線（bake_terrain.py の COURSE2）
 		down_line = (m["course2"] as Array).duplicate()
-		down_line.append_array([[-120.0, 48.0], [-60.0, 42.0], [0.0, 30.0]])   # 麓へ下りる道の線（南の斜面 = そりコースの下の縁）
 	_nets()
 	_lights(down_line)
 	_jump_tower()
@@ -271,6 +270,9 @@ func _lights(down_line: Array) -> void:
 		var p: Vector2 = _along(_lift, _lift_len * t)[0]
 		for off in [16.0, 78.0 - 22.0 * t]:
 			_lamp_pole(p + side * off, -up, side)
+	# 麓へ下りる道の北の縁（林の島の先の側）に 2 本。南の斜面はそりコースなので、中には立てない
+	for q in [Vector2(-112, 34), Vector2(-48, 24)]:
+		_lamp_pole(q, Vector2(0, 1), Vector2(1, 0))
 	if down_line.is_empty():
 		return
 	var cen := Vector2.ZERO
