@@ -102,6 +102,9 @@ func receive(pid: int, m: Array) -> void:
 		"told":
 			if from_host:
 				_told(m[1])
+		"warp":
+			if from_host and main.player:
+				main.player.warp_to(m[1], float(m[2]))
 		"reset":
 			if is_host():
 				main.reset_sled()
@@ -125,7 +128,11 @@ func start(args: Dictionary) -> bool:
 		_back_to_start("host" if args.has("host") else "join")
 		return false
 	if not args.has("host"):
-		peer.get_peer(1).set_timeout(0, 4000, 8000)   # つながらないときは 8 秒ほどであきらめる（ENet の既定は 30 秒ほど）
+		# つながらないときは 8 秒ほどであきらめる（ENet の既定は 30 秒ほど）。ホストがワールドを替えたあと（patient）は、ホストが
+		# 新しいワールドを作り終えるまで待つので長めに
+		var wait := 30000 if args.has("patient") else 8000
+		peer.get_peer(1).set_timeout(0, wait / 2, wait)
+		boot.erase("patient")
 	multiplayer.multiplayer_peer = peer
 	multiplayer.peer_connected.connect(_on_peer)
 	multiplayer.peer_disconnected.connect(_on_gone)
@@ -190,6 +197,7 @@ func _world(w: String) -> void:
 	print("ホストのワールドへ移る: ", w)
 	_moving = true
 	boot["world"] = w
+	boot["patient"] = "1"   # ホストもワールドを作り直しているので、つながるまで長めに待つ（start）
 	if not boot.has("join"):   # 引数でつないだとき: 引数を写す（読み直すと引数は残るが、ワールドは boot から足す）
 		boot["join"] = String(main.args.get("join", ""))
 		if main.args.has("port"):
@@ -437,6 +445,8 @@ func _up(pid: int, what: String, ev: Dictionary, at: int) -> void:
 		"emote":
 			main.emotes._apply(ev)
 		"craft":
+			if String(ev.get("kind", "")) in main.craft.HOST_ONLY:
+				return   # 縫い上がり・ボタンが入る・財布を決めるはホストの画面だけが出す
 			if not main.craft.wallets.has(pid):
 				main.craft.join(pid)
 			main.craft._apply(ev)
@@ -578,3 +588,54 @@ func reset_sled() -> void:
 		_sure.rpc_id(1, "_in", ["reset"])
 	else:
 		main.reset_sled()
+
+
+# ---- ホストの操作（設定の「ホストの操作」。host_panel.gd）: 人の場所・財布・ワールド -------------------------------
+
+## ホスト: 来ている人（自分も）の番号と体。[[番号, 体], …]。自分がいちばん上
+func members() -> Array:
+	var out := []
+	if main.player:
+		out.append([int(main.player.id), main.player])
+	for pid in remotes:
+		var r = remotes[pid]
+		if is_instance_valid(r):
+			out.append([int(pid), r])
+	return out
+
+
+## ホスト: その人を at へ移す（yaw は向き。NAN ならそのまま）。自分なら自分の体を、ほかの人ならその人の画面へ頼む
+func host_warp(who: int, at: Vector3, yaw := NAN) -> void:
+	if not is_host():
+		return
+	if main.player and who == int(main.player.id):
+		main.player.warp_to(at, yaw)
+	elif remotes.has(who):
+		_sure.rpc_id(who, "_in", ["warp", at, yaw])
+
+
+## ホスト: 財布のボタンの数を n にする（配り役の出来事で、みんなの画面へ）
+func host_purse(who: int, n: int) -> void:
+	if is_host() and main.craft.wallets.has(who):
+		main.craft.send({"kind": "purse", "who": who, "n": clampi(n, 0, main.craft.PURSE_MAX)})
+
+
+## ホスト: ワールドを替える。つなぐ側へ先に知らせ（それぞれ作り直して、同じ番号へつなぎ直す。_world）、
+## 知らせが出ていくのを少し待ってから、自分もそのワールドでホストを始め直す。工房の持ち物・財布は始め直しになる
+func host_world(w: String) -> void:
+	if not is_host() or _moving or w == main.stage or not w in main.WORLDS:
+		return
+	print("ワールドを替える: ", w)
+	if not remotes.is_empty():
+		_sure.rpc("_in", ["world", w])
+	_moving = true
+	main.save_world(w)
+	var b := {"host": "1", "world": w}
+	if main.args.has("port"):
+		b["port"] = String(main.args["port"])
+	boot = b
+	load("res://start.gd").done = true
+	await get_tree().create_timer(0.5, true, false, true).timeout   # 知らせが届くまで（確かに届く流れ）
+	multiplayer.multiplayer_peer.close()
+	multiplayer.multiplayer_peer = OfflineMultiplayerPeer.new()
+	get_tree().reload_current_scene.call_deferred()

@@ -26,6 +26,7 @@ extends Node
 ##   tag_on    {id, loose}     名札入れの名札を、持ち主のいない名札なしのソリに付けて、持ち主になる（同じく G を長押し）。
 ##                             ロッジのソリ（ロッジの名札が付いている）には付けられない
 ##   profile   {name, color}   自分の名前と、キャラの色（COLORS の番号）を決める（装備の画面）。HUD の札で、人の形の色と頭の上の名前になる
+##   purse     {n}               財布のボタンの数を n にする（ホストだけが出す。設定の「ホストの操作」）
 ##   doll      {doll}          自分の人形（doll.gd の KINDS のどれか）を替える（2 階の衣装掛け）。みんなの画面で、その人の人形が作り直される。
 ##                             入った時にも今の人形で 1 度送る（通信では、あとから来た人もこれでほかの人の人形を知る）
 ##   dye       {doll, colors}  2 階の染め桶で、人形 doll の服を部位ごとに染める。colors は部位ごとの色 4 つ（"rrggbb"。"" はもとの色。
@@ -556,7 +557,8 @@ static func price(item: Dictionary) -> int:
 ## つなぐ側では断られたかがすぐには分からないので true を返し、結果は配られた出来事で知る（断られたら何も起きない）。
 ## ミシンが縫い上げる・ボタンが入るは、ホストの画面が決める（つなぐ側の画面では送らない。見た目は続けてよいので true を返し、
 ## 本物はホストから届く）。調理の装置が仕上げる・米袋がひとりでに帯に戻るは auto（つなぐ側では送らず false。ホストの画面が出す）
-const HOST_ONLY := ["sewn", "earn", "stake"]
+const HOST_ONLY := ["sewn", "earn", "stake", "purse"]
+const PURSE_MAX := 999999   # ホストが決められる財布の上限
 
 func send(ev: Dictionary) -> bool:
 	ev["frame"] = Doll.frame_index() + 1
@@ -1313,6 +1315,11 @@ func _apply(ev: Dictionary) -> bool:
 			if int(ev.get("n", 0)) <= 0 or wallets[who] < int(ev.n):
 				return false
 			wallets[who] -= int(ev.n)
+		"purse":   # ホストが財布のボタンの数を決める（設定の「ホストの操作」。host_panel.gd）
+			var n := int(ev.get("n", -1))
+			if n < 0 or n > PURSE_MAX:
+				return false
+			wallets[who] = n
 		"rack_in":
 			var id := int(ev.get("id", -1))
 			var s: Node3D = sleds.get(id)

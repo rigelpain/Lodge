@@ -665,6 +665,12 @@ func _ready() -> void:
 		settings.lock("cpus", "このワールドにはまだいない")
 	if get_tree().current_scene == self:
 		use_game_pacing()
+	var hp := preload("res://host_panel.gd").new()   # ホストの操作（設定の画面の中。ホストのときだけ出る）
+	hp.name = "HostPanel"
+	hp.main = self
+	hp.net = net
+	hp.settings = settings
+	add_child(hp)
 	if args.has("settings"):   # 確かめ用: 設定画面を開いた状態で始める
 		settings.set_open(true)
 		if player: player.menu_open = true

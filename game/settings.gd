@@ -65,6 +65,7 @@ var _scroll: ScrollContainer
 var _box: VBoxContainer
 var _controls := {}
 var _dragging := ""          # いま動かしているスライダー（メニューの大きさは離してから当てる）
+var host_slot: VBoxContainer # ホストの操作（host_panel.gd が中を作る。ホストのときだけ中身がある）
 var net_note: Label          # 通信の様子（ホストの番号・つないでいる人数）。main.gd が入れる。一人なら空
 var _ghost_cb: CheckButton   # 霊体化（観戦モード）。ITEMS とは別で、保存しない（起動し直すと体に戻っている）
 var _seen_cb: CheckButton    # 霊体のあいだ、ほかの人から見える
@@ -113,6 +114,10 @@ func _build() -> void:
 	title.add_theme_font_size_override("font_size", 20)
 	title.add_theme_color_override("font_color", Color.WHITE)
 	box.add_child(title)
+	# ホストの操作（host_panel.gd）。ゲーム中にすぐ触れるよう、いちばん上
+	host_slot = VBoxContainer.new()
+	host_slot.add_theme_constant_override("separation", 8)
+	box.add_child(host_slot)
 
 	for it in ITEMS:
 		var key: String = it[0]
@@ -260,6 +265,12 @@ func _layout() -> void:
 	_panel.size = _panel.get_combined_minimum_size()
 	_panel.scale = Vector2(k, k)
 	_panel.position = ((view - _panel.size * k) / 2.0).max(Vector2(8, 8))
+
+
+## 中身が変わったとき（ホストの操作の行が増えた・減った）に、大きさを合わせ直す
+func relayout() -> void:
+	if is_open:
+		_layout.call_deferred()
 
 
 ## 設定の画面が画面の上で占める所（px）。hud.gd の操作の札はこの左に置く

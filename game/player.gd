@@ -897,6 +897,35 @@ func get_off() -> void:
 	_keep_above_ground(0.0)
 
 
+## ホストに場所を移された（設定の「ホストの操作」。host_panel.gd → net.gd の "warp"）。ソリ・リフト・席からは離れて、歩く姿で at に立つ。
+## yaw が NAN なら向きはそのまま。乾燥機の中では移さない（false）
+func warp_to(at: Vector3, yaw := NAN) -> bool:
+	if mode == Mode.DRUM:
+		return false
+	match mode:
+		Mode.GRIP, Mode.ROPE:
+			let_go()
+		Mode.RIDE:
+			get_off()
+		Mode.SIT:
+			if lift_chair >= 0:
+				lift_jump()
+			elif seat_i >= 0:
+				stand_up()   # 席を空けたと配る。立つ動きは待たずに、下で歩く姿へ
+	mode = Mode.WALK
+	seat_i = -1
+	lift_chair = -1
+	_lift_wait = false
+	_sit_stage = 0
+	_col.disabled = false
+	global_position = at
+	velocity = Vector3.ZERO
+	if not is_nan(yaw):
+		rotation.y = yaw
+	_keep_above_ground(0.0)
+	return true
+
+
 ## 安全網: 雪面より below (m) 下にいたら、その場の雪の上へ戻す（地面の当たりは厚みのない面なので、下へ出ると戻れない）
 func _keep_above_ground(below: float) -> void:
 	var w := get_parent()
