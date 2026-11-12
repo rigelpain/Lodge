@@ -137,6 +137,11 @@ func _run() -> void:
 			b.queue_free()
 		for w in woods:
 			(w as MultiMeshInstance3D).visibility_range_end = 330.0
+	# 雪面の起伏（asahigaoka/bake_terrain.py の snow_relief）: 雪面すれすれから、陽の当たる向きと横から。--time=15.5 など陽の低い時刻で撮ると影で見える
+	await _look("relief_main", _eye(-150.0, -95.0, 1.2), _eye(-60.0, -40.0, -2.0), 55.0)
+	await _look("relief_across", _eye(-90.0, -150.0, 1.2), _eye(-200.0, -80.0, -4.0), 55.0)
+	await _look("relief_beginner", _eye(-30.0, 40.0, 1.2), _eye(-150.0, 62.0, 4.0), 55.0)
+	await _look("relief_high", Vector3(-40.0, _y(-120.0, -90.0) + 45.0, -10.0), _eye(-150.0, -110.0, 0.0), 55.0)
 	# V 字の坂: ロッジの前から西を見る（右が主コース、左が初級コースとそりコース、あいだに林の島）
 	await _look("v_lodge", _eye(96.0, 28.0, 2.4), _eye(-110.0, -15.0, 22.0), 80.0)
 	await _look("v_plaza", _eye(62.0, 36.0, 1.7), _eye(-120.0, -20.0, 25.0), 85.0)
