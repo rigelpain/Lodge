@@ -251,7 +251,8 @@ func _host() -> void:
 
 
 func _join() -> void:
-	var ip := _ip.text.strip_edges()
+	var ip := plain_number(_ip.text)
+	_ip.text = ip
 	var cf := ConfigFile.new()
 	cf.set_value("net", "last", ip)
 	cf.save(NET_CFG)
@@ -273,6 +274,22 @@ func _go(a: Dictionary) -> void:
 	await get_tree().process_frame   # 砂時計を描いてから
 	await get_tree().process_frame
 	get_tree().reload_current_scene()
+
+
+## 打った番号を、つなげる形に直す。日本語入力のまま打つと「１００．６４」「100。64」のような全角や句点になり、
+## つなぐ前にしくじって、すぐ × が出ていた（2026-11-13）。全角の英数字・記号は半角に、句点・読点は点に、空白と見えない字は抜く
+static func plain_number(s: String) -> String:
+	var out := ""
+	for i in s.length():
+		var c := s.unicode_at(i)
+		if c >= 0xFF01 and c <= 0xFF5E:   # 全角の ！〜～ → 半角
+			c -= 0xFEE0
+		elif c in [0x3002, 0xFF61, 0x3001, 0xFF64]:   # 。｡、､
+			c = 0x2E
+		elif c <= 0x20 or c == 0x3000 or c in [0x200B, 0x200C, 0x200D, 0xFEFF, 0x00A0]:   # 空白・見えない字
+			continue
+		out += String.chr(c)
+	return out
 
 
 func _last_ip() -> String:
