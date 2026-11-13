@@ -32,6 +32,8 @@ function paint() {
     loadHistory();
   } else if (page === 'playtest') {
     loadPlaytest();
+  } else if (page === 'steam') {
+    loadSteam();
   } else render(data);
 }
 
@@ -298,6 +300,21 @@ function loadPlaytest() {
     .catch((e) => {
       $('main').insertAdjacentHTML('afterbegin', `<p class="tile in" style="grid-column:span 12" role="alert">テストプレイのページを読めませんでした（${esc(e.message)}）。</p>`);
     });
+}
+
+// Steam で出す: 中身は steam.html に書いてある。App ID があれば管理画面のリンクをその画面へ向ける
+function loadSteam() {
+  once('link', { rel: 'stylesheet', href: 'steam.css?v=1' }).then(() => {
+    const id = data.steam && data.steam.appid;
+    document.querySelectorAll('[data-page="steam"] a[data-app]').forEach((a) => {
+      if (id) a.href = `https://partner.steamgames.com${a.dataset.app}${id}`;
+      a.classList.toggle('no-id', !id);
+    });
+    if (id) $('st-appid').textContent = `App ID は ${id}。「管理画面」のリンクは、Lodge のその画面へ直に開きます。`;
+    reveal();
+  }).catch((e) => {
+    $('main').insertAdjacentHTML('afterbegin', `<p class="tile in" style="grid-column:span 12" role="alert">Steam のページを読めませんでした（${esc(e.message)}）。</p>`);
+  });
 }
 
 // ページの行き来: 読み込み直さず、相手のページの main だけ取ってきて差し替える
