@@ -725,6 +725,11 @@ func _ready() -> void:
 		settings.lock("cpus", "このワールドにはまだいない")
 	if get_tree().current_scene == self:
 		use_game_pacing()
+		if preload("res://spec.gd").wanted():   # 起動のときの診断（このパソコンに画質を合わせる。真っ暗なら描き方を替える）
+			var sp := preload("res://spec.gd").new()
+			sp.name = "Spec"
+			sp.main = self
+			add_child(sp)
 	var hp := preload("res://host_panel.gd").new()   # ホストの操作（設定の画面の中。ホストのときだけ出る）
 	hp.name = "HostPanel"
 	hp.main = self
@@ -1182,8 +1187,53 @@ func _fit_3d_scale() -> void:
 	var k := clampf(user * clampf(SCALE_3D_HEIGHT / maxf(vp.size.y, 1.0), 0.5, 1.0), 0.25, 1.0)
 	if args.has("scale3d"):
 		k = clampf(float(args["scale3d"]), 0.25, 1.0)
-	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if k < 1.0 else Viewport.SCALING_3D_MODE_BILINEAR
+	var gabi: bool = settings != null and settings.values.get("gabi", false)
+	if gabi:   # 縦 GABI_H px の粒で描く。Godot の 3D の縮めは 1/4 までなので、大きな画面ではそれより細かく描いて、粒は _gabi_layer でそろえる
+		k = clampf(float(_gabi_h()) / maxf(vp.size.y, 1.0), 0.25, 1.0)
+	var fsr := k < 1.0 and not gabi and RenderingServer.get_current_rendering_method() != "gl_compatibility"
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if fsr else Viewport.SCALING_3D_MODE_BILINEAR
 	vp.scaling_3d_scale = k
+	vp.mesh_lod_threshold = 4.0 if gabi else 1.0   # 粒が荒いので、形も粗くてよい
+	_sync_gabi_layer(gabi, vp.size)
+
+
+## ガビガビ（settings.gd の gabi）: 3D を縦 GABI_H px の粒で描く。3D のすぐ上（HUD より下）に、画面の絵を粒のます目にそろえる 1 枚を置く。
+## 3D は粒と同じか少し細かい大きさで描いてなめらかに広げてあるので、ます目の真ん中を読めば、その粒の色そのものになる。HUD はくっきりのまま
+const GABI_H := 270
+const GABI_SHADER := """
+shader_type canvas_item;
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear, repeat_disable;
+uniform vec2 grid = vec2(480.0, 270.0);
+void fragment() {
+	COLOR = vec4(texture(screen_tex, (floor(SCREEN_UV * grid) + 0.5) / grid).rgb, 1.0);
+}
+"""
+var _gabi_layer: CanvasLayer
+
+## 粒の縦の数。確かめ用: --gabi-h=数 で替える
+func _gabi_h() -> int:
+	return int(args.get("gabi-h", GABI_H))
+
+func _sync_gabi_layer(on: bool, size: Vector2i) -> void:
+	if on and _gabi_layer == null:
+		_gabi_layer = CanvasLayer.new()
+		_gabi_layer.name = "Gabi"
+		_gabi_layer.layer = -100   # どの HUD よりも下（3D を描いたすぐあと）
+		var r := ColorRect.new()
+		r.set_anchors_preset(Control.PRESET_FULL_RECT)
+		r.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var sh := Shader.new()
+		sh.code = GABI_SHADER
+		var m := ShaderMaterial.new()
+		m.shader = sh
+		r.material = m
+		_gabi_layer.add_child(r)
+		add_child(_gabi_layer)
+	if _gabi_layer == null:
+		return
+	_gabi_layer.visible = on
+	var rect := _gabi_layer.get_child(0) as ColorRect
+	(rect.material as ShaderMaterial).set_shader_parameter("grid", Vector2(roundf(_gabi_h() * float(size.x) / maxf(size.y, 1.0)), _gabi_h()))
 
 
 ## 小窓の面の環境: 本体の環境の写しから、160 px の面では見えない重いもの（陰・色の照り返し・光のにじみ・空気の厚み）を抜く
@@ -2469,7 +2519,7 @@ func _apply_setting(key: String, v) -> void:
 			if player: player.base_fov = v
 		"sens":
 			if player: player.mouse_sens = v
-		"scale":
+		"scale", "gabi":
 			_fit_h = -1   # 窓の大きさの縮めとかけ合わせて当て直す（_fit_3d_scale）
 			_fit_3d_scale()
 		"vsync":
