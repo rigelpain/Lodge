@@ -30,6 +30,8 @@ function paint() {
     loadDecisions();
   } else if (page === 'history') {
     loadHistory();
+  } else if (page === 'playtest') {
+    loadPlaytest();
   } else render(data);
 }
 
@@ -284,6 +286,17 @@ function loadHistory() {
   ]).then(([, , h]) => { window.renderHistory(h); reveal(); })
     .catch((e) => {
       $('main').insertAdjacentHTML('afterbegin', `<p class="tile in" style="grid-column:span 12" role="alert">軌跡を読めませんでした（${esc(e.message)}）。</p>`);
+    });
+}
+
+// テストプレイ: 版の一覧は playtest.js が GitHub Releases から読む
+function loadPlaytest() {
+  Promise.all([
+    once('link', { rel: 'stylesheet', href: 'playtest.css?v=2' }),
+    once('script', { src: 'playtest.js?v=1' }),
+  ]).then(() => window.renderPlaytest()).then(reveal)
+    .catch((e) => {
+      $('main').insertAdjacentHTML('afterbegin', `<p class="tile in" style="grid-column:span 12" role="alert">テストプレイのページを読めませんでした（${esc(e.message)}）。</p>`);
     });
 }
 

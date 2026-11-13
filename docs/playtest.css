@@ -1,0 +1,69 @@
+/* テストプレイのページ。色と寸法は index.css の決まりを使う */
+.pt-hero { grid-column: span 7; }
+.pt-dl { grid-column: span 5; }
+.pt-steps { grid-column: span 12; }
+.pt-notes { grid-column: span 7; }
+.pt-help { grid-column: span 5; }
+.pt-keys, .pt-old { grid-column: span 6; }
+.pt-make { grid-column: span 12; }
+@media (max-width: 1100px) { .pt-hero, .pt-dl { grid-column: span 12; } .pt-notes, .pt-help { grid-column: span 6; } }
+@media (max-width: 680px) { [data-page="playtest"] > * { grid-column: span 12; } }
+
+[data-page="playtest"] code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.92em; padding: 0.05em 0.35em; border-radius: 6px; background: rgba(255, 255, 255, 0.6); overflow-wrap: anywhere; }
+[data-page="playtest"] a code { background: none; padding: 0; }
+
+/* いちばん新しい版 */
+.pt-dl { display: flex; flex-direction: column; }
+.pt-wait { color: var(--ink-2); }
+.pt-ver { display: flex; align-items: center; gap: 0.6em; line-height: 1; margin-bottom: clamp(14px, 1.6vw, 22px); }
+.pt-ver .num { font-size: var(--t-num); font-weight: 800; letter-spacing: -0.05em; }
+.pt-ver-sub { font-size: var(--t-xs); color: var(--ink-2); line-height: 1.7; }
+.pt-gets { display: grid; gap: 10px; }
+.pt-get { display: flex; flex-direction: column; gap: 2px; padding: 14px 20px; min-height: 56px; border-radius: 20px; text-decoration: none; color: var(--ink); background: rgba(255, 255, 255, 0.75); box-shadow: 0 1px 3px rgba(30, 50, 110, 0.15), inset 0 1px 0 #fff; transition: transform 200ms var(--ease), box-shadow 200ms var(--ease); }
+.pt-get:hover { transform: translateY(-1px); }
+.pt-get.main { background: var(--coral); color: #fff; box-shadow: 0 0 0 5px var(--coral-soft), 0 6px 16px -4px rgba(255, 79, 48, 0.5); order: -1; }
+.pt-get-os { font-weight: 800; font-size: var(--t-m); }
+.pt-get-os::before { content: "↓ "; }
+.pt-get-sub { font-size: var(--t-xs); opacity: 0.8; }
+
+/* 参加のしかた: 3 枚のカード */
+.pt-step-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--gap); }
+@media (max-width: 1100px) { .pt-step-list { grid-template-columns: 1fr; } }
+.pt-step { padding: 16px 18px 18px; border-radius: 22px; background: rgba(255, 255, 255, 0.4); box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9); border: 1.5px dashed rgba(20, 28, 54, 0.18); }
+.pt-no { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 50%; background: var(--navy); color: #fff; font-weight: 800; margin-bottom: 8px; box-shadow: 0 2px 8px rgba(42, 82, 180, 0.35); }
+.pt-step h3 { font-size: var(--t-m); font-weight: 700; margin: 0 0 0.6em; display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2em 0.6em; }
+.pt-step h3 small { font-size: var(--t-xs); font-weight: 500; color: var(--ink-2); }
+.pt-how { list-style: decimal; padding-left: 1.4em; display: grid; gap: 0.45em; font-size: var(--t-s); line-height: 1.6; }
+.pt-how[hidden] { display: none; }
+.pt-how li::marker { color: var(--ink-3); font-weight: 700; }
+.pt-lead { font-size: var(--t-s); line-height: 1.6; margin: 0.4em 0; }
+.pt-os { display: inline-flex; gap: 4px; padding: 4px; margin-bottom: 0.8em; border-radius: 999px; background: rgba(255, 255, 255, 0.45); box-shadow: inset 0 1px 2px rgba(30, 50, 110, 0.12); }
+.pt-os-btn { border: 0; font: inherit; font-weight: 700; font-size: var(--t-xs); color: var(--ink-2); background: none; border-radius: 999px; padding: 0 16px; min-height: 34px; cursor: pointer; }
+.pt-os-btn[aria-pressed="true"] { background: rgba(255, 255, 255, 0.95); color: var(--ink); box-shadow: 0 2px 6px rgba(30, 50, 110, 0.15); }
+.pt-os-btn:focus-visible, .pt-copy:focus-visible, .pt-get:focus-visible, .pt-faq summary:focus-visible { outline: 2px solid var(--coral); outline-offset: 2px; }
+.pt-cards { display: grid; gap: 8px; margin: 0.6em 0; }
+.pt-cards > div { padding: 8px 12px; border-radius: 14px; background: rgba(255, 255, 255, 0.55); }
+.pt-cards > div.host { box-shadow: inset 3px 0 0 var(--coral); }
+.pt-cards > div.join { box-shadow: inset 3px 0 0 var(--navy); }
+.pt-cards dt { font-size: var(--t-xs); font-weight: 700; color: var(--ink-2); }
+.pt-cards dd { margin: 0; font-size: var(--t-s); line-height: 1.55; }
+
+/* 写せるコマンド */
+.pt-code { display: flex; align-items: center; gap: 8px; margin: 0.5em 0; padding: 6px 6px 6px 12px; border-radius: 14px; background: rgba(20, 28, 54, 0.82); color: #fff; }
+.pt-code code { flex: 1; min-width: 0; background: none; padding: 0; color: #fff; font-size: var(--t-xs); }
+.pt-copy { flex: none; border: 0; font: inherit; font-weight: 700; font-size: var(--t-xs); min-height: 32px; padding: 0 12px; border-radius: 999px; color: var(--ink); background: rgba(255, 255, 255, 0.9); cursor: pointer; }
+
+/* 困ったとき */
+.pt-faq details { border-top: 1px solid rgba(255, 255, 255, 0.55); }
+.pt-faq details:first-child { border-top: 0; }
+.pt-faq summary { cursor: pointer; font-weight: 700; padding: 0.6em 0; min-height: 44px; display: flex; align-items: center; }
+.pt-faq ul { list-style: disc; padding: 0 0 0.8em 1.3em; display: grid; gap: 0.35em; font-size: var(--t-xs); line-height: 1.65; color: var(--ink-2); }
+
+/* 操作 */
+.pt-keylist > div { display: grid; grid-template-columns: 9em minmax(0, 1fr); gap: 12px; align-items: baseline; padding: 0.45em 0; }
+.pt-keylist > div + div { border-top: 1px solid rgba(255, 255, 255, 0.55); }
+.pt-keylist dd { margin: 0; font-size: var(--t-s); }
+kbd { display: inline-block; min-width: 1.9em; text-align: center; padding: 0.1em 0.45em; margin-right: 3px; border-radius: 7px; font: 700 var(--t-xs) "Manrope", "Noto Sans JP", sans-serif; background: rgba(255, 255, 255, 0.9); box-shadow: 0 2px 0 rgba(30, 50, 110, 0.18), inset 0 1px 0 #fff; }
+
+.pt-make p { font-size: var(--t-s); max-width: 60em; }
+.pt-make .pt-code { max-width: 60em; }

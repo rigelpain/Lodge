@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lodge テストプレイ</title>
+<meta name="description" content="Lodge のテストプレイの配り場所。いちばん新しい版のダウンロードと、友達の雪山へつなぐまでの手順、困ったときの見どころ。">
+<meta name="color-scheme" content="light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="index.css?v=8">
+<link rel="stylesheet" href="playtest.css?v=2">
+</head>
+<body>
+<a class="skip" href="#main">本文へ移る</a>
+
+<nav class="tabs" aria-label="ページ">
+  <a href="./" data-page="all">全体</a>
+  <a href="history.html" data-page="history">軌跡</a>
+  <a href="art.html" data-page="art">アート</a>
+  <a href="sound.html" data-page="sound">音</a>
+  <a href="layout.html" data-page="layout">間取り</a>
+  <a href="decisions.html" data-page="decisions">判断</a>
+  <a href="playtest.html" data-page="playtest" aria-current="page">テスト</a>
+</nav>
+
+<!-- テストプレイ: 配り場所と参加のしかた。版の一覧は GitHub Releases から playtest.js が読む -->
+<main id="main" class="grid" data-page="playtest">
+  <header class="tile hero pt-hero" aria-labelledby="pt-goal">
+    <p class="kicker">テストプレイ<span class="dot" aria-hidden="true"></span>新しい版が出ると、このページも替わります</p>
+    <h1 id="pt-goal">ダウンロードして、友達の雪山へつなぐ</h1>
+    <p class="pitch">一人が「ホスト」になり、ほかの人はホストに「つなぎ」ます。サーバーは要りません。8 人まで一緒に遊べます。遊ぶ前に、みんな同じ版にそろえてください。</p>
+  </header>
+
+  <section class="tile pt-dl" aria-labelledby="pt-dl-h">
+    <h2 id="pt-dl-h">いちばん新しい版</h2>
+    <div id="pt-latest" aria-live="polite"><p class="pt-wait">版の一覧を読んでいます…</p></div>
+  </section>
+
+  <section class="tile pt-steps" aria-labelledby="pt-steps-h">
+    <h2 id="pt-steps-h">参加のしかた</h2>
+    <ol class="pt-step-list">
+      <li class="pt-step">
+        <p class="pt-no num">1</p>
+        <h3>ゲームを入れる</h3>
+        <div class="pt-os" role="group" aria-label="パソコンの種類">
+          <button type="button" class="pt-os-btn" data-os="win" aria-pressed="true">Windows</button>
+          <button type="button" class="pt-os-btn" data-os="mac" aria-pressed="false">Mac</button>
+        </div>
+        <ol class="pt-how" data-os="win">
+          <li><code>Lodge-windows.zip</code> を右クリックして「すべて展開」。</li>
+          <li>展開したフォルダの <code>Lodge.exe</code> をダブルクリック。</li>
+          <li>青い画面「PC が保護されました」が出たら「詳細情報」→「実行」（署名のない手作りのゲームなので出ます）。</li>
+          <li>ファイアウォールの画面では「プライベート ネットワーク」にチェックを入れて「許可」。<b>ホストになる人は、ここで許可しないと友達がつなげません。</b></li>
+        </ol>
+        <ol class="pt-how" data-os="mac" hidden>
+          <li>Apple シリコン（M1 以降）の Mac で動きます。「この Mac について」の「チップ」が「Apple M…」なら大丈夫です。</li>
+          <li><code>Lodge-mac.zip</code> をダブルクリックして展開し、<code>Lodge.app</code> を「アプリケーション」へ移す。</li>
+          <li><code>Lodge.app</code> を control を押しながらクリック →「開く」→ もう一度「開く」。</li>
+          <li>それでも開けないときは「システム設定」→「プライバシーとセキュリティ」の下の「このまま開く」。だめならターミナルで:
+            <div class="pt-code"><code>xattr -cr /Applications/Lodge.app</code><button type="button" class="pt-copy" data-copy="xattr -cr /Applications/Lodge.app">写す</button></div>
+          </li>
+        </ol>
+      </li>
+      <li class="pt-step">
+        <p class="pt-no num">2</p>
+        <h3>Tailscale でつなぐ準備<small>はじめの 1 回だけ</small></h3>
+        <ol class="pt-how">
+          <li>みんな <a href="https://tailscale.com/download">Tailscale</a> を入れて起動し、Google などのアカウントでログイン（無料）。</li>
+          <li><b>ホストになる人</b>は <a href="https://login.tailscale.com/admin/machines">管理画面</a> で、自分のパソコンの行の「…」→「Share…」から友達のメールアドレスへ共有。</li>
+          <li><b>友達</b>は届いた招待を開いて「Accept」。</li>
+          <li>Tailscale のアイコン（Windows は右下、Mac は右上）が「Connected」なら準備できています。</li>
+        </ol>
+      </li>
+      <li class="pt-step">
+        <p class="pt-no num">3</p>
+        <h3>遊ぶ</h3>
+        <p class="pt-lead">起動すると、雪山に紙の札が 3 枚吊るしてあります。</p>
+        <dl class="pt-cards">
+          <div><dt>左の札</dt><dd>一人で遊ぶ（仲間は CPU）</dd></div>
+          <div class="host"><dt>まんなかの札</dt><dd><b>ホストになる</b>。下に出る <code>100.</code> で始まる番号を友達に教えます。右の二枚重ねの紙を押すと番号を写せます</dd></div>
+          <div class="join"><dt>右の札</dt><dd><b>つなぐ</b>。ホストの番号を欄に打ち、赤い「＞」を押します</dd></div>
+        </dl>
+        <p class="pt-lead">ホストが先にまんなかの札を押して待ちます。砂時計が出ているあいだはつないでいるところ。つながると雪山に立ちます。</p>
+      </li>
+    </ol>
+  </section>
+
+  <section class="tile pt-notes" aria-labelledby="pt-notes-h">
+    <h2 id="pt-notes-h">この版で変わったこと</h2>
+    <ul class="list" id="pt-notes"></ul>
+  </section>
+
+  <section class="tile pt-help" aria-labelledby="pt-help-h">
+    <h2 id="pt-help-h">困ったとき</h2>
+    <div class="pt-faq">
+      <details>
+        <summary>つながらない（家に赤い × が出る）</summary>
+        <ul>
+          <li>番号の打ち間違いがないか、ホストの札の番号と見比べる。</li>
+          <li>ホストがまんなかの札を押して、雪山に立っているか。</li>
+          <li>二人とも Tailscale が「Connected」か。友達はホストの共有を「Accept」したか。</li>
+          <li>ホストが Windows なら、ファイアウォールで Lodge の「プライベート」を許可しているか（「Windows セキュリティ」→「ファイアウォールとネットワーク保護」→「ファイアウォールによるアプリケーションの許可」）。</li>
+          <li>使うのは UDP の 24680 番。会社や学校のネットでは通らないことがあります。</li>
+          <li>みんな同じ版か（上の日付とコミットを見比べる）。</li>
+        </ul>
+      </details>
+      <details>
+        <summary>途中で切れた</summary>
+        <ul><li>ホストがゲームを閉じると、みんなスタート画面に戻ります。ホストがもう一度まんなかの札を押し、みんなつなぎ直してください。</li></ul>
+      </details>
+      <details>
+        <summary>かくかくする・重い</summary>
+        <ul>
+          <li>Esc の設定の「3D の描画の解像度（軽さ）」を下げると軽くなります。</li>
+          <li>設定の「確かめ用の数字（fps・通信）」を入れると、左上に通信の往復の時間（ms）が出ます。100 ms を大きく超えるなら、Wi-Fi から有線にすると良くなることがあります。</li>
+        </ul>
+      </details>
+      <details>
+        <summary>Windows で、HUD は出るのに景色が真っ暗</summary>
+        <ul>
+          <li>起動して数秒で、ゲームが自分で描き方を替えて起動し直します（一度ウィンドウが閉じて、また開きます）。</li>
+          <li>それでも真っ暗なら <code>%APPDATA%\Godot\app_userdata\Lodge\logs\godot.log</code> を送ってください。</li>
+        </ul>
+      </details>
+      <details>
+        <summary>ほかの人の画面と違う</summary>
+        <ul>
+          <li>斜面の雪のボタンは、それぞれの画面で切れます（財布に入るのはホストが決めた分だけ）。</li>
+          <li>同時に同じ席へ座ると、二人が同じ席に座れてしまうことがあります。</li>
+        </ul>
+      </details>
+    </div>
+    <p class="cap">気づいたことは、スクリーンショットと一緒に教えてください。くわしい手引きは <a href="https://github.com/rigelpain/Lodge/blob/main/docs/playtest-online.md">playtest-online.md</a>。</p>
+  </section>
+
+  <section class="tile pt-keys" aria-labelledby="pt-keys-h">
+    <h2 id="pt-keys-h">おもな操作</h2>
+    <dl class="pt-keylist">
+      <div><dt><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></dt><dd>歩く・ソリをつかんでいるときは押す</dd></div>
+      <div><dt><kbd>Shift</kbd></dt><dd>走る</dd></div>
+      <div><dt><kbd>Space</kbd></dt><dd>跳ぶ</dd></div>
+      <div><dt><kbd>F</kbd></dt><dd>ソリの縁をつかむ・紐を持つ・手を離す</dd></div>
+      <div><dt><kbd>E</kbd></dt><dd>ソリに乗る・降りる</dd></div>
+      <div><dt><kbd>C</kbd></dt><dd>自分の姿が見える視点に切り替える</dd></div>
+      <div><dt><kbd>Tab</kbd></dt><dd>身ぶりの輪（手を掲げる・声）</dd></div>
+      <div><dt><kbd>1</kbd>〜<kbd>7</kbd></dt><dd>身ぶりと声（ハイタッチは向かい合って高い手のひら）</dd></div>
+      <div><dt><kbd>左クリック</kbd></dt><dd>雪玉を投げる（押しているあいだ振りかぶる）</dd></div>
+      <div><dt><kbd>Esc</kbd></dt><dd>設定。下にホストの番号と来ている人の数</dd></div>
+    </dl>
+  </section>
+
+  <section class="tile pt-old" aria-labelledby="pt-old-h">
+    <h2 id="pt-old-h">前の版</h2>
+    <ol class="list" id="pt-old"></ol>
+    <p class="cap"><a href="https://github.com/rigelpain/Lodge/releases">GitHub の Releases</a> にすべての版があります。</p>
+  </section>
+
+  <section class="tile pt-make" aria-labelledby="pt-make-h">
+    <h2 id="pt-make-h">作る人向け: 新しい版を配る</h2>
+    <p>書きかけが混ざらないよう、まっさらな作業場で書き出してから、Releases に載せます。載せるとこのページに出ます（zip を一人ずつ渡さなくてよい）。</p>
+    <div class="pt-code"><code>git worktree add ../Lodge-release origin/main</code><button type="button" class="pt-copy" data-copy="git worktree add ../Lodge-release origin/main">写す</button></div>
+    <div class="pt-code"><code>cd ../Lodge-release &amp;&amp; ./build_release.sh &amp;&amp; ./publish_playtest.sh</code><button type="button" class="pt-copy" data-copy="cd ../Lodge-release &amp;&amp; ./build_release.sh &amp;&amp; ./publish_playtest.sh">写す</button></div>
+    <p class="cap"><code>publish_playtest.sh</code> は <code>build/</code> のいちばん新しい zip を <code>playtest-&lt;日付&gt;-&lt;コミット&gt;</code> の版として載せ、前の版からのコミットを「変わったこと」に書きます。前に作った zip なら <code>./publish_playtest.sh build/2026-11-13-42403e1</code> のように場所を渡します。</p>
+  </section>
+</main>
+
+<script src="index.js?v=10"></script>
+</body>
+</html>
