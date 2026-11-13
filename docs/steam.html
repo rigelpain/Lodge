@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Lodge を Steam で出す</title>
+<meta name="description" content="Lodge を Steam で発売するまでの手続きの順番と、それぞれの公式ページ・管理画面へのリンク。">
+<meta name="color-scheme" content="light">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;800&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="index.css?v=8">
+<link rel="stylesheet" href="steam.css?v=1">
+</head>
+<body>
+<a class="skip" href="#main">本文へ移る</a>
+
+<nav class="tabs" aria-label="ページ">
+  <a href="./" data-page="all">全体</a>
+  <a href="history.html" data-page="history">軌跡</a>
+  <a href="art.html" data-page="art">アート</a>
+  <a href="sound.html" data-page="sound">音</a>
+  <a href="layout.html" data-page="layout">間取り</a>
+  <a href="decisions.html" data-page="decisions">判断</a>
+  <a href="playtest.html" data-page="playtest">テスト</a>
+  <a href="steam.html" data-page="steam" aria-current="page">Steam</a>
+</nav>
+
+<!-- Steam で出す: 手続きの順番と公式のリンク。App ID が決まったら data.json の steam.appid に入れると、管理画面のリンクが直に開く -->
+<main id="main" class="grid" data-page="steam">
+  <header class="tile hero st-hero" aria-labelledby="st-goal">
+    <p class="kicker">発売までの手続き<span class="dot" aria-hidden="true"></span>2026年11月13日に Steamworks の公式文書で確かめた</p>
+    <h1 id="st-goal">Lodge を Steam で出す</h1>
+    <p class="pitch">「ストアページ」と「ゲーム本体（ビルド）」の 2 つを並べて進め、両方の審査が通ってから、自分で発売のボタンを押します。承認されても勝手には発売されません。</p>
+    <p class="cap" id="st-appid">App ID はまだありません。手数料を払うともらえます。<code>data.json</code> の <code>steam.appid</code> に入れると、下の「管理画面」のリンクがその画面へ直に開きます。</p>
+  </header>
+
+  <section class="tile st-time" aria-labelledby="st-time-h">
+    <h2 id="st-time-h">待つ日数</h2>
+    <ul class="st-days">
+      <li><span class="num">30</span><span class="st-u">日まで</span><span class="st-what">税の確認。そのあいだ税の情報は直せない</span></li>
+      <li><span class="num">21</span><span class="st-u">日</span><span class="st-what">最初の数本は、手数料を払ってから発売まで空ける</span></li>
+      <li><span class="num">3–5</span><span class="st-u">営業日</span><span class="st-what">ストアページの審査。7 営業日前には出す</span></li>
+      <li><span class="num">14</span><span class="st-u">日</span><span class="st-what">Coming Soon で公開しておく最短の期間</span></li>
+      <li><span class="num">3–5</span><span class="st-u">営業日</span><span class="st-what">ビルドの審査。こちらも 7 営業日みる</span></li>
+    </ul>
+    <p class="cap">手数料を払ってから、少なくとも 1 か月半はみておく。審査は初回だけで、そのあとの更新は審査なし。</p>
+  </section>
+
+  <section class="tile st-steps" aria-labelledby="st-steps-h">
+    <h2 id="st-steps-h">順番</h2>
+    <ol class="st-step-list">
+      <li class="st-step">
+        <p class="st-no num">1</p>
+        <h3>パートナー登録と手数料<small>一度だけ</small></h3>
+        <ul class="st-how">
+          <li>Steam のアカウントでサインインして登録。本人確認、銀行口座、税の質問（日本に住む人は W-8BEN にあたるもの）に答える。</li>
+          <li>アプリ 1 本ごとに 100 ドルの手数料。返金はなし。売上が 1,000 ドルを超えると戻る。払えるのは管理者の権限の人だけ。</li>
+        </ul>
+        <ul class="st-links">
+          <li><a href="https://partner.steamgames.com/steamdirect">Steam Direct（登録の入口）</a></li>
+          <li><a href="https://partner.steamgames.com/doc/gettingstarted/onboarding">登録の流れ（Onboarding）</a></li>
+          <li><a href="https://partner.steamgames.com/doc/gettingstarted/appfee">手数料（Steam Direct Fee）</a></li>
+          <li><a href="https://partner.steamgames.com/doc/gettingstarted/documents">本人確認の書類のこつ</a></li>
+          <li><a href="https://partner.steamgames.com/doc/finance/taxfaq">税の FAQ</a></li>
+          <li><a href="https://partner.steamgames.com/doc/gettingstarted/faq">登録の FAQ</a></li>
+        </ul>
+      </li>
+
+      <li class="st-step">
+        <p class="st-no num">2</p>
+        <h3>アップロード用のアカウント</h3>
+        <ul class="st-how">
+          <li>管理者のアカウントとは別に、アップロード用の Steam アカウントを作り、「Edit App Metadata」と「Publish App Changes To Steam」だけを付ける。</li>
+          <li>Coming Soon の公開と発売には「Manage pricing and discounts」も要る。</li>
+          <li>発売後にビルドを反映するとき、モバイル認証か SMS の確認が来る。メールや電話番号を変えると 3 日反映できないので、発売の直前に触らない。</li>
+        </ul>
+        <ul class="st-links">
+          <li><a href="https://partner.steamgames.com/doc/gettingstarted/managing_users">アカウントと権限</a></li>
+          <li><a href="https://store.steampowered.com/mobile">Steam モバイルアプリ（認証）</a></li>
+        </ul>
+      </li>
+
+      <li class="st-step">
+        <p class="st-no num">3</p>
+        <h3>アプリの設定</h3>
+        <ul class="st-how">
+          <li>起動の設定: OS ごとに実行ファイルを指定。Mac は <code>Lodge.app</code> を指す。</li>
+          <li>デポ（ファイルを入れる箱）を作り、「Developer Comp」のパッケージに入れる。入れないと自分のアカウントで遊べない。</li>
+          <li>最後に必ず「Publish」。忘れるとアップロードが失敗する。</li>
+        </ul>
+        <p class="st-sub">管理画面</p>
+        <ul class="st-links">
+          <li><a data-app="/apps/landing/" href="https://partner.steamgames.com/">アプリのトップ</a></li>
+          <li><a data-app="/apps/config/" href="https://partner.steamgames.com/">起動の設定（Installation）</a></li>
+          <li><a data-app="/apps/depots/" href="https://partner.steamgames.com/">デポ</a></li>
+          <li><a data-app="/apps/associated/" href="https://partner.steamgames.com/">パッケージ（Associated Packages &amp; DLC）</a></li>
+          <li><a data-app="/apps/publishing/" href="https://partner.steamgames.com/">設定の公開（Publish）</a></li>
+        </ul>
+        <p class="st-sub">説明</p>
+        <ul class="st-links">
+          <li><a href="https://partner.steamgames.com/doc/store/application/depots">デポ</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/application/packages">パッケージ</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/application/platforms">対応 OS</a></li>
+        </ul>
+      </li>
+
+      <li class="st-step">
+        <p class="st-no num">4</p>
+        <h3>ストアページを作って審査</h3>
+        <ul class="st-how">
+          <li>カプセル画像、説明、タグ、トレーラー、必要スペックを入れる。</li>
+          <li>Content Survey（内容の申告）に答える。プレイヤーに届く絵・音・文に生成 AI で作ったものがあれば申告する。作業を速めるのに使っただけなら書かない。承認後は直せない項目がある。</li>
+          <li>「Mark as ready for review」→ 承認されたら「Post as Coming Soon」で公開。押すまで公開されず、2 週間の数えも始まらない。</li>
+          <li>早期アクセスで出すなら、ここで早期アクセスの質問にも答える。</li>
+        </ul>
+        <p class="st-sub">管理画面</p>
+        <ul class="st-links">
+          <li><a data-app="/admin/game/edit/" href="https://partner.steamgames.com/">ストアページの編集</a></li>
+        </ul>
+        <p class="st-sub">説明</p>
+        <ul class="st-links">
+          <li><a href="https://partner.steamgames.com/doc/store/page">ストアページの作り方</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/assets/standard">ストアの画像の寸法</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/assets/rules">画像の決まり</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/trailer">トレーラー</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/tags">タグ</a></li>
+          <li><a href="https://partner.steamgames.com/doc/gettingstarted/contentsurvey">Content Survey（内容の申告）</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/earlyaccess">早期アクセス</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/pricing">値段のつけ方</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/release_dates">発売日の出し方</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/coming_soon">Coming Soon</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/localization">言語の設定</a></li>
+        </ul>
+      </li>
+
+      <li class="st-step">
+        <p class="st-no num">5</p>
+        <h3>ビルドを上げて試す</h3>
+        <ul class="st-how">
+          <li>Steamworks SDK を入れ、Godot で書き出したものを <code>tools/ContentBuilder/content/</code> に置く。</li>
+          <li><code>app_build_&lt;App ID&gt;.vdf</code> に、どのファイルをどのデポに入れるかを書き、<code>steamcmd</code> で上げる。先に <code>"Preview" "1"</code> で中身だけ確かめると安全。</li>
+          <li>上げただけでは配られない。ビルドの画面で、まずパスワードを付けたベータのブランチに反映して、自分の Steam で遊んで確かめる。</li>
+        </ul>
+        <p class="st-sub">管理画面</p>
+        <ul class="st-links">
+          <li><a href="https://partner.steamgames.com/downloads/list">Steamworks SDK のダウンロード</a></li>
+          <li><a data-app="/apps/builds/" href="https://partner.steamgames.com/">ビルドの一覧と反映</a></li>
+        </ul>
+        <p class="st-sub">説明</p>
+        <ul class="st-links">
+          <li><a href="https://partner.steamgames.com/doc/sdk/uploading">Steam へのアップロード（SteamPipe）</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/application/builds">ビルド</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/application/branches">ベータのブランチ</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/testing">Steam での試し方</a></li>
+          <li><a href="https://partner.steamgames.com/doc/features/playtest">Steam Playtest（発売前の試遊）</a></li>
+        </ul>
+      </li>
+
+      <li class="st-step">
+        <p class="st-no num">6</p>
+        <h3>ビルドの審査と発売</h3>
+        <ul class="st-how">
+          <li>出せるのはストアページを出したあと。<code>default</code> のブランチに、ほぼ完成のビルドを反映して Game Build のチェックリストを済ませ、「Mark as ready for review」。</li>
+          <li>ストアに書いた機能と OS（Mac も書くなら Mac）が全部動くかを見られる。まだの機能はストアから外しておく。</li>
+          <li>両方の承認と Coming Soon 2 週間がそろったら、アプリのトップの緑の「Release App」→「Publish Now」→「Release Now」。</li>
+        </ul>
+        <p class="st-sub">管理画面</p>
+        <ul class="st-links">
+          <li><a data-app="/apps/landing/" href="https://partner.steamgames.com/">アプリのトップ（Release App）</a></li>
+        </ul>
+        <p class="st-sub">説明</p>
+        <ul class="st-links">
+          <li><a href="https://partner.steamgames.com/doc/store/releasing">発売の流れ（Release Process）</a></li>
+          <li><a href="https://partner.steamgames.com/doc/store/review_process">審査</a></li>
+          <li><a href="https://partner.steamgames.com/doc/steamhardware/compat">Steam Deck の対応審査（発売とは別）</a></li>
+        </ul>
+      </li>
+    </ol>
+  </section>
+
+  <section class="tile st-game" aria-labelledby="st-game-h">
+    <h2 id="st-game-h">ゲームに組み込む</h2>
+    <p class="st-lead">アップロードの手続きとは別の作業です。Godot からは GodotSteam を通して使います。通信を Steam の部屋と P2P に載せるなら、ここを読む。</p>
+    <ul class="st-links">
+      <li><a href="https://godotsteam.com/">GodotSteam（Godot から Steam の機能を使う）</a></li>
+      <li><a href="https://partner.steamgames.com/doc/features/multiplayer/matchmaking">部屋とマッチング（Lobbies）</a></li>
+      <li><a href="https://partner.steamgames.com/doc/features/multiplayer/networking">Steam の通信（P2P）</a></li>
+      <li><a href="https://partner.steamgames.com/doc/features/multiplayer/steamdatagramrelay">Steam の中継（Datagram Relay）</a></li>
+      <li><a href="https://partner.steamgames.com/doc/features/overlay">オーバーレイ（友だちの招待）</a></li>
+      <li><a href="https://partner.steamgames.com/doc/features/cloud">クラウドセーブ</a></li>
+      <li><a href="https://partner.steamgames.com/doc/features/achievements">実績</a></li>
+    </ul>
+  </section>
+
+  <section class="tile st-after" aria-labelledby="st-after-h">
+    <h2 id="st-after-h">公開してから・発売してから</h2>
+    <ul class="st-links">
+      <li><a href="https://partner.steamgames.com/doc/marketing/wishlist">ウィッシュリスト</a></li>
+      <li><a href="https://partner.steamgames.com/doc/marketing/upcoming_events/nextfest">Steam Next Fest（体験版の祭り）</a></li>
+      <li><a href="https://partner.steamgames.com/doc/marketing/event_tools">お知らせとイベント</a></li>
+      <li><a href="https://partner.steamgames.com/doc/store/updates">更新の出し方</a></li>
+      <li><a href="https://partner.steamgames.com/doc/marketing/discounts">割引</a></li>
+      <li><a href="https://partner.steamgames.com/doc/finance/payments_salesreporting">売上の報告と支払い</a></li>
+      <li><a href="https://partner.steamgames.com/doc/marketing/branding">Steam のロゴの使い方</a></li>
+    </ul>
+    <p class="cap">ぜんぶの説明は <a href="https://partner.steamgames.com/doc/home">Steamworks の文書</a>。日数や金額は変わることがあるので、手続きの前に元のページで確かめる。</p>
+  </section>
+</main>
+
+<script src="index.js?v=11"></script>
+</body>
+</html>
