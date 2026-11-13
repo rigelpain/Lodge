@@ -158,6 +158,7 @@ func _load_pen() -> void:
 	pp.scale_xz = Vector3(-rack_side, 1.0, 1.0) * Vector3(SET_SCALE, 1.0, SET_SCALE)
 	add_child(pp)
 	for e in PEN_PETS:
+		await get_tree().process_frame   # 1 コマに 1 匹ずつ（一度に並べると 1 コマが引っかかる）
 		pp.add(e[0], e[1], float(e[2]), e[3])
 
 

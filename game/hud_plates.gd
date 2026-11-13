@@ -176,8 +176,13 @@ func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float
 	if v.is_empty():
 		var painter: Control = paint.call()
 		painter.material = _print_mat(kind)
-		prints.add_child(painter)
-		v = {"node": Node3D.new(), "mesh": MeshInstance3D.new(), "painter": painter, "size": Vector2.ZERO, "thick": 0.0,
+		# 印刷の傾き・ずれ・縮みは、印刷を入れた Node2D（holder）で動かす。Control の傾き・縮み・支点を変えると、そのたびに
+		# エンジンが中身を描き直す（風で揺れているあいだ、名札の絵を 2 コマに 1 回作り直していた。2026-11-14 測定）
+		var holder := Node2D.new()
+		holder.physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
+		prints.add_child(holder)
+		holder.add_child(painter)
+		v = {"node": Node3D.new(), "mesh": MeshInstance3D.new(), "painter": painter, "holder": holder, "size": Vector2.ZERO, "thick": 0.0,
 			"radius": 0.0, "shadows": [], "used": false}
 		vp.add_child(v.node)
 		v.node.add_child(v.mesh)
@@ -199,16 +204,18 @@ func plate(id: String, paint: Callable, rect: Rect2, radius: float, thick: float
 	_place_shadows(v.shadows, base * Transform3D(Basis(), center))
 	# 印刷: 板と同じだけ、画面の中で傾けてずらす
 	var p: Control = v.painter
-	p.size = _vs()
-	p.pivot_offset = pivot
-	if wind.is_empty():
-		p.rotation = tilt
-		p.position = lift
-	else:
-		p.rotation = Icons.wind_angle(wind[0], wind[1], wind[2]) + tilt
-		p.position = Icons.wind_offset(wind[0], wind[3]) + lift
-	p.scale = Vector2(maxf(squash, 0.01), 1.0)
-	p.z_index = order   # 印刷の重なりの順（重ねた札は、前の札ほど上）
+	if p.size != _vs():
+		p.size = _vs()
+	var rot := tilt
+	var pos := lift
+	if not wind.is_empty():
+		rot += Icons.wind_angle(wind[0], wind[1], wind[2])
+		pos += Icons.wind_offset(wind[0], wind[3])
+	# 支点のまわりに回して縮め、ずらす（Control の position・pivot_offset・rotation・scale と同じ式）
+	var turn := Transform2D(rot, Vector2(maxf(squash, 0.01), 1.0), 0.0, Vector2.ZERO)
+	var h: Node2D = v.holder
+	h.transform = Transform2D(0.0, pos + pivot) * turn * Transform2D(0.0, -pivot)
+	h.z_index = order   # 印刷の重なりの順（重ねた札は、前の札ほど上）
 	p.modulate.a = clampf(a, 0.0, 1.0)
 	(p.material as ShaderMaterial).set_shader_parameter("rect", Vector4(rect.position.x, rect.position.y, rect.size.x, rect.size.y))
 	if stamp == null or stamp != v.get("stamp"):

@@ -186,11 +186,9 @@ func _physics_process(dt: float) -> void:
 ## いまの場所と動きから、1 フレームの増減
 func _rate(id: int, who: Node3D, dt: float) -> float:
 	var w := water_of(id)
-	# 中か外かは、音の屋内の判定（audio.gd の zone_at: 0 外・1 風除室・2 中）
-	var temp := get_node_or_null("/root/Temperature")
-	var at := who.global_position + Vector3.UP
-	var zone := Audio.zone_at(temp._find_lodge(), at) if temp else 0
-	var warm := _warm_at(who.global_position, temp)
+	var env := _env_of(id, who)
+	var zone: int = env[1]
+	var warm: float = env[2]
 	var d: Doll = who.get("doll")
 	var dw := 0.0
 	if _in_dryer(id):
@@ -199,7 +197,7 @@ func _rate(id: int, who: Node3D, dt: float) -> float:
 		# 火のそば（中でも外でも）: 速く乾き、近ければ 0 より下（パリッと）まで。焚き火は暖炉より速い（campfire.gd の dry_k）
 		var floor_w := lerpf(0.0, CRISP, smoothstep(CRISP_FROM, CRISP_FULL, warm))
 		if w > floor_w:
-			dw = -minf((DRY_ROOM + DRY_FIRE * warm) * _fire_k(who.global_position) * dt, w - floor_w)
+			dw = -minf((DRY_ROOM + DRY_FIRE * warm) * float(env[3]) * dt, w - floor_w)
 		elif w < 0.0:
 			dw = minf(CRISP_FADE * dt, floor_w - w)   # 火から少し離れたら、その近さのパリッとまで戻る
 	elif w < 0.0:
@@ -228,10 +226,38 @@ func _rate(id: int, who: Node3D, dt: float) -> float:
 		elif not body.is_on_floor():
 			_fall[id] = -body.velocity.y
 		elif _fall.has(id):
-			if _fall[id] > FALL_SPEED and zone == 0:
+			# 着いた所が外かは、そのコマに調べ直す（覚えている様子は数コマ前のもの。落ちるあいだに場所が変わっている）
+			if _fall[id] > FALL_SPEED and _zone_of(who) == 0:
 				dw += FALL_WET - minf(w, 0.0)   # パリッとは消えて、そこから濡れる
 			_fall.erase(id)
 	return dw
+
+
+## その人のいる所の様子 [調べた物理のコマ, 中か外か（audio.gd の zone_at: 0 外・1 風除室・2 中）, 火の暖かさ, 乾く速さの倍率, 調べた場所]。
+## 場所の様子はゆっくりしか変わらないので、人ごとに ENV_EVERY コマに 1 回だけ調べる（仲間が 30 人いると、全員の分を毎コマ調べるのに
+## 1 コマ 0.3 ms ほど使っていた。2026-11-14 測定）。調べた場所から ENV_MOVE より動いていたら（置き直された・速いソリ）、すぐ調べ直す。
+## 増減の足し算・乾燥機の中か・落ちて転ぶ判定は毎コマのまま
+const ENV_EVERY := 5
+const ENV_MOVE := 1.5
+var _env := {}
+
+func _env_of(id: int, who: Node3D) -> Array:
+	var now := Engine.get_physics_frames()
+	var at := who.global_position
+	var e: Array = _env.get(id, [])
+	if not e.is_empty() and now - int(e[0]) < ENV_EVERY and at.distance_squared_to(e[4]) < ENV_MOVE * ENV_MOVE:
+		return e
+	var temp := get_node_or_null("/root/Temperature")
+	var warm := _warm_at(at, temp)
+	e = [now, _zone_of(who), warm, _fire_k(at) if warm > 0.0 else 1.0, at]
+	_env[id] = e
+	return e
+
+
+## 中か外か（audio.gd の zone_at: 0 外・1 風除室・2 中）
+func _zone_of(who: Node3D) -> int:
+	var temp := get_node_or_null("/root/Temperature")
+	return Audio.zone_at(temp._find_lodge(), who.global_position + Vector3.UP) if temp else 0
 
 
 ## その所の火の暖かさ（0 〜 1）: 暖炉から HEARTH_R、焚き火（仲間分け "fires"）から FIRE_R の内で近いほど強い

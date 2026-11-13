@@ -310,7 +310,7 @@ func _make_posts() -> void:
 				"cursor": 0.0, "last_delay": -1.0, "sway": rng.randf() * 1000.0})
 
 
-func _feed_posts(listener: Vector3) -> void:
+func _feed_posts(listener: Vector3, dt: float) -> void:
 	if _pcm.is_empty():
 		return
 	var n_pcm := _pcm.size()
@@ -321,9 +321,16 @@ func _feed_posts(listener: Vector3) -> void:
 		var n: int = mini(pb.get_frames_available(), 4096)
 		if n <= 0:
 			continue
-		var d1: float = listener.distance_to(post.node.global_position) / C_SOUND
+		var dist: float = listener.distance_to(post.node.global_position)
+		var d1: float = dist / C_SOUND
 		var d0: float = post.last_delay if post.last_delay >= 0.0 else d1
 		var cursor: float = post.cursor
+		if dist > post.player.max_distance + 10.0:
+			# 聞こえない柱（届く距離の外）は、曲の波形を作らない。曲の進みだけ合わせておく（大きな山や大山にいるあいだ、6 本ぶん
+			# 1 秒に 10 万近い計算をしていた。2026-11-14）。戻ってくれば、進んだ所から続きが鳴る
+			post.cursor = cursor + dt   # 何も送らないあいだは空きが減らないので、進みは本当の時間で
+			post.last_delay = d1
+			continue
 		var buf := PackedVector2Array()
 		buf.resize(n)
 		# 読む位置はコマの中で一直線に進むので、足し算で求める（1 秒に 1 万回以上回るので、毎回 fposmod しない）
@@ -1148,7 +1155,7 @@ func _listener() -> Vector3:
 
 func _process(dt: float) -> void:
 	_clock += dt
-	_feed_posts(_listener())
+	_feed_posts(_listener(), dt)
 
 
 func _physics_process(dt: float) -> void:

@@ -152,6 +152,7 @@ func _load_goods() -> void:
 	var rows := [Lantern.LOOKS.slice(0, 5), Lantern.LOOKS.slice(5, 10),
 			Pals.PERCH_ORDER.slice(0, 5), Pals.PERCH_ORDER.slice(5, 9), Pals.PERCH_ORDER.slice(9)]
 	for t in rows.size():
+		await get_tree().process_frame   # 1 コマに 1 段ずつ（全部を一度に並べると、1 コマが 50 ms ほど止まっていた。2026-11-14 測定）
 		var keys: Array = rows[t]
 		var lantern := t < 2
 		for i in keys.size():

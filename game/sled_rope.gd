@@ -233,10 +233,21 @@ func _lay_out() -> void:
 
 ## 見た目の雪面の高さ（当たり判定の地面に、吹きだまりのうねりを足す）
 func _ground(p: Vector3) -> float:
-	var world := sled.get_parent()
-	if not world.has_method("height"):
+	var f := Engine.get_physics_frames()
+	if f != _w_frame:   # 世界に聞ける事（height・snow_lift を持つか）は、1 コマに 1 回だけ確かめる（紐の点ごとに聞くと 1 コマ何十回にもなる）
+		_w_frame = f
+		_w = sled.get_parent()
+		_w_height = _w.has_method("height")
+		_w_lift = _w.has_method("snow_lift")
+	if not _w_height:
 		return -INF
-	return world.height(p.x, p.z) + (world.snow_lift(p.x, p.z) if world.has_method("snow_lift") else 0.0)
+	return _w.height(p.x, p.z) + (_w.snow_lift(p.x, p.z) if _w_lift else 0.0)
+
+
+var _w: Node
+var _w_frame := -1
+var _w_height := false
+var _w_lift := false
 
 
 ## 遠い紐は細くて見えないので動かさず隠す。少し遠い紐は 3 回に 1 度だけ動かす。

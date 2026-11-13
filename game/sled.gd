@@ -376,21 +376,35 @@ func vis_point(local: Vector3) -> Vector3:
 	return to_global(local + Vector3(0, vis_lift, 0))
 
 
+var _lift_xf := Transform3D(Basis(), Vector3.INF)   # 雪面を聞いたときのソリの向きと位置
+var _lift_want := 0.0                                # そのときの、載せる量
+var _lift_put := NAN                                 # 見た目に入れ終えた量（まだなら NAN）
+
 ## 見た目を見た目の雪面に載せる量を求めて、寄せる。底（ソリの座標の y = 0）の 3 × 5 の点で、見た目の雪面がいちばん上に出ている所に合わせる
 func _update_vis_lift(dt: float) -> void:
 	var want := 0.0
 	var w := get_parent()
 	if snow_lift.is_valid() and w and w.has_method("height") and not crashed and not racked:
-		var top := -INF
-		var near := INF
-		for i in 3:
-			for j in 5:
-				var p := to_global(Vector3((i - 1) * HALF.x * 0.9, 0.0, (j - 2) * 0.5 * HALF.y * 0.9))
-				var g: float = w.height(p.x, p.z)
-				near = minf(near, p.y - g)
-				top = maxf(top, g + float(snow_lift.call(p.x, p.z)) - p.y)
-		if near < VIS_LIFT_ON:
-			want = top
+		# 止まっているソリ（置いた所から動いていない）は、前に求めた値のまま。雪面の 15 点を毎回聞き直さない（2026-11-14）
+		var xf := global_transform
+		if xf == _lift_xf:
+			want = _lift_want
+		else:
+			var top := -INF
+			var near := INF
+			for i in 3:
+				for j in 5:
+					var p := to_global(Vector3((i - 1) * HALF.x * 0.9, 0.0, (j - 2) * 0.5 * HALF.y * 0.9))
+					var g: float = w.height(p.x, p.z)
+					near = minf(near, p.y - g)
+					top = maxf(top, g + float(snow_lift.call(p.x, p.z)) - p.y)
+			if near < VIS_LIFT_ON:
+				want = top
+			_lift_xf = xf
+			_lift_want = want
+	if vis_lift == want and _lift_put == want:
+		return   # もう載っている
+	_lift_put = want if absf(vis_lift - want) < 0.001 else NAN
 	vis_lift = lerpf(vis_lift, want, 1.0 - exp(-VIS_LIFT_RATE * dt))
 	if absf(vis_lift - want) < 0.001:
 		vis_lift = want
@@ -435,6 +449,9 @@ func _retire_trail() -> void:
 	left.now = _trail_now
 	for c in _trails.size():
 		var mi := _trails[c]
+		if mi.get_parent() == null:   # まだ場面へ足していない塊（一度も縫っていない）
+			mi.free()
+			continue
 		remove_child(mi)
 		if _chunk_end[c] > _trail_now and mi.multimesh.visible_instance_count > 0:
 			left.keep(mi, _chunk_end[c])
@@ -965,6 +982,14 @@ func place_lift() -> float:
 	return maxf(0.0, k.box.z * 0.5 * 0.45 - 0.3)
 
 
+## ソリが消えるとき、まだ場面へ足していない塊（子になっていないので、ひとりでには消えない）を片づける
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		for mi in _trails:
+			if is_instance_valid(mi) and mi.get_parent() == null:
+				mi.free()
+
+
 ## 滑り木の跡のステッチ（毛糸の雪に残る針目）
 func _make_trail() -> void:
 	_stitch_name = stitch_kind()
@@ -988,8 +1013,7 @@ func _make_trail() -> void:
 		mi.lod_bias = 5.0 if _st.get("arc", false) else 1.0   # 弧の目は、粗い形だと角ばる
 		mi.top_level = true
 		mi.visible = false
-		add_child(mi)
-		_trails.append(mi)
+		_trails.append(mi)   # 場面へ足すのは、初めて目を縫うとき（_emit）。使わない塊まで足すと、ソリを出すたびに数 ms かかる
 	_trail_end.resize(_trail_n)
 	_trail_end.fill(-1.0)
 	_chunk_end.resize(_trails.size())
@@ -1176,6 +1200,8 @@ func _emit(a: Vector3, b: Vector3, nn: Vector3, bow: int) -> void:
 	_trail_end[slot] = _trail_now + life
 	_chunk_end[ci] = maxf(_chunk_end[ci], _trail_now + life)
 	var chunk := _trails[ci]
+	if chunk.get_parent() == null:
+		add_child(chunk)
 	var mm := chunk.multimesh
 	var j := slot % _trail_chunk
 	_chunk_grow(mm, a, b)

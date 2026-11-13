@@ -569,16 +569,27 @@ func _round_player(dir: Vector3) -> Vector3:
 
 
 var _rounding := false       # あなたのまわりを回っている途中
+var _looks_frame := -1       # 持ち物の見た目を人形へ伝えたコマ（_pose_doll）
 
 
 ## 遊んでいる人: この画面の人と、通信でつないでいる人。仲間は入らない
+## 物理の 1 歩のあいだは同じ答えなので、最初の仲間が作った並びを、同じ世界・同じあなたを持つ仲間で使い回す
+## （仲間 30 人で 1 コマに 80 回ほど作り直していた。2026-11-14 測定）。返した並びは書き換えないこと
+static var _humans_key := []
+static var _humans_list: Array = []
+
 func _humans() -> Array:
+	var key := [Engine.get_physics_frames(), get_parent(), player]
+	if key == _humans_key:
+		return _humans_list
 	var out := [player] if player and not Ghost.gone(player) else []   # 観戦モードの霊体（ghost.gd）は、いない人と同じ
 	var net := get_parent().get_node_or_null("Net")
 	if net:
 		for r in net.remotes.values():
 			if not Ghost.gone(r):
 				out.append(r)
+	_humans_key = key
+	_humans_list = out
 	return out
 
 
@@ -669,13 +680,19 @@ func _pose_doll() -> void:
 	else:
 		doll.act = Doll.Act.WALK
 	doll.sled = sled
-	if hub:
+	# 持ち物の見た目（雪玉・提灯・帯の米袋）は、人形が姿勢を作る 12 コマ／秒に合わせて伝える。物理の歩みごとに工房へ聞くと、
+	# 仲間 30 人で 1 コマに何百回にもなる（2026-11-14 測定）
+	var fi := Doll.frame_index()
+	var looks := fi != _looks_frame
+	_looks_frame = fi
+	if hub and looks:
 		doll.holding_ball = hub.balls_of(id) > 0 and hub.can_throw(id)   # 持っている雪玉（右手に 1 つ、残りは袖。player.gd と同じ）
 		doll.sleeve_balls = hub.balls_of(id) - (1 if doll.holding_ball else 0)
 	doll.lean = Vector2(_lean_now.x, _lean_now.y - _lean_now.z) if state == State.RIDE else Vector2.ZERO
-	if craft:
-		doll.lantern = craft.lantern(id).get("look", "")
-		doll.lantern_color = craft.lantern(id).get("color", "")
+	if craft and looks:
+		var lamp: Dictionary = craft.lantern(id)
+		doll.lantern = lamp.get("look", "")
+		doll.lantern_color = lamp.get("color", "")
 		doll.lantern_lit = craft.lamp_on(id)
 		var spec: Dictionary = craft.sack(id)   # 帯の丸めた米袋（player.gd と同じ）
 		doll.belt_sack = not spec.is_empty() and craft.sack_sled(id) == null

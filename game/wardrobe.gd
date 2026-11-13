@@ -139,10 +139,11 @@ func _hanger(pivot: Node3D, wood: Material) -> void:
 		pivot.add_child(arm)
 
 
-## 人形を掛ける（近づいてから一度だけ）
+## 人形を掛ける（近づいてから一度だけ）。1 コマに 1 体ずつ（7 体を一度に作ると、1 コマが 0.1 秒あまり止まっていた。2026-11-14 測定）
 func _load_dolls() -> void:
 	_loaded = true
 	for k in _hangers:
+		await get_tree().process_frame
 		var top: float = Doll.TOP[k]
 		var s := HANG / top
 		var inst: Node3D = (load(Doll.SCENES[k]) as PackedScene).instantiate()

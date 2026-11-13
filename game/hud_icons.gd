@@ -208,10 +208,7 @@ static func screen() -> void:
 
 
 static func _map(pts: PackedVector2Array) -> PackedVector2Array:
-	var o := PackedVector2Array()
-	for p in pts:
-		o.append(_o + p * _s)
-	return o
+	return Transform2D(Vector2(_s, 0.0), Vector2(0.0, _s), _o) * pts   # 点ごとに _o + p * _s（まとめて写す）
 
 
 # ---- 描く道具（絵の座標で受けて、画面へ写す） ----------------------------------------------
@@ -243,9 +240,9 @@ static func dashes(ci: CanvasItem, pts: PackedVector2Array, col: Color, w: float
 	var path := pts.duplicate()
 	if closed:
 		path.append(pts[0])
-	var t := 0.0
 	var draw_on := true
 	var left := on
+	var segs := PackedVector2Array()   # 目の両端を並べて、最後にまとめて描く（目ごとに描く命令を出すと、縫い目 1 本で何十回にもなる）
 	for i in path.size() - 1:
 		var p0 := path[i]
 		var p1 := path[i + 1]
@@ -254,15 +251,15 @@ static func dashes(ci: CanvasItem, pts: PackedVector2Array, col: Color, w: float
 		while d < seg:
 			var step := minf(left, seg - d)
 			if draw_on:
-				var q0 := p0.lerp(p1, d / seg)
-				var q1 := p0.lerp(p1, (d + step) / seg)
-				ci.draw_line(_o + q0 * _s, _o + q1 * _s, Color(col, col.a * a), maxf(w * _s, 1.0), true)
+				segs.append(_o + p0.lerp(p1, d / seg) * _s)
+				segs.append(_o + p0.lerp(p1, (d + step) / seg) * _s)
 			d += step
 			left -= step
 			if left <= 0.0001:
 				draw_on = not draw_on
 				left = on if draw_on else off
-		t += seg
+	if not segs.is_empty():
+		ci.draw_multiline(segs, Color(col, col.a * a), maxf(w * _s, 1.0), true)
 
 
 ## 糸の線: 太い糸に、撚りの明るい筋を細かく重ねる（サテンステッチ風）

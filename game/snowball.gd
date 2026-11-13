@@ -53,11 +53,22 @@ func _physics_process(dt: float) -> void:
 	if _last == Vector3.INF:
 		_last = p
 	# このコマで進んだ線分が、人形の体の形（人形ごとに測った、高さごとの太さ）に入るか
+	var seg := _last.distance_to(p)
 	for id in hub.people:
-		if id == thrower or not hub.can_hit(thrower, id):
+		if id == thrower:
 			continue
 		var who: Node3D = hub.who_of(id)
 		if who == null or who.get("doll") == null:
+			continue
+		# 遠い人は、体の形と比べない（体の形は人形の足もとを軸にした、高さごとの太さの筒。いちばん太い所と、このコマに進んだ長さより
+		# 横に離れていれば、線分のどの点も入らない）。仲間が 30 人いると、雪玉 1 つが毎回 30 人の姿勢を作り直させていた（2026-11-14 測定）
+		var dd: Node3D = who.doll
+		var reach: float = dd.body_reach() + RADIUS + seg
+		var dx := dd.global_position.x - p.x
+		var dz := dd.global_position.z - p.z
+		if dx * dx + dz * dz > reach * reach:
+			continue
+		if not hub.can_hit(thrower, id):
 			continue
 		var hit := _segment_vs_body(_last, p, who.doll)
 		if hit != Vector3.INF:

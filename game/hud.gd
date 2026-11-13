@@ -157,6 +157,8 @@ func _ready() -> void:
 	_tag_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_tag_view.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
 	add_child(_tag_view)
+	_tag_mark = _live_of(_tag_view, "tag_mark")
+	_tag_live = _live_of(_tag_view, "tag_live")
 	_hint_view = View.new()   # 操作の手引き。世界の物について毎コマ動くので、HUD 本体から分けて、本体を毎コマ描き直さない（2026-11-07）
 	_hint_view.hud = self
 	_hint_view.part = "hints"
@@ -725,10 +727,11 @@ func _update_speedo(dt: float, p: Node, menu: bool) -> void:
 		_tag_view.rotation = Icons.wind_angle(1.0, -0.09, 0.05)
 		_tag_view.position = Icons.wind_offset(1.0, 2.0 * ui()) + Vector2(0, -16.0 * ui() * fp[1]) + Icons.tuck_off(tr, _view.size)
 		_tag_view.scale = Vector2(maxf(fp[0], 0.01), 1.0)
-		var st := _tag_stamp(true)
+		var st := _tag_stamp()
 		if st != _tag_view_stamp:
 			_tag_view_stamp = st
 			_tag_view.queue_redraw()
+		_tag_live_tick(st)
 	var allowed: bool = main.settings == null or main.settings.values.get("speedo", true)
 	# 糸の上にボタンがあるあいだは、滑り終わり（snow_buttons.gd の ride_pay。0.5 m/s より遅いのが 1 秒）まで出しておく
 	# （遅くなると先に消えて、糸の上のボタンが見えないまま財布へ飛んでしまうので）
@@ -1041,10 +1044,12 @@ func _update_plates() -> void:
 			if k < cards.size():
 				var bo: Array = _view.back_offset(u, k)
 				plates.plate("tagb%d" % k, _painter.bind("tagback:%d" % k), tr, 12.0 * u, 7.0 * u, "paper", piv,
-					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0] + toff, 0.03 * k, 3 - k, _tag_stamp(false))
+					[1.0 + k, -0.09, 0.05, 2.0 * u], _tag_a, bo[1], 1.0, bo[0] + toff, 0.03 * k, 3 - k, _tag_stamp())
 		var fp := flip_pose()
+		var tst := _tag_stamp()
 		plates.plate("tag", _painter.bind("tag"), tr, 12.0 * u, 8.0 * u, "paper", piv,
-			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]) + toff, 0.0, 3, _tag_stamp(true))
+			[1.0, -0.09, 0.05, 2.0 * u], _tag_a, 0.0, fp[0], Vector2(0, -16.0 * u * fp[1]) + toff, 0.0, 3, tst)
+		_tag_live_tick(tst)
 	if _spd_a > 0.01:   # 速さの表示: 立体のボビンと、縫い目を縫うフェルトのリボンの板（ボビンから吊るす）
 		var g := Speedo.layout(speedo_box_now(), _spd_pop)
 		# 回る向き: 糸はボビンの左下から下へ出ていくので、左側が下へ動く向き（画面で反時計回り）に回して糸を送り出す。
@@ -1092,11 +1097,11 @@ func _view_stamp() -> Array:
 ## 名札の中身の印。これが変わったときだけ名札を描き直す（2026-11-02、M2 で名札を毎コマ描くと 1 コマに 4〜5 ms かかっていた）。
 ## 風の揺れ・めくり・引っこめは入れ物ごと動かすので描き直さない。中の絵（回るソリの図・丘の上のソリの印）は、live なら
 ## 人形と同じ 12 コマ／秒で進める（回る図はもともと 12 コマの刻み）。薄さは 0.05 刻みで、出る・消える途中も描き直す
-func _tag_stamp(live: bool) -> Array:
-	var s := [_view.size, snappedf(_tag_a, 0.05), _card, cards.hash(), _tag_sled, _tag_item.hash(), shown_area()]
-	if live:
-		s.append(Doll.frame_index())
-	return s
+## 動かない所（名札の柄・窓・標高の札の布と断面・回る図の窓の地）の印。動く所は別の入れ物が 12 コマ／秒で描く（_tag_live_tick）。
+## 印に入れ忘れた変化があっても、0.5 秒で追いつく
+func _tag_stamp() -> Array:
+	return [_view.size, ui(), snappedf(_tag_a, 0.05), _card, cards.hash(), _tag_sled, _tag_item.hash(), shown_area(), _shown_key,
+			hash(shown_card().get("design", 0)), tag_owner(), hash(_tag_sled.get("tag")) if _tag_sled else 0, Time.get_ticks_msec() / 500]
 
 
 var _hoop_tex: ImageTexture
@@ -1121,7 +1126,51 @@ func _painter(part: String) -> Control:
 	v.part = part
 	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	v.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	if part == "tag":
+		_tag_mark = _live_of(v, "tag_mark")
+		_tag_live = _live_of(v, "tag_live")
 	return v
+
+
+## 名札の入れ物の上に、動く所だけを描く入れ物を重ねる（tag_mark: ソリの印と登った分の糸。tag_live: 回る図・人・持ち主・風のめくれ）。
+## 親と同じ大きさ・傾き・薄さ・印刷の陰影（親の素材）で、親の絵の上に、足した順に描かれる
+func _live_of(tag: Control, part: String) -> Control:
+	var v := View.new()
+	v.hud = self
+	v.part = part
+	v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	v.texture_repeat = CanvasItem.TEXTURE_REPEAT_ENABLED
+	v.use_parent_material = true
+	v.set_anchors_preset(Control.PRESET_FULL_RECT)
+	tag.add_child(v)
+	return v
+
+
+var _tag_live: Control          # 名札の、回る図・人・持ち主を描く入れ物（_live_of）
+var _tag_mark: Control          # 名札の、ソリの印と登った分の糸を描く入れ物（_live_of）
+var _tag_live_stamp := []
+var _tag_mark_stamp := []
+var _tag_mark_at := Vector3.INF # 印を描いたときのソリ（なければあなた）の場所
+var _tag_win := Rect2()         # 名札の中の窓の場所（動かない所を描いたときに決まり、動く所が使う）
+
+
+## 名札の動く所は、人形と同じ 12 コマ／秒で描き直す（回る図はもともと 12 コマの刻み）。動かない所を描き直したコマにも描く。
+## ソリの印と登った分の糸は、そのコマにソリ（なければあなた）が動いていたときだけ
+func _tag_live_tick(back_stamp: Array) -> void:
+	if _tag_live == null:
+		return
+	var st := [Doll.frame_index(), back_stamp]
+	if st == _tag_live_stamp:
+		return
+	_tag_live_stamp = st
+	_tag_live.queue_redraw()
+	var p = main.player if main else null
+	var at: Vector3 = _tag_sled.global_position if _tag_sled else (p.global_position if p else Vector3.ZERO)
+	var mst := [back_stamp, shown_card().get("empty", false), _tag_sled != null]
+	if mst != _tag_mark_stamp or at.distance_squared_to(_tag_mark_at) > 0.0001:
+		_tag_mark_stamp = mst
+		_tag_mark_at = at
+		_tag_mark.queue_redraw()
 
 
 ## 速さの表示の置き場（画面の px）: 画面の左側の縦の帯。上の端は前の確かめ用の札の下の所（256）のまま、左下の名札の束の上まで
@@ -1203,13 +1252,27 @@ class View extends Control:
 			Icons.printing = false
 			return
 		if part == "tag":   # 名札だけを描く入れ物（風で、この入れ物ごと傾ける。名札の絵は中で描く向きを自分で変えるので）
+			# ここは動かない所だけ（名札の柄・窓・標高の札の布と断面・回る図の窓の地）。中身が変わったときだけ描き直す。
+			# 動く所（ソリの印・回る図・人・持ち主・風のめくれ）は、上に重ねた入れ物（tag_live）が 12 コマ／秒で描く（2026-11-14。
+			# 前は全部を 12 コマ／秒で描き直していて、布の柄の縫い目やフェルトの面を作り直すのに 1 回 2〜3 ms かかっていた）
 			if hud._tag_a > 0.01:
 				var tr := tag_rect(u)
 				if hud.plates == null:   # 平らなとき: 束の後ろの札の縁を、前の札の後ろにずらして描く
 					for k in range(mini(hud.cards.size() - 1, 2), 0, -1):
 						var c: Dictionary = hud.cards[posmod(hud._card + k, hud.cards.size())]
 						SledTags.draw_tag(self, Rect2(tr.position + back_offset(u, k)[0], tr.size), c.design, hud._tag_a, false, true)
-				_draw_tag(u, hud._tag_a)
+				_draw_tag(u, hud._tag_a, 1)
+			Icons.printing = false
+			return
+		if part == "tag_mark":   # 標高の札の上のソリの印と、登った分の赤い糸。ソリが動いたときだけ描き直す
+			if hud._tag_a > 0.01:
+				_draw_tag(u, hud._tag_a, 2)
+			Icons.printing = false
+			return
+		if part == "tag_live":   # 回る図・人・持ち主・風のめくれ（12 コマ／秒）
+			if hud._tag_a > 0.01:
+				var tr := tag_rect(u)
+				_draw_tag(u, hud._tag_a, 3)
 				Icons.flap(self, tr.position + Vector2(tr.size.x, 0), Vector2.LEFT, Vector2.DOWN, 22.0 * u, 1.0)
 			Icons.printing = false
 			return
@@ -1261,31 +1324,39 @@ class View extends Control:
 	func back_offset(u: float, k: int) -> Array:
 		return [Vector2(7.0, -8.0) * u * k, -0.035 * k]
 
-	func _draw_tag(u: float, a: float) -> void:
+	## layer: 1 は動かない所だけ、2 はソリの印と登った分の糸だけ、3 は回る図・人・持ち主だけ（View._draw の "tag"・"tag_mark"・"tag_live"）
+	func _draw_tag(u: float, a: float, layer: int) -> void:
 		var sled: RigidBody3D = hud._tag_sled
 		var item: Dictionary = hud._tag_item
 		var r := tag_rect(u)
 		var idx = hud.shown_card().get("design", 0)   # その札の名札（自分の名札か、ロッジの名札）
 		u *= TAG_K
-		# 名札の外の影と縁: 雪の白・空の青・ロッジの茶色のどれの上でも、名札の形が浮いて見えるように
-		var pts := SledTags.outline(r, SledTags.design(idx).shape)
-		var halo := Geometry2D.offset_polygon(pts, 1.6 * u, Geometry2D.JOIN_ROUND)
-		if halo.size() > 0:
-			var sh := PackedVector2Array()
-			for q in halo[0]:
-				sh.append(q + Vector2(1.2, 2.2) * u)
-			draw_colored_polygon(sh, Color(Icons.SHADOW, 0.30 * a))
-			var rim := halo[0].duplicate()
-			rim.append(halo[0][0])
-			draw_polyline(rim, Color(Icons.SHADOW, 0.35 * a), 1.2 * u, true)
-		# 名札の中に無地の窓を敷き、情報はその上に描く（名札の柄は、窓のまわりの縁として見える）
-		var win := SledTags.draw_tag(self, r, idx, a, false, true)
+		var win: Rect2
+		if layer == 1:
+			# 名札の外の影と縁: 雪の白・空の青・ロッジの茶色のどれの上でも、名札の形が浮いて見えるように
+			var pts := SledTags.outline(r, SledTags.design(idx).shape)
+			var halo := Geometry2D.offset_polygon(pts, 1.6 * u, Geometry2D.JOIN_ROUND)
+			if halo.size() > 0:
+				var sh := PackedVector2Array()
+				for q in halo[0]:
+					sh.append(q + Vector2(1.2, 2.2) * u)
+				draw_colored_polygon(sh, Color(Icons.SHADOW, 0.30 * a))
+				var rim := halo[0].duplicate()
+				rim.append(halo[0][0])
+				draw_polyline(rim, Color(Icons.SHADOW, 0.35 * a), 1.2 * u, true)
+			# 名札の中に無地の窓を敷き、情報はその上に描く（名札の柄は、窓のまわりの縁として見える）
+			win = SledTags.draw_tag(self, r, idx, a, false, true)
+			hud._tag_win = win
+		else:
+			win = hud._tag_win   # 窓の場所は、動かない所を描いたときに決まる
+			if win.size.x <= 0.0:
+				return
 		# 窓の中の絵は 210 × 120（u）の枠で組み、窓に収まるよう縮めて真ん中に置く
 		var fw := 210.0 * u
 		var fh := 120.0 * u
 		var k := minf(minf(win.size.x / fw, win.size.y / fh), 1.06)
 		draw_set_transform(win.get_center() - Vector2(fw, fh) * k / 2.0, 0.0, Vector2(k, k))
-		_draw_tag_info(u, a, fw, fh, sled, item)
+		_draw_tag_info(u, a, fw, fh, sled, item, layer)
 		draw_set_transform(Vector2.ZERO)
 		Icons.screen()
 
@@ -1293,7 +1364,7 @@ class View extends Control:
 	## 下の段の左は、そのソリがくるくる回る図に、いま触れている人・乗っている人を実際の所に乗せたもの（_draw_turn）。
 	## 下の段の右は、王冠を載せた持ち主（_draw_owner）。ロッジのソリは持ち主の欄を出さず、回る図の窓を右いっぱいに広げる。
 	## 窓の地はいつも明るいので、線は濃く、印には白い縁
-	func _draw_tag_info(u: float, a: float, fw: float, fh: float, sled: RigidBody3D, item: Dictionary) -> void:
+	func _draw_tag_info(u: float, a: float, fw: float, fh: float, sled: RigidBody3D, item: Dictionary, layer: int) -> void:
 		var main: Node3D = hud.main
 		var lodge_sled: bool = sled != null and hud.tag_owner() < 0 and SledTags.has_tag(sled.get("tag"))
 		var tw := Rect2(Vector2(4.0, 46.0) * u, Vector2(fw / u - 8.0 if lodge_sled else 150.0, 71.0) * u)   # 回る図の窓
@@ -1309,21 +1380,27 @@ class View extends Control:
 				Icons.sled_side(self, Vector2.ZERO, 1.0, a, slope, true)   # 前は左（頂上）
 			else:   # 畳んだ包み
 				Icons.patch(self, Icons.xf(Icons.rr(-7, -7, 14, 14, 2), PI / 4, Vector2(0, 2), 1.0), preload("res://fabrics.gd").color(item.get("fabric", "red")), a, false)
-		ElevCard.draw(self, area, u, a, fw, Callable(main, "height"), NAN if empty else Areas.locate(area, Vector2(sp.x, sp.z)), mark_at)
-		if empty:   # 自分のソリがまだない: 空の山と、空の窓だけ
-			Icons.screen()
-			Icons.dashes(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Icons.PAPER_EDGE, 1.4 * u, 5.0 * u, 3.5 * u, a, true)
+		if layer != 3:
+			ElevCard.draw(self, area, u, a, fw, Callable(main, "height"), NAN if empty else Areas.locate(area, Vector2(sp.x, sp.z)), mark_at, layer)
+		if layer == 2:
 			return
-		_draw_turn(u, a, tw, sled, item)
-		if not lodge_sled:
+		if empty:   # 自分のソリがまだない: 空の山と、空の窓だけ
+			if layer == 1:
+				Icons.screen()
+				Icons.dashes(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Icons.PAPER_EDGE, 1.4 * u, 5.0 * u, 3.5 * u, a, true)
+			return
+		_draw_turn(u, a, tw, sled, item, layer)
+		if not lodge_sled and layer == 3:
 			_draw_owner(u, a, Rect2(Vector2(158.0, 46.0) * u, Vector2(fw - 160.0 * u, 71.0 * u)), sled)
 
 	## 回る図の窓: ソリがゆっくり回り（sled_tags.gd の turntable_wide。12 コマの刻みで 5° ずつ、12 秒で 1 周）、いま触れている人・
 	## 乗っている人を、そのソリの上の実際の所に 3D の人型（person_icon.gd の model。キャラの色）で乗せて、いっしょに回す。
 	## どの向きから見ても人型は正しく見え、ソリの陰にも隠れる。頭の上の名前と、持ち主の王冠は、ここで上に描く
-	func _draw_turn(u: float, a: float, tw: Rect2, sled: RigidBody3D, item: Dictionary) -> void:
+	func _draw_turn(u: float, a: float, tw: Rect2, sled: RigidBody3D, item: Dictionary, layer: int) -> void:
 		Icons.screen()
-		Icons.patch(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, Icons.THREAD)
+		if layer == 1:   # 窓の地は動かない
+			Icons.patch(self, Icons.rr(tw.position.x, tw.position.y, tw.size.x, tw.size.y, 8.0 * u), Color(0.86, 0.90, 0.97), a, true, Icons.THREAD)
+			return
 		var kind: String = sled.kind if sled else String(item.get("sled", "mid"))
 		var fabric: String = sled.fabric if sled else String(item.get("fabric", ""))
 		var ar := float(SledTags.WIDE_SIZE.x) / SledTags.WIDE_SIZE.y

@@ -373,10 +373,14 @@ static func lodge_weight(x: float, z: float) -> float:
 	return smoothstep(0.0, LODGE_BLEND, Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length())
 
 
+static var _lodge_ground := NAN   # ロッジの足もとの地面の高さ（変わらないので一度だけ求める。height は 1 コマに何百回も呼ばれる）
+
 static func height(x: float, z: float) -> float:
 	if tenka():
 		return Tenka.lift(x, z)
-	return lerpf(ground(LODGE_POS.x, LODGE_POS.y), ground(x, z), lodge_weight(x, z))
+	if is_nan(_lodge_ground):
+		_lodge_ground = ground(LODGE_POS.x, LODGE_POS.y)
+	return lerpf(_lodge_ground, ground(x, z), lodge_weight(x, z))
 
 
 static var _drift: FastNoiseLite

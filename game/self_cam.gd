@@ -146,9 +146,27 @@ func _sync_env() -> void:
 
 ## 灯り（太陽・月・ロッジのランプ）も描画の層に属し、カメラは自分の映す層の灯りしか当てない。
 ## 小窓は世界の層（層 1）を映さないので、灯りに小窓の層を足す（本体の画面の見え方は変わらない）。後から置かれる灯りのために、ときどき見直す
+## はじめに一度だけ場面じゅうを探し、あとから置かれる灯りは、場面に足された知らせで覚える（前は 5 秒ごとに場面じゅうを探し直していて、
+## そのたびに 1 コマが数 ms 引っかかっていた。2026-11-14 測定）。覚えた灯りには、ときどき層を足し直す（置いたあとで層を入れ直す物のため）
+var _lights: Array = []
+var _lights_found := false
+
 func _share_lights() -> void:
-	for l in main.find_children("*", "Light3D", true, false):
-		(l as Light3D).layers |= LAYER
+	if not _lights_found:
+		_lights_found = true
+		_lights = main.find_children("*", "Light3D", true, false)
+		get_tree().node_added.connect(_on_node_added)
+	var keep := []
+	for l in _lights:
+		if is_instance_valid(l):
+			(l as Light3D).layers |= LAYER
+			keep.append(l)
+	_lights = keep
+
+
+func _on_node_added(n: Node) -> void:
+	if n is Light3D and main and main.is_ancestor_of(n):
+		_lights.append(n)
 
 
 ## 頭から陽の方へ、建物や木があるか（ロッジの屋根・木の陰）。丘の雪面は見ない（低い夕日だと遠くの斜面に当たってしまう）
@@ -447,7 +465,13 @@ func _layout() -> void:
 	_mat.set_shader_parameter("hoop_in", HOOP_IN)
 	_mat.set_shader_parameter("hoop_out", HOOP_IN * (1.0 + HOOP_T))
 	_mat.set_shader_parameter("pitch", maxf(STITCH_PX * u, 2.2))   # 小さい画面でも糸が潰れないように
-	_frame.queue_redraw()
+	var st := [u, d, stitch_col, plain_frame]   # 枠の絵は、大きさ・糸の色・枠の種類が変わったときだけ描き直す（前は毎コマ描いていた）
+	if st != _frame_stamp:
+		_frame_stamp = st
+		_frame.queue_redraw()
+
+
+var _frame_stamp := []
 
 
 ## 骨の所（世界）。骨がなければ INF

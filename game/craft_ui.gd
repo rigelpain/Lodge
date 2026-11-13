@@ -139,6 +139,14 @@ func _ready() -> void:
 	_view.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_view.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(_view)
+	for part in PARTS:   # 描く順（下から）: 売り台などの画面（_view）→ 持ち物の列 → 財布 → 飛ぶボタン → 装備の札 → 雪玉の帯
+		var v := View.new()
+		v.ui = self
+		v.part = part
+		v.set_anchors_preset(Control.PRESET_FULL_RECT)
+		v.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(v)
+		_part_views[part] = v
 	name_edit = LineEdit.new()   # 名前を打つ欄（紙のラベルの見た目。装備の画面のときだけ出す）
 	name_edit.visible = false
 	name_edit.max_length = Craft.NAME_MAX
@@ -936,69 +944,128 @@ func _process(dt: float) -> void:
 		name_edit.position = _name_rect.position
 		name_edit.size = _name_rect.size
 		name_edit.add_theme_font_size_override("font_size", maxi(10, int(_name_rect.size.y * 0.55)))
-	var vst := _view_stamp()
-	if vst != _view_stamp_last:
-		_view_stamp_last = vst
-		_view.queue_redraw()
+	_redraw_parts()
 
 
-var _view_stamp_last := []
+## 描く入れ物を、中身ごとに分ける（2026-11-14）。前は 1 つの入れ物に全部描いていて、財布のボタンの光り（12 コマ／秒）や
+## 飛んでくるボタン（毎コマ）のたびに、持ち物の列・装備の札・雪玉の帯まで描き直していた（M2・CPU 30 人で 1 コマの 1 割ほど）。
+## 入れ物ごとに印を持ち、印が変わった入れ物だけ描き直す。重なる順は前と同じ（PARTS の順）
+const PARTS := ["bar", "coins", "flies", "gear", "balls"]
+var _part_views := {}
+var _part_stamps := {}
 var _shine_k := -1
 var _shine_due := 0
 var _shine_tick := 0
 
-## 持ち物の列・お金・I N R の札・雪玉の中身の印。これが変わったときだけ描き直す（hud.gd の _view_stamp と同じ考え）。
-## 毎コマ描くと M2 で 1 コマ 4〜5 ms かかり、本体の CPU を使い切って熱で遅くなる原因になっていた（2026-11-05 測定）。
-## 画面を開いているあいだ・飛んでいるボタン・跳ね・名前の札の出入りは毎コマ。
-## 真鍮より上のボタンは光るので 12 コマ／秒。人形が動くコマ（いちばん重いコマ）と重ならないよう 2 コマあとに描く。
-## 印に入れ忘れた変化があっても、0.25 秒で追いつく
-func _view_stamp() -> Array:
-	var moving := shop_open or machine_open or gear_open or not _flies.is_empty() or _bar_a < 1.0 \
-			or _shake > 0.0 or _coin_pop > 0.0 or _ball_pop > 0.0 or _name_t > 0.0
-	for k in _pop:
-		if _pop[k] > 0.0:
-			moving = true
-			break
-	if moving:
-		return [Engine.get_process_frames()]
+
+## 入れ物ごとの中身の印（hud.gd の _view_stamp と同じ考え）。毎コマ描くと M2 で 1 コマ 4〜5 ms かかり、本体の CPU を使い切って
+## 熱で遅くなる原因になっていた（2026-11-05 測定）。画面を開いているあいだは、どれも毎コマ。飛んでいるボタン・跳ね・名前の札の
+## 出入りは、その入れ物だけ毎コマ。真鍮より上のボタンは光るので 12 コマ／秒。人形が動くコマ（いちばん重いコマ）と重ならないよう
+## 2 コマあとに描く。印に入れ忘れた変化があっても、財布は 0.25 秒、ほかは 1 秒で追いつく（入れ物ごとに時をずらして、同じコマに重ねない）
+func _redraw_parts() -> void:
+	var frame := Engine.get_process_frames()
+	var busy := shop_open or machine_open or gear_open
 	var who := _who()
 	var coins: int = craft.wallet(who)
-	var s := [_view.size, Icons.tuck, Icons.user_scale, _focus(), craft.hands.get(who, -1), craft.bag(who).hash(), coins, _pending, _balls,
-			craft.sacks.get(who, []).hash(), craft.sack_sel.get(who, 0), craft.lantern(who).hash(), craft.lamp_on(who),
-			Time.get_ticks_msec() / 250]
+	var now := Time.get_ticks_msec()
+	var base := [_view.size, Icons.tuck, Icons.user_scale, _focus(), busy]
 	var sc = main.get("self_cam") if main else null
+	var cam := []
 	if sc and is_instance_valid(sc) and sc.get("_frame") != null:
-		s.append_array([(sc._frame as Control).get_global_rect(), sc.get("hidden")])
-	if coins >= 10:
-		var k := Doll.frame_index()
-		if k != _shine_k:
-			_shine_k = k
-			_shine_due = 2
-		if _shine_due > 0:
-			_shine_due -= 1
-			if _shine_due == 0:
-				_shine_tick += 1
-		s.append(_shine_tick)
-	return s
+		cam = [(sc._frame as Control).get_global_rect(), sc.get("hidden")]
+	var purse := [coins - _pending > 0 or not _flies.is_empty(), Craft.split(coins - _pending).hash(), craft.scope(who).is_empty()]
+	_stamp_part("", [_view.size, frame if busy else 0])
+	# 持ち物の列
+	var popping := false
+	for k in _pop:
+		if _pop[k] > 0.0:
+			popping = true
+			break
+	if busy or popping or _bar_a < 1.0 or _name_t > 0.0:
+		_stamp_part("bar", [frame])
+	else:
+		_stamp_part("bar", base + purse + [craft.hands.get(who, -1), craft.bag(who).hash(), craft.scope(who).hash(), now / 1000])
+	# 財布
+	if busy or _coin_pop > 0.0 or _bar_a < 1.0:
+		_stamp_part("coins", [frame])
+	else:
+		if coins >= 10:
+			var k := Doll.frame_index()
+			if k != _shine_k:
+				_shine_k = k
+				_shine_due = 2
+			if _shine_due > 0:
+				_shine_due -= 1
+				if _shine_due == 0:
+					_shine_tick += 1
+		_stamp_part("coins", base + purse + [coins, _pending, _shine_tick if coins >= 10 else 0, (now + 50) / 250])
+	# 飛んでいるボタン（なくなったコマにもう一度描いて、何も残さない）
+	_stamp_part("flies", [frame] if busy or not _flies.is_empty() else base + [0])
+	# 装備の札（I・N・R）と雪玉の帯は、刺繍枠（自分の小窓）の上に付いていて、滑るときの風で枠と一緒に震える（self_cam.gd）。
+	# 震えるたびに描き直さず、描いたときの枠の場所からのずれだけ、入れ物ごと動かす（前は、滑っているあいだ 12 コマ／秒で描き直していた）。
+	# 枠が画面の右の端に寄っていて札が端で止まるとき・引っこめの途中・雪合戦のあいだは、置き方が枠のずれどおりにならないので、前のとおり描き直す
+	var hoop := cam
+	var hoop_at := Vector2.INF
+	if Icons.tuck >= 0.999:
+		hoop = []   # 引っこめきって画面の外にあるあいだは、枠が震えても描き直さない（見えない）
+	elif not cam.is_empty() and not cam[1] and Icons.tuck == 0.0 and not _focus():
+		var fr: Control = sc._frame
+		var u := ui()
+		var total := 70.0 * u * 3.0 + 10.0 * u * 2.0
+		if fr.position.x + fr.size.x / 2.0 < _view.size.x - 12.0 * u - total / 2.0 - 8.0 * u:
+			hoop = [fr.size, false]
+			hoop_at = fr.position
+	if _stamp_part("gear", base + hoop + [craft.sacks.get(who, []).hash(), craft.sack_sel.get(who, 0), craft.sack(who).hash(), craft.sack_sled(who) != null,
+			craft.lantern(who).hash(), craft.lamp_on(who), (now + 350) / 1000]):
+		_drawn_at["gear"] = hoop_at
+	# 雪玉の帯
+	if _stamp_part("balls", [frame] if _ball_pop > 0.0 else base + hoop + [_balls, _ball_dir, (now + 700) / 1000]):
+		_drawn_at["balls"] = hoop_at
+	for part in ["gear", "balls"]:
+		var from: Vector2 = _drawn_at.get(part, Vector2.INF)
+		(_part_views[part] as Control).position = hoop_at - from if hoop_at != Vector2.INF and from != Vector2.INF else Vector2.ZERO
+
+
+var _drawn_at := {}   # 入れ物 → 描いたときの刺繍枠の左上（枠のずれだけ入れ物を動かす。動かさないときは INF）
+
+
+## 印が変わっていたら描き直す。描き直したら true
+func _stamp_part(part: String, st: Array) -> bool:
+	if st == _part_stamps.get(part):
+		return false
+	_part_stamps[part] = st
+	(_view if part == "" else _part_views[part]).queue_redraw()
+	return true
 
 
 class View extends Control:
 	var ui: Node
+	var part := ""      # 描く中身（craft_ui.gd の PARTS）。"" は売り台・ミシン・装備の画面
 
 	func _draw() -> void:
 		var u: float = ui.ui()
-		if ui.shop_open:
-			_draw_shop(u)
-		if ui.machine_open:
-			_draw_machine(u)
-		if ui.gear_open:
-			_draw_gear_screen(u)
-		if ui._bar_a > 0.01:   # 操作のための表示なので、風では揺らさない（2026-10-29 代表）
-			_draw_bar(u, ui._bar_a)
-		if not ui._focus():
-			_draw_flies(u)
-			_draw_gear(u)
-		_draw_balls(u)
+		match part:
+			"":
+				if ui.shop_open:
+					_draw_shop(u)
+				if ui.machine_open:
+					_draw_machine(u)
+				if ui.gear_open:
+					_draw_gear_screen(u)
+			"bar":
+				if ui._bar_a > 0.01:   # 操作のための表示なので、風では揺らさない（2026-10-29 代表）
+					_draw_bar(u, ui._bar_a)
+			"coins":
+				if ui._bar_a > 0.01:
+					_draw_purse(u, ui._bar_a)
+			"flies":
+				if not ui._focus():
+					_draw_flies(u)
+			"gear":
+				if not ui._focus():
+					_draw_gear(u)
+			"balls":
+				_draw_balls(u)
 
 	## 帯の装備の札（2026-10-29 代表「米袋は刺繍小窓の上においてほしい」）: 右下の刺繍の小窓の真上に、左から
 	##   装備の画面（I・背負いかばん）、米袋（N。持っている米袋の数だけ点、選んでいるのは赤。出していれば破線の形）、
@@ -1114,11 +1181,10 @@ class View extends Control:
 
 	## 持ち物の列: 素手と、手持ちの 6 マス（空いたマスは縫い目だけ）。かばんの物は装備の画面で。
 	## マスは画面のまんなかにそろえ、財布はその右に足す（ボタンが増えてもマスは動かない）。紙の左右の余白はそろえる
-	func _draw_bar(u: float, a: float) -> void:
+	## 持ち物の列と財布の置き場所（列の入れ物と財布の入れ物が、同じ所に描くため）
+	func _bar_layout(u: float) -> Dictionary:
 		var craft: Node = ui.craft
 		var who: int = ui._who()
-		var bag: Array = craft.bag(who)
-		var held: int = craft.hands.get(who, -1)
 		var cell := 58.0 * u   # 7 マスでも 1280×720 で左下の札・右下の刺繍枠とぶつからない大きさ
 		var gap := 6.0 * u
 		var neck: Dictionary = craft.scope(who)   # 首から下げた双眼鏡: 素手の右に丸い枠（持ち物の場所ではない。craft.gd の NECK）
@@ -1132,8 +1198,31 @@ class View extends Control:
 		var x0 := size.x / 2.0 - cells_w / 2.0
 		var y := size.y - 20.0 * u - cell
 		var off := Icons.tuck_off(Rect2(x0 - 56.0 * u, y - 60.0 * u, w + 68.0 * u, cell + 70.0 * u), size)   # 何もしないでいると画面の外へ（名前の札まで）
-		x0 += off.x
-		y += off.y
+		return {"cell": cell, "gap": gap, "neck": neck, "order": order, "coins": coins, "cells_w": cells_w, "focus": focus, "purse": purse,
+				"w": w, "x0": x0 + off.x, "y": y + off.y}
+
+	## 財布: ボタンを数だけ、山に積む（持ち物の列の右）
+	func _draw_purse(u: float, a: float) -> void:
+		var L := _bar_layout(u)
+		if L.purse:
+			_coins(L.x0 + L.cells_w + L.gap * 2.0, L.y + L.cell - 4.0 * u, L.coins, 9.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI)), a)
+
+	func _draw_bar(u: float, a: float) -> void:
+		var craft: Node = ui.craft
+		var who: int = ui._who()
+		var bag: Array = craft.bag(who)
+		var held: int = craft.hands.get(who, -1)
+		var L := _bar_layout(u)
+		var cell: float = L.cell
+		var gap: float = L.gap
+		var neck: Dictionary = L.neck
+		var order: Array = L.order
+		var n := order.size()
+		var cells_w: float = L.cells_w
+		var focus: bool = L.focus
+		var w: float = L.w
+		var x0: float = L.x0
+		var y: float = L.y
 		Icons.screen()
 		Icons.patch(self, Icons.rr(x0 - 12.0 * u, y - 10.0 * u, w + 24.0 * u, cell + 20.0 * u, 16.0 * u), Icons.PAPER, 0.85 * a, false)
 		if craft.has_hand_items(who) and not focus:   # 持ち替えの案内: Z（と、ホイール・二本指スクロール）
@@ -1165,9 +1254,7 @@ class View extends Control:
 				Icons.screen()
 				Icons.dashes(self, Icons.rr(r.position.x - 3.0 * u, r.position.y - 3.0 * u, cell + 6.0 * u, cell + 6.0 * u, 12.0 * u), Icons.RED, 2.4 * u, 6.0 * u, 3.5 * u, a, true)
 				Icons.chevron(self, Vector2(c.x, r.position.y - 12.0 * u), 14.0 * u, Icons.RED, a, PI / 2, 2.6 * u)
-		# 財布: ボタンを数だけ、山に積む
-		if purse:
-			_coins(x0 + cells_w + gap * 2.0, y + cell - 4.0 * u, coins, 9.0 * u * (1.0 + 0.25 * sin(ui._coin_pop * PI)), a)
+		# 財布は別の入れ物（_draw_purse。ボタンの光りで列まで描き直さない）
 		# 手に持っている物の名前: 持ち替えたとき、列のまんなかの上に紙の札で少しのあいだ（左下の札とぶつからない所）。
 		# ゲームの中に文字を出さない決まりの例外（2026-11-01 代表「手に持ってる物の名前をインベントリHUDの上に小さく表示」）
 		var it: Dictionary = craft.held(who)
