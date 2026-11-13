@@ -1539,7 +1539,7 @@ class View extends Control:
 		var rows: Array = [
 			[["W", "A", "S", "D"], "walk"], [["Shift"], "run"], [["Space"], "jump"], [["mouse_move"], "look"],
 			[["F"], "grab"], [["F"], "rope"], [["E"], "ride"], [["Backspace"], "return"],
-			[["mouse_r"], "point"], [["C"], "view"], [["V"], "pip_cycle"], [["P"], "pip_off"],
+			[["mouse_r"], "point"], [["C"], "view"], [["V"], "pip_cycle"],
 			[["Esc"], "settings"], [["Left", "Right"], "tag_stack"],
 		]
 		# ピンチ: 三人称のカメラの距離（一人称で閉じ続けると三人称へ）。視野角と人形の画面の高さは設定からだけ
