@@ -185,6 +185,11 @@ var _rest_rot := {}          # 番号 → 付け根の回転（親の座標）
 var _rest_pos := {}
 var _rot := {}               # 番号 → いまの回転（親の座標）
 var _g := {}                 # 番号 → いまの向きと位置（骨の座標の空間）
+## 骨の親と子の番号（_ready で一度だけ骨組みから写す）。姿勢を作るたびに骨組みに聞くと、人形 1 体の 1 コマで何百回にもなる（2026-11-14 測定）
+var _par := PackedInt32Array()
+var _kids: Array[PackedInt32Array] = []
+var _thigh_l := -1
+var _thigh_r := -1
 var peek := ""                    # 双眼鏡をのぞいている: "" / "stand"（テラスの台）/ 手の双眼鏡の品物の kind（binoculars.gd の GRADES）
 var _peek_item: Node3D            # 目に当てている双眼鏡の形
 var _peek_kind := ""              # …その段
@@ -274,6 +279,10 @@ func _ready() -> void:
 		return d
 	for i in skel.get_bone_count():
 		_order.append(i)
+		_par.append(skel.get_bone_parent(i))
+		_kids.append(skel.get_bone_children(i))
+	_thigh_l = _id("thigh.L")
+	_thigh_r = _id("thigh.R")
 	_order.sort_custom(func(a, b): return depth.call(a) < depth.call(b))
 	_make_breath()
 	_make_ball()
@@ -348,6 +357,19 @@ func _ensure_pose(to_bones := false) -> void:
 	_pose()
 	if to_bones:
 		_apply()
+
+
+## 体の形のいちばん太い所の半径（m）。これより遠い雪玉は、体の形と細かく比べるまでもなく当たらない（snowball.gd）
+func body_reach() -> float:
+	var c: Array = _body_cache.get(kind, [])
+	if c.is_empty():
+		return 0.0
+	if c.size() < 4:
+		var far := 0.0
+		for v in (c[0] as PackedFloat32Array):
+			far = maxf(far, v)
+		c.append(far)
+	return c[3]
 
 
 func body_hit(p: Vector3, r: float) -> bool:
@@ -528,10 +550,13 @@ func _update_all() -> void:
 
 
 func _update(i: int) -> void:
-	var p := skel.get_bone_parent(i)
-	var pos: Vector3 = _rest_pos[i] + (Vector3(0, -_hips_drop, 0) if p < 0 else Vector3.ZERO)
-	_lift_at.erase(i)
-	if _leg_lift > 0.0 and p >= 0 and (i == _id("thigh.L") or i == _id("thigh.R")):
+	var p := _par[i]
+	var pos: Vector3 = _rest_pos[i]
+	if p < 0:
+		pos += Vector3(0, -_hips_drop, 0)
+	if not _lift_at.is_empty():
+		_lift_at.erase(i)
+	if _leg_lift > 0.0 and p >= 0 and (i == _thigh_l or i == _thigh_r):
 		_lift_at[i] = (_g[p] as Transform3D).basis.inverse() * Vector3(0, _leg_lift, 0)
 		pos += _lift_at[i]
 	var local := Transform3D(Basis(_rot[i]), pos)
@@ -542,7 +567,7 @@ func _update(i: int) -> void:
 func _turn(i: int, q: Quaternion) -> void:
 	if i < 0:
 		return
-	var p := skel.get_bone_parent(i)
+	var p := _par[i]
 	var pb: Basis = (_g[p] as Transform3D).basis.orthonormalized() if p >= 0 else Basis.IDENTITY
 	var lb := Basis(_rot[i])
 	_rot[i] = (pb.inverse() * Basis(q) * pb * lb).get_rotation_quaternion()
@@ -551,7 +576,7 @@ func _turn(i: int, q: Quaternion) -> void:
 
 func _update_subtree(i: int) -> void:
 	_update(i)
-	for c in skel.get_bone_children(i):
+	for c in _kids[i]:
 		_update_subtree(c)
 
 
@@ -616,7 +641,7 @@ func _arm_joints(side: String, target: Vector3, to_wrist := false) -> Array:
 func _apply() -> void:
 	for i in _order:
 		skel.set_bone_pose_rotation(i, _rot[i])
-		skel.set_bone_pose_position(i, _rest_pos[i] + (Vector3(0, -_hips_drop, 0) if skel.get_bone_parent(i) < 0 else Vector3.ZERO)
+		skel.set_bone_pose_position(i, _rest_pos[i] + (Vector3(0, -_hips_drop, 0) if _par[i] < 0 else Vector3.ZERO)
 			+ _lift_at.get(i, Vector3.ZERO))
 	var sk := _id("skirt")
 	if sk >= 0:
@@ -1222,12 +1247,15 @@ func _physics_process(dt: float) -> void:
 		pos = rock_at + r * (pos - rock_at) + ax.cross(Vector3.UP).normalized() * (rock_roll * rock)
 	if drum_fit != 1.0:
 		b = b.scaled(Vector3.ONE * drum_fit)
+	var put: Transform3D
 	if rolled:
-		global_transform = rolled_at   # 大玉の面に半分埋まって、玉と一緒に回る（rolled.gd）
+		put = rolled_at   # 大玉の面に半分埋まって、玉と一緒に回る（rolled.gd）
 		_tumble = 0.0
 		_lay = 0.0
 	else:
-		global_transform = _flung_xform(b, pos) if _tumble != 0.0 or _lay > 0.0 else Transform3D(b, pos)
+		put = _flung_xform(b, pos) if _tumble != 0.0 or _lay > 0.0 else Transform3D(b, pos)
+	if put != transform:   # 動いていない人形（座っている・立ち止まっている）は置き直さない。置き直すと、体の部品ぜんぶに伝え直しになる
+		global_transform = put
 
 	# 歩みは進んだ道のりで刻む（足と地面のずれを小さく）
 	if _last == Vector3.INF:
@@ -1949,21 +1977,23 @@ const EXHALE_ERODE := 0.7       # 寿命の後半で削れて消える強さ（�
 const EXHALE_NEAR := 1.7        # カメラからこの距離 (m) より近いほど薄い。大きいほど一人称の視界が空く（離れて見るほかの人には、ほとんど効かない）
 
 
+static var _sun: Node3D   # 白い息の光の向きに使う太陽（_make_breath）
+
 func _make_breath() -> void:
 	var att := BoneAttachment3D.new()
 	att.bone_name = "head"
 	skel.add_child(att)
 	var quad := QuadMesh.new()
 	quad.size = Vector2(0.36, 0.36)
-	var sh := Shader.new()
-	sh.code = BREATH_SHADER
 	var mat := ShaderMaterial.new()
-	mat.shader = sh
+	mat.shader = Look._shared_shader("breath", BREATH_SHADER)   # 人形ごとに作り直さない（材質は人形ごと）
 	mat.set_shader_parameter("cotton", cotton_texture())
 	mat.set_shader_parameter("erode", 0.85)
-	var sun := get_tree().root.find_children("*", "DirectionalLight3D", true, false)
-	if not sun.is_empty():
-		mat.set_shader_parameter("sun_dir", -(sun[0] as Node3D).global_basis.z)
+	if _sun == null or not is_instance_valid(_sun) or not _sun.is_inside_tree():   # 太陽は一度探したら覚えておく（人形を作るたびに場面じゅうを探さない）
+		var sun := get_tree().root.find_children("*", "DirectionalLight3D", true, false)
+		_sun = sun[0] if not sun.is_empty() else null
+	if _sun:
+		mat.set_shader_parameter("sun_dir", -_sun.global_basis.z)
 	quad.material = mat
 	_breath_mat = mat   # 人形ごとの材質（濃さを寒さで変える）
 	var grow := Curve.new()   # 出口で細く、昇りながら太く広がる

@@ -322,6 +322,7 @@ static func cloth(color: Color, scale := 10.0) -> StandardMaterial3D:
 
 
 static var _wagara := {}
+static var _wagara_masks := {}   # 柄 → 墨の所だけ不透明な絵（色違いを作るときに使い回す）
 
 
 ## 和柄の布（千代紙の着物の柄を、木綿に染めたもの）。kind: seigaiha 青海波 / kikko 亀甲 / ichimatsu 市松 / mizutama 水玉 / koshi 格子
@@ -329,10 +330,20 @@ static func wagara(kind: String, base: Color, ink: Color, scale := 5.0) -> Stand
 	var key := "%s %s %s" % [kind, base.to_html(), ink.to_html()]
 	if not _wagara.has(key):
 		var s := 128
+		# 柄の形（どこが墨か）は色によらないので、柄ごとに一度だけ求めて覚える。色違いは、地の色の絵に墨の色を形どおりに写すだけ。
+		# 前は色の組ごとに 1 画素ずつ求め直していて、青海波は 1 枚 0.23 秒かかり、仲間が着替える・染めるたびに画面が止まっていた（2026-11-14 測定）
+		if not _wagara_masks.has(kind):
+			var mk := Image.create(s, s, false, Image.FORMAT_LA8)
+			for y in s:
+				for x in s:
+					if _wagara_ink(kind, x, y, s):
+						mk.set_pixel(x, y, Color(1, 1, 1, 1))
+			_wagara_masks[kind] = mk
 		var img := Image.create(s, s, false, Image.FORMAT_RGB8)
-		for y in s:
-			for x in s:
-				img.set_pixel(x, y, ink if _wagara_ink(kind, x, y, s) else base)
+		img.fill(base)
+		var top := Image.create(s, s, false, Image.FORMAT_RGB8)
+		top.fill(ink)
+		img.blit_rect_mask(top, _wagara_masks[kind], Rect2i(0, 0, s, s), Vector2i.ZERO)
 		img.generate_mipmaps()
 		_wagara[key] = ImageTexture.create_from_image(img)
 	var m := cloth(Color.WHITE, scale)
@@ -348,7 +359,9 @@ static func _wagara_ink(kind: String, x: int, y: int, s: int) -> bool:
 			var r := s / 4.0
 			var best := -1
 			var dist := 0.0
-			for j in range(-1, 9):
+			# 半円の中心は縦に r/2 おき。縦に r 以上離れた段は届かないので、届く段（4 つほど）だけ見る（結果は同じ）
+			var j0 := int(floor(y / (r * 0.5)))
+			for j in range(maxi(-1, j0 - 1), mini(9, j0 + 3)):
 				for i in range(-1, 5):
 					var cx := i * r * 2.0 + (r if j % 2 != 0 else 0.0)
 					var cy := j * r * 0.5
@@ -384,6 +397,18 @@ static func _wagara_ink(kind: String, x: int, y: int, s: int) -> bool:
 ## 弧の向きは位相の整数の部分: 0 でまっすぐ、1・2 で左・右へふくらむ弧（くさり縫いの輪の半分）。
 ## 目は原点（入る針穴）から -z へ長さぶん伸び、もう一方の針穴へ沈む。面 0 が糸、面 1 が針穴のくぼみと糸の下の影（乗算）。
 ## 糸の管には粗い形（LOD）を 2 段つける。Godot が画面での大きさから選ぶので、遠くの目と 360° 映像の小窓では粗い形になる
+## 同じコードのシェーダーは 1 つだけ作って使い回す（色や形は材質ごとの値で変える）。前はソリを 1 台出すたびに縫い目のシェーダーを
+## 作り直していて、仲間が米袋を広げるたびに 1 コマが 10〜20 ms 止まっていた（2026-11-14 測定）
+static var _shared_shaders := {}
+
+static func _shared_shader(key: String, code: String) -> Shader:
+	if not _shared_shaders.has(key):
+		var sh := Shader.new()
+		sh.code = code
+		_shared_shaders[key] = sh
+	return _shared_shaders[key]
+
+
 static func stitch_mesh(color: Color, holes := true) -> ArrayMesh:
 	var mesh := ArrayMesh.new()
 	# 面 0: 糸の管。u（縫い目に沿って 0〜1、両端の沈む所を細かく）× a（まわり 0〜1）の格子
@@ -413,10 +438,8 @@ static func stitch_mesh(color: Color, holes := true) -> ArrayMesh:
 	arr[Mesh.ARRAY_TEX_UV] = uvs
 	arr[Mesh.ARRAY_INDEX] = idx
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arr, [], lods)
-	var sh := Shader.new()
-	sh.code = THREAD_SHADER
 	var mat := ShaderMaterial.new()
-	mat.shader = sh
+	mat.shader = _shared_shader("thread", THREAD_SHADER)
 	mat.set_shader_parameter("color", color)
 	mesh.surface_set_material(0, mat)
 
@@ -432,10 +455,8 @@ static func stitch_mesh(color: Color, holes := true) -> ArrayMesh:
 	q[Mesh.ARRAY_TEX_UV] = PackedVector2Array([Vector2(0, 0), Vector2(0, 0), Vector2(1, 0), Vector2(1, 0)])
 	q[Mesh.ARRAY_INDEX] = PackedInt32Array([0, 2, 1, 1, 2, 3])
 	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, q)
-	var sh2 := Shader.new()
-	sh2.code = STITCH_HOLE_SHADER
 	var mat2 := ShaderMaterial.new()
-	mat2.shader = sh2
+	mat2.shader = _shared_shader("hole", STITCH_HOLE_SHADER)
 	mat2.set_shader_parameter("shade", Color(0.50, 0.56, 0.74))
 	mat2.render_priority = -1
 	mesh.surface_set_material(1, mat2)
@@ -518,10 +539,8 @@ static func gather_stitch_mesh(color: Color) -> ArrayMesh:
 	arr.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, mesh.surface_get_arrays(0))
 	arr.surface_set_material(0, mat)
 	arr.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, q)
-	var sh := Shader.new()
-	sh.code = GATHER_SHADER
 	var m2 := ShaderMaterial.new()
-	m2.shader = sh
+	m2.shader = _shared_shader("gather", GATHER_SHADER)
 	m2.set_shader_parameter("shade", Color(0.2, 0.25, 0.48))   # 雪はとても明るいので、深い影の青で掛けないとひだが白く飛ぶ
 	m2.render_priority = -1
 	arr.surface_set_material(1, m2)

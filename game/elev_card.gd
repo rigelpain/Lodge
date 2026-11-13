@@ -58,7 +58,9 @@ static func stitches(ci: CanvasItem, id: String, rc: Rect2, a: float, u: float) 
 
 
 ## 上の段を描く。mark は断面の上のソリの位置（NAN なら印なし）。draw_mark は印を描く関数 (中心, 坂の傾き, 大きさの倍率)
-static func draw(ci: CanvasItem, id: String, u: float, a: float, fw: float, height: Callable, mark: float, draw_mark: Callable) -> void:
+## layer: 0 は全部、1 は動かない所だけ（布の地・柄・断面・旗・ロッジ）、2 は動く所だけ（登った分の赤い糸とソリの印）。
+## 名札は動かない所と動く所を別の入れ物に描く（hud.gd の View。動く所だけ 12 コマ／秒で描き直す）
+static func draw(ci: CanvasItem, id: String, u: float, a: float, fw: float, height: Callable, mark: float, draw_mark: Callable, layer := 0) -> void:
 	var f := Areas.info(id)
 	var sec := Areas.section(id, height)
 	var x0 := 6.0 * u
@@ -71,29 +73,31 @@ static func draw(ci: CanvasItem, id: String, u: float, a: float, fw: float, heig
 	var to_x := func(r: float) -> float: return lerpf(x0, x1, (r - rmin) / (rmax - rmin))
 	var to_y := func(l: float) -> float: return lerpf(yb, yfull, l) if float(f.tall) > 0.0 else yb - 5.0 * u
 	var rc := Rect2(x0 - 3.0 * u, 2.0 * u, x1 - x0 + 6.0 * u, 41.5 * u)
-	Icons.screen()
-	Icons.patch(ci, Icons.rr(rc.position.x, rc.position.y, rc.size.x, rc.size.y, 4.0 * u), area_color(id), a, false)
-	stitches(ci, id, rc, a, u)
-	var prof := PackedVector2Array()
-	for q in sec:
-		prof.append(Vector2(to_x.call(q.x), to_y.call(q.y)))
-	var mound := prof.duplicate()
-	mound.append(Vector2(x1, yb + 3.0 * u))
-	mound.append(Vector2(x0, yb + 3.0 * u))
-	Icons.screen()
-	Icons.patch(ci, mound, Icons.SNOW, a, false)
-	Icons.thread(ci, prof, Icons.THREAD, 1.4 * u, a)
-	var k: float = PROP_K.get(id, 1.0) * u
-	if id == Areas.NONE:   # ロッジのまわり: 平らな高台の、ロッジの本当の位置に（ソリの印と同じ物差し）
-		var lp: Vector2 = preload("res://main.gd").LODGE_POS
-		_lodge(ci, Vector2(to_x.call(Areas.locate(id, lp)), to_y.call(0.0)), k, a)
-	else:   # 頂上の旗と、ふもとのロッジ
-		var top := Vector2(to_x.call(0.0), to_y.call(Areas.level(sec, 0.0)))
-		Icons.thread(ci, PackedVector2Array([top, top - Vector2(0, 12) * k]), Icons.WOOD.darkened(0.2), maxf(1.4 * k, 0.9 * u), a)
-		Icons.patch(ci, PackedVector2Array([top - Vector2(0, 12) * k, top + Vector2(8.5, -9.5) * k, top - Vector2(0, 7) * k]), Icons.RED, a, false)
-		_lodge(ci, Vector2(x1 - 5.5 * k - 1.0 * u, yb), k, a)
-	if is_nan(mark):
+	if layer != 2:
+		Icons.screen()
+		Icons.patch(ci, Icons.rr(rc.position.x, rc.position.y, rc.size.x, rc.size.y, 4.0 * u), area_color(id), a, false)
+		stitches(ci, id, rc, a, u)
+		var prof := PackedVector2Array()
+		for q in sec:
+			prof.append(Vector2(to_x.call(q.x), to_y.call(q.y)))
+		var mound := prof.duplicate()
+		mound.append(Vector2(x1, yb + 3.0 * u))
+		mound.append(Vector2(x0, yb + 3.0 * u))
+		Icons.screen()
+		Icons.patch(ci, mound, Icons.SNOW, a, false)
+		Icons.thread(ci, prof, Icons.THREAD, 1.4 * u, a)
+		var k: float = PROP_K.get(id, 1.0) * u
+		if id == Areas.NONE:   # ロッジのまわり: 平らな高台の、ロッジの本当の位置に（ソリの印と同じ物差し）
+			var lp: Vector2 = preload("res://main.gd").LODGE_POS
+			_lodge(ci, Vector2(to_x.call(Areas.locate(id, lp)), to_y.call(0.0)), k, a)
+		else:   # 頂上の旗と、ふもとのロッジ
+			var top := Vector2(to_x.call(0.0), to_y.call(Areas.level(sec, 0.0)))
+			Icons.thread(ci, PackedVector2Array([top, top - Vector2(0, 12) * k]), Icons.WOOD.darkened(0.2), maxf(1.4 * k, 0.9 * u), a)
+			Icons.patch(ci, PackedVector2Array([top - Vector2(0, 12) * k, top + Vector2(8.5, -9.5) * k, top - Vector2(0, 7) * k]), Icons.RED, a, false)
+			_lodge(ci, Vector2(x1 - 5.5 * k - 1.0 * u, yb), k, a)
+	if is_nan(mark) or layer == 1:
 		return
+	Icons.screen()
 	var climbed := PackedVector2Array()
 	for i in 25:
 		var r := lerpf(rmax, mark, i / 24.0)
