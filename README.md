@@ -9,6 +9,7 @@
   - [操作と物理の決まり](design/controls-and-physics.md) … 力の向きだけ入力し、あとは物理。仲間の挙動、確かめ方
   - [音の設計](design/sound-concept.md) … 雪が吸った乾いた音。柱のスピーカー、登り、滑り出す一瞬、ロッジの中。素材の決まりと出どころ（`sound/`）
 - 開発ダッシュボード: `docs/`（GitHub Pages で公開。中身は `docs/data.json` を書き換える）
+- テストプレイの配り場所: [rigelpain.github.io/Lodge/playtest.html](https://rigelpain.github.io/Lodge/playtest.html)（`./build_release.sh` のあと `./publish_playtest.sh` で Releases に載せると出る。手順は [docs/playtest-online.md](docs/playtest-online.md)）
 - ゲーム本体（Godot 4.6）: `game/`
 - 絵柄の見本: これから `prototypes/` に置く
 
