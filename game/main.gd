@@ -1251,7 +1251,7 @@ func _pip_env_of() -> Environment:
 	return _pip_env
 
 
-## 右上の 360° の小窓を出す・消す。pip_hidden は遊ぶ人の選び（P・設定）で、雪合戦のあいだ（duel_focus）はそれと別に消す
+## 右上の 360° の小窓を出す・消す。pip_hidden は遊ぶ人の選び（設定の画面）で、雪合戦のあいだ（duel_focus）はそれと別に消す
 func _sync_pip_shown() -> void:
 	if _pip_layer:
 		_pip_layer.visible = not pip_hidden and not duel_focus and not (ghost and ghost.active)   # 霊体のあいだは、体の所の映像を出さない
@@ -1261,7 +1261,7 @@ func _sync_pip_shown() -> void:
 ## ミニマップ以外のHUDをよけることってできますか？集中して戦いたいので。あ、雪玉ストック数は避けなくていいです」「一人称視点固定にしてほしいです」）。
 ## 残す物: 名札の札（hud.gd）・持ち物の列と雪玉のストック（craft_ui.gd）・ハート・時計・円の地図（duel_hud.gd）。
 ## ここでよけるのは、右上の小窓・右下の刺繍枠とバッジ・日時計。案内のワッペン・糸巻き・確かめ用の数字（hud.gd）、I・N・R の札・財布（craft_ui.gd）は
-## それぞれ duel_focus を見て描かない。遊ぶ人の選び（小窓の P・設定の刺繍枠・三人称）は書き換えないので、終わると元のとおりに戻る
+## それぞれ duel_focus を見て描かない。遊ぶ人の選び（設定の小窓・刺繍枠・三人称）は書き換えないので、終わると元のとおりに戻る
 func set_duel_focus(on: bool) -> void:
 	duel_focus = on
 	_sync_pip_shown()
@@ -2553,11 +2553,8 @@ func _unhandled_input(e: InputEvent) -> void:
 			return
 		if e.physical_keycode == KEY_BACKSPACE:   # R はランタンの点け消し（player.gd）
 			net.reset_sled()   # 通信でつないでいるときは、ホストが戻す
-		elif e.physical_keycode == KEY_P and _pip_layer:
-			# 右上の 360° 映像を消す／出す（消している間は描画もしない）
-			pip_hidden = not pip_hidden
-			_sync_pip_shown()
-			settings.sync("pip", not pip_hidden)
+		# 右上の 360° 映像の出し消しは設定の画面からだけ。前は P でも切り替わったが、遊んでいる途中に押し間違えて
+		# 気づかないまま消えることがあるので外した（2026-11-14 代表「Pでの切り替えはないほうが良い、意図しない切り替えになりかねない」）
 		elif e.physical_keycode == KEY_V and pip_mat:
 			pip_mode = (pip_mode + 1) % 3
 			pip_mat.set_shader_parameter("mode", pip_mode)

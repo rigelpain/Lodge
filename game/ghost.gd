@@ -192,7 +192,7 @@ func _input(e: InputEvent) -> void:
 	elif e is InputEventMouseButton and e.pressed and Input.mouse_mode != Input.MOUSE_MODE_CAPTURED and not menu:
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		get_viewport().set_input_as_handled()
-	if e is InputEventKey and not e.physical_keycode in [KEY_ESCAPE, KEY_V, KEY_P]:
+	if e is InputEventKey and not e.physical_keycode in [KEY_ESCAPE, KEY_V]:
 		get_viewport().set_input_as_handled()
 	elif e is InputEventMouseButton and not menu:
 		get_viewport().set_input_as_handled()
