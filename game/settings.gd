@@ -15,17 +15,21 @@ const PATH := "user://settings.cfg"
 ## 画質の段: 選ぶと、下の 3D の解像度・くぼみの影・影・光のにじみが、まとめてその段の値になる（そのあと 1 つずつ変えてもよい）。
 ## 解像度は、縦 1080 px の画面での割合（それより大きな画面では main.gd がさらに縮める）。
 ## 2026-11-02 代表「あいかわらず FPS が 30 以下。低いと画面酔いすんだよね」
-const QUALITY_NAMES := ["とても軽い", "軽い", "ふつう", "きれい"]
+## ガビガビ（2026-11-13 代表「もっと低スペでも動くようなガビガビな感じのも作ってほしい」）: 3D を縦 GABI_H px の荒い粒で描き、
+## 重いもの（360° 映像・自分の姿の小窓・舞う雪）も止める。GPU の弱いパソコン向けのいちばん軽い段
+const QUALITY_NAMES := ["ガビガビ", "とても軽い", "軽い", "ふつう", "きれい"]
 const QUALITY := [
-	{"scale": 0.5, "ssao": false, "shadows": false, "glow": false},
-	{"scale": 0.6, "ssao": false, "shadows": true, "glow": true},
-	{"scale": 0.75, "ssao": true, "shadows": true, "glow": true},
-	{"scale": 1.0, "ssao": true, "shadows": true, "glow": true},
+	{"scale": 0.5, "ssao": false, "shadows": false, "glow": false, "gabi": true, "pip": false, "selfcam": false, "snow": false},
+	{"scale": 0.5, "ssao": false, "shadows": false, "glow": false, "gabi": false},
+	{"scale": 0.6, "ssao": false, "shadows": true, "glow": true, "gabi": false},
+	{"scale": 0.75, "ssao": true, "shadows": true, "glow": true, "gabi": false},
+	{"scale": 1.0, "ssao": true, "shadows": true, "glow": true, "gabi": false},
 ]
-const VERSION := 3   # 既定値を変えたら上げる。古い保存は、その項目だけ既定に戻す
+const QUALITY_NORMAL := 3   # ふつう
+const VERSION := 4   # 既定値を変えたら上げる。古い保存は、その項目だけ既定に戻す（版 4: 画質の段の先頭にガビガビを足した）
 # [鍵, 見出し, 種類, 既定, 範囲や段]
 const ITEMS := [
-	["quality", "画質（軽さ）", "choice", 2, QUALITY_NAMES],   # 重いときにすぐ選べるよう、いちばん上
+	["quality", "画質（軽さ）", "choice", QUALITY_NORMAL, QUALITY_NAMES],   # 重いときにすぐ選べるよう、いちばん上
 	["bob", "視点の揺れ（押す・引くとき）", "bool", true, null],
 	["ride_shake", "滑るときの画面の揺れ", "bool", true, null],   # 2026-11-12: 押す・引くときの揺れとは別に（旭ヶ丘の速いソリのガクガク。player.gd の _rattle）
 	["fov_kick", "押すときに画角が少し広がる", "bool", true, null],
@@ -44,6 +48,7 @@ const ITEMS := [
 	["ssao", "くぼみの影・色の照り返し", "bool", true, null],
 	["shadows", "影", "bool", true, null],
 	["glow", "明るい所の光のにじみ", "bool", true, null],
+	["gabi", "ガビガビ（荒い粒で描く。いちばん軽い）", "bool", false, null],
 	["vsync", "縦同期（画面のズレが気になるとき）", "bool", false, null],
 	["vol_music", "音量: 音楽", "float", 0.05, [0.0, 1.0, 0.01]],
 	["vol_sfx", "音量: 効果音", "float", 0.05, [0.0, 1.0, 0.01]],
@@ -303,6 +308,12 @@ func lock(key: String, why: String) -> void:
 		row.modulate.a = 0.55
 
 
+## 外から値を選ぶ（起動のときの診断 spec.gd）。画面の表示を合わせ、選んだときと同じく当てて保存する
+func choose(key: String, v) -> void:
+	sync(key, v)
+	_change(key, v)
+
+
 ## 外から値を変えたとき（キー操作など）に、画面の表示も合わせる
 func sync(key: String, v) -> void:
 	values[key] = v
@@ -340,6 +351,8 @@ func _load() -> void:
 		if saved_version < 3 and key.begins_with("vol_"):
 			continue   # 音量の既定を 5% に変えた（版 3）。古い保存の音量は読まない
 		values[key] = cf.get_value("settings", key, values[key])
+		if saved_version < 4 and key == "quality":
+			values[key] = int(values[key]) + 1   # 先頭にガビガビを足したので、前の段の番号を 1 つずらす
 
 
 func _save() -> void:
