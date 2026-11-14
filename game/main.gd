@@ -373,6 +373,15 @@ static func lodge_weight(x: float, z: float) -> float:
 	return smoothstep(0.0, LODGE_BLEND, Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length())
 
 
+## ジャンプ台の通り道（踏み切りの手前から、飛んで着く先まで）にいるか。ここでは、雪面の隆起の跳ねと「浮いたら雪面へ戻す力」を効かせない
+## （sled.gd の bumps。ジャンプ台は地形とは別の当たりなので、台の上と宙にいるあいだが「雪面から浮いた」に見えて、飛びが縮んでしまう）。
+## 大きな山と大山のジャンプ台があるのは今までの世界だけ
+static func on_jump_lane(x: float, z: float) -> bool:
+	if tenka():
+		return false
+	return Mountain.on_kicker_lane(x, z, 6.0) or Grand.on_kicker_lane(x, z, 6.0)
+
+
 static var _lodge_ground := NAN   # ロッジの足もとの地面の高さ（変わらないので一度だけ求める。height は 1 コマに何百回も呼ばれる）
 
 static func height(x: float, z: float) -> float:
@@ -529,11 +538,13 @@ func _ready() -> void:
 	var want_start := Start.wanted(args)
 	_snow_cache.clear()
 	_drift_memo.clear()
-	# ソリの滑りの速さはワールドごと（旭ヶ丘は速い。sled.gd の glide・pull）。ほかのワールドは今までどおり
-	Sled.glide = float(Tenka.SITES.get(stage, {}).get("glide", 1.0))
-	Sled.pull = float(Tenka.SITES.get(stage, {}).get("pull", 0.0))
-	Sled.bumps = float(Tenka.SITES.get(stage, {}).get("bumps", 0.0))     # 雪面の小さな隆起で跳ねる
-	Sled.rattle = float(Tenka.SITES.get(stage, {}).get("rattle", 0.0))   # 乗っている人の画面のガクガク
+	# ソリの滑りの速さ・跳ね・画面のガクガクは、どのワールドも同じ（sled.gd の FEEL）。はじめは旭ヶ丘だけだったのを共通にした
+	# （2026-11-14 代表「旭ヶ丘でのみ実装していたものを共通のものにしたい」）。ワールドごとに変えたいときだけ、tenkamori.gd の SITES に同じ名前で書く
+	var feel: Dictionary = Tenka.SITES.get(stage, {})
+	Sled.glide = float(feel.get("glide", Sled.FEEL.glide))
+	Sled.pull = float(feel.get("pull", Sled.FEEL.pull))
+	Sled.bumps = float(feel.get("bumps", Sled.FEEL.bumps))      # 雪面の小さな隆起で跳ねる
+	Sled.rattle = float(feel.get("rattle", Sled.FEEL.rattle))   # 乗っている人の画面のガクガク
 	if tenka():
 		Tenka.use(stage)
 		# 天下森には、まだロッジ（夏虫沢ヒュッテ）と、山をめぐる仲間と、雪のボタンがない

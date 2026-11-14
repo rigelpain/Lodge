@@ -105,15 +105,18 @@ const CRASH_REST := 1.0        # これだけ止まっていると、ふつう�
 ##   glide  雪の抵抗（drag・push・沈み）に掛ける割合。小さいほど最高速度が速い（最高速度はおよそ 1/√glide 倍）
 ##   pull   坂を下る向きに足す、重力の割合。大きいほど加速がよい（凍った斜面のすべりのよさ）
 ## どちらも掛け算と足し算が 1 つずつ増えるだけで、描く物も当たりの計算も増えない
-static var glide := 1.0
-static var pull := 0.0
+## 2026-11-14 代表「旭ヶ丘での滑ってる時の一人称視点のガクガクやスピードなど、旭ヶ丘でのみ実装していたものを共通のものにしたい」で、
+## どのワールドも FEEL の値にした（前は旭ヶ丘だけで、ほかは glide 1・pull 0・bumps 0・rattle 0）。値は旭ヶ丘で決めたまま
+const FEEL := {"glide": 0.25, "pull": 0.4, "bumps": 1.0, "rattle": 0.75}   # rattle 0.75: 代表が「いい感じ」と言ったときの揺れ
+static var glide := 0.25
+static var pull := 0.4
 ## ワールドごとの揺れ（2026-11-12 代表「ソリってもっと揺れるよね？それが怖かった記憶がある。画面のガクガクもそうだし、ちょっとした隆起で跳ねる」）
 ##   bumps   雪面の小さな隆起で跳ねる強さ（0 で無し）。乗って BUMP_MIN より速く滑っているとき、雪面を BUMP_CELL (m) の升に分け、
 ##           升ごとに決まった割合（BUMP_CHANCE）で隆起がある。隆起に乗り上げると、速さに比べた勢いで雪面から跳ね、前後に少しつんのめる。
 ##           隆起の所は場所で決まるので、同じ所を通れば同じ所で跳ねる。升をまたぐときに数を 1 つ作るだけで、当たりの形も描く物も増えない
 ##   rattle  乗っている人の画面のガクガクの強さ（player.gd が読む。0 で無し）
-static var bumps := 0.0
-static var rattle := 0.0
+static var bumps := 1.0
+static var rattle := 0.75
 const HALF_H_ON_SNOW := 0.9    # ソリのまんなかが雪面からこれより上なら、宙にいる (m)
 ## 跳ねは「ジャンプ」でなく、ごつんと突き上げられる小刻みな衝撃（2026-11-12 代表「はねるのがジャンプみたいになってる」）:
 ## 高さは数 cm で、すぐ雪面に戻る。そのかわり細かい間隔で何度も来て、前後・左右にがくっと揺さぶる
@@ -1242,9 +1245,11 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 		_uphill_brake(dt, v_t)
 	if pull > 0.0 and n.y < 0.9995:   # 坂を下る向き（重力の、雪面に沿った分）に足す
 		apply_central_force((Vector3.DOWN - n * Vector3.DOWN.dot(n)) * 9.8 * pull * mass)
-	if bumps > 0.0 and vs > BUMP_MIN:
+	var w := get_parent()
+	# ジャンプ台の通り道では跳ねさせず、雪面へも引き戻さない（台は地形とは別の当たりで、台の上と宙が「浮いた」に見えて飛びが縮む。main.gd の on_jump_lane）
+	if bumps > 0.0 and vs > BUMP_MIN and not (w and w.has_method("on_jump_lane") and w.on_jump_lane(global_position.x, global_position.z)):
 		_bump(n, vs)
-		var w := get_parent()   # 少し浮いたら、すぐ雪面へ戻す（隆起や地形の段で、ふわっと長く飛ばない）
+		# 少し浮いたら、すぐ雪面へ戻す（隆起や地形の段で、ふわっと長く飛ばない）
 		if w and w.has_method("height") and global_position.y - w.height(global_position.x, global_position.z) > 0.6:
 			apply_central_force(Vector3.DOWN * 9.8 * BUMP_SNAP * mass)
 	for x in [-RUNNER_X, RUNNER_X]:
