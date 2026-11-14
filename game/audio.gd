@@ -65,6 +65,7 @@ var _runner_fast: AudioStreamPlayer3D
 var _creak: AudioStreamPlayer3D
 var _runner_other: AudioStreamPlayer3D   # 自分が触っていないソリの滑り木ときしみ（ほかの人の音の決まり）
 var _creak_other: AudioStreamPlayer3D
+var _sled_land_seen := 0     # 前に見た、ソリの着地の回数（sled.gd の land_n）
 var _wind_calm: AudioStreamPlayer
 var _wind_rush: AudioStreamPlayer
 var _self_step: AudioStreamPlayer
@@ -378,6 +379,18 @@ func _update_sled(dt: float) -> void:
 	var v := sled.linear_velocity.length()
 	var fast := lerpf(-60.0, -6.0, clampf((v - 0.4) / 7.2, 0.0, 1.0)) if v > 0.3 else -80.0
 	var mine := _sled_is_mine()
+	# 長く宙にいるあいだは雪をこすらないので、「しゃー」が消えて風だけになる（小刻みな浮きでは消さない。速いときは 1〜2 秒に 1 回浮く）。
+	# 着いたら、雪を打つ低い「どさっ」（速く落ちたほど大きく低く）
+	if sled.air_t > 0.25:
+		fast = -80.0
+	if sled.land_n != _sled_land_seen:
+		_sled_land_seen = sled.land_n
+		var hit := clampf((sled.land_v - 2.0) / 6.0, 0.0, 1.0)
+		var pitch := rng.randf_range(0.62, 0.7) - 0.12 * hit
+		if mine:
+			_shot(_creak, _pick("snow_splat", 3), -15.0 + 10.0 * hit, pitch)
+		else:
+			_shot_other(_creak_other, _pick("snow_splat", 3), -15.0 + 10.0 * hit - OTHER_DROP, pitch)
 	_runner_fast.volume_db = lerpf(_runner_fast.volume_db, fast if mine else -80.0, minf(1.0, dt * 8.0))
 	_runner_other.volume_db = lerpf(_runner_other.volume_db, -80.0 if mine else fast - OTHER_DROP, minf(1.0, dt * 8.0))
 	_runner_other.max_db = _runner_other.volume_db

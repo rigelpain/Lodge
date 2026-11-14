@@ -71,6 +71,10 @@ func get_off() -> void:
 	var still := 0.0
 	var y0 := sled.global_position.y
 	var b0: int = sled.bump_n
+	var l0: int = sled.land_n
+	var lands := []     # 着地ごとの、雪面へ向かっていた速さ (m/s)
+	var airs := []      # 宙にいた時間 (s)。ソリが数えた分（sled.gd の air_t）
+	var air_was := 0.0
 	var air := 0.0      # 雪面から離れていた時間 (s)
 	var high := 0.0     # ソリの底が雪面からいちばん離れた高さ (m)
 	var flips := 0.0    # いちばん傾いた角度 (°)
@@ -87,6 +91,11 @@ func get_off() -> void:
 			air += 1.0 / 60.0
 		high = maxf(high, gap)
 		flips = maxf(flips, rad_to_deg(acos(clampf(sled.global_basis.y.y, -1.0, 1.0))))
+		if sled.land_n != l0 + lands.size():
+			lands.append(snappedf(sled.land_v, 0.1))
+		if sled.air_t <= 0.0 and air_was > sled.AIR_MIN_T:
+			airs.append(snappedf(air_was, 0.01))
+		air_was = sled.air_t
 		still = still + 1.0 / 60.0 if v < 0.3 else 0.0
 		if still > 2.0 or sled.crashed:
 			break
@@ -94,6 +103,7 @@ func get_off() -> void:
 	print("%s: いちばん速いとき %.1f m/s（時速 %.0f km）  5 m/s まで %s 秒・10 m/s まで %s 秒・20 m/s まで %s 秒  %.0f 秒で (%.0f, %.0f) に%s  下った高さ %.0f m" % [
 			name, top, top * 3.6, _s(t5), _s(t10), _s(t20), w, p.x, p.z, "打ち上がった" if sled.crashed else "止まった", y0 - p.y])
 	print("    跳ねた %d 回・宙にいた %.1f 秒・いちばん浮いた %.2f m・いちばん傾いた %.0f°" % [sled.bump_n - b0, air, high, flips])
+	print("    着地 %d 回 %s  宙の時間 %s" % [lands.size(), lands, airs])
 	if d.is_inside_tree():
 		sled.dismount(d)
 	d.queue_free()

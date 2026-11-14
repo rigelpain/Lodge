@@ -127,9 +127,27 @@ const BUMP_UP := 0.05          # 突き上げる速さ = 滑る速さ × これ�
 const BUMP_UP_MAX := 0.8       # 突き上げる速さの上限 (m/s。高さ 3 cm ほど、宙に 0.16 秒ほど)
 const BUMP_PITCH := 1.1        # つんのめる・のけぞる回る速さ (rad/s) の上限
 const BUMP_ROLL := 0.6         # 左右にがくっと傾く回る速さ (rad/s) の上限
-const BUMP_SNAP := 0.8         # 乗って速く滑っていて雪面から少し浮いたとき、下へ足す重力の割合（ふわっと飛ばず、すぐ雪面に戻る）
 var _bump_cell := Vector2i(1 << 30, 0)
 var bump_n := 0                # 跳ねた回数（確かめ用・画面のガクガクのきっかけ）
+## 宙と着地（2026-11-14 代表「ジャンプ台や起伏でのちょっとした落下のときに体が浮く用な浮遊感とかバウンドする感じとかが欲しい」）。
+## 地面のほうが下がって浮いたら、ふつうの重力のまま飛ぶ（前は、雪面から 0.6 m 浮くと重力を 0.8 倍足して引き戻していた。BUMP_SNAP）。
+## 小さな隆起の「ごつん」（bumps）は数 cm のままで、宙には数えない。
+## 着いたら、雪面へ向かっていた速さの LAND_BOUNCE 倍で 1 回はね返る（雪が受け止めるので小さく。2 回めはほとんど浮かない）。
+## air_t・land_n・land_v は、乗っている人の目の浮き沈み（player.gd の _ride_air）・滑る音（audio.gd）・雪しぶき（ride_wind.gd）が読む。
+## 下への線 1 本（_ground_normal と同じもの）で見るので、当たりの計算も描く物も増えない。
+## 旭ヶ丘を速く下ると、起伏に付いていけず 1〜2 秒に 1 回は 0.3〜1 秒ほど浮く（引き戻していた前も、小刻みな浮きは同じだけあった）。
+## だから、見せ方の側は「長く浮いたとき」だけ大きく変える（player.gd の AIR_LIFT_T・RATTLE_AIR_T、audio.gd）
+const AIR_GAP := 0.22          # ソリの底が、下の当たり（雪面・ジャンプ台）からこれより離れたら宙 (m)
+const AIR_MIN_T := 0.12        # これより長く宙にいたあと着いたら、着地とする (s)
+const LAND_MIN_V := 1.0        # 雪面へ向かう速さがこれより速いと、着地の手応えがある (m/s)
+const LAND_BOUNCE := 0.22      # はね返る速さ = 雪面へ向かっていた速さ × これ（LAND_BOUNCE_MAX まで）
+const LAND_BOUNCE_MAX := 1.5   # はね返る速さの上限 (m/s。高さ 11 cm ほど、宙に 0.3 秒ほど)
+var air_t := 0.0               # 乗って滑っていて、宙にいる時間 (s)。雪の上では 0
+var land_n := 0                # 着地した回数
+var land_v := 0.0              # 最後の着地の、雪面へ向かっていた速さ (m/s)
+var _air_vn := 0.0             # 宙にいるあいだの、雪面へ向かう速さ
+var _touch_t := 0.0            # 雪面のすぐ上まで来てからの時間（当たりが受け止めるのを待つ）
+var _ground_gap := INF         # ソリの底から、下の当たりまでの高さ (m)。_ground_normal が入れる（届かなければ INF）
 var crashed := false           # 打ち上がってから止まるまで。乗れない。滑り木は効かず、どの向きでも坂に沿って滑る
 var _crash_t := 0.0
 var _crash_still := 0.0
@@ -1219,7 +1237,31 @@ func _ground_normal() -> Vector3:
 	var q := PhysicsRayQueryParameters3D.create(from, from + Vector3.DOWN * 2.0)
 	q.exclude = [get_rid()]
 	var hit := get_world_3d().direct_space_state.intersect_ray(q)
+	_ground_gap = global_position.y - float(hit.position.y) if hit else INF
 	return hit.normal if hit else Vector3.UP
+
+
+## 宙にいる時間を数え、着いたら 1 回はね返す（乗って滑っているあいだ、_ride_forces から毎コマ）。n は下の当たりの向き
+func _air_step(dt: float, n: Vector3) -> void:
+	var vn := -linear_velocity.dot(n)   # 雪面へ向かう速さ
+	if _ground_gap > AIR_GAP:
+		air_t += dt
+		_air_vn = maxf(vn, 0.0)
+		_touch_t = 0.0
+		return
+	if air_t <= 0.0:
+		return
+	if vn > 0.5 and _touch_t < 0.2:   # 雪面のすぐ上で、まだ落ちている。当たりが受け止めてから、はね返す（先に押し上げると、ただ弱く着くだけになる）
+		_touch_t += dt
+		air_t += dt
+		_air_vn = maxf(_air_vn, vn)
+		return
+	if air_t > AIR_MIN_T and _air_vn > LAND_MIN_V:
+		land_v = _air_vn
+		land_n += 1
+		apply_central_impulse(n * mass * minf(land_v * LAND_BOUNCE, LAND_BOUNCE_MAX))
+	air_t = 0.0
+	_touch_t = 0.0
 
 
 ## 乗って下っているときの力。ソリと乗っている人は一緒に動くので、重力は同じ加速で、ほかの力（雪の抵抗・沈み・体重移動）は
@@ -1230,6 +1272,7 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 	var K: Dictionary = KINDS[kind]
 	var share := mass / load_mass()
 	var n := _ground_normal()
+	_air_step(dt, n)
 	var v_t := linear_velocity - n * linear_velocity.dot(n)
 	var vs := v_t.length()
 	if vs > 0.01:
@@ -1246,12 +1289,10 @@ func _ride_forces(dt: float, fwd: Vector3) -> void:
 	if pull > 0.0 and n.y < 0.9995:   # 坂を下る向き（重力の、雪面に沿った分）に足す
 		apply_central_force((Vector3.DOWN - n * Vector3.DOWN.dot(n)) * 9.8 * pull * mass)
 	var w := get_parent()
-	# ジャンプ台の通り道では跳ねさせず、雪面へも引き戻さない（台は地形とは別の当たりで、台の上と宙が「浮いた」に見えて飛びが縮む。main.gd の on_jump_lane）
+	# ジャンプ台の通り道では跳ねさせない（台は地形とは別の当たりで、台の上が「雪面から浮いた」に見える。main.gd の on_jump_lane）。
+	# 浮いたソリを雪面へ引き戻す力は、2026-11-14 に外した（起伏を越えて落ちるとき、ふつうの重力で飛ぶ。上の「宙と着地」）
 	if bumps > 0.0 and vs > BUMP_MIN and not (w and w.has_method("on_jump_lane") and w.on_jump_lane(global_position.x, global_position.z)):
 		_bump(n, vs)
-		# 少し浮いたら、すぐ雪面へ戻す（隆起や地形の段で、ふわっと長く飛ばない）
-		if w and w.has_method("height") and global_position.y - w.height(global_position.x, global_position.z) > 0.6:
-			apply_central_force(Vector3.DOWN * 9.8 * BUMP_SNAP * mass)
 	for x in [-RUNNER_X, RUNNER_X]:
 		var r := global_basis * Vector3(x, 0, 0)
 		var v_point := linear_velocity + angular_velocity.cross(r)
@@ -1650,6 +1691,7 @@ func _physics_process(dt: float) -> void:
 			angular_damp = 6.0
 			angular_velocity = Vector3.ZERO
 	if crashed:
+		air_t = 0.0
 		_update_drag(dt)
 		_crash_step(dt)
 		return
@@ -1689,6 +1731,8 @@ func _physics_process(dt: float) -> void:
 		apply_force(-slip * mass * slip_k * 0.5, r)
 	# 左右の滑り木の前後方向の抵抗。体重をかけた側が雪に食い込んで抵抗が増え、曲がる。
 	# 後ろに体重をかけると両側が食い込んで止まる
+	if not (descent and on_runners):
+		air_t = 0.0   # 宙と着地を数えるのは、乗って滑っているあいだだけ（_air_step）
 	if not on_runners:
 		pass
 	elif descent:

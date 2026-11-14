@@ -76,6 +76,7 @@ const Bot := preload("res://bot.gd")
 const Settings := preload("res://settings.gd")
 const Audio := preload("res://audio.gd")
 const RideWind := preload("res://ride_wind.gd")
+const RideBlur := preload("res://ride_blur.gd")
 const SewingMachine := preload("res://sewing_machine.gd")
 const Emotes := preload("res://emotes.gd")
 const Duel := preload("res://duel.gd")
@@ -373,8 +374,8 @@ static func lodge_weight(x: float, z: float) -> float:
 	return smoothstep(0.0, LODGE_BLEND, Vector2(maxf(q.x, 0.0), maxf(q.y, 0.0)).length())
 
 
-## ジャンプ台の通り道（踏み切りの手前から、飛んで着く先まで）にいるか。ここでは、雪面の隆起の跳ねと「浮いたら雪面へ戻す力」を効かせない
-## （sled.gd の bumps。ジャンプ台は地形とは別の当たりなので、台の上と宙にいるあいだが「雪面から浮いた」に見えて、飛びが縮んでしまう）。
+## ジャンプ台の通り道（踏み切りの手前から、飛んで着く先まで）にいるか。ここでは、雪面の隆起の跳ねを効かせない
+## （sled.gd の bumps。ジャンプ台は地形とは別の当たりなので、台の上が「雪面から浮いた」に見える）。
 ## 大きな山と大山のジャンプ台があるのは今までの世界だけ
 static func on_jump_lane(x: float, z: float) -> bool:
 	if tenka():
@@ -723,6 +724,10 @@ func _ready() -> void:
 		ride_wind = RideWind.new()
 		ride_wind.setup(player, sled)
 		add_child(ride_wind)
+	if player and not args.has("no-blur"):   # 速いときの、画面の端の流れるぼかし（あなたの画面だけ）
+		ride_blur = RideBlur.new()
+		ride_blur.setup(player)
+		add_child(ride_blur)
 
 	# 設定画面（Esc）。保存してある値を起動時に当てる
 	settings = Settings.new()
@@ -1049,6 +1054,7 @@ const PIP_SUN_LAYER := 1 << 8
 var env: Environment
 var snowfall: GPUParticles3D
 var ride_wind: Node3D
+var ride_blur: Node3D
 var _pip_layer: CanvasLayer
 var self_cam: CanvasLayer
 var ghost: Node              # 観戦モード（ghost.gd）
@@ -1230,6 +1236,8 @@ func _gabi_h() -> int:
 	return int(args.get("gabi-h", GABI_H))
 
 func _sync_gabi_layer(on: bool, size: Vector2i) -> void:
+	if ride_blur:
+		ride_blur.gabi = on   # いちばん軽い画質のあいだは、端のぼかしを出さない
 	if on and _gabi_layer == null:
 		_gabi_layer = CanvasLayer.new()
 		_gabi_layer.name = "Gabi"
@@ -2515,6 +2523,10 @@ func _apply_setting(key: String, v) -> void:
 			if ride_wind: ride_wind.calm = not v   # 揺れを切った人には、風も控えめに
 		"wind":
 			if ride_wind: ride_wind.strength = v
+		"ride_blur":
+			if ride_blur: ride_blur.strength = v
+		"ride_float":
+			if player: player.ride_float_amount = v
 		"ride_shake":
 			if player: player.ride_shake_enabled = v
 		"fov_kick":
