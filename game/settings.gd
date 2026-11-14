@@ -39,6 +39,8 @@ const ITEMS := [
 	["selfcam", "右下の自分の姿（前から）", "bool", true, null],
 	["snow", "舞う雪", "bool", true, null],
 	["wind", "風の流れ（滑るとき）", "float", 1.0, [0.0, 1.0, 0.05]],
+	["ride_blur", "速いときに画面の端が流れてぼける", "float", 1.0, [0.0, 1.0, 0.05]],   # 2026-11-14: ride_blur.gd
+	["ride_float", "宙に浮く感じ・着地の沈み（滑るとき）", "float", 1.0, [0.0, 1.0, 0.05]],   # 2026-11-14: player.gd の _ride_air
 	["third", "三人称", "bool", false, null],
 	["fov", "視野角（一人称）", "float", 75.0, [50.0, 110.0, 1.0]],
 	["cam_dist", "三人称: カメラの距離", "float", 3.4, [1.4, 9.0, 0.1]],
@@ -237,7 +239,7 @@ func _fmt(key: String, v: float) -> String:
 		"cpus": return "%d 人" % roundi(v)
 		"cam_dist": return "%.1f m" % v
 		"cam_frame": return "%+d%%" % roundi(v * 100)
-		"scale", "wind", "ride_fov_amt", "vol_music", "vol_sfx", "vol_voice", "menu_scale", "hud_scale": return "%d%%" % round(v * 100)
+		"scale", "wind", "ride_blur", "ride_float", "ride_fov_amt", "vol_music", "vol_sfx", "vol_voice", "menu_scale", "hud_scale": return "%d%%" % round(v * 100)
 		_: return "%.2f" % v
 
 

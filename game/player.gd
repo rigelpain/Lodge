@@ -203,6 +203,25 @@ const RATTLE_BUMP := 2.2                    # 隆起で跳ねた直後の倍率
 var _rattle_y := 0.0         # いまカメラに入れている上下 (m)
 var _rattle_bump := 0.0      # 跳ねた直後の強まり（0〜1。すぐ消える）
 var _rattle_seen := 0        # 前に見た、ソリの跳ねた回数
+## 乗って宙に浮いたとき・着いたときの、体の浮き沈み（2026-11-14 代表「体が浮く用な浮遊感とかバウンドする感じとかが欲しい」）。
+## 目の高さを、ばね 1 本で動かす: 宙にいるあいだは席からふわっと浮き（AIR_LIFT）、ガクガクが止まる。着いたら、雪面へ向かっていた速さの分
+## すとんと沈み、ばねで 1 回はね戻る（うなずきも少し）。ソリの宙と着地は sled.gd の air_t・land_n・land_v。数を足すだけで、描く物は増えない
+const AIR_LIFT := 0.09                      # 宙で、目が席から浮く高さ (m)
+const AIR_LIFT_T := Vector2(0.12, 0.7)      # 宙に出てから、浮きはじめる・浮ききるまで (s)。小刻みな浮き（0.3 秒ほど）では少しだけ、長い落下でふわっと
+const AIR_FLOAT := Vector2(45.0, 13.0)      # 宙のあいだのばね（強さ, 弱まり）。ゆっくり、行きすぎずに浮く
+const AIR_SPRING := Vector2(190.0, 9.0)     # 雪の上のばね。着地で沈んだあと、1 回はね戻って収まる
+const AIR_LAND_KICK := 0.24                 # 着地で目が沈みはじめる速さ = 雪面へ向かっていた速さ × これ (m/s)
+const AIR_LAND_KICK_MAX := 1.7              # その上限（沈む深さ 9 cm ほど）
+const AIR_NOD := 1.1                        # 沈んだ深さ 1 m あたりのうなずき (rad)
+var ride_float_amount := 1.0   # 設定「宙に浮く感じ・着地の沈み」（0〜1）
+var _air_y := 0.0            # ばねの今の高さ (m)
+var _air_v := 0.0            # その速さ
+var _air_shown := 0.0        # いまカメラに入れている高さ (m)
+var _air_sled := 0           # 着地を数えているソリ（乗り替えたら数え直す）
+var _land_seen := 0          # 前に見た、ソリの着地の回数
+const RATTLE_AIR := 0.25     # 宙にいるあいだのガクガクの割合
+const RATTLE_AIR_T := 0.3    # 宙に出てから、ガクガクが弱まりはじめるまで (s)。小刻みな浮きでは弱めない
+var _rattle_air := 1.0       # いまのその割合（RATTLE_AIR〜1）
 var ride_shake_enabled := true   # 設定「滑るときの画面の揺れ」。切ると 0.3 倍（「視点の揺れ（押す・引くとき）」とは別。前はそちらに連れて弱まっていた）
 var _fall_v := 0.0           # 宙にいるあいだの下向きの速さ（着いたときの手応えの強さ）
 var _drag_k := 0.0           # 引きずられている度合い（0→1 になめらかに）。視点が前へ傾き、低く揺れる
@@ -1587,13 +1606,15 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 			eye = to_local(_peek_stand.eye_world())   # 台をのぞく: 目は頭の軸の所
 		eye.y += _cam_em.z * ek   # しゃがむ・身ぶりで目が下がる幅も、人形の背丈に合わせる
 		# 着地の沈みは目の高さの追いかけ（lerp）の外で足す（なまらず、すとんと沈んですっと戻る）
-		cam.position.y += _dip_shown - _rattle_y
+		cam.position.y += _dip_shown - _rattle_y - _air_shown
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
 		_dip_shown = _land_dip(dt)
 		var rt := _rattle(dt)   # 上下・うなずき・左右の傾き
 		_rattle_y = rt.x
-		cam.position.y += _rattle_y - _dip_shown
-		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5 + fv.y + rt.y, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0 + fv.x + rt.z)
+		_air_shown = _ride_air(dt)   # 宙で浮き、着地で沈んではね戻る
+		cam.position.y += _rattle_y - _dip_shown + _air_shown
+		var nod := minf(_air_shown, 0.0) * AIR_NOD   # 着地で沈んだ分、がくっとうなずく
+		cam.rotation = Vector3(clampf(_pitch + _cam_em.x - 0.18 * _drag_k - dip * 1.5 + fv.y + rt.y + nod, -1.5, 1.4), _cam_em.y + reel * 0.5, _cam_roll + reel + jolt * 2.0 + fv.x + rt.z)
 		return
 	# 三人称: 頭の少し上を中心に、後ろからカメラの距離と高さで見る。マウスの上下で回り込む。
 	# 頭からカメラへ玉を滑らせて、壁・天井・地面・ソリに当たる手前で止める（埋まらない）。
@@ -1627,7 +1648,8 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	_cam_free = free if free < _cam_free else move_toward(_cam_free, free, dt * 4.0)
 	var at := pivot_w + ray.normalized() * minf(_cam_free, ray.length())
 	var rt := _rattle(dt)   # 三人称も、カメラごとガクガク揺れる（一人称と同じ数）
-	at += Vector3.UP * rt.x * 1.5
+	_air_shown = 0.0   # 一人称に戻ったとき、引き戻す分が残らないように
+	at += Vector3.UP * (rt.x * 1.5 + _ride_air(dt) * 1.5)   # 宙の浮き・着地の沈みも、カメラごと
 	cam.global_position = at if cam.global_position.distance_to(at) > 2.0 or free < _cam_free + 0.01 \
 		else cam.global_position.lerp(at, min(1.0, dt * 10.0))
 	# 地面や当たりで動かした所から、もう一度頭へ向け直す（ずらした分は除いて向ける。ずらしは縮めた割合だけ残す）
@@ -1649,15 +1671,42 @@ func _rattle(dt: float) -> Vector3:
 		return Vector3.ZERO
 	if sled.bump_n != _rattle_seen:
 		_rattle_seen = sled.bump_n
-		_rattle_bump = 1.0
+		_rattle_bump = maxf(_rattle_bump, 1.0)
+	# 長く宙にいるあいだは、雪をこすらないのでガクガクがほとんど止まる（すっと静かになる。風にあおられる分だけ残す）。着いたらすぐ戻る。
+	# 旭ヶ丘を速く下ると 1〜2 秒に 1 回は 0.3〜1 秒ほど浮くので、短い浮きでは弱めない（速いときの揺れが減ってしまう）
+	var in_air: bool = sled.air_t > RATTLE_AIR_T
+	_rattle_air = move_toward(_rattle_air, RATTLE_AIR if in_air else 1.0, dt * (7.0 if in_air else 30.0))
 	var k: float = Sled.rattle * smoothstep(RATTLE_SPEED.x, RATTLE_SPEED.y, sled.linear_velocity.length()) * (1.0 if ride_shake_enabled else 0.3)
-	k *= 1.0 + (RATTLE_BUMP - 1.0) * _rattle_bump
+	k *= (1.0 + (RATTLE_BUMP - 1.0) * _rattle_bump) * _rattle_air
 	if k <= 0.001:
 		return Vector3.ZERO
 	var f := float(Doll.frame_index())
 	return Vector3((fposmod(sin(f * 12.9898) * 43758.5453, 1.0) - 0.5) * 2.0 * RATTLE_Y,
 			(fposmod(sin(f * 78.233) * 24634.6345, 1.0) - 0.5) * 2.0 * RATTLE_PITCH,
 			(fposmod(sin(f * 39.3468) * 15731.743, 1.0) - 0.5) * 2.0 * RATTLE_ROLL) * k
+
+
+## 乗って宙に浮いたとき・着いたときの、目の浮き沈み (m)。上の「体の浮き沈み」。乗って滑っていなければ、ばねで 0 に戻る
+func _ride_air(dt: float) -> float:
+	var riding := mode == Mode.RIDE and sled != null
+	var want := 0.0
+	var air := false
+	if riding:
+		if sled.get_instance_id() != _air_sled:
+			_air_sled = sled.get_instance_id()
+			_land_seen = sled.land_n
+		air = sled.air_t > AIR_LIFT_T.x
+		if air:
+			want = AIR_LIFT * smoothstep(AIR_LIFT_T.x, AIR_LIFT_T.y, sled.air_t)
+		if sled.land_n != _land_seen:
+			_land_seen = sled.land_n
+			_air_v -= minf(sled.land_v * AIR_LAND_KICK, AIR_LAND_KICK_MAX)
+			_rattle_bump = clampf(sled.land_v / 2.5, 1.0, 2.0)   # 着地の直後は、隆起より強くガクガク
+	var sp := AIR_FLOAT if air else AIR_SPRING
+	var h := minf(dt, 1.0 / 30.0)
+	_air_v += ((want - _air_y) * sp.x - _air_v * sp.y) * h
+	_air_y = clampf(_air_y + _air_v * h, -0.14, 0.1)
+	return _air_y * ride_float_amount * (1.0 if ride_shake_enabled else 0.3)
 
 
 func _update_ride_fov(dt: float) -> void:

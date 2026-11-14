@@ -8,7 +8,15 @@ extends Node3D
 
 const LAYER := 1 << 4
 const SPEED_MIN := 2.0      # これより遅いと出さない (m/s)
-const SPEED_FULL := 9.0     # これで最も強い（頂上からまっすぐ下ると 10 m/s ほど）
+const SPEED_FULL := 9.0     # 下の段（level）がこれで満ちる。速さの表示・HUD の揺れもこの値
+## 上の段（rush）: SPEED_FULL より上でも、SPEED_TOP まで強まり続ける（2026-11-14 代表「いまMAXのスピード出ててもいまいち恐怖を感じるほどではなくて」。
+## 滑りを速くしたあと、旭ヶ丘の主コースで 29 m/s・そりコースで 20 m/s 出るのに、風は 9 m/s で満ちて、その上は変わらなかった）。
+## 糸がさらに長く、多く、目の近くと画面の真ん中寄りまで流れる。粒の仕掛けの数は同じで、上の段の分の粒は速いときだけ生まれる
+const SPEED_TOP := 26.0     # 上の段がこれで満ちる (m/s)
+const RUSH_MORE := 0.6      # 上の段で増える粒の数（下の段の数に対する割合）
+const RUSH_STRETCH := 2.4   # 上の段で糸に足す長さ（stretch）
+const RUSH_CLEAR := 0.07    # 上の段で、画面の真ん中の空きを縮める幅（画面の高さに対する割合）
+const RUSH_IN := 0.3        # 上の段で、筒の内の半径を縮める幅 (m)。糸が目のすぐ横を通る
 const DRIFT := 0.35         # 粒そのものも後ろへ流れる（ソリの速さに対する割合）。止まった空気より風らしく
 const TUBE_R := 2.6         # 流れる筒の外の半径 (m)
 const TUBE_IN := 0.8        # 内の半径。目の前の筋は空ける
@@ -63,6 +71,9 @@ var sled: RigidBody3D
 var strength := 1.0   # 設定「風の流れ」: 0〜1
 var calm := false     # 設定「視点の揺れ」が切れているとき: 量を減らし、糸のゆらぎを止める
 var level := 0.0      # いまの強さ（0〜1。確かめ用に外から読む）
+var rush := 0.0       # 上の段のいまの強さ（0〜1）
+var _puff: GPUParticles3D   # 着地で舞い上がる雪
+var _land_seen := 0   # 前に見た、ソリの着地の回数（sled.gd の land_n）
 var _threads: GPUParticles3D
 var _fluff: GPUParticles3D
 var _grains: GPUParticles3D
@@ -81,16 +92,18 @@ func _ready() -> void:
 
 	# 毛糸の切れはし: 細くよじれた短い糸。雪の影の青と生成りが多く、ところどころ赤と山吹。
 	# 白い雪と淡い空の前で読めるよう、色は少し沈める
-	_threads = _flow(260, 1.1, _thread_mesh(), _mat(shader, 0.2, false, null, true),
+	_threads = _flow(roundi(260 * (1.0 + RUSH_MORE)), 1.1, _thread_mesh(), _mat(shader, 0.2, false, null, true),
 			[Color(0.55, 0.64, 0.84), Color(0.86, 0.80, 0.68), Color(0.62, 0.70, 0.88), Color(0.80, 0.33, 0.30),
 			Color(0.90, 0.86, 0.78), Color(0.58, 0.66, 0.86), Color(0.86, 0.68, 0.30), Color(0.84, 0.78, 0.66)])
+	_threads.set_meta("clear", 0.2)
 	_threads.process_material.scale_min = 0.7
 	_threads.process_material.scale_max = 1.3
 	# 綿の毛: ふわっとした小さなかたまりに、細い繊維が数本。ゆっくり回りながら流れる
 	var q := QuadMesh.new()
 	q.size = Vector2(0.16, 0.16)
-	_fluff = _flow(36, 1.3, q, _mat(shader, 0.22, true, _fluff_texture()),
+	_fluff = _flow(roundi(36 * (1.0 + RUSH_MORE)), 1.3, q, _mat(shader, 0.22, true, _fluff_texture()),
 			[Color(1, 1, 1, 0.9), Color(0.96, 0.97, 1.0, 0.8)])
+	_fluff.set_meta("clear", 0.22)
 	var fm: ParticleProcessMaterial = _fluff.process_material
 	fm.scale_min = 0.6
 	fm.scale_max = 1.4
@@ -109,8 +122,9 @@ func _ready() -> void:
 	g.height = 0.032
 	g.radial_segments = 5
 	g.rings = 3
-	_grains = _flow(140, 1.0, g, _mat(shader, 0.18, false, null, true),
+	_grains = _flow(roundi(140 * (1.0 + RUSH_MORE)), 1.0, g, _mat(shader, 0.18, false, null, true),
 			[Color(1, 1, 1), Color(0.90, 0.93, 1.0)])
+	_grains.set_meta("clear", 0.18)
 
 	# 滑り木の前から舞い上がるパウダー。ソリについて動き出し、空気に止められて後ろへ流れる
 	_spray = GPUParticles3D.new()
@@ -143,6 +157,37 @@ func _ready() -> void:
 	_spray.material_override = _mat(shader, 0.0, false, null)
 	_spray.emitting = false
 	sled.add_child(_spray)
+
+	# 着地で舞い上がる雪: ソリの前半分の下から、いちどにぱっと。ソリについて動き出し、目の横を後ろへ流れる
+	_puff = GPUParticles3D.new()
+	_puff.amount = 90
+	_puff.lifetime = 0.8
+	_puff.one_shot = true
+	_puff.explosiveness = 0.95
+	_puff.local_coords = false
+	_puff.layers = LAYER
+	_puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	_puff.visibility_aabb = AABB(Vector3(-20, -10, -20), Vector3(40, 20, 40))
+	_puff.position = Vector3(0, 0.1, -0.7)
+	var um := ParticleProcessMaterial.new()
+	um.emission_shape = ParticleProcessMaterial.EMISSION_SHAPE_BOX
+	um.emission_box_extents = Vector3(0.85, 0.03, 0.8)
+	um.direction = Vector3(0, 1, 0)
+	um.spread = 70.0
+	um.initial_velocity_min = 1.5
+	um.initial_velocity_max = 4.5
+	um.inherit_velocity_ratio = 0.9
+	um.gravity = Vector3(0, -6.0, 0)
+	um.damping_min = 3.0
+	um.damping_max = 7.0
+	um.scale_min = 0.8
+	um.scale_max = 2.4
+	um.color_ramp = _life_ramp()
+	_puff.process_material = um
+	_puff.draw_pass_1 = sg
+	_puff.material_override = _mat(shader, 0.0, false, null)
+	_puff.emitting = false
+	sled.add_child(_puff)
 
 
 ## 進む向きのまわりの筒から、粒を後ろへ流す仕掛け
@@ -275,6 +320,11 @@ static func level_of(speed: float) -> float:
 	return smoothstep(SPEED_MIN, SPEED_FULL, speed)
 
 
+## 上の段の盛り上がり（0〜1）: 9 m/s から出て 26 m/s で満ちる。画面の端のぼかし（ride_blur.gd）もこの値で一緒に強まる
+static func rush_of(speed: float) -> float:
+	return smoothstep(SPEED_FULL, SPEED_TOP, speed)
+
+
 func _process(dt: float) -> void:
 	if player == null or sled == null:
 		return
@@ -282,26 +332,39 @@ func _process(dt: float) -> void:
 		# 乗ったソリが替わった（縫ったソリなど）: 雪しぶきもそのソリへ移す
 		sled = player.sled
 		_spray.reparent(sled, false)
+		_puff.reparent(sled, false)
+		_land_seen = sled.land_n
 	elif player.mode != player.Mode.RIDE and sled.get("crafted") and get_parent().get("sled"):
 		# 降りた縫ったソリは畳まれて消えることがあるので、しぶきはもとのソリへ戻しておく
 		sled = get_parent().sled
 		_spray.reparent(sled, false)
+		_puff.reparent(sled, false)
+		_land_seen = sled.land_n
 	var v := sled.linear_velocity
 	var speed := v.length()
 	var riding: bool = player.mode == player.Mode.RIDE and player.sled == sled
 	var want := level_of(speed) * strength * (0.55 if calm else 1.0) if riding else 0.0
 	level = move_toward(level, want, dt * (1.2 if want > level else 2.5))
+	var want_rush := rush_of(speed) * strength * (0.55 if calm else 1.0) if riding else 0.0
+	rush = move_toward(rush, want_rush, dt * (0.8 if want_rush > rush else 2.5))
 	var on := level > 0.01
 	for p in _flows:
 		p.emitting = on
-		p.amount_ratio = level
-	_spray.emitting = on and speed > SPEED_MIN + 2.0
+		p.amount_ratio = level * lerpf(1.0 / (1.0 + RUSH_MORE), 1.0, rush)
+	_spray.emitting = on and speed > SPEED_MIN + 2.0 and sled.air_t < 0.05   # 宙にいるあいだは、雪を舞い上げない
 	_spray.amount_ratio = level
+	if sled.land_n != _land_seen:   # 着地: 雪がぱっと舞い上がる（速く落ちたほど多く）
+		_land_seen = sled.land_n
+		if riding and strength > 0.0:
+			_puff.amount_ratio = clampf(sled.land_v / 5.0, 0.3, 1.0) * strength
+			_puff.restart()
+			_puff.emitting = true
 	# 濃さ: 強いほど濃い。弱まると、まだ宙に残っている粒も一緒に薄れて消える
 	var dens := (0.35 + 0.65 * level) * minf(1.0, level * 8.0)
 	for p in _flows:
 		(p.material_override as ShaderMaterial).set_shader_parameter("strength", dens)
 	(_spray.material_override as ShaderMaterial).set_shader_parameter("strength", dens)
+	(_puff.material_override as ShaderMaterial).set_shader_parameter("strength", maxf(dens, 0.6))
 	if not on:
 		return
 
@@ -317,17 +380,19 @@ func _process(dt: float) -> void:
 	var back := -dir
 	var side := (Vector3.UP if absf(dir.y) < 0.95 else Vector3.FORWARD).cross(back).normalized()
 	var at := Transform3D(Basis(side, back, side.cross(back)), eye + dir * lead * 0.55 + Vector3.UP * 0.4)
-	var stretch := 0.7 + 1.8 * level
+	var stretch := 0.7 + 1.8 * level + RUSH_STRETCH * rush
 	for p in _flows:
 		p.global_transform = at
 		p.speed_scale = fast
 		var pm: ParticleProcessMaterial = p.process_material
 		pm.emission_ring_height = lead
+		pm.emission_ring_inner_radius = TUBE_IN - RUSH_IN * rush
 		pm.initial_velocity_min = speed * DRIFT * 0.7 / fast   # 早回しの分を割り戻す（世界の中で流れる速さは同じ）
 		pm.initial_velocity_max = speed * DRIFT * 1.3 / fast
 		var m: ShaderMaterial = p.material_override
 		m.set_shader_parameter("flow", back)
-		m.set_shader_parameter("stretch", stretch if p != _grains else 1.0 + 1.5 * level)
+		m.set_shader_parameter("stretch", stretch if p != _grains else 1.0 + 1.5 * level + RUSH_STRETCH * rush)
+		m.set_shader_parameter("clear_r", float(p.get_meta("clear")) - RUSH_CLEAR * rush)
 	(_fluff.process_material as ParticleProcessMaterial).turbulence_enabled = not calm
 	var sp: ParticleProcessMaterial = _spray.process_material
 	sp.initial_velocity_min = 1.0 + speed * 0.15
