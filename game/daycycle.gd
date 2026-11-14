@@ -4,6 +4,8 @@ extends Node
 ## 空と霧の色、環境光を変える。夜は同じ灯りを月にして、青く淡く照らす（空の円は月の色になる）。
 ## 画面の右下に日時計を出す。数字は出さず、細い線の扇形の目盛りの上を、昼は太陽、夜は月が東から西へ渡る。
 ## 確かめ用: --time=時（例 --time=17.5 で 17:30 から）、--day=秒（一日の長さ）
+## 設定の画面（settings.gd）から、時刻を変える（set_hour）・止める（paused）ことができる。どちらも保存せず、起動し直すと朝の 10 時から流れる。
+## 時刻はつないだ人どうしでそろえていないので、変わるのは自分の画面だけ
 
 const DAY_SECONDS := 1200.0       # 20 分で一日
 const START_HOUR := 10.0          # 始まりは朝の 10 時
@@ -15,6 +17,7 @@ const AMB_NIGHT := 0.3
 const SKY_EVERY := 0.5            # 空と霧の色を変える間隔（秒）。空の映り込みの計算を毎フレームしないように
 
 var hour := START_HOUR            # いまの時刻（0〜24）
+var paused := false               # 時刻を止めている（設定の画面）
 var day_seconds := DAY_SECONDS
 var _sun: DirectionalLight3D
 var _env: Environment
@@ -55,7 +58,8 @@ func _process(dt: float) -> void:
 			return
 		_make_dial()
 		_apply(true)
-	hour = fposmod(hour + dt * 24.0 / day_seconds, 24.0)
+	if not paused:
+		hour = fposmod(hour + dt * 24.0 / day_seconds, 24.0)
 	_sky_t += dt
 	_apply(_sky_t >= SKY_EVERY)
 	if _dial and is_instance_valid(_dial) and _dial.is_inside_tree():   # 場面を読み直すあいだ（スタート画面から始める）は外れている
@@ -71,6 +75,12 @@ func _process(dt: float) -> void:
 		if st != _dial_stamp:
 			_dial_stamp = st
 			_dial.queue_redraw()
+
+
+## 時刻を変える（設定の画面から）。空と霧の色も、次のコマですぐ合わせる（ふだんは SKY_EVERY 秒ごと）
+func set_hour(h: float) -> void:
+	hour = fposmod(h, 24.0)
+	_sky_t = SKY_EVERY
 
 
 ## 時刻を "10:24" の形で

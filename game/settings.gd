@@ -77,6 +77,10 @@ var host_slot: VBoxContainer # ホストの操作（host_panel.gd が中を作�
 var net_note: Label          # 通信の様子（ホストの番号・つないでいる人数）。main.gd が入れる。一人なら空
 var _ghost_cb: CheckButton   # 霊体化（観戦モード）。ITEMS とは別で、保存しない（起動し直すと体に戻っている）
 var _seen_cb: CheckButton    # 霊体のあいだ、ほかの人から見える
+var _time_sl: HSlider        # 時刻（daycycle.gd の hour）。ITEMS とは別で、保存しない（起動し直すと朝の 10 時から流れる）
+var _time_num: Label
+var _time_cb: CheckButton    # 時刻を止める
+var _time_t := 0.0
 
 
 func _ready() -> void:
@@ -182,6 +186,8 @@ func _build() -> void:
 			sl.drag_ended.connect(func(_c: bool): _dragging = ""; _layout())
 			box.add_child(row)
 			_controls[key] = sl
+		if key == "cpus":
+			_build_time(box)   # 世界の様子を変える物どうし、CPU の数の次に
 
 	_build_ghost(box)   # 霊体化はいちばん下（2026-11-08 代表「霊体化は一番下で良いよ」）
 
@@ -206,6 +212,69 @@ func _build() -> void:
 	net_note.add_theme_color_override("font_color", Color(1, 1, 1, 0.8))
 	box.add_child(net_note)
 	box.add_child(foot)
+
+
+## 時刻の 2 行（2026-11-14 代表「設定画面で時間いじれるようにしてほしい」）: 時刻のスライダー（0:00〜24:00、15 分きざみ）と、時刻を止める切り替え。
+## 一日の巡り（daycycle.gd。自動読み込み）を直接動かす。太陽・空・灯り・気温はそこから時刻を読むので、いっしょに変わる。
+## 保存はしない。時刻はつないだ人どうしでそろえていないので、変わるのは自分の画面だけ
+func _build_time(box: VBoxContainer) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var lb := Label.new()
+	lb.text = "時刻"
+	lb.add_theme_font_size_override("font_size", 15)
+	lb.custom_minimum_size.x = 220
+	row.add_child(lb)
+	_time_sl = HSlider.new()
+	_time_sl.min_value = 0.0
+	_time_sl.max_value = 24.0
+	_time_sl.step = 0.25
+	_time_sl.custom_minimum_size.x = 150
+	_time_sl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(_time_sl)
+	_time_num = Label.new()
+	_time_num.custom_minimum_size.x = 44
+	_time_num.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	_time_num.add_theme_font_size_override("font_size", 15)
+	row.add_child(_time_num)
+	_time_sl.value_changed.connect(func(v: float):
+		var dc := get_node_or_null("/root/DayCycle")
+		if dc:
+			dc.set_hour(v)
+		_sync_time())
+	_time_sl.drag_started.connect(func(): _dragging = "time")
+	_time_sl.drag_ended.connect(func(_c: bool): _dragging = "")
+	box.add_child(row)
+	_time_cb = CheckButton.new()
+	_time_cb.text = "時刻を止める"
+	_time_cb.add_theme_font_size_override("font_size", 15)
+	_time_cb.toggled.connect(func(on: bool):
+		var dc := get_node_or_null("/root/DayCycle")
+		if dc:
+			dc.paused = on)
+	box.add_child(_time_cb)
+	_sync_time()
+
+
+## いまの時刻を、スライダーと数字に写す（動かしているあいだは、スライダーには写さない）
+func _sync_time() -> void:
+	var dc := get_node_or_null("/root/DayCycle")
+	if dc == null or _time_sl == null:
+		return
+	if _dragging != "time":
+		_time_sl.set_value_no_signal(dc.hour)
+	_time_num.text = dc.clock()
+	_time_cb.set_pressed_no_signal(dc.paused)
+
+
+## 画面が開いているあいだ、流れている時刻をスライダーに写す
+func _process(dt: float) -> void:
+	if not is_open:
+		return
+	_time_t -= dt
+	if _time_t <= 0.0:
+		_time_t = 0.25
+		_sync_time()
 
 
 ## 霊体化の 2 行（ほかの切り替えと同じく字で。項目のいちばん下に、線で分けて）: 霊体になる、霊体のあいだほかの人から見える
