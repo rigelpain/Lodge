@@ -1334,9 +1334,15 @@ func _process(_dt: float) -> void:
 		_pip_sun.light_energy = sun_light.light_energy
 		_pip_sun.light_angular_distance = sun_light.light_angular_distance
 		_pip_sun.visible = sun_light.visible
-		_pip_due = minf(_pip_due + _dt * PIP_FPS * FACES.size(), FACES.size())
+		# 縦長の形（pip_mode 0）は後ろを中心にした魚眼で、画面の隅でも軸から 98° ほど。「前」の面（軸から 115° より先）は 1 画素も映らないので描かない
+		# （2026-11-14 測定: 天下森の滑走は 1 コマの 8 割近くが 3D の描画で、この映像がその 2 割弱。面は 1 秒に 72 枚 → 60 枚）
+		var skip_front := pip_mode == 0
+		var faces := FACES.size() - (1 if skip_front else 0)
+		_pip_due = minf(_pip_due + _dt * PIP_FPS * faces, faces)
 		while _pip_due >= 1.0:
 			_pip_due -= 1.0
+			if skip_front and _pip_next == 0:
+				_pip_next = 1
 			_pip_vps[_pip_next].render_target_update_mode = SubViewport.UPDATE_ONCE
 			_pip_next = (_pip_next + 1) % FACES.size()
 

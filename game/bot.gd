@@ -123,6 +123,12 @@ var _goal_t := 0.0           # そこから近づけないでいる秒
 var _roam_rest := 0.0        # 次の山へ歩き出すまで (s)
 var _far_t := 0.0            # 遠いかを見直すまで (s)
 var _far_acc := 0.0          # 間引いて動く時間のたまり (s)
+## どの人からも遠くて、歩いているか休んでいるだけの仲間は、毎コマの考え（_physics_process の全部）を THIN_EVERY コマに 1 回にする
+## （2026-11-14 代表「遠い仲間も軽くして」。遠い歩きは前から FAR_STEP ごとに進めていたが、そこへ着くまでの前処理は毎コマ 30 人ぶん走っていた）。
+## 飛ばしたコマの時間はためて、次に考えるコマへまとめて渡す。乗る・押す・組む・ロッジの中・雪合戦は、今までどおり毎コマ
+const THIN_EVERY := 3
+var _thin := false           # 次のコマから間引いてよい（前のコマが、遠い歩きか遠い休みで終わった）
+var _thin_dt := 0.0          # 間引いて飛ばしたコマの時間のたまり (s)
 var _wp_best := INF          # いまの行き先に、いちばん近づいた距離
 var _wp_t := 0.0             # そこから近づけないでいる秒
 var give_ups := 0            # 当たりを消して抜けた回数（確かめ用）
@@ -397,6 +403,13 @@ func damp_k(push: bool) -> float:
 
 func _physics_process(dt: float) -> void:
 	push_world = Vector3.ZERO
+	if _thin:
+		_thin_dt += dt
+		if (Engine.get_physics_frames() + id) % THIN_EVERY != 0:   # 仲間ごとにコマをずらす（同じコマに固めない）
+			return
+		dt = _thin_dt
+	_thin_dt = 0.0
+	_thin = false
 	if roam:
 		_keep_sled()
 		_team_cool = maxf(0.0, _team_cool - dt)
@@ -1142,10 +1155,16 @@ func _pick_area() -> String:
 
 ## 次の山へ歩く。頂上の先（広げる所）まで来たら、米袋を広げて乗る
 func _roam_walk(dt: float) -> void:
+	_far_t -= dt
+	if _far_t <= 0.0:   # 遠いかの見直しは、休んでいるあいだも（前は歩いているときだけで、休みに入ると前の値のままだった）
+		_far_t = randf_range(0.4, 0.6)
+		var h := _nearest_human()
+		far = h == null or global_position.distance_to(h.global_position) > FAR
 	if _area == "":
 		_roam_rest -= dt
 		if _roam_rest > 0.0:
 			_settle_walk(Vector3.ZERO, dt)
+			_thin = far and is_on_floor()   # 遠くで立って休んでいるだけ
 			return
 		if (visit and visit.want()) or _try_errand() or _try_team():
 			return
@@ -1181,13 +1200,9 @@ func _roam_walk(dt: float) -> void:
 		_ghost = true
 		_col.disabled = true
 		_nav_clear()
-	_far_t -= dt
-	if _far_t <= 0.0:
-		_far_t = randf_range(0.4, 0.6)
-		var h := _nearest_human()
-		far = h == null or global_position.distance_to(h.global_position) > FAR
 	var dir := Vector3(w.x - at.x, 0, w.y - at.y).normalized()
 	if far or _ghost:
+		_thin = far   # 遠い歩き（FAR_STEP ごとに進むだけ）
 		_far_acc += dt
 		if _far_acc < FAR_STEP:
 			return
