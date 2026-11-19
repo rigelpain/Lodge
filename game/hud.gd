@@ -1194,7 +1194,7 @@ func speedo_box_now() -> Rect2:
 ## （2026-10-31 代表「押してる人数はタグで表示すべきだし、速度は糸巻き、fps や通信速度は残しましょう。もっと小さい HUD で間に合うはず」。
 ## 人数・高さ・速さ・いまの状態・覚えた案内の数は、札と糸巻きと手引きが伝えるので出さない）
 func _debug_values() -> Dictionary:
-	return {"fps": int(Engine.get_frames_per_second()), "ms": _net_ms()}
+	return {"fps": int(Engine.get_frames_per_second()), "ms": _net_ms(), "s3d": roundi(100.0 * float(main.get("dyn_scale") if main and main.get("dyn_scale") != null else 1.0))}
 
 
 ## 通信の往復の時間 (ms)。ENet でつながっている相手のうち、いちばん遅い相手。ひとりで遊んでいるときは -1
@@ -1493,6 +1493,8 @@ class View extends Control:
 		at += Icons.tuck_off(Rect2(Vector2.ZERO, Vector2(200.0, 24.0) * u), size)
 		var parts := [["%d fps" % d.fps, Icons.RED if d.fps < 30 else Icons.THREAD],
 			["%s ms" % (str(d.ms) if d.ms >= 0 else "--"), Icons.THREAD]]
+		if int(d.get("s3d", 100)) < 100:   # 重いときに自動で粗くしている割合（main.gd の _auto_scale）
+			parts.append(["3D %d%%" % d.s3d, Icons.THREAD])
 		for x in parts:
 			draw_string_outline(font, at, x[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, maxi(2, int(3.0 * u)), Color(1, 1, 1, 0.55))
 			draw_string(font, at, x[0], HORIZONTAL_ALIGNMENT_LEFT, -1, fs, Color(x[1], 0.8))

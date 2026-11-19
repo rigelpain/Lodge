@@ -47,6 +47,7 @@ const ITEMS := [
 	["cam_frame", "三人称: 人形の画面の高さ", "float", -0.2, [-0.75, 0.5, 0.05]],
 	["sens", "マウスの感度", "float", 1.0, [0.3, 2.5, 0.05]],
 	["scale", "3D の描画の解像度（軽さ）", "float", 0.67, [0.4, 1.0, 0.01]],
+	["auto_scale", "重いときは 3D を自動で粗くして fps を保つ", "bool", true, null],   # 2026-11-19: main.gd の _auto_scale（ほかのアプリが GPU を使うときなど）
 	["ssao", "くぼみの影・色の照り返し", "bool", true, null],
 	["shadows", "影", "bool", true, null],
 	["glow", "明るい所の光のにじみ", "bool", true, null],
