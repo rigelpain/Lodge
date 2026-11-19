@@ -193,9 +193,11 @@ var _land_t := 1.0           # 着いてからの時間 (s)。LAND_DIP_T まで�
 var _land_amp := 0.0         # そのときの沈む深さ (m)
 var _dip_shown := 0.0        # いまカメラに入れている着地の沈み (m)
 ## 乗って速く滑っているときの画面のガクガク（一人称。2026-11-12 代表「画面のガクガクもそうだし」）。強さはワールドごと（sled.gd の rattle）。
-## 人形と同じコマ（Doll.frame_index）で刻むので、なめらかに揺れず、がくがくと飛ぶ。速いほど大きく、隆起で跳ねた直後は一段大きい。
+## 人形と同じコマ（Doll.frame_index）で刻むので、なめらかに揺れず、がくがくと飛ぶ。大きさは速さに比例し（2026-11-18 代表「視界の揺れはスピードに比例して」）、
+## 隆起で跳ねた直後は一段大きい（その一段も速さに比例した大きさに掛ける）。
 ## 設定の「視点の揺れ」を切ると弱く（0.3 倍）。目の高さと向きに数を足すだけで、描く物は増えない
-const RATTLE_SPEED := Vector2(2.5, 14.0)   # この速さ (m/s) から揺れはじめ、ここで全部（2026-11-12 代表「もっと視界ガクガク揺れていい」で、遅いうちから）
+const RATTLE_FULL := 14.0                  # この速さ (m/s) で揺れが全部。0 からまっすぐ比例する（前は 2.5〜14 m/s のなめらかな立ち上がり）
+const RATTLE_OVER := 1.15                  # 比例の上限（米袋の連打の 16 m/s まで伸びる）
 const RATTLE_Y := 0.03                      # 目の上下 (m)
 const RATTLE_PITCH := 0.022                 # うなずき (rad)
 const RATTLE_ROLL := 0.035                  # 左右の傾き (rad)
@@ -1676,7 +1678,7 @@ func _rattle(dt: float) -> Vector3:
 	# 旭ヶ丘を速く下ると 1〜2 秒に 1 回は 0.3〜1 秒ほど浮くので、短い浮きでは弱めない（速いときの揺れが減ってしまう）
 	var in_air: bool = sled.air_t > RATTLE_AIR_T
 	_rattle_air = move_toward(_rattle_air, RATTLE_AIR if in_air else 1.0, dt * (7.0 if in_air else 30.0))
-	var k: float = Sled.rattle * smoothstep(RATTLE_SPEED.x, RATTLE_SPEED.y, sled.linear_velocity.length()) * (1.0 if ride_shake_enabled else 0.3)
+	var k: float = Sled.rattle * minf(sled.linear_velocity.length() / RATTLE_FULL, RATTLE_OVER) * (1.0 if ride_shake_enabled else 0.3)
 	k *= (1.0 + (RATTLE_BUMP - 1.0) * _rattle_bump) * _rattle_air
 	if k <= 0.001:
 		return Vector3.ZERO

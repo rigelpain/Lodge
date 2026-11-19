@@ -95,6 +95,11 @@ const CRASH_UP := Vector2(5.0, 13.0)   # 上へ飛ぶ速さ (m/s)。当たった
 const CRASH_UP_AT := Vector2(3.0, 12.0)
 const CRASH_KEEP := 0.35       # 雪の塊: 当たった速さのうち、そのまま前へ残る割合。大きいと塊を越えてロッジの前の広場まで飛ぶ
 const CRASH_BOUNCE := 0.3      # 木: 跳ね返る速さの割合
+## 打ち上がったソリが宙を進む距離は、当たった速さに比例する（2026-11-18 代表「四散するときも衝突スピードに比例した飛距離に」）。
+## 前は上へ飛ぶ速さ（CRASH_UP）も速さで増えるので、宙にいる時間 × 前へ残る速さで、距離が速さの 2 乗ほどに伸びていた。
+## いまは 距離 = 前へ残る速さ（CRASH_KEEP・CRASH_BOUNCE を掛けた）× CRASH_FLY_T。宙にいる時間が長いほど、前へ残る速さを落とす。
+## CRASH_FLY_T は当たった速さ 9 m/s のときの宙の時間（その速さでは前と同じ距離）
+const CRASH_FLY_T := 2.1
 const CRASH_SPIN := Vector2(4.0, 9.0)  # 宙で回る速さの下限と上限 (rad/s)
 const CRASH_SPIN_DAMP := 0.2   # 宙で回る勢いの弱まり（ふだんの angular_damp は 6）
 const CRASH_LAND_DAMP := 2.5   # 着いたあと、回る勢いの弱まり
@@ -127,6 +132,10 @@ const BUMP_UP := 0.05          # 突き上げる速さ = 滑る速さ × これ�
 const BUMP_UP_MAX := 0.8       # 突き上げる速さの上限 (m/s。高さ 3 cm ほど、宙に 0.16 秒ほど)
 const BUMP_PITCH := 1.1        # つんのめる・のけぞる回る速さ (rad/s) の上限
 const BUMP_ROLL := 0.6         # 左右にがくっと傾く回る速さ (rad/s) の上限
+## 隆起でがくっと回る強さは、滑る速さに比例する（2026-11-18 代表「視界の揺れはスピードに比例して」「平地で米袋でガクガクってちょっと違う」）。
+## 前は BUMP_MIN を超えると、遅くても最高速と同じだけ回っていた。BUMP_SPIN_AT で前と同じ強さ（中・大のソリでまっすぐ下る速さ）、BUMP_SPIN_OVER 倍で頭打ち
+const BUMP_SPIN_AT := 9.0
+const BUMP_SPIN_OVER := 1.3
 var _bump_cell := Vector2i(1 << 30, 0)
 var bump_n := 0                # 跳ねた回数（確かめ用・画面のガクガクのきっかけ）
 ## 宙と着地（2026-11-14 代表「ジャンプ台や起伏でのちょっとした落下のときに体が浮く用な浮遊感とかバウンドする感じとかが欲しい」）。
@@ -1318,8 +1327,9 @@ func _bump(n: Vector3, vs: float) -> void:
 		return   # 宙にいるあいだは跳ねない
 	var k := (0.5 + h / BUMP_CHANCE) * bumps
 	apply_central_impulse(n * mass * minf(vs * BUMP_UP, BUMP_UP_MAX) * k)
-	angular_velocity += global_basis.x * (fposmod(h * 7.0, 1.0) - 0.4) * BUMP_PITCH * k   # 前へつんのめる・後ろへのけぞる（回りの弱まりですぐ収まる）
-	angular_velocity += global_basis.z * (fposmod(h * 13.0, 1.0) - 0.5) * 2.0 * BUMP_ROLL * k   # 左右にがくっと傾く
+	var ks := k * minf(vs / BUMP_SPIN_AT, BUMP_SPIN_OVER)   # 回る強さは速さに比例
+	angular_velocity += global_basis.x * (fposmod(h * 7.0, 1.0) - 0.4) * BUMP_PITCH * ks   # 前へつんのめる・後ろへのけぞる（回りの弱まりですぐ収まる）
+	angular_velocity += global_basis.z * (fposmod(h * 13.0, 1.0) - 0.5) * 2.0 * BUMP_ROLL * ks   # 左右にがくっと傾く
 	bump_n += 1
 
 
@@ -1574,7 +1584,8 @@ func _launch(v: Vector3, keep: Vector3, point: Vector3, lump: Node3D = null) -> 
 	if rope_holder and rope_holder.has_method("let_go"):
 		rope_holder.let_go()
 	var speed := v.length()
-	linear_velocity = keep + Vector3.UP * lerpf(CRASH_UP.x, CRASH_UP.y, clampf(inverse_lerp(CRASH_UP_AT.x, CRASH_UP_AT.y, speed), 0.0, 1.0))
+	var up := lerpf(CRASH_UP.x, CRASH_UP.y, clampf(inverse_lerp(CRASH_UP_AT.x, CRASH_UP_AT.y, speed), 0.0, 1.0))
+	linear_velocity = keep * (CRASH_FLY_T / (2.0 * up / 9.8)) + Vector3.UP * up   # 宙を進む距離 = keep × CRASH_FLY_T（速さに比例）
 	var spin := clampf(speed, CRASH_SPIN.x, CRASH_SPIN.y)
 	angular_velocity = global_basis.x * spin * (1.0 if randf() < 0.5 else -1.0) + global_basis.z * spin * randf_range(-0.7, 0.7)
 	angular_damp = CRASH_SPIN_DAMP
