@@ -1199,6 +1199,42 @@ const SCALE_3D_HEIGHT := 1080.0
 
 var _fit_h := -1   # 3D の大きさを決めたときの画面の縦 (px)。窓の大きさが変わったら決め直す（起動の直後にも変わる）
 
+## 重いときだけ 3D を自動で粗くする（2026-11-19 代表「裏で discord や meet を開いていても重くならないようにしたい」→「自動で下げて」）。
+## M2 の全画面（画質「きれい」・CPU 30 人）では GPU が 96〜100% に張りつき、1 コマの重さの大半が 3D を描く細かさだった
+## （3D の大きさ 0.75 → 0.5 で 34 → 21 ms。ほかの項目は 1 つ 0.5〜3.7 ms。tools/fps_cost.gd で測定）。
+## ほかのアプリが GPU を使うと、それだけで 60 に届かなくなる。そこで、1 コマが間に合わない間は 3D の大きさを少しずつ下げ、
+## 余裕が戻れば少しずつ元（設定の値）へ上げる。HUD・文字・小窓の細かさは変えない（FSR で広げる）。
+## 1 コマの時間は DYN_WINDOW 秒ごとの中央値で見る（読み込みなどの一度きりの引っかかりでは下げない）。
+## 下げても速くならないとき（重いのが GPU ではなく CPU のとき）は、粗くしても得がない。1 段の差は測るぶれより小さいので、得は DYN_GAIN_STEPS 段まとめて見る（その段数ぶん下げても DYN_GAIN より速くならなければ得がない。
+## そのぶん上げ戻して、しばらく下げない）。下げはじめからの合計で見ると、途中までは得があっても、その先のほとんど得のない所まで下げきってしまう。
+## M2 の全画面・CPU 30 人・Chrome が CPU を 1 つ使っているとき: 3D 0.65 で 42 fps、0.45 で 55 fps、0.32 で 57 fps（GPU と CPU の両方が重い）
+## 上げて遅くなったら、次に上げるまでの待ちを倍にする（行ったり来たりをくり返さない）。
+## 遊んでいる窓（use_game_pacing）が手前にあるときだけ。ガビガビ・--scale3d・設定で切ったときは何もしない
+const DYN_MIN := 0.5          # 設定の大きさに対する、下げる下限の割合
+const SCALE_3D_FLOOR := 0.25  # 3D の大きさの下限（Godot の 3D の縮めの下限）
+const DYN_WINDOW := 0.5       # 1 コマの時間を見る区切り (s)
+const DYN_SAMPLES := 2        # 下げている途中、1 つの段で測る区切りの数（段を替えた直後の 1 区切りは捨てる）。その平均で次を決める
+const DYN_SLOW := 1.05        # 1 コマが 60 FPS の時間のこれ倍（約 57 FPS）を超えたら下げる
+const DYN_OK := 1.025         # これ以内（ほぼ 60 FPS）が DYN_RAISE_WAIT 秒続いたら上げる
+const DYN_DOWN := 0.1         # 1 回に下げる幅（設定の大きさに対する割合）
+const DYN_UP := 0.05          # 1 回に上げる幅
+const DYN_RAISE_WAIT := 2.0   # 上げるまでの待ちの始め (s)。いちばん下から元まで 20 秒ほど。上げて遅くなるたびに倍（DYN_RAISE_WAIT_MAX まで）
+const DYN_RAISE_WAIT_MAX := 40.0
+const DYN_GAIN := 0.95        # DYN_GAIN_STEPS 段下げて、1 コマの時間がこの倍より短くならなければ「下げても得がない」
+const DYN_GAIN_STEPS := 3
+const DYN_CPU_HOLD := 15.0    # 下げても得がないとき、下げずに待つ (s)
+var dyn_scale := 1.0          # いまの自動の割合（DYN_MIN〜1。確かめ用の数字にも出す）
+var auto_scale := true        # 設定「重いときは 3D を自動で粗くする」
+var _dyn_last_us := 0
+var _dyn_ft: PackedFloat32Array = []
+var _dyn_t := 0.0
+var _dyn_ok_t := 0.0
+var _dyn_wait := DYN_RAISE_WAIT
+var _dyn_hold := 0.0
+var _dyn_steps: Array = []    # 下げている途中の、段ごとの [割合, 1 コマの時間の和 (ms), 区切りの数（-1 は捨てる 1 区切り目）]。間に合うようになったら空に
+var _dyn_since_up := INF      # 最後に上げてからの時間 (s)
+var _focused := true
+
 func _fit_3d_scale() -> void:
 	var vp := get_viewport()
 	if vp.size.y == _fit_h:
@@ -1208,6 +1244,8 @@ func _fit_3d_scale() -> void:
 	var k := clampf(user * clampf(SCALE_3D_HEIGHT / maxf(vp.size.y, 1.0), 0.5, 1.0), 0.25, 1.0)
 	if args.has("scale3d"):
 		k = clampf(float(args["scale3d"]), 0.25, 1.0)
+	else:
+		k = clampf(k * dyn_scale, SCALE_3D_FLOOR, 1.0)   # 重いときだけ自動で粗くする分（_auto_scale）
 	var gabi: bool = settings != null and settings.values.get("gabi", false)
 	if gabi:   # 縦 GABI_H px の粒で描く。Godot の 3D の縮めは 1/4 までなので、大きな画面ではそれより細かく描いて、粒は _gabi_layer でそろえる
 		k = clampf(float(_gabi_h()) / maxf(vp.size.y, 1.0), 0.25, 1.0)
@@ -1216,6 +1254,84 @@ func _fit_3d_scale() -> void:
 	vp.scaling_3d_scale = k
 	vp.mesh_lod_threshold = 4.0 if gabi else 1.0   # 粒が荒いので、形も粗くてよい
 	_sync_gabi_layer(gabi, vp.size)
+
+
+## 重いときだけ 3D を自動で粗くする（上の DYN_* の説明）。--auto-scale で確かめの道具（-s）でも動かす
+func _auto_scale(dt: float) -> void:
+	var gabi: bool = settings != null and settings.values.get("gabi", false)
+	var on := auto_scale and (_game_pacing or args.has("auto-scale")) and (_focused or args.has("auto-scale")) and not gabi and not args.has("scale3d")
+	if not on:
+		if dyn_scale != 1.0:
+			dyn_scale = 1.0
+			_fit_h = -1
+		_dyn_reset()
+		return
+	var now := Time.get_ticks_usec()
+	if _dyn_last_us > 0:
+		var real := (now - _dyn_last_us) / 1000.0
+		_dyn_ft.append(real)
+		_dyn_t += real / 1000.0
+		_dyn_hold = maxf(_dyn_hold - real / 1000.0, 0.0)
+		_dyn_since_up += real / 1000.0
+	_dyn_last_us = now
+	if _dyn_t < DYN_WINDOW or _dyn_ft.size() < 5:
+		return
+	var sorted := _dyn_ft.duplicate()
+	sorted.sort()
+	var ms: float = sorted[sorted.size() / 2]
+	var win := _dyn_t
+	_dyn_ft.clear()
+	_dyn_t = 0.0
+	var target := 1000.0 / float(Engine.max_fps if Engine.max_fps > 0 else GAME_FPS)
+	var was := dyn_scale
+	if ms > target * DYN_SLOW:
+		_dyn_ok_t = 0.0
+		if _dyn_since_up < DYN_WINDOW * 3.0:   # 上げた直後に遅くなった: 次に上げるまでの待ちを倍に
+			_dyn_wait = minf(_dyn_wait * 2.0, DYN_RAISE_WAIT_MAX)
+			_dyn_since_up = INF
+		var first := _dyn_steps.is_empty()
+		if first or not is_equal_approx(_dyn_steps[-1][0], dyn_scale):
+			_dyn_steps.append([dyn_scale, 0.0, 0 if first else -1])   # 下げたばかりの段は、替えた直後の 1 区切りを捨てる
+		var cur: Array = _dyn_steps[-1]
+		if int(cur[2]) < 0:
+			cur[2] = 0
+		else:
+			cur[1] += ms
+			cur[2] += 1
+		if int(cur[2]) >= DYN_SAMPLES and _dyn_hold <= 0.0 and dyn_scale > DYN_MIN:
+			var avg: float = cur[1] / cur[2]
+			var back: Array = _dyn_steps[-1 - DYN_GAIN_STEPS] if _dyn_steps.size() > DYN_GAIN_STEPS else []
+			if not back.is_empty() and avg > float(back[1]) / float(back[2]) * DYN_GAIN:
+				# 何段か下げても速くならなかった（ここから先は GPU ではなく CPU が重い）: そのぶん上げ戻して、しばらく下げない
+				dyn_scale = back[0]
+				_dyn_hold = DYN_CPU_HOLD
+				_dyn_steps.clear()
+			else:
+				dyn_scale = maxf(dyn_scale - DYN_DOWN, DYN_MIN)
+	else:
+		_dyn_steps.clear()
+		if ms <= target * DYN_OK:
+			_dyn_ok_t += win
+			if _dyn_ok_t >= _dyn_wait and dyn_scale < 1.0:
+				dyn_scale = minf(dyn_scale + DYN_UP, 1.0)
+				_dyn_ok_t = 0.0
+				_dyn_since_up = 0.0
+				if dyn_scale >= 1.0:
+					_dyn_wait = DYN_RAISE_WAIT   # 元に戻りきったら、待ちも始めから
+		else:
+			_dyn_ok_t = 0.0   # 間（57〜58.5 FPS）: 下げも上げもしない
+	if args.has("auto-scale-trace"):
+		print("自動の 3D: 1 コマ %.1f ms → 割合 %.2f（段 %d、待ち %.0f s、止め %.0f s）" % [ms, dyn_scale, _dyn_steps.size(), _dyn_wait, _dyn_hold])
+	if dyn_scale != was:
+		_fit_h = -1   # 次の _fit_3d_scale で当て直す
+
+
+func _dyn_reset() -> void:
+	_dyn_last_us = 0
+	_dyn_ft.clear()
+	_dyn_t = 0.0
+	_dyn_ok_t = 0.0
+	_dyn_steps.clear()
 
 
 ## ガビガビ（settings.gd の gabi）: 3D を縦 GABI_H px の粒で描く。3D のすぐ上（HUD より下）に、画面の絵を粒のます目にそろえる 1 枚を置く。
@@ -1331,6 +1447,7 @@ func _place_pip_cams() -> void:
 var _cloud_t := 0.0
 
 func _process(_dt: float) -> void:
+	_auto_scale(_dt)
 	_fit_3d_scale()
 	_cloud_t += _dt
 	if _cloud_t >= 0.5:   # 雲は 0.5 秒ごとに焼き直す
@@ -1387,9 +1504,12 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT:
 		Engine.max_fps = BACKGROUND_FPS
 		Engine.max_physics_steps_per_frame = BACKGROUND_STEPS
+		_focused = false
 	elif what == NOTIFICATION_APPLICATION_FOCUS_IN:
 		Engine.max_fps = GAME_FPS
 		Engine.max_physics_steps_per_frame = GAME_STEPS
+		_focused = true
+		_dyn_reset()
 
 
 ## ロッジの中の小さな物（家具・小物・壁の灯りの道具）は、カメラから LODGE_INNER_SEE より遠いと描かない。
@@ -2552,6 +2672,8 @@ func _apply_setting(key: String, v) -> void:
 			if player: player.base_fov = v
 		"sens":
 			if player: player.mouse_sens = v
+		"auto_scale":
+			auto_scale = v
 		"scale", "gabi":
 			_fit_h = -1   # 窓の大きさの縮めとかけ合わせて当て直す（_fit_3d_scale）
 			_fit_3d_scale()

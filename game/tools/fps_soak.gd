@@ -33,6 +33,7 @@ var _w_down := false
 var _vsync_set := false
 var _next_probe := 30.0
 var _probe_n := 0
+var _probe_hour := -1.0   # 決まった場所で測るあいだ止めた時刻（戻す先）。-1 は止めていない
 
 
 func _initialize() -> void:
@@ -220,6 +221,11 @@ func _drive(dt: float) -> void:
 		_begin("probe_hill" if _probe_n % 2 == 0 else "probe_lodge")
 		_probe_n += 1
 		_set_w(false)
+		if args.has("probe-hour"):   # 測るあいだだけ時刻をそろえる（夜の重さと、時間で重くなるのを分ける）。終わったら元の時刻から続ける
+			var dc := get_root().get_node("DayCycle")
+			_probe_hour = dc.hour
+			dc.set_hour(float(args["probe-hour"]))
+			dc.paused = true
 	if _phase.begins_with("probe"):
 		# 少し落ち着くまで置き直す
 		if _phase_t < 1.0:
@@ -232,6 +238,11 @@ func _drive(dt: float) -> void:
 				p.rotation.y = 0.8
 		if _phase_t > PROBE_SECS:
 			_next_probe = t + float(args["probe-every"])
+			if _probe_hour >= 0.0:
+				var dc := get_root().get_node("DayCycle")
+				dc.set_hour(_probe_hour)
+				dc.paused = false
+				_probe_hour = -1.0
 			_begin("push")
 		return
 	match _phase:
@@ -249,6 +260,13 @@ func _drive(dt: float) -> void:
 				p.rotation.y = atan2(-fwd.x, -fwd.z)
 			_set_w(true)
 			var top := Vector2(sled.global_position.x, sled.global_position.z).length()
+			if _phase_t > 25.0 and top >= 5.0 and sled.global_position.y < 16.6:
+				# 押しても登れない所（平らな所・ロッジの前）で止まったら、丘の頂上のそばへ運んでから滑る
+				p.let_go()
+				var a := randf() * TAU
+				sled.global_position = Vector3(cos(a) * 3.0, main.height(cos(a) * 3.0, sin(a) * 3.0) + 0.6, sin(a) * 3.0)
+				sled.linear_velocity = Vector3.ZERO
+				top = 0.0
 			if top < 5.0 or sled.global_position.y > 16.6 or _phase_t > 75.0:
 				p.let_go()
 				# 丘のふもとへ向けて押し出してから乗る（頂上の平らな所で止まらないように）
