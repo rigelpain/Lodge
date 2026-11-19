@@ -196,12 +196,18 @@ var _dip_shown := 0.0        # いまカメラに入れている着地の沈み 
 ## 人形と同じコマ（Doll.frame_index）で刻むので、なめらかに揺れず、がくがくと飛ぶ。大きさは速さに比例し（2026-11-18 代表「視界の揺れはスピードに比例して」）、
 ## 隆起で跳ねた直後は一段大きい（その一段も速さに比例した大きさに掛ける）。
 ## 設定の「視点の揺れ」を切ると弱く（0.3 倍）。目の高さと向きに数を足すだけで、描く物は増えない
-const RATTLE_FULL := 14.0                  # この速さ (m/s) で揺れが全部。0 からまっすぐ比例する（前は 2.5〜14 m/s のなめらかな立ち上がり）
-const RATTLE_OVER := 1.15                  # 比例の上限（米袋の連打の 16 m/s まで伸びる）
-const RATTLE_Y := 0.03                      # 目の上下 (m)
-const RATTLE_PITCH := 0.022                 # うなずき (rad)
-const RATTLE_ROLL := 0.035                  # 左右の傾き (rad)
-const RATTLE_BUMP := 2.2                    # 隆起で跳ねた直後の倍率
+static var RATTLE_FULL := 14.0                  # この速さ (m/s) で揺れが全部。0 からまっすぐ比例する（前は 2.5〜14 m/s のなめらかな立ち上がり）
+static var RATTLE_OVER := 1.15                  # 比例の上限（米袋の連打の 16 m/s まで伸びる）
+static var RATTLE_Y := 0.03                      # 目の上下 (m)
+static var RATTLE_PITCH := 0.022                 # うなずき (rad)
+static var RATTLE_ROLL := 0.035                  # 左右の傾き (rad)
+static var RATTLE_BUMP := 2.2                    # 隆起で跳ねた直後の倍率
+## 一人称と三人称で揺れの強さを分ける（2026-11-19 代表「TPS視点とFPS視点で揺れの強度変えたい。FPSはいまのままで、TPSはもっと抑えめでいい」）。
+## 上の数すべてに、いまの視点の倍率を掛ける
+static var RATTLE_FIRST := 1.0                   # 一人称の倍率（前のまま）
+static var RATTLE_THIRD := 0.4                   # 三人称の倍率
+## 揺れの RATTLE_* と、ソリの速さ・跳ね・ぶつかったときの飛び方は、テストプレイの調整の画面（ride_tune.gd）から変えられるよう static var にしてある。
+## 決まった値は ride_tune.gd の JSON から tools/ride_tune_apply.gd で、ここの既定に書き戻す
 var _rattle_y := 0.0         # いまカメラに入れている上下 (m)
 var _rattle_bump := 0.0      # 跳ねた直後の強まり（0〜1。すぐ消える）
 var _rattle_seen := 0        # 前に見た、ソリの跳ねた回数
@@ -221,7 +227,7 @@ var _air_v := 0.0            # その速さ
 var _air_shown := 0.0        # いまカメラに入れている高さ (m)
 var _air_sled := 0           # 着地を数えているソリ（乗り替えたら数え直す）
 var _land_seen := 0          # 前に見た、ソリの着地の回数
-const RATTLE_AIR := 0.25     # 宙にいるあいだのガクガクの割合
+static var RATTLE_AIR := 0.25     # 宙にいるあいだのガクガクの割合
 const RATTLE_AIR_T := 0.3    # 宙に出てから、ガクガクが弱まりはじめるまで (s)。小刻みな浮きでは弱めない
 var _rattle_air := 1.0       # いまのその割合（RATTLE_AIR〜1）
 var ride_shake_enabled := true   # 設定「滑るときの画面の揺れ」。切ると 0.3 倍（「視点の揺れ（押す・引くとき）」とは別。前はそちらに連れて弱まっていた）
@@ -1611,7 +1617,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 		cam.position.y += _dip_shown - _rattle_y - _air_shown
 		cam.position = cam.position.lerp(eye, min(1.0, dt * 10.0))
 		_dip_shown = _land_dip(dt)
-		var rt := _rattle(dt)   # 上下・うなずき・左右の傾き
+		var rt := _rattle(dt, RATTLE_FIRST)   # 上下・うなずき・左右の傾き
 		_rattle_y = rt.x
 		_air_shown = _ride_air(dt)   # 宙で浮き、着地で沈んではね戻る
 		cam.position.y += _rattle_y - _dip_shown + _air_shown
@@ -1649,7 +1655,7 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 	var free := _cam_clear(pivot_w, ray)
 	_cam_free = free if free < _cam_free else move_toward(_cam_free, free, dt * 4.0)
 	var at := pivot_w + ray.normalized() * minf(_cam_free, ray.length())
-	var rt := _rattle(dt)   # 三人称も、カメラごとガクガク揺れる（一人称と同じ数）
+	var rt := _rattle(dt, RATTLE_THIRD)   # 三人称も、カメラごとガクガク揺れる（一人称の RATTLE_THIRD 倍。抑えめ）
 	_air_shown = 0.0   # 一人称に戻ったとき、引き戻す分が残らないように
 	at += Vector3.UP * (rt.x * 1.5 + _ride_air(dt) * 1.5)   # 宙の浮き・着地の沈みも、カメラごと
 	cam.global_position = at if cam.global_position.distance_to(at) > 2.0 or free < _cam_free + 0.01 \
@@ -1665,8 +1671,8 @@ func _place_camera(dt: float, bob: float, working: bool) -> void:
 
 ## 乗って滑っている速さから、視野角に足す分を決める。速さは雪のでこぼこで細かく揺れるので、ならしてから使う。
 ## 一人称も三人称も同じだけ足す（三人称はそのうえでカメラを少し後ろへ引く）
-## 画面のガクガク: (目の上下 m, うなずき rad, 左右の傾き rad)。乗って滑っていなければ 0
-func _rattle(dt: float) -> Vector3:
+## 画面のガクガク: (目の上下 m, うなずき rad, 左右の傾き rad)。乗って滑っていなければ 0。view は視点ごとの倍率（RATTLE_FIRST・RATTLE_THIRD）
+func _rattle(dt: float, view: float) -> Vector3:
 	var Sled := preload("res://sled.gd")
 	_rattle_bump = maxf(0.0, _rattle_bump - dt * 3.0)
 	if mode != Mode.RIDE or Sled.rattle <= 0.0 or sled == null:
@@ -1679,7 +1685,7 @@ func _rattle(dt: float) -> Vector3:
 	var in_air: bool = sled.air_t > RATTLE_AIR_T
 	_rattle_air = move_toward(_rattle_air, RATTLE_AIR if in_air else 1.0, dt * (7.0 if in_air else 30.0))
 	var k: float = Sled.rattle * minf(sled.linear_velocity.length() / RATTLE_FULL, RATTLE_OVER) * (1.0 if ride_shake_enabled else 0.3)
-	k *= (1.0 + (RATTLE_BUMP - 1.0) * _rattle_bump) * _rattle_air
+	k *= (1.0 + (RATTLE_BUMP - 1.0) * _rattle_bump) * _rattle_air * view
 	if k <= 0.001:
 		return Vector3.ZERO
 	var f := float(Doll.frame_index())

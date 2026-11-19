@@ -883,6 +883,19 @@ $G --path game --resolution 960x540 --fixed-fps 60 -s res://tools/big_ball_shots
 
 旋回（D の効き）: 速いとき（約 6 m/s）1 秒で 1.9° → 2.4°（1.26 倍）、止まった所から W＋D 3 秒で 1.1° → 1.4°（1.27 倍）。滑り降りの最高速は 8.5 m/s で変わらない
 
+## 乗り心地の調整の画面（テストプレイ用。2026-11-19、`game/ride_tune.gd`・`game/ride_tune_ui.gd`）
+
+代表の言葉:「TPS視点とFPS視点で揺れの強度変えたい。FPSはいまのままで、TPSはもっと抑えめでいい。そこら辺のパラメータ（ソリのスピード、加速、ぶつかったときの飛び方、飛ぶ速度など）まとめてテストプレイ用のゲーム内ではいじれるようにして、しっくり来る設定を本番にいれれるようにjsonとかでコピーできるように」
+
+- **一人称と三人称の揺れ**: 滑るときの画面のガクガク（`player.gd` の `_rattle`）に、視点ごとの倍率を掛ける。一人称 `RATTLE_FIRST`（1.0。前のまま）、三人称 `RATTLE_THIRD`（0.4）。旭ヶ丘を 22 m/s ほどで下ると、1 コマで向きが変わる角度の平均は一人称 0.37°・三人称 0.24°（三人称にはソリそのものの傾きも入る。倍率 0 で 0.003°）
+- **開き方**: Esc の設定で「確かめ用の数字（fps・通信）」を入れると、下の並びに「乗り心地の調整」ボタンが出る。遊ぶ人には見せないので字を使う（2026-11-19 代表に確かめた）。画面の右に縦長に出し、既定から変えた値は数字が黄色になる
+- **動かせる値**: ソリの速さ（`FEEL` の `glide`・`pull`）、隆起の跳ね（`FEEL.bumps`・`BUMP_*`・`LAND_BOUNCE*`）、画面の揺れ（`RATTLE_*`・`FEEL.rattle`）、ソリが木・雪の塊にぶつかったとき（`sled.gd` の `CRASH_*`）、放り投げられる人（`flung.gd` の `CRASH_MIN`・`THROW_*`・`G_UP`・`G_DOWN`）。一覧は `ride_tune.gd` の `ITEMS`（見出し・範囲・きざみ）。これらは `const` から `static var` に変えた
+- **効く範囲**: 変えるとすぐ効く。保存はせず、起動し直すと既定に戻る。つないで遊ぶときは、ソリの動きと放り投げる向き・強さはホストの値、画面の揺れは各自の値
+- **JSON**: 「JSON をコピー」で全部の値をクリップボードへ（`{"lodge_ride_tune": 1, "sled": {"FEEL": {...}, "CRASH_UP": [下, 上], ...}, "flung": {...}, "player": {...}}`）。「貼り付けて読む」でクリップボードの JSON を読み、同じ値に戻る。「既定に戻す」でソースの既定へ
+- **本番に入れる手順**: コピーした JSON を Claude に渡して「本番に入れて」と頼む。Claude は JSON を `game/tools/ride_tune.json` に置き、`tools/ride_tune_apply.gd` で 3 つの .gd の `static var` の既定値を書き換える（値の所だけ。変わった行を表示する。`--dry` で書き換えずに見るだけ）。変わった値の注釈とこの文書を合わせて PR にする
+
+確かめの道具: `game/tools/ride_tune_check.gd`（揺れの比べ、スライダーが効くこと、JSON のコピーと貼り戻し）
+
 ## 確かめ方（ヘッドレス）
 
 ```bash
@@ -893,6 +906,8 @@ $G --headless --path game -- --bots=0 --sim=rope --log --quit-at=10      # 紐�
 $G --headless --path game -- --bots=0 --sim=left --log --quit-at=8       # 左側面から A
 $G --headless --path game -- --no-player --bots=2 --sled-yaw=160 --log   # 逆向きから
 $G --path game -- --bots=1 --sim --shot=/tmp/a.png --shot-at=5           # 画面を保存（--third で三人称）
+$G --path game --resolution 960x540 -s res://tools/ride_tune_check.gd -- --world=asahigaoka --no-sound   # 乗り心地の調整の画面（揺れの比べ・スライダー・JSON の出し入れ）
+$G --headless --path game -s res://tools/ride_tune_apply.gd -- res://tools/ride_tune.json            # 調整の JSON を本番の既定に書き戻す（--dry で見るだけ）
 $G --headless --path game -s res://tools/ride_check.gd -- --case=climb --bots=1 --ride --keys=W   # 乗って W ＋ 仲間一人（登る時間）
 $G --headless --path game -s res://tools/ride_check.gd -- --case=turn-fast --bots=0              # 速いときの旋回
 $G --headless --fixed-fps 60 --path game -s res://tools/glide_check.gd -- --case=coast --sled=mid --no-player --bots=0 --no-sound --no-lodge --roam-bots=0 --lodge-bots=0    # 平らな所で止まるまで（--case=down は本物の山、--case=edge は地面の外へ出ないか。--case=pull は --no-player なしで紐と押す）
