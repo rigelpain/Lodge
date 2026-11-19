@@ -478,9 +478,10 @@ $G --headless --fixed-fps 60 --path game -s res://tools/peg_net_check.gd -- --ho
 | `CRASH_UP` | 5〜13 m/s | ソリが上へ飛ぶ速さ（当たった速さ 3〜12 m/s に合わせて） | 高く飛ぶ |
 | `CRASH_KEEP` | 0.35 | 雪の塊で、前へ残る速さの割合 | 塊を越えてロッジの前まで飛ぶ |
 | `CRASH_BOUNCE` | 0.3 | 木で跳ね返る速さの割合 | 大きく跳ね返る |
+| `CRASH_FLY_T` | 2.1 s | 宙を進む距離 = 前へ残る速さ（`CRASH_KEEP`・`CRASH_BOUNCE` を掛けた）× これ。当たった速さに比例する（2026-11-18 代表）。上へ飛ぶ速さが大きいほど宙が長いので、そのぶん前へ残る速さを落とす | 遠くへ飛ぶ |
 | `CRASH_SPIN` | 4〜9 rad/s | 宙で回る速さ | よく回る |
 
-盛りの置き方は `game/sled_crash.gd` の `LUMP_SEED`（乱数の種。変えると別の置き方）・`LUMP_BAND`（散らす帯）・`LUMP_GAP`（帯に沿った間隔 1.6〜4.2 m）・`LUMP_EXTRA`（同じ所に前後をずらしてもう 1 つ盛る割合）・`LUMP_KINDS`（形の出やすさ）・`LUMP_LEE`（ロッジの側の裾の長さの割合。小さいほど急）・`LUMP_HIT_K`（当たりの半径 = 裾の半径 × これ）・`LUMP_SEE`（これより遠いと描かない 160 m）。当たり具合は `tools/lump_cover.gd` で数える。人の飛び方の `THROW_UP` の下限は、打ち上がって見えるよう 5 から 9 m/s に上げた。
+盛りの置き方は `game/sled_crash.gd` の `LUMP_SEED`（乱数の種。変えると別の置き方）・`LUMP_BAND`（散らす帯）・`LUMP_GAP`（帯に沿った間隔 1.6〜4.2 m）・`LUMP_EXTRA`（同じ所に前後をずらしてもう 1 つ盛る割合）・`LUMP_KINDS`（形の出やすさ）・`LUMP_LEE`（ロッジの側の裾の長さの割合。小さいほど急）・`LUMP_HIT_K`（当たりの半径 = 裾の半径 × これ）・`LUMP_SEE`（これより遠いと描かない 160 m）。当たり具合は `tools/lump_cover.gd` で数える。人の飛び方の `THROW_UP` の下限は、打ち上がって見えるよう 5 から 9 m/s に上げた（2026-11-18 に、飛ぶ距離を速さに比例させたので下限はなくした。下の「飛び方」）。
 
 ![ロッジの正面の雪だまり（上から）](lodge-snow-drifts/after-top.jpg)
 ![ソリの目線](lodge-snow-drifts/after-eye.jpg)
@@ -601,11 +602,13 @@ $G --path game --resolution 960x540 --fixed-fps 60 -s res://tools/run_over_shots
 - **境目**: ソリが幹へ迫る速さが `Flung.CRASH_MIN`（5 m/s）以上なら放り投げられる。押して出せる 4 m/s より上。より遅いとき、幹の端をかすめるだけのときは、乗ったまま物理で止まる・それる
 - **飛び方**（`flung.gd` の `THROW_*`。1 人ずつ決める）
   - 向き: 進む向きの左右 `THROW_FAN`（70°）に、乗っている人を等分して並べ、`THROW_JITTER`（12°）ばらす。だれがどこへ飛ぶかは毎回変わる。真っすぐ前は `THROW_FAN_MIN`（18°）だけ避ける。1 人のときは `THROW_FAN_MIN` 〜 `THROW_FAN_ONE`（45°）で左か右へ
-  - 水平の速さ: ぶつかる前のソリの速さ × `THROW_OUT_K`（0.9〜1.05）。上限 `THROW_OUT_MAX`
-  - 上向きの速さ: ぶつかる前のソリの速さ × `THROW_UP_K`（0.55〜0.95）を `THROW_UP`（5〜14 m/s）に収める
+  - 宙を飛ぶ距離は、ぶつかる前のソリの速さに比例する（2026-11-18 代表「四散するときも衝突スピードに比例した飛距離に」）: 距離 = 速さ × `THROW_DIST_K`（1.2 m）× `THROW_DIST_VAR`（0.85〜1.15、一人ひとり）。上限 `THROW_DIST_MAX`（40 m）
+  - 上向きと水平の速さの比は `THROW_RISE`（0.9〜1.3、一人ひとり）。この比と距離から、届く速さを逆算する（`Flung.throw_speeds`）。遅いと低く近く、速いと高く遠く
+  - 前は水平 = 速さ × 0.9〜1.05、上向き = 速さ × 0.55〜0.95 を 9〜14 m/s に収めていた。遅くても高く飛び、速いと距離が速さの 2 乗ほどに伸びていた
+  - 丘の木へ中のソリで当てた確かめ（`tools/crash_check.gd` の当て方で、速さを変えて）: 当たった速さ 7〜15 m/s で、人が宙を飛んだ距離は速さのおよそ 1.4〜1.6 倍（坂を下りながら落ちるので平らな所より長い）
   - 席が幹のすぐ後ろなので、飛び出して `THROW_THRU`（0.4 秒）は幹の当たりを切る
 - **濡れる**: 轢かれたときも放り投げられたときも、はじめて雪に落ちたときに濡れる（[よれのゲージ](damp.md) の「吹き飛ぶ」。`damp.gd` の `FLUNG_WET`）
-- **戻り方**: 轢かれたときと同じ。飛んで、着いて、雪をすべって倒れ、その場で起き上がる（`LIE_TIME`・`RISE_TIME`）。ソリへは戻らない。中のソリに 3 人で乗って 8〜20 m/s でぶつかると、8〜50 m 飛んで、起き上がるまで 3〜5 秒
+- **戻り方**: 轢かれたときと同じ。飛んで、着いて、雪をすべって倒れ、その場で起き上がる（`LIE_TIME`・`RISE_TIME`）。ソリへは戻らない。中のソリに乗って 7〜15 m/s でぶつかると、着いてすべる分も入れて 16〜31 m 飛んで（2026-11-18 の確かめ。1 人）、起き上がるまで 3〜5 秒
 - **ソリ**: 幹で止まり、そこに残る（空のソリの決まりでずり落ちる）。米袋は帯に戻す（空の袋を坂に残さない）
 - **仲間**: 同じように飛ぶ。山めぐりの仲間は、起き上がると次の山へ向かう
 - **複数人**: ソリの物理を持つホストが見つけて、一人ひとりの向きと強さを決め、出来事 `flung`（`thrown`・`dir`・`out`・`up`）で配る。体を動かす画面（その人の画面・ホストの仲間）が、その値で飛ばす
@@ -880,6 +883,19 @@ $G --path game --resolution 960x540 --fixed-fps 60 -s res://tools/big_ball_shots
 
 旋回（D の効き）: 速いとき（約 6 m/s）1 秒で 1.9° → 2.4°（1.26 倍）、止まった所から W＋D 3 秒で 1.1° → 1.4°（1.27 倍）。滑り降りの最高速は 8.5 m/s で変わらない
 
+## 乗り心地の調整の画面（テストプレイ用。2026-11-19、`game/ride_tune.gd`・`game/ride_tune_ui.gd`）
+
+代表の言葉:「TPS視点とFPS視点で揺れの強度変えたい。FPSはいまのままで、TPSはもっと抑えめでいい。そこら辺のパラメータ（ソリのスピード、加速、ぶつかったときの飛び方、飛ぶ速度など）まとめてテストプレイ用のゲーム内ではいじれるようにして、しっくり来る設定を本番にいれれるようにjsonとかでコピーできるように」
+
+- **一人称と三人称の揺れ**: 滑るときの画面のガクガク（`player.gd` の `_rattle`）に、視点ごとの倍率を掛ける。一人称 `RATTLE_FIRST`（1.0。前のまま）、三人称 `RATTLE_THIRD`（0.4）。旭ヶ丘を 22 m/s ほどで下ると、1 コマで向きが変わる角度の平均は一人称 0.37°・三人称 0.24°（三人称にはソリそのものの傾きも入る。倍率 0 で 0.003°）
+- **開き方**: Esc の設定で「確かめ用の数字（fps・通信）」を入れると、下の並びに「乗り心地の調整」ボタンが出る。遊ぶ人には見せないので字を使う（2026-11-19 代表に確かめた）。画面の右に縦長に出し、既定から変えた値は数字が黄色になる
+- **動かせる値**: ソリの速さ（`FEEL` の `glide`・`pull`）、隆起の跳ね（`FEEL.bumps`・`BUMP_*`・`LAND_BOUNCE*`）、画面の揺れ（`RATTLE_*`・`FEEL.rattle`）、ソリが木・雪の塊にぶつかったとき（`sled.gd` の `CRASH_*`）、放り投げられる人（`flung.gd` の `CRASH_MIN`・`THROW_*`・`G_UP`・`G_DOWN`）。一覧は `ride_tune.gd` の `ITEMS`（見出し・範囲・きざみ）。これらは `const` から `static var` に変えた
+- **効く範囲**: 変えるとすぐ効く。保存はせず、起動し直すと既定に戻る。つないで遊ぶときは、ソリの動きと放り投げる向き・強さはホストの値、画面の揺れは各自の値
+- **JSON**: 「JSON をコピー」で全部の値をクリップボードへ（`{"lodge_ride_tune": 1, "sled": {"FEEL": {...}, "CRASH_UP": [下, 上], ...}, "flung": {...}, "player": {...}}`）。「貼り付けて読む」でクリップボードの JSON を読み、同じ値に戻る。「既定に戻す」でソースの既定へ
+- **本番に入れる手順**: コピーした JSON を Claude に渡して「本番に入れて」と頼む。Claude は JSON を `game/tools/ride_tune.json` に置き、`tools/ride_tune_apply.gd` で 3 つの .gd の `static var` の既定値を書き換える（値の所だけ。変わった行を表示する。`--dry` で書き換えずに見るだけ）。変わった値の注釈とこの文書を合わせて PR にする
+
+確かめの道具: `game/tools/ride_tune_check.gd`（揺れの比べ、スライダーが効くこと、JSON のコピーと貼り戻し）
+
 ## 確かめ方（ヘッドレス）
 
 ```bash
@@ -890,6 +906,8 @@ $G --headless --path game -- --bots=0 --sim=rope --log --quit-at=10      # 紐�
 $G --headless --path game -- --bots=0 --sim=left --log --quit-at=8       # 左側面から A
 $G --headless --path game -- --no-player --bots=2 --sled-yaw=160 --log   # 逆向きから
 $G --path game -- --bots=1 --sim --shot=/tmp/a.png --shot-at=5           # 画面を保存（--third で三人称）
+$G --path game --resolution 960x540 -s res://tools/ride_tune_check.gd -- --world=asahigaoka --no-sound   # 乗り心地の調整の画面（揺れの比べ・スライダー・JSON の出し入れ）
+$G --headless --path game -s res://tools/ride_tune_apply.gd -- res://tools/ride_tune.json            # 調整の JSON を本番の既定に書き戻す（--dry で見るだけ）
 $G --headless --path game -s res://tools/ride_check.gd -- --case=climb --bots=1 --ride --keys=W   # 乗って W ＋ 仲間一人（登る時間）
 $G --headless --path game -s res://tools/ride_check.gd -- --case=turn-fast --bots=0              # 速いときの旋回
 $G --headless --fixed-fps 60 --path game -s res://tools/glide_check.gd -- --case=coast --sled=mid --no-player --bots=0 --no-sound --no-lodge --roam-bots=0 --lodge-bots=0    # 平らな所で止まるまで（--case=down は本物の山、--case=edge は地面の外へ出ないか。--case=pull は --no-player なしで紐と押す）

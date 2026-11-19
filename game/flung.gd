@@ -23,8 +23,9 @@ const UP_RANGE := Vector2(3.0, 8.0)   # 上向きの速さの下限と上限 (m/
 const SIDE_K := 0.3         # 当たった側へそれる割合。ソリの通り道から外れて、すぐまた下敷きにならないように
 const SLED_LOSS := 0.25     # 人を飛ばした反動のうち、ソリの速さに効かせる割合（紙の体は見かけより軽い）。1 で本当の反動
 # ---- 飛んでいるあいだ
-const G_UP := 14.6          # 上がるあいだの重力 (m/s²。player.gd の GRAVITY と同じ)
-const G_DOWN := 16.0        # 下りるあいだの重力 (m/s²)。歩くときの 24 より軽い（紙の体が、ふわっと落ちる）
+## G_UP・G_DOWN・CRASH_MIN・THROW_* の多くは、テストプレイの調整の画面（ride_tune.gd）で変えられるよう static var にしてある（2026-11-19）
+static var G_UP := 14.6          # 上がるあいだの重力 (m/s²。player.gd の GRAVITY と同じ)
+static var G_DOWN := 16.0        # 下りるあいだの重力 (m/s²)。歩くときの 24 より軽い（紙の体が、ふわっと落ちる）
 const TURNS_PER_S := 1.1    # 宙で回る速さの目安（1 秒に何回転）
 const HOP_MIN_FALL := 3.0   # これより速く落ちて着くと、一度だけ跳ねる (m/s)
 const HOP_UP := 0.4         # 跳ねるときに残る、落ちる速さの割合
@@ -40,15 +41,19 @@ const FALL_NET := 2.0       # 雪面よりこれだけ下へ沈んだら、雪�
 const EDGE_STOP := 3.0      # 見た目の地面の端からこの距離より外へは飛ばない (m)
 const EDGE_EASE := 2.5      # 端へ向かう速さの上限 = 端までの残り × これ (1/s)
 # ---- ソリで木にぶつかって放り投げられる
-const CRASH_MIN := 5.0      # 放り投げられる境目: ソリが幹へ向かって迫る速さ (m/s)。これより遅い・かすめるだけなら、乗ったままソリが止まる。押して出せる 4 m/s より上
-const THROW_OUT_K := Vector2(0.9, 1.05)   # 水平に飛ぶ速さ = ぶつかる前のソリの速さ × この範囲（一人ひとり）
-const THROW_OUT_MAX := 30.0 # 水平に飛ぶ速さの上限 (m/s)
-const THROW_UP_K := Vector2(0.55, 0.95)   # 上向きの速さ = ぶつかる前のソリの速さ × この範囲（一人ひとり）
-const THROW_UP := Vector2(9.0, 14.0)      # 上向きの速さの下限と上限 (m/s)
-const THROW_FAN := 70.0     # 進む向きから左右へ広がる角度の端 (度)。乗っている人を、この中に等分して並べる
-const THROW_FAN_MIN := 18.0 # 真っすぐ前を避ける角度 (度)。幹に正面から突っ込まない
-const THROW_FAN_ONE := 45.0 # 1 人で乗っているときの、左右へそれる角度の端 (度)。THROW_FAN_MIN からこの間で決める
-const THROW_JITTER := 12.0  # 向きのばらつき (度)
+static var CRASH_MIN := 5.0      # 放り投げられる境目: ソリが幹へ向かって迫る速さ (m/s)。これより遅い・かすめるだけなら、乗ったままソリが止まる。押して出せる 4 m/s より上
+## 宙を飛ぶ距離は、ぶつかる前のソリの速さに比例する（2026-11-18 代表「四散するときも衝突スピードに比例した飛距離に」）。
+## 前は上向きの速さに下限（9 m/s）があり、遅くぶつかっても高く遠く飛び、速いと距離が速さの 2 乗ほどに伸びていた。
+## いまは先に距離を決め（速さ × THROW_DIST_K、一人ひとり THROW_DIST_VAR でばらす）、上向きと水平の速さの比（THROW_RISE）から、その距離に届く速さを逆算する。
+## 遅いと低く近くへ、速いと高く遠くへ。着いてから跳ねる・雪をすべる分はこの外
+static var THROW_DIST_K := 1.2   # 宙を飛ぶ距離 (m) = ぶつかる前のソリの速さ (m/s) × これ（10 m/s で 12 m。前とほぼ同じ）
+static var THROW_DIST_VAR := Vector2(0.85, 1.15)   # 一人ひとりの距離のばらつき
+static var THROW_DIST_MAX := 40.0   # 宙を飛ぶ距離の上限 (m)
+static var THROW_RISE := Vector2(0.9, 1.3)   # 上向きの速さ ÷ 水平の速さ（一人ひとり）。どの速さでも同じ角度で打ち上がる
+static var THROW_FAN := 70.0     # 進む向きから左右へ広がる角度の端 (度)。乗っている人を、この中に等分して並べる
+static var THROW_FAN_MIN := 18.0 # 真っすぐ前を避ける角度 (度)。幹に正面から突っ込まない
+static var THROW_FAN_ONE := 45.0 # 1 人で乗っているときの、左右へそれる角度の端 (度)。THROW_FAN_MIN からこの間で決める
+static var THROW_JITTER := 12.0  # 向きのばらつき (度)
 const THROW_THRU := 0.4     # 飛び出してからこの長さ、幹の当たりを切る (s)。席が幹のすぐ後ろなので、はじめに引っかからないように
 # ---- 体の当たり（player.gd・bot.gd の _ready のカプセルと同じ）
 const RADIUS := 0.35
@@ -206,12 +211,20 @@ static func throw_events(s: RigidBody3D, v: Vector3, point: Vector3) -> Array:
 			deg = side * randf_range(THROW_FAN_MIN, THROW_FAN_ONE)
 		elif absf(deg) < THROW_FAN_MIN:
 			deg = (signf(deg) if deg != 0.0 else side) * THROW_FAN_MIN
-		var speed := v.length()
+		var fly := throw_speeds(v.length() * randf_range(THROW_DIST_VAR.x, THROW_DIST_VAR.y), randf_range(THROW_RISE.x, THROW_RISE.y))
 		out.append({"kind": "flung", "who": who[i].get("id"), "thrown": true, "sled": s.get_parent().get_path_to(s), "closing": 0.0, "point": point,
 				"dir": v.normalized().rotated(Vector3.UP, deg_to_rad(deg)),
-				"out": minf(speed * randf_range(THROW_OUT_K.x, THROW_OUT_K.y), THROW_OUT_MAX),
-				"up": clampf(speed * randf_range(THROW_UP_K.x, THROW_UP_K.y), THROW_UP.x, THROW_UP.y)})
+				"out": fly.x, "up": fly.y})
 	return out
+
+
+## 速さ speed (m/s) でぶつかって放り投げられるときの (水平の速さ, 上向きの速さ)。宙を飛ぶ距離が speed × THROW_DIST_K になる（平らな所で）。
+## 宙の時間 = up / G_UP + up / √(G_UP × G_DOWN)（上がって、同じ高さまで下りる）。距離 = out × 宙の時間、up = out × rise から out を解く
+static func throw_speeds(speed: float, rise: float) -> Vector2:
+	var dist := minf(speed * THROW_DIST_K, THROW_DIST_MAX)
+	var per_up := 1.0 / G_UP + 1.0 / sqrt(G_UP * G_DOWN)
+	var o := sqrt(dist / (rise * per_up))
+	return Vector2(o, o * rise)
 
 
 ## ホストのソリだけに効かせる（emotes.gd が出来事 "flung" で呼ぶ）。重いソリほど遅くならない

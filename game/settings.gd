@@ -5,6 +5,7 @@ extends CanvasLayer
 ## HUD の大きさ（hud_scale）は hud_icons.gd の倍率に入れ、HUD の表示（札・ワッペン・持ち物の列・身ぶりの輪・日時計）にかかる。
 
 const Icons := preload("res://hud_icons.gd")
+const TuneUI := preload("res://ride_tune_ui.gd")
 
 signal changed(key: String, value)
 signal to_start                # 「スタート画面へ」を押した（main.gd が net.leave で読み直す）
@@ -82,6 +83,9 @@ var _time_sl: HSlider        # 時刻（daycycle.gd の hour）。ITEMS とは�
 var _time_num: Label
 var _time_cb: CheckButton    # 時刻を止める
 var _time_t := 0.0
+## 乗り心地の調整（テストプレイ用。ride_tune_ui.gd）。「確かめ用の数字」を入れているときだけ、下の並びにボタンが出る
+var _tune_btn: Button
+var _tune: Control
 
 
 func _ready() -> void:
@@ -92,6 +96,10 @@ func _ready() -> void:
 	Icons.user_scale = values["hud_scale"]
 	_build()
 	_panel.get_parent().visible = false
+	_tune = TuneUI.new()
+	_tune.visible = false
+	_tune.back.connect(func(): _open_tune(false))
+	add_child(_tune)
 	get_viewport().size_changed.connect(_layout)
 
 
@@ -200,6 +208,11 @@ func _build() -> void:
 	hint.add_theme_color_override("font_color", Color(1, 1, 1, 0.6))
 	hint.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	foot.add_child(hint)
+	_tune_btn = Button.new()
+	_tune_btn.text = "乗り心地の調整"
+	_tune_btn.visible = values["hud_debug"]
+	_tune_btn.pressed.connect(func(): _open_tune(true))
+	foot.add_child(_tune_btn)
 	var back := Button.new()
 	back.text = "スタート画面へ"
 	back.pressed.connect(func(): to_start.emit())
@@ -322,6 +335,9 @@ func _change(key: String, v) -> void:
 			changed.emit(k, q[k])
 	if key == "hud_scale":
 		Icons.user_scale = v
+	elif key == "hud_debug" and _tune_btn:
+		_tune_btn.visible = v
+		relayout()
 	elif key == "menu_scale" and _dragging != key:
 		_layout()   # 動かしている最中に拡げると、手の下でスライダーがずれて値が跳ねるので、離してから
 	changed.emit(key, v)
@@ -351,8 +367,22 @@ func relayout() -> void:
 		_layout.call_deferred()
 
 
+## 乗り心地の調整の画面へ切り替える・設定へ戻る（どちらも設定の画面を開いたまま）
+func _open_tune(on: bool) -> void:
+	_tune.visible = on
+	_panel.get_parent().visible = not on
+	if on:
+		_tune.ui_scale = values["menu_scale"]
+		_tune.refresh()
+		_tune.layout()
+	else:
+		_layout()
+
+
 ## 設定の画面が画面の上で占める所（px）。hud.gd の操作の札はこの左に置く
 func panel_rect() -> Rect2:
+	if _tune and _tune.visible:
+		return _tune.panel_rect()
 	if _panel == null:
 		return Rect2()
 	return Rect2(_panel.position, _panel.size * _panel.scale)
@@ -401,6 +431,8 @@ func sync(key: String, v) -> void:
 		c.select(int(v))
 	if key == "hud_scale":
 		Icons.user_scale = v
+	elif key == "hud_debug" and _tune_btn:
+		_tune_btn.visible = v
 	elif key == "menu_scale":
 		_layout()
 	_save()
@@ -409,6 +441,8 @@ func sync(key: String, v) -> void:
 func set_open(on: bool) -> void:
 	is_open = on
 	_panel.get_parent().visible = on
+	if _tune:
+		_tune.visible = false
 	if on:
 		_layout()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE if on else Input.MOUSE_MODE_CAPTURED

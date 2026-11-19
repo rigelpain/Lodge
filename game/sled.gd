@@ -90,12 +90,17 @@ const FALL_NET := 2.0          # 安全網: 雪面よりこれだけ下へ沈ん
 signal slipped(who: Node3D)    # 引きずられて手が離れた
 
 # ---- 雪の塊や木にぶつかって打ち上がる（塊は sled_crash.gd。値の意味は design/controls-and-physics.md）
-const CRASH_SOFT_SPEED := 3.0  # 雪の塊に、これより速く当たると打ち上がる (m/s)。押している・紐で引いている・つかんでいるソリは飛ばない
-const CRASH_UP := Vector2(5.0, 13.0)   # 上へ飛ぶ速さ (m/s)。当たった速さが CRASH_UP_AT.x のとき 〜 CRASH_UP_AT.y のとき
-const CRASH_UP_AT := Vector2(3.0, 12.0)
-const CRASH_KEEP := 0.35       # 雪の塊: 当たった速さのうち、そのまま前へ残る割合。大きいと塊を越えてロッジの前の広場まで飛ぶ
-const CRASH_BOUNCE := 0.3      # 木: 跳ね返る速さの割合
-const CRASH_SPIN := Vector2(4.0, 9.0)  # 宙で回る速さの下限と上限 (rad/s)
+static var CRASH_SOFT_SPEED := 3.0  # 雪の塊に、これより速く当たると打ち上がる (m/s)。押している・紐で引いている・つかんでいるソリは飛ばない
+static var CRASH_UP := Vector2(5.0, 13.0)   # 上へ飛ぶ速さ (m/s)。当たった速さが CRASH_UP_AT.x のとき 〜 CRASH_UP_AT.y のとき
+static var CRASH_UP_AT := Vector2(3.0, 12.0)
+static var CRASH_KEEP := 0.35       # 雪の塊: 当たった速さのうち、そのまま前へ残る割合。大きいと塊を越えてロッジの前の広場まで飛ぶ
+static var CRASH_BOUNCE := 0.3      # 木: 跳ね返る速さの割合
+## 打ち上がったソリが宙を進む距離は、当たった速さに比例する（2026-11-18 代表「四散するときも衝突スピードに比例した飛距離に」）。
+## 前は上へ飛ぶ速さ（CRASH_UP）も速さで増えるので、宙にいる時間 × 前へ残る速さで、距離が速さの 2 乗ほどに伸びていた。
+## いまは 距離 = 前へ残る速さ（CRASH_KEEP・CRASH_BOUNCE を掛けた）× CRASH_FLY_T。宙にいる時間が長いほど、前へ残る速さを落とす。
+## CRASH_FLY_T は当たった速さ 9 m/s のときの宙の時間（その速さでは前と同じ距離）
+static var CRASH_FLY_T := 2.1
+static var CRASH_SPIN := Vector2(4.0, 9.0)  # 宙で回る速さの下限と上限 (rad/s)
 const CRASH_SPIN_DAMP := 0.2   # 宙で回る勢いの弱まり（ふだんの angular_damp は 6）
 const CRASH_LAND_DAMP := 2.5   # 着いたあと、回る勢いの弱まり
 const CRASH_MAX := 40.0        # 打ち上がってからこの長さで、ふつうのソリに戻る (s)
@@ -107,7 +112,8 @@ const CRASH_REST := 1.0        # これだけ止まっていると、ふつう�
 ## どちらも掛け算と足し算が 1 つずつ増えるだけで、描く物も当たりの計算も増えない
 ## 2026-11-14 代表「旭ヶ丘での滑ってる時の一人称視点のガクガクやスピードなど、旭ヶ丘でのみ実装していたものを共通のものにしたい」で、
 ## どのワールドも FEEL の値にした（前は旭ヶ丘だけで、ほかは glide 1・pull 0・bumps 0・rattle 0）。値は旭ヶ丘で決めたまま
-const FEEL := {"glide": 0.25, "pull": 0.4, "bumps": 1.0, "rattle": 0.75}   # rattle 0.75: 代表が「いい感じ」と言ったときの揺れ
+## FEEL と CRASH_*・BUMP_*・LAND_BOUNCE* の一部は、テストプレイの調整の画面（ride_tune.gd）で変えられるよう static var にしてある（2026-11-19）
+static var FEEL := {"glide": 0.25, "pull": 0.4, "bumps": 1.0, "rattle": 0.75}   # rattle 0.75: 代表が「いい感じ」と言ったときの揺れ
 static var glide := 0.25
 static var pull := 0.4
 ## ワールドごとの揺れ（2026-11-12 代表「ソリってもっと揺れるよね？それが怖かった記憶がある。画面のガクガクもそうだし、ちょっとした隆起で跳ねる」）
@@ -121,12 +127,16 @@ const HALF_H_ON_SNOW := 0.9    # ソリのまんなかが雪面からこれよ�
 ## 跳ねは「ジャンプ」でなく、ごつんと突き上げられる小刻みな衝撃（2026-11-12 代表「はねるのがジャンプみたいになってる」）:
 ## 高さは数 cm で、すぐ雪面に戻る。そのかわり細かい間隔で何度も来て、前後・左右にがくっと揺さぶる
 const BUMP_CELL := 2.5
-const BUMP_CHANCE := 0.45     # 升に隆起がある割合（2026-11-12 代表「少しの隆起でももう少し跳ねて良い」）
-const BUMP_MIN := 3.5          # これより遅いと跳ねない (m/s)
-const BUMP_UP := 0.05          # 突き上げる速さ = 滑る速さ × これ（BUMP_UP_MAX まで）× (0.5〜1.5) × bumps
-const BUMP_UP_MAX := 0.8       # 突き上げる速さの上限 (m/s。高さ 3 cm ほど、宙に 0.16 秒ほど)
-const BUMP_PITCH := 1.1        # つんのめる・のけぞる回る速さ (rad/s) の上限
-const BUMP_ROLL := 0.6         # 左右にがくっと傾く回る速さ (rad/s) の上限
+static var BUMP_CHANCE := 0.45     # 升に隆起がある割合（2026-11-12 代表「少しの隆起でももう少し跳ねて良い」）
+static var BUMP_MIN := 3.5          # これより遅いと跳ねない (m/s)
+static var BUMP_UP := 0.05          # 突き上げる速さ = 滑る速さ × これ（BUMP_UP_MAX まで）× (0.5〜1.5) × bumps
+static var BUMP_UP_MAX := 0.8       # 突き上げる速さの上限 (m/s。高さ 3 cm ほど、宙に 0.16 秒ほど)
+static var BUMP_PITCH := 1.1        # つんのめる・のけぞる回る速さ (rad/s) の上限
+static var BUMP_ROLL := 0.6         # 左右にがくっと傾く回る速さ (rad/s) の上限
+## 隆起でがくっと回る強さは、滑る速さに比例する（2026-11-18 代表「視界の揺れはスピードに比例して」「平地で米袋でガクガクってちょっと違う」）。
+## 前は BUMP_MIN を超えると、遅くても最高速と同じだけ回っていた。BUMP_SPIN_AT で前と同じ強さ（中・大のソリでまっすぐ下る速さ）、BUMP_SPIN_OVER 倍で頭打ち
+static var BUMP_SPIN_AT := 9.0
+static var BUMP_SPIN_OVER := 1.3
 var _bump_cell := Vector2i(1 << 30, 0)
 var bump_n := 0                # 跳ねた回数（確かめ用・画面のガクガクのきっかけ）
 ## 宙と着地（2026-11-14 代表「ジャンプ台や起伏でのちょっとした落下のときに体が浮く用な浮遊感とかバウンドする感じとかが欲しい」）。
@@ -140,8 +150,8 @@ var bump_n := 0                # 跳ねた回数（確かめ用・画面のガ�
 const AIR_GAP := 0.22          # ソリの底が、下の当たり（雪面・ジャンプ台）からこれより離れたら宙 (m)
 const AIR_MIN_T := 0.12        # これより長く宙にいたあと着いたら、着地とする (s)
 const LAND_MIN_V := 1.0        # 雪面へ向かう速さがこれより速いと、着地の手応えがある (m/s)
-const LAND_BOUNCE := 0.22      # はね返る速さ = 雪面へ向かっていた速さ × これ（LAND_BOUNCE_MAX まで）
-const LAND_BOUNCE_MAX := 1.5   # はね返る速さの上限 (m/s。高さ 11 cm ほど、宙に 0.3 秒ほど)
+static var LAND_BOUNCE := 0.22      # はね返る速さ = 雪面へ向かっていた速さ × これ（LAND_BOUNCE_MAX まで）
+static var LAND_BOUNCE_MAX := 1.5   # はね返る速さの上限 (m/s。高さ 11 cm ほど、宙に 0.3 秒ほど)
 var air_t := 0.0               # 乗って滑っていて、宙にいる時間 (s)。雪の上では 0
 var land_n := 0                # 着地した回数
 var land_v := 0.0              # 最後の着地の、雪面へ向かっていた速さ (m/s)
@@ -1318,8 +1328,9 @@ func _bump(n: Vector3, vs: float) -> void:
 		return   # 宙にいるあいだは跳ねない
 	var k := (0.5 + h / BUMP_CHANCE) * bumps
 	apply_central_impulse(n * mass * minf(vs * BUMP_UP, BUMP_UP_MAX) * k)
-	angular_velocity += global_basis.x * (fposmod(h * 7.0, 1.0) - 0.4) * BUMP_PITCH * k   # 前へつんのめる・後ろへのけぞる（回りの弱まりですぐ収まる）
-	angular_velocity += global_basis.z * (fposmod(h * 13.0, 1.0) - 0.5) * 2.0 * BUMP_ROLL * k   # 左右にがくっと傾く
+	var ks := k * minf(vs / BUMP_SPIN_AT, BUMP_SPIN_OVER)   # 回る強さは速さに比例
+	angular_velocity += global_basis.x * (fposmod(h * 7.0, 1.0) - 0.4) * BUMP_PITCH * ks   # 前へつんのめる・後ろへのけぞる（回りの弱まりですぐ収まる）
+	angular_velocity += global_basis.z * (fposmod(h * 13.0, 1.0) - 0.5) * 2.0 * BUMP_ROLL * ks   # 左右にがくっと傾く
 	bump_n += 1
 
 
@@ -1574,7 +1585,8 @@ func _launch(v: Vector3, keep: Vector3, point: Vector3, lump: Node3D = null) -> 
 	if rope_holder and rope_holder.has_method("let_go"):
 		rope_holder.let_go()
 	var speed := v.length()
-	linear_velocity = keep + Vector3.UP * lerpf(CRASH_UP.x, CRASH_UP.y, clampf(inverse_lerp(CRASH_UP_AT.x, CRASH_UP_AT.y, speed), 0.0, 1.0))
+	var up := lerpf(CRASH_UP.x, CRASH_UP.y, clampf(inverse_lerp(CRASH_UP_AT.x, CRASH_UP_AT.y, speed), 0.0, 1.0))
+	linear_velocity = keep * (CRASH_FLY_T / (2.0 * up / 9.8)) + Vector3.UP * up   # 宙を進む距離 = keep × CRASH_FLY_T（速さに比例）
 	var spin := clampf(speed, CRASH_SPIN.x, CRASH_SPIN.y)
 	angular_velocity = global_basis.x * spin * (1.0 if randf() < 0.5 else -1.0) + global_basis.z * spin * randf_range(-0.7, 0.7)
 	angular_damp = CRASH_SPIN_DAMP
