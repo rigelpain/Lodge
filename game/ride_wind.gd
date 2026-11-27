@@ -43,7 +43,7 @@ void vertex() {
 	} else if (along) {
 		// 粒の向きは流れで決める（粒の仕組みの align_y は、流れが世界の z に近いと崩れる）。
 		// 生まれたときの角度で、流れを軸に回してばらつかせる
-		vec3 y = normalize(flow);
+		vec3 y = dot(flow, flow) > 1e-10 ? normalize(flow) : vec3(0.0, 0.0, 1.0);   // 止まっていて流れが 0 でも非数にしない
 		vec3 x = normalize(cross(abs(y.y) < 0.95 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0), y));
 		vec3 z = cross(x, y);
 		float a = INSTANCE_CUSTOM.x;
