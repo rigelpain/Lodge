@@ -730,6 +730,7 @@ func _ready() -> void:
 		add_child(ride_blur)
 
 	# 設定画面（Esc）。保存してある値を起動時に当てる
+	calm = preload("res://spec.gd").calm_level()   # このパソコンで 3D が真っ暗になったときに切った分（spec.gd）。設定より先に決める
 	settings = Settings.new()
 	add_child(settings)
 	settings.changed.connect(_apply_setting)
@@ -1234,6 +1235,14 @@ var _dyn_hold := 0.0
 var _dyn_steps: Array = []    # 下げている途中の、段ごとの [割合, 1 コマの時間の和 (ms), 区切りの数（-1 は捨てる 1 区切り目）]。間に合うようになったら空に
 var _dyn_since_up := INF      # 最後に上げてからの時間 (s)
 var _focused := true
+
+## 3D が真っ暗になるパソコンで切る分（spec.gd が決めて、user://spec.cfg に GPU と描き方ごとに残す）。
+## どこかの面で 1 コマでも非数が出ると、光のにじみ（glow）がそれを 3D の絵ぜんぶへ広げ、色の照り返し（SSIL）は前のコマの絵を読むので
+## 次のコマへ持ち越して、黒いまま戻らない（HUD は 3D のあとに描くので出る）。非数の出方は GPU と描き方で違い、Mac の Metal では出なかった。
+## CALM_SSIL 以上で照り返しを、CALM_GLOW 以上で光のにじみも、設定に関わらず切る（設定の値は書き換えない）
+const CALM_SSIL := 1
+const CALM_GLOW := 2
+var calm := 0
 
 func _fit_3d_scale() -> void:
 	var vp := get_viewport()
@@ -2681,11 +2690,11 @@ func _apply_setting(key: String, v) -> void:
 			if _game_pacing:
 				DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_ENABLED if v else DisplayServer.VSYNC_DISABLED)
 		"glow":
-			if env: env.glow_enabled = v
+			if env: env.glow_enabled = v and calm < CALM_GLOW
 		"ssao":
 			if env:
 				env.ssao_enabled = v
-				env.ssil_enabled = v   # 照り返しも同じく重いので一緒に
+				env.ssil_enabled = v and calm < CALM_SSIL   # 照り返しも同じく重いので一緒に
 		"shadows":
 			if sun_light: sun_light.shadow_enabled = v
 		"hints":

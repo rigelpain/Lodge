@@ -221,7 +221,9 @@ void sky() {
 	if (h < 0.0) col = mix(horizon_color, ground_color, smoothstep(0.0, -0.3, h));
 
 	// 羊毛の雲: 焼いた画像から読む（R 濃さ、G 陰）。低い所ほど大きく、縁はふわっと
-	vec2 cuv = vec2(atan(d.x, -d.z) / 6.2831853 + 0.5, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.1415927);
+	// 真上・真下は atan(0, 0)。GPU によっては非数になり、光のにじみで 3D の絵ぜんぶが黒くなる（Windows の真っ暗の疑い）ので避ける
+	float lon = abs(d.x) + abs(d.z) > 1e-6 ? atan(d.x, -d.z) : 0.0;
+	vec2 cuv = vec2(lon / 6.2831853 + 0.5, 0.5 - asin(clamp(d.y, -1.0, 1.0)) / 3.1415927);
 	vec2 c = texture(clouds, cuv).rg;
 	float cloud = smoothstep(0.50, 0.66, c.r) * smoothstep(0.02, 0.22, h);
 	vec3 shade = mix(cloud_color * 0.82, cloud_color, smoothstep(0.5, 0.75, c.g));
@@ -743,7 +745,8 @@ void fragment() {
 	float dh = length(hv);
 	float core = (1.0 - smoothstep(0.004, 0.022, dh)) * v_holes;
 	float dimple = (1.0 - smoothstep(0.015, 0.07, dh)) * v_holes;
-	float pull = pow(0.5 + 0.5 * cos(atan(hv.y, hv.x) * 7.0), 4.0) * dimple * (1.0 - core);
+	float ah = dh > 1e-6 ? atan(hv.y, hv.x) : 0.0;   // 針穴の真ん中は atan(0, 0)。GPU によっては非数になるので避ける
+	float pull = pow(0.5 + 0.5 * cos(ah * 7.0), 4.0) * dimple * (1.0 - core);
 	float k = clamp(under + core * 0.45 + dimple * 0.22 + pull * 0.08, 0.0, 0.7);
 	// 埋もれる: 針穴とくぼみは、糸より先に雪で埋まる。ほつれる: 糸がなくなるのに合わせて、影とくぼみが消える
 	k *= style == 0 ? 1.0 - smoothstep(0.0, 0.6, v_bury) : 1.0 - smoothstep(0.3, 0.9, v_bury);

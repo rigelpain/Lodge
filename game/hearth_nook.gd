@@ -318,7 +318,7 @@ void fragment() {
 			for (int i = -1; i <= 1; i++) {
 				vec2 n = ip + vec2(float(i), float(j));
 				vec2 o = hash2(n);
-				vec2 dir = normalize(hash2(n + 17.0) - 0.5);
+				vec2 dir = normalize(hash2(n + 17.0) - 0.5 + vec2(1e-5));   // 長さ 0 の normalize は GPU によって非数になる
 				vec2 c = n + o + dir * h * h * 0.9;   // 房は立ち上がってから倒れる
 				float d = length(g - c);
 				if (d < best) { best = d; bc = (n + o) * CELL; bv = hash2(n + 3.0).x; }

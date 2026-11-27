@@ -339,7 +339,7 @@ uniform sampler2D normal_tex : hint_normal, filter_linear_mipmap, repeat_enable;
 #SWAP
 void fragment() {
 	vec3 c = dye(texture(albedo_tex, UV).rgb, part_at(UV));
-	ALBEDO = pow(c, vec3(2.2));
+	ALBEDO = pow(max(c, vec3(0.0)), vec3(2.2));   // 負の数の pow は GPU によって非数になる
 	NORMAL_MAP = texture(normal_tex, UV).rgb;
 	ROUGHNESS = 0.9;
 	SPECULAR = 0.2;

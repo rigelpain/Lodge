@@ -137,7 +137,7 @@ void fragment() {
 		float wob = texture(noise, d * 0.35 + 0.5).r;
 		float ring = 0.5 + 0.5 * sin((r + wob * 0.12) * 46.0);
 		vec3 c = mix(core, wood, smoothstep(0.0, 0.9, r)) * (0.86 + 0.14 * ring);
-		float crack = smoothstep(0.985, 1.0, abs(sin(atan(d.y, d.x) * 3.0 + wob * 2.0))) * step(0.15, r) * step(r, 0.8);
+		float crack = smoothstep(0.985, 1.0, abs(sin(atan(d.y, d.x + 1e-6) * 3.0 + wob * 2.0))) * step(0.15, r) * step(r, 0.8);
 		c *= 1.0 - 0.35 * crack;
 		c = mix(c, bark * 0.8, smoothstep(0.86, 0.96, r));
 		ALBEDO = c;

@@ -60,11 +60,11 @@ void fragment() {
 	float coord;
 	if (border) {
 		d = normalize(p - vec2(0.0, -0.005) + vec2(1e-5));
-		coord = atan(p.x, p.y + 0.005) * 0.06;
+		coord = atan(p.x, p.y + 0.005 + 1e-6) * 0.06;   // atan(0, 0) は GPU によって非数になるので、ずらしておく
 	} else if (p.y > -0.012 + 0.003 * sin(p.x * 420.0)) {
 		vec2 c = vec2(0.0, -0.13);
-		d = normalize(p - c);
-		coord = atan(p.x - c.x, p.y - c.y) * 0.13;
+		d = normalize(p - c + vec2(1e-5));
+		coord = atan(p.x - c.x, p.y - c.y + 1e-6) * 0.13;
 	} else {
 		d = vec2(1.0, 0.0);
 		coord = p.y + 0.37;
@@ -74,14 +74,16 @@ void fragment() {
 	float fine = 1.0 - smoothstep(0.12, 0.45, fwidth(coord) / strand);   // 遠くでは糸の筋をならす
 	vec3 N = NORMAL;
 	vec3 T = (VIEW_MATRIX * MODEL_MATRIX * vec4(d, 0.0, 0.0)).xyz;
-	T = normalize(T - N * dot(T, N));
+	// 縁で面の向きと筋の向きがそろうと長さ 0 になり、normalize が非数を出す（光のにじみで 3D ぜんぶが黒くなる疑い）。そのときは面に沿う別の向き
+	T = T - N * dot(T, N);
+	T = dot(T, T) > 1e-12 ? normalize(T) : normalize(cross(N, abs(N.y) < 0.9 ? vec3(0.0, 1.0, 0.0) : vec3(1.0, 0.0, 0.0)));
 	vec3 B = cross(N, T);
 	NORMAL = normalize(N + B * cos(f * PI) * 0.5 * fine);
 	tang = T;
 	crest = mix(1.0, 0.45 + 0.55 * sin(f * PI), fine);   // 光るのは糸の背
 	// 空の光の照り返し: 上からの光が糸に沿って伸びる（日が背にあっても、見る向きで糸ごとにきらっとする）
 	vec3 up = (VIEW_MATRIX * vec4(0.0, 1.0, 0.0, 0.0)).xyz;
-	float ts = dot(T, normalize(VIEW + up));
+	float ts = dot(T, normalize(VIEW + up + vec3(0.0, 1e-5, 0.0)));
 	float sky = sqrt(max(1.0 - ts * ts, 0.0));
 	EMISSION = mix(vec3(1.0), color, 0.5) * (pow(sky, 24.0) * 0.6 + pow(sky, 5.0) * 0.1) * sheen * crest;
 	float shade = mix(1.0, 0.8 + 0.2 * sin(f * PI), fine);   // 糸と糸のあいだの溝は少し暗い
@@ -94,7 +96,7 @@ void fragment() {
 void light() {
 	float nl = clamp(dot(NORMAL, LIGHT), 0.0, 1.0);
 	DIFFUSE_LIGHT += nl * ATTENUATION * LIGHT_COLOR / PI;
-	vec3 H = normalize(LIGHT + VIEW);
+	vec3 H = normalize(LIGHT + VIEW + vec3(0.0, 1e-5, 0.0));   // 陽が真うしろでも長さ 0 にしない
 	float th = dot(tang, H);
 	float s = sqrt(max(1.0 - th * th, 0.0));
 	float spec = pow(s, 90.0) * 0.8 + pow(s, 16.0) * 0.18;
